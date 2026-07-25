@@ -2,7 +2,7 @@ import { AppLayout } from "@/components/layout/app-layout";
 import { ProjectProvider } from "@/contexts/project-context";
 import { useProjects } from "@/hooks/use-projects";
 import { Suspense, lazy } from "react";
-import { Link, Navigate, Route, Routes } from "react-router-dom";
+import { Link, Navigate, Route, Routes } from "react-router";
 
 const Admin = lazy(() =>
   import("@/pages/admin").then((m) => ({ default: m.Admin })),

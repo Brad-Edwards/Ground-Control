@@ -10,6 +10,8 @@
           "id": "workflow-guardrail-sync",
           "whenAny": [
             "skills/implement/SKILL.md",
+            "skills/implement/_development-principles.md",
+            "skills/implement/steps/**",
             "skills/quickfix/SKILL.md",
             "skills/integrate/SKILL.md",
             ".claude/skills/implement/SKILL.md",

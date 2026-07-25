@@ -65,6 +65,19 @@ _TIER1_PATTERNS = (
         r"(?:in|as)\s+(?:a\s+|the\s+|another\s+)?(?:follow[-\s]?up|subsequent)\s+"
         r"(?:PR|pull\s+request|issue|ticket|commit|change)\b",
     ),
+    (
+        "nonaction-because-provenance",
+        r"\b(?:not|won'?t|will\s+not|cannot|can'?t|skip(?:ping)?)\s+"
+        r"(?:be\s+)?(?:fix|fixing|address|addressing|repair|repairing|resolve|resolving|handle|handling)\b"
+        r"[^.\n]{0,80}\b(?:because|since|as)\b[^.\n]{0,60}"
+        r"\b(?:pre-existing|unrelated|outside\s+(?:this\s+)?(?:PR'?s?\s+)?scope|out\s+of\s+scope|owned\s+by)\b",
+    ),
+    (
+        "provenance-used-for-nonaction",
+        r"\b(?:pre-existing|unrelated|outside\s+(?:this\s+)?(?:PR'?s?\s+)?scope|out\s+of\s+scope|owned\s+by[^,.;\n]{0,40})\b"
+        r"[^.\n]{0,80}(?:\b(?:so|therefore|means)\b|[;:])[^.\n]{0,60}"
+        r"\b(?:not|won'?t|will\s+not|skip(?:ping)?|left\s+unresolved|leave\s+unresolved)\b",
+    ),
 )
 
 _TIER2_PATTERNS = (

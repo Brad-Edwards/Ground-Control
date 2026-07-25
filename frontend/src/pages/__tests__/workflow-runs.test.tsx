@@ -18,10 +18,10 @@ vi.mock("@/contexts/project-context", () => ({
   }),
 }));
 
-vi.mock("react-router-dom", async () => {
+vi.mock("react-router", async () => {
   const actual =
-    await vi.importActual<typeof import("react-router-dom")>(
-      "react-router-dom",
+    await vi.importActual<typeof import("react-router")>(
+      "react-router",
     );
   return {
     ...actual,
@@ -107,6 +107,7 @@ const composedAggregate: WorkflowRunAggregateResponse = {
 
 const activeRun: WorkflowRunResponse = {
   id: "run-1",
+  graphNodeId: "WORKFLOW_RUN:run-1",
   project: "ground-control",
   repo: "autarchy-ai/Ground-Control",
   issueNumber: 859,
@@ -134,6 +135,7 @@ const activeRun: WorkflowRunResponse = {
 const readyRun: WorkflowRunResponse = {
   ...activeRun,
   id: "run-2",
+  graphNodeId: "WORKFLOW_RUN:run-2",
   finalState: "READY_FOR_REVIEW",
   outcome: "NONE",
   branch: "feature/ready",
@@ -143,6 +145,7 @@ const readyRun: WorkflowRunResponse = {
 const mergedRun: WorkflowRunResponse = {
   ...activeRun,
   id: "run-3",
+  graphNodeId: "WORKFLOW_RUN:run-3",
   finalState: "MERGED",
   outcome: "MERGED",
   branch: "feature/done",

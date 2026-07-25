@@ -8,6 +8,21 @@ accepted
 
 2026-05-23
 
+> **Sync note for issue #1309 (2026-07-17, ADR-084 §5 Envers as-of spine):**
+> Removed the dead `threats-insufficient-effectiveness` action (and its
+> `as_of` / `min_effectiveness` / `freshness_window_days` parameters) from the
+> `gc_risk_control_mapping` tool in `mcp/ground-control/index.js`, and the
+> backing `getThreatsInsufficientEffectiveness` helper from
+> `mcp/ground-control/lib.js`. The action called a REST route that
+> `RiskControlAnalysisController` never exposed; it was the last surviving
+> divergent as-of surface (ADR-084 §5: the canonical as-of coordinate is the
+> Envers revision, resolved by the new `AsOfRevisionResolver`—see
+> `docs/architecture/ARCHITECTURE.md` § As-Of Time Semantics). This is a
+> policy-surface removal, not an extension: the documentation-coverage
+> classifier, `outcome_required` mapping, Vale rule set,
+> `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new
+> `docs/DOC_STYLE.md` style rule is established.
+
 > **Sync note for issue #1308 (2026-07-15, graph enum contract):** Added
 > `GraphEntityType` to the existing ADR-034 `ENUM_CONTRACT_INVENTORY`, so
 > `make policy` checks the backend enum against the generated TypeScript union
@@ -487,3 +502,29 @@ style rule; `docs/API.md` carries the matching contract update.
 **2026-07-13 (issue #1385 reject `GRC` on project creation).** Removed `GRC` from the `gc_admin` `create_project` `type` enum in `mcp/ground-control/index.js` and updated the `createProject` client-helper doc comment in `mcp/ground-control/lib.js`, mirroring the backend guard added to `ProjectService.create` that rejects `type=GRC` at creation with a `project_type_grc_not_creatable` validation error (ADR-089 §4) while keeping persisted `GRC` rows readable. `docs/API.md` already documents `type` as `SOFTWARE | RESEARCH` with `GRC` as a legacy read-only value (issue #1346), so no API-doc change was needed. This is a change to an existing `mcp_tool` surface covered by the existing classifier path logic; the documentation-coverage classifier (`classifyChangedSurface`), `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged; no new `docs/DOC_STYLE.md` style rule is established.
 
 **2026-07-13 (issue #1383 repository identity consistency + drift gate, GC-P026).** Hardened checkout-derived repository identity across the MCP surface and added a `make policy` drift gate. `mcp/ground-control/lib.js` now routes `createGitHubIssue` (a mutation, fail-closed) and `getIssueContext` (a read) through `getOwnerRepo(repoRoot|cwd, {allowGhFallback:false})`, so identity comes from the checkout's git `origin` remote and never from `process.env.GH_REPO`; a caller-supplied `repo` is validated (owner/repo shape + case-insensitive agreement with the checkout) and rejected on mismatch; `parseGroundControlYaml` now requires `github_repo` to match the `owner/repo` shape; `mcp/ground-control/index.js` `gc_create_github_issue` takes `repo_path` for checkout context; and `mcp/ground-control/gc-integrate.js` refuses with `github_identity_mismatch` when `.ground-control.yaml` `github_repo` disagrees with the checkout. `tools/policy/checks.py` gains `run_repo_identity_drift` (registered in `main`), an inventory-based gate modeled on `run_ghcr_namespace_drift` that pins active repository-identity surfaces to `autarchy-ai/Ground-Control` while exempting historical ADR/changelog references and test fixtures; `tools/tests/test_policy.py` carries its positive/negative/historical tests. Per the convention that `tools/policy/checks.py` policy additions and MCP-behavior changes are recorded here rather than as standalone documentation edits, this amendment is the durable record; the documentation-coverage classifier (`classifyChangedSurface`), `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged; no new `docs/DOC_STYLE.md` style rule is established.
+
+**2026-07-17 (issue #1310 ACES concept-family crosswalk gate, ADR-084 §4).** `tools/policy/checks.py` gained `run_ontology_crosswalk_check` (registered in `main`, alongside `run_ontology_binding_check`) with the helpers `_safe_ontology_external_path`, `_load_ontology_family_ids`, and `_validate_crosswalk_pin`. The gate validates the new `contracts/ontology/crosswalks/aces-concept-families-v1.json` artifact: pin/hash integrity against the immutable reference snapshot under `contracts/ontology/external/aces-sdl/0.23.0/`, referential integrity of every family reference over both the Ground Control catalog and the vendored ACES snapshot, the closed effect vocabulary (`annotates|aligns|refines|constrains`), the `aligns`⇒no-divergence / `refines`⇒recorded-divergence invariant, and the stated time omission; it reads only tracked files in-process with no network, package import, or subprocess (ADR-084 §2 hermetic rule). `tools/tests/test_policy.py` carries its positive/negative fixtures. `docs/DOC_STYLE.md` is updated in lockstep to note that a new policy check records its contract in the owning ADR (here ADR-084 §4). This is a policy-surface addition; the documentation-coverage classifier (`classifyChangedSurface`), `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged; no new `docs/DOC_STYLE.md` style rule is established.
+
+**2026-07-25 (issue #1416 `/implement` execution-contract gate).**
+`tools/policy/checks.py` gains `run_implement_execution_contract`, registered in
+`main`, to enforce the canonical principles-before-routing order, immutable
+delegation tokens, the closed pause classes, same-checkout branch-tool boundary,
+absence of direct worktree/branch commands, and the open-obligation completion
+gate. The MCP tool descriptions for branch preparation and obligation records
+name every enforced input and are covered by the live description-parity test.
+The existing documentation-coverage classifier, `outcome_required` mapping,
+Vale rules, installer, and `.vale.ini` are unchanged.
+
+The issue #1416 pre-push reviews further harden the MCP mutations:
+caller-supplied repository paths and origins are pinned at MCP launch, branch
+checkout disables hooks and executable Git configuration, branch results omit
+the raw origin URL, pickup writes use one server operation,
+execution-obligation authority checks effective repository permission, and
+`wontfix` requires a replayable structured record derived from an exact source
+command. These are security corrections to the same documented tool surfaces;
+classifier and style behavior remain unchanged.
+The subsequent issue #1416 verification correction adds a binding
+risk-proportionate local-test principle, reconciles the review and completion
+step text, and extends the structural policy test. It changes workflow
+scheduling documentation, not documentation classification, Vale rules, or
+style policy.

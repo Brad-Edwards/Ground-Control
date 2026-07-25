@@ -13,6 +13,12 @@ This step calls `gc_assert_completion`, and it is invoked **twice across the run
 
 The pre-merge/post-merge split (issue #963) exists so the requirement `DRAFT→ACTIVE` transition, traceability links, and the durable final report never land ahead of shipped code - the same coherence the #1058 post-merge close already enforces.
 
+For both phases, `gc_assert_completion` re-reads the trusted
+`gc:execution-obligation` ledger from the issue thread. It refuses with
+`completion_open_execution_obligations` while any real problem remains open.
+Caller summaries or cached arrays cannot override this gate. Repair and verify
+every obligation, record its resolution, then retry completion.
+
 **Precondition (post_merge only)**: Steps 15 (`gc_transition_status`) and 16 (`gc_create_traceability_link` / `gc_delete_traceability_link`) must have run successfully in Phase E. The post-merge final report must reflect the reconciled state of the Ground Control graph; the pre-merge readiness record must not claim a reconciliation that has not happened.
 
 **You MUST NOT merge the PR. You MUST NOT run `gh pr merge`. The user reviews and merges.**

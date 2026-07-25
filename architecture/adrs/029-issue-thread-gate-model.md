@@ -465,3 +465,30 @@ unchanged by this amendment.
 **2026-07-15 (issue #1382 base-to-feature maintenance merge).** The `.claude/hooks/git-merge-guard.py` PreToolUse hook now permits one narrow local operation an agent could not run before: a real `git merge` of the integration branch (`origin/dev`, resolved as the exact `refs/remotes/origin/dev` ref) into the current *non-protected* feature branch, so an open PR can be kept current with real conflict resolution followed by an ordinary `git commit`. This is branch maintenance, not a pull-request merge; `gh pr merge` remains blocked, and the 2026-05-26 (#989) integration-manager carve-out remains the only automated PR-merge path. The two #989 amendments above describe the hook as blocking "`git merge` from agent Bash invocations"; that statement is now qualified - the hook blocks pull-request merges, protected-branch-destination merges, non-`origin/dev` sources, and every ambiguous invocation shape (chained/wrapped/global-option commands, shell expansion or substitution inside a quoted operand, unsupported merge modes, a configured `branch.<dest>.mergeOptions`, missing/multiple/aliased sources, detached HEAD), but permits the base-to-feature maintenance merge. The protected-destination set is a hardcoded constant (`main`, `dev`), not derived from any agent-writable ref or working-tree file (`refs/remotes/origin/*` and the working tree are both writable with a single command); the current branch is read from the full symbolic ref so a colliding tag cannot disguise it; source identity is by symbolic ref, never by commit OID. The single-human-touchpoint contract (PR merge) and the issue-thread durable-record contract are unchanged; only the hook's `git merge` gate is narrowed. See `.claude/hooks/git-merge-guard.py`, `tools/tests/test_git_merge_guard.py`, and `architecture/notes/merge-guard-base-to-feature-preflight.md`.
 
 **2026-07-15 (issue #1399, GC-P027 Release Please adoption).** Release Please becomes the owner of `CHANGELOG.md` and the product version, the Towncrier `changelog.d/` fragment convention is retired, and a CI Conventional-Commit PR-title gate (`.github/workflows/pr-title.yml`) is added. This is a release/changelog-ownership change: the issue-thread durable-record model (decision records, phase markers, readiness/final reports) and the single-human-touchpoint (PR merge) contract are unchanged. Cross-referenced for the `workflow-guardrail-sync` contract. See ADR-021 (2026-07-15 amendment) and ADR-063.
+
+**2026-07-25 (issue #1416, execution-obligation records).** The issue thread
+gains an `execution-obligation` marker family with `opened`, `escalated`, and
+`resolved` events for defects, failing checks, security concerns, workflow
+failures, and quality problems discovered during `/implement`. The server
+reconstructs current state from markers written by the authenticated actor.
+Escalation keeps an obligation open and names one of the closed pause classes;
+resolution requires repair evidence or an explicit, justified disposition.
+Both phases of `gc_assert_completion` re-read this state and refuse while any
+obligation remains open. Final reports also reject provenance, ownership, or
+scope language used to excuse non-action. Marker authority is stable across
+callers and based on effective repository permission: every marker author must
+currently have `write`, `maintain`, or `admin` permission. Coarse `OWNER`,
+`MEMBER`, and `COLLABORATOR` comment associations are not authorization.
+Marker-shaped records from outside the effective-permission set fail closed. A
+`wontfix` resolution embeds the id of a structured authorization record
+produced from an exact `/ground-control authorize-wontfix <OBLIGATION_ID>`
+source comment; posting and replay verify the source author's permission,
+exact positive command, and record binding. Negations, questions, quotations,
+and free-form approval prose cannot authorize the disposition.
+Within the review-fix loop, verification is risk-proportionate: batch related
+findings, run targeted tests between cycles, and widen only for shared,
+cross-cutting, security-sensitive, or observably broader risk. If fixes changed
+the tree, run repository-wide completion and policy once on the final post-fix
+state before leaving the review band; do not repeat those broad suites after
+every small correction. Durable decision records and all mandatory workflow
+gates are unchanged.

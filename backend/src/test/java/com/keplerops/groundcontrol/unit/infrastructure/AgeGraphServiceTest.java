@@ -66,6 +66,9 @@ class AgeGraphServiceTest {
     @Mock
     private AgeSnapshotCleaner snapshotCleaner;
 
+    @Mock
+    private com.keplerops.groundcontrol.domain.audit.service.AsOfRevisionResolver asOfRevisionResolver;
+
     private AgeGraphService service;
 
     private static final UUID PROJECT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
@@ -86,7 +89,8 @@ class AgeGraphServiceTest {
                 graphProjectionRegistryService,
                 projectRepository,
                 snapshotRepository,
-                snapshotCleaner);
+                snapshotCleaner,
+                asOfRevisionResolver);
     }
 
     @Nested
@@ -200,11 +204,13 @@ class AgeGraphServiceTest {
                     graphProjectionRegistryService,
                     projectRepository,
                     snapshotRepository,
-                    snapshotCleaner);
+                    snapshotCleaner,
+                    asOfRevisionResolver);
             // An active snapshot exists (reads resolve it) and publication gets version 1; lenient
             // so the subset of tests that exercise only one of read/materialize don't trip strict stubs.
             lenient().when(snapshotRepository.findActiveGraphName()).thenReturn(Optional.of("test_graph"));
             lenient().when(snapshotRepository.nextVersion()).thenReturn(1L);
+            lenient().when(asOfRevisionResolver.currentRevision()).thenReturn(Optional.of(5));
         }
 
         @Test
@@ -232,7 +238,8 @@ class AgeGraphServiceTest {
                     .anyMatch(sql -> sql.contains("create_graph(?"))
                     .noneMatch(sql -> sql.contains("DETACH DELETE"));
             // Publication records the new snapshot — the atomic active-version swap on commit.
-            verify(snapshotRepository).insertSnapshot(eq(1L), eq("test_graph_v1"), eq("GLOBAL"), eq(0), eq(0), any());
+            verify(snapshotRepository)
+                    .insertSnapshot(eq(1L), eq("test_graph_v1"), eq("GLOBAL"), eq(0), eq(0), eq(5), any());
         }
 
         @Test
@@ -267,7 +274,49 @@ class AgeGraphServiceTest {
                             && sql.contains("REQUIREMENT")
                             && sql.contains("cypher('test_graph_v1'"))
                     .noneMatch(sql -> sql.contains("DETACH DELETE"));
-            verify(snapshotRepository).insertSnapshot(eq(1L), eq("test_graph_v1"), eq("GLOBAL"), eq(1), eq(0), any());
+            verify(snapshotRepository)
+                    .insertSnapshot(eq(1L), eq("test_graph_v1"), eq("GLOBAL"), eq(1), eq(0), eq(5), any());
+        }
+
+        @Test
+        void materializeGraph_capturesRevisionBetweenAdvisoryLockAndProjectionBuild() {
+            // ADR-084 §5: the resolver query and every contributor read inside buildProjection()
+            // must share the same REPEATABLE_READ snapshot, so the revision capture must happen
+            // strictly after the advisory lock acquisition (serializes concurrent publishers) and
+            // strictly before buildProjection() (the first contributor read). Capturing it earlier
+            // (e.g. before the lock) or later (e.g. after the projection is built) would let the
+            // recorded source_revision diverge from what the projection actually reflects.
+            when(graphProjectionRegistryService.buildProjection())
+                    .thenReturn(new GraphProjection(List.of(), List.of()));
+
+            enabledService.materializeGraph();
+
+            var inOrder =
+                    org.mockito.Mockito.inOrder(jdbcTemplate, asOfRevisionResolver, graphProjectionRegistryService);
+            inOrder.verify(jdbcTemplate).execute(org.mockito.ArgumentMatchers.contains("pg_advisory_xact_lock"));
+            inOrder.verify(asOfRevisionResolver).currentRevision();
+            inOrder.verify(graphProjectionRegistryService).buildProjection();
+        }
+
+        @Test
+        void materializeGraph_recordsNullSourceRevisionWhenNoRevisionResolvedYet() {
+            // A fresh database with nothing ever audited: the resolver honestly returns empty, and
+            // that must reach the snapshot row as NULL, never a fabricated 0/-1 coordinate.
+            when(asOfRevisionResolver.currentRevision()).thenReturn(Optional.empty());
+            when(graphProjectionRegistryService.buildProjection())
+                    .thenReturn(new GraphProjection(List.of(), List.of()));
+
+            enabledService.materializeGraph();
+
+            verify(snapshotRepository)
+                    .insertSnapshot(
+                            eq(1L),
+                            eq("test_graph_v1"),
+                            eq("GLOBAL"),
+                            eq(0),
+                            eq(0),
+                            org.mockito.ArgumentMatchers.isNull(),
+                            any());
         }
 
         @Test
@@ -416,11 +465,13 @@ class AgeGraphServiceTest {
                     graphProjectionRegistryService,
                     projectRepository,
                     snapshotRepository,
-                    snapshotCleaner);
+                    snapshotCleaner,
+                    asOfRevisionResolver);
             // An active snapshot exists (reads resolve it) and publication gets version 1; lenient
             // so the subset of tests that exercise only one of read/materialize don't trip strict stubs.
             lenient().when(snapshotRepository.findActiveGraphName()).thenReturn(Optional.of("test_graph"));
             lenient().when(snapshotRepository.nextVersion()).thenReturn(1L);
+            lenient().when(asOfRevisionResolver.currentRevision()).thenReturn(Optional.of(5));
         }
 
         @SuppressWarnings("unchecked")
@@ -745,7 +796,8 @@ class AgeGraphServiceTest {
                     graphProjectionRegistryService,
                     projectRepository,
                     snapshotRepository,
-                    snapshotCleaner);
+                    snapshotCleaner,
+                    asOfRevisionResolver);
             // No buildProjection stub: validateGraphName fails before the projection is read.
 
             assertThatThrownBy(dangerousService::materializeGraph).isInstanceOf(DomainValidationException.class);
@@ -834,11 +886,13 @@ class AgeGraphServiceTest {
                     graphProjectionRegistryService,
                     projectRepository,
                     snapshotRepository,
-                    snapshotCleaner);
+                    snapshotCleaner,
+                    asOfRevisionResolver);
             // An active snapshot exists (reads resolve it) and publication gets version 1; lenient
             // so the subset of tests that exercise only one of read/materialize don't trip strict stubs.
             lenient().when(snapshotRepository.findActiveGraphName()).thenReturn(Optional.of("test_graph"));
             lenient().when(snapshotRepository.nextVersion()).thenReturn(1L);
+            lenient().when(asOfRevisionResolver.currentRevision()).thenReturn(Optional.of(5));
         }
 
         @Test
@@ -1022,6 +1076,32 @@ class AgeGraphServiceTest {
         void researchProjectionKeyIsApproved(String key) {
             var approvedKeys = AgeGraphService.APPROVED_PROPERTY_KEYS;
             assertThat(approvedKeys).contains(key);
+        }
+    }
+
+    @Nested
+    class WorkflowContributorPropertyKeyRegression {
+
+        @org.junit.jupiter.params.ParameterizedTest
+        @org.junit.jupiter.params.provider.ValueSource(
+                strings = {
+                    "repo",
+                    "issueNumber",
+                    "workflowType",
+                    "runtimeDriver",
+                    "finalState",
+                    "outcome",
+                    "provenance",
+                    "startedAt",
+                    "endedAt",
+                    "phase",
+                    "eventType",
+                    "cycleIndex",
+                    "occurredAt",
+                    "durationMs"
+                })
+        void workflowProjectionKeyIsApproved(String key) {
+            assertThat(key).isIn(AgeGraphService.APPROVED_PROPERTY_KEYS);
         }
     }
 }

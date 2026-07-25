@@ -197,6 +197,19 @@ _DEFERRAL_TIER1_PATTERNS: tuple[tuple[str, str], ...] = (
         r"(?:in|as)\s+(?:a\s+|the\s+|another\s+)?(?:follow[-\s]?up|subsequent)\s+"
         r"(?:PR|pull\s+request|issue|ticket|commit|change)\b",
     ),
+    (
+        "nonaction-because-provenance",
+        r"\b(?:not|won'?t|will\s+not|cannot|can'?t|skip(?:ping)?)\s+"
+        r"(?:be\s+)?(?:fix|fixing|address|addressing|repair|repairing|resolve|resolving|handle|handling)\b"
+        r"[^.\n]{0,80}\b(?:because|since|as)\b[^.\n]{0,60}"
+        r"\b(?:pre-existing|unrelated|outside\s+(?:this\s+)?(?:PR'?s?\s+)?scope|out\s+of\s+scope|owned\s+by)\b",
+    ),
+    (
+        "provenance-used-for-nonaction",
+        r"\b(?:pre-existing|unrelated|outside\s+(?:this\s+)?(?:PR'?s?\s+)?scope|out\s+of\s+scope|owned\s+by[^,.;\n]{0,40})\b"
+        r"[^.\n]{0,80}(?:\b(?:so|therefore|means)\b|[;:])[^.\n]{0,60}"
+        r"\b(?:not|won'?t|will\s+not|skip(?:ping)?|left\s+unresolved|leave\s+unresolved)\b",
+    ),
 )
 
 _DEFERRAL_TIER2_PATTERNS: tuple[tuple[str, str], ...] = (
@@ -3544,6 +3557,327 @@ def run_ontology_binding_check(root: Path = REPO_ROOT) -> list[Violation]:
 
 
 # ---------------------------------------------------------------------------
+# ACES concept-family crosswalk (ADR-084 §4).
+#
+# The crosswalk records GC native families against ACES families under the
+# closed effect vocabulary, pinned to a released aces-sdl distribution. The pin
+# is validated against an immutable, repo-relative reference snapshot of the
+# reviewed catalog bytes rather than a live upstream lookup: the check reads the
+# local GC catalog and the vendored snapshot in-process, recomputes the raw-byte
+# hash, and resolves every family reference. It performs no network request,
+# package import, or subprocess call (ADR-084 §2 hermetic rule).
+# ---------------------------------------------------------------------------
+
+ONTOLOGY_CROSSWALK_PATH = Path("contracts/ontology/crosswalks/aces-concept-families-v1.json")
+ONTOLOGY_CROSSWALK_SCHEMA_VERSION = "aces-concept-families-crosswalk/v1"
+ONTOLOGY_EXTERNAL_SNAPSHOT_ROOT = Path("contracts/ontology/external")
+ONTOLOGY_EFFECT_VOCABULARY = frozenset({"annotates", "aligns", "refines", "constrains"})
+# ADR-084 §4/§5: the crosswalk must bind to the canonical GC family catalog, and
+# crosswalk v1 deliberately omits the ACES `time-and-apparatus` family (GC has no
+# time family; time is the Envers spine). Both are contract invariants, not data.
+ONTOLOGY_CROSSWALK_TIME_FAMILY = "time-and-apparatus"
+
+
+def _safe_ontology_external_path(root: Path, raw_path: Any) -> bool:
+    if not isinstance(raw_path, str) or not raw_path:
+        return False
+    rel = Path(raw_path)
+    if rel.is_absolute() or ".." in rel.parts or rel.as_posix() != raw_path:
+        return False
+    if not rel.is_relative_to(ONTOLOGY_EXTERNAL_SNAPSHOT_ROOT):
+        return False
+    try:
+        (root / rel).resolve().relative_to(root.resolve())
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def _load_ontology_family_ids(path: Path) -> tuple[set[str], Any, str | None]:
+    """Return (family_ids, schema_version, error) for a concept-families catalog,
+    reading only the family keys and version. Full family-shape validation lives
+    in the binding check."""
+    try:
+        payload = load_json(path, reject_duplicate_keys=True)
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+        return set(), None, str(exc)
+    if not isinstance(payload, dict):
+        return set(), None, "catalog is not a JSON object"
+    families = payload.get("families")
+    if not isinstance(families, dict) or not families:
+        return set(), payload.get("schema_version"), "catalog declares no families object"
+    return {fid for fid in families if isinstance(fid, str) and fid}, payload.get("schema_version"), None
+
+
+def _validate_crosswalk_pin(
+    root: Path, crosswalk: dict[str, Any]
+) -> tuple[set[str], list[Violation]]:
+    """Validate the external pin and return (aces_family_ids, violations)."""
+    pin = crosswalk.get("external_pin")
+    if not isinstance(pin, dict):
+        return set(), [
+            _ontology_violation("ontology-crosswalk-pin-invalid", "Crosswalk must declare an external_pin object.")
+        ]
+    violations: list[Violation] = []
+    distribution = pin.get("distribution")
+    release_version = pin.get("release_version")
+    sha256 = pin.get("sha256")
+    snapshot_rel = pin.get("reference_snapshot")
+    for field in ("authority", "distribution", "release_version", "artifact_path", "catalog_schema_version"):
+        if not isinstance(pin.get(field), str) or not pin[field].strip():
+            violations.append(
+                _ontology_violation("ontology-crosswalk-pin-invalid", f"external_pin.{field} must be a non-empty string.")
+            )
+    if not isinstance(sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", sha256):
+        violations.append(
+            _ontology_violation("ontology-crosswalk-pin-invalid", "external_pin.sha256 must be a 64-character lowercase hex digest.")
+        )
+    if not _safe_ontology_external_path(root, snapshot_rel):
+        violations.append(
+            _ontology_violation(
+                "ontology-crosswalk-pin-invalid",
+                f"external_pin.reference_snapshot must be a repo-relative path under {ONTOLOGY_EXTERNAL_SNAPSHOT_ROOT.as_posix()}/.",
+                f"got {snapshot_rel!r}",
+            )
+        )
+        return set(), violations
+    # The snapshot must live under external/<distribution>/<release_version>/ so a
+    # release bump adds a new snapshot instead of mutating a pinned one.
+    if isinstance(distribution, str) and isinstance(release_version, str):
+        expected_prefix = f"{ONTOLOGY_EXTERNAL_SNAPSHOT_ROOT.as_posix()}/{distribution}/{release_version}/"
+        if not snapshot_rel.startswith(expected_prefix):
+            violations.append(
+                _ontology_violation(
+                    "ontology-crosswalk-pin-invalid",
+                    "external_pin.reference_snapshot must live under external/<distribution>/<release_version>/.",
+                    f"expected prefix {expected_prefix}, got {snapshot_rel}",
+                )
+            )
+    snapshot_path = root / Path(snapshot_rel)
+    if not snapshot_path.is_file():
+        violations.append(
+            _ontology_violation("ontology-crosswalk-snapshot-missing", f"Reference snapshot is missing: {snapshot_rel}.")
+        )
+        return set(), violations
+    snapshot_bytes = snapshot_path.read_bytes()
+    if isinstance(sha256, str):
+        actual = hashlib.sha256(snapshot_bytes).hexdigest()
+        if actual != sha256:
+            violations.append(
+                _ontology_violation(
+                    "ontology-crosswalk-hash-drift",
+                    "Reference snapshot bytes do not match external_pin.sha256; re-review the crosswalk against the new release.",
+                    f"pinned {sha256}, actual {actual}",
+                )
+            )
+    # ADR-084 §2/§4: the reference catalog rejects duplicate-key JSON, so a pinned
+    # snapshot cannot carry an ambiguous repeated key while passing hash validation.
+    try:
+        snapshot = load_json(snapshot_path, reject_duplicate_keys=True)
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+        violations.append(
+            _ontology_violation("ontology-crosswalk-snapshot-invalid-json", f"Reference snapshot is not readable JSON: {snapshot_rel}.", str(exc))
+        )
+        return set(), violations
+    if not isinstance(snapshot, dict) or not isinstance(snapshot.get("families"), dict):
+        violations.append(
+            _ontology_violation("ontology-crosswalk-snapshot-invalid-json", f"Reference snapshot must declare a families object: {snapshot_rel}.")
+        )
+        return set(), violations
+    declared_catalog_version = pin.get("catalog_schema_version")
+    snapshot_version = snapshot.get("schema_version")
+    if isinstance(declared_catalog_version, str) and snapshot_version != declared_catalog_version:
+        violations.append(
+            _ontology_violation(
+                "ontology-crosswalk-pin-invalid",
+                "external_pin.catalog_schema_version does not match the snapshot schema_version.",
+                f"pinned {declared_catalog_version!r}, snapshot {snapshot_version!r}",
+            )
+        )
+    aces_family_ids = {fid for fid in snapshot["families"] if isinstance(fid, str) and fid}
+    return aces_family_ids, violations
+
+
+def run_ontology_crosswalk_check(root: Path = REPO_ROOT) -> list[Violation]:
+    """Validate the ACES concept-family crosswalk: pin/hash integrity, both-catalog
+    referential integrity, and the closed effect vocabulary (ADR-084 §4)."""
+
+    crosswalk_path = root / ONTOLOGY_CROSSWALK_PATH
+    if not crosswalk_path.is_file():
+        return [
+            _ontology_violation(
+                "ontology-crosswalk-missing",
+                f"Required crosswalk artifact is missing: {ONTOLOGY_CROSSWALK_PATH.as_posix()}.",
+            )
+        ]
+    try:
+        crosswalk = load_json(crosswalk_path, reject_duplicate_keys=True)
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+        return [
+            _ontology_violation(
+                "ontology-crosswalk-invalid-json",
+                f"Crosswalk artifact is not readable JSON: {ONTOLOGY_CROSSWALK_PATH.as_posix()}.",
+                str(exc),
+            )
+        ]
+    if not isinstance(crosswalk, dict):
+        return [_ontology_violation("ontology-crosswalk-shape-invalid", "Crosswalk artifact must contain a JSON object.")]
+
+    violations: list[Violation] = []
+    if crosswalk.get("schema_version") != ONTOLOGY_CROSSWALK_SCHEMA_VERSION:
+        violations.append(
+            _ontology_violation(
+                "ontology-crosswalk-version-invalid",
+                "Crosswalk artifact has an unsupported schema version.",
+                f"expected {ONTOLOGY_CROSSWALK_SCHEMA_VERSION}, got {crosswalk.get('schema_version')!r}",
+            )
+        )
+
+    gc_catalog_rel = crosswalk.get("gc_catalog")
+    declared_gc_version = crosswalk.get("gc_catalog_schema_version")
+    canonical_gc_catalog = ONTOLOGY_CONTRACT_PATHS["families"].as_posix()
+    canonical_gc_version = ONTOLOGY_SCHEMA_VERSIONS["families"]
+    gc_family_ids: set[str] = set()
+    if not isinstance(gc_catalog_rel, str) or not gc_catalog_rel:
+        violations.append(_ontology_violation("ontology-crosswalk-shape-invalid", "Crosswalk must declare gc_catalog."))
+    elif gc_catalog_rel != canonical_gc_catalog:
+        # Bind to the canonical GC catalog so a crosswalk cannot point validation
+        # at an alternate file with invented family IDs (ADR-084 §2).
+        violations.append(
+            _ontology_violation(
+                "ontology-crosswalk-gc-catalog-invalid",
+                "Crosswalk gc_catalog must be the canonical Ground Control family catalog.",
+                f"expected {canonical_gc_catalog}, got {gc_catalog_rel}",
+            )
+        )
+    else:
+        gc_family_ids, loaded_gc_version, gc_error = _load_ontology_family_ids(root / Path(gc_catalog_rel))
+        if gc_error is not None or not gc_family_ids:
+            violations.append(
+                _ontology_violation(
+                    "ontology-crosswalk-gc-catalog-unreadable",
+                    f"Crosswalk gc_catalog is missing or unreadable: {gc_catalog_rel}.",
+                    *([gc_error] if isinstance(gc_error, str) else []),
+                )
+            )
+        # The declared version and the loaded catalog's version must both equal the
+        # canonical version, so neither the pin nor the catalog can drift unseen.
+        if declared_gc_version != canonical_gc_version or loaded_gc_version != canonical_gc_version:
+            violations.append(
+                _ontology_violation(
+                    "ontology-crosswalk-gc-catalog-invalid",
+                    "Crosswalk gc_catalog_schema_version and the loaded catalog must both be the canonical GC catalog version.",
+                    f"canonical {canonical_gc_version!r}, declared {declared_gc_version!r}, loaded {loaded_gc_version!r}",
+                )
+            )
+
+    aces_family_ids, pin_violations = _validate_crosswalk_pin(root, crosswalk)
+    violations.extend(pin_violations)
+
+    alignments = crosswalk.get("alignments")
+    if not isinstance(alignments, list) or not alignments:
+        violations.append(_ontology_violation("ontology-crosswalk-shape-invalid", "Crosswalk must declare a non-empty alignments array."))
+        alignments = []
+
+    seen_pairs: set[tuple[str, str]] = set()
+    for row in alignments:
+        if not isinstance(row, dict):
+            violations.append(_ontology_violation("ontology-crosswalk-alignment-invalid", "Every alignment must be an object."))
+            continue
+        gc_family = row.get("gc_family")
+        aces_family = row.get("aces_family")
+        effect = row.get("effect")
+        rationale = row.get("rationale")
+        divergences = row.get("divergences")
+        if isinstance(gc_family, str) and isinstance(aces_family, str):
+            pair = (gc_family, aces_family)
+            if pair in seen_pairs:
+                violations.append(
+                    _ontology_violation("ontology-crosswalk-alignment-duplicate", f"Alignment ({gc_family} -> {aces_family}) is declared more than once.")
+                )
+            seen_pairs.add(pair)
+        if not isinstance(gc_family, str) or gc_family not in gc_family_ids:
+            violations.append(
+                _ontology_violation("ontology-crosswalk-gc-family-missing", f"Alignment references unknown Ground Control family {gc_family!r}.")
+            )
+        if not isinstance(aces_family, str) or aces_family not in aces_family_ids:
+            violations.append(
+                _ontology_violation("ontology-crosswalk-aces-family-missing", f"Alignment references unknown ACES family {aces_family!r}.")
+            )
+        elif aces_family == ONTOLOGY_CROSSWALK_TIME_FAMILY:
+            # ADR-084 §5: time has no GC family and is deliberately omitted from v1;
+            # aligning it requires a GC time family and an ADR amendment first.
+            violations.append(
+                _ontology_violation(
+                    "ontology-crosswalk-time-alignment-forbidden",
+                    f"Alignment to ACES `{ONTOLOGY_CROSSWALK_TIME_FAMILY}` is forbidden in crosswalk v1; time is omitted until a GC time family exists (ADR-084 §5).",
+                )
+            )
+        if effect not in ONTOLOGY_EFFECT_VOCABULARY:
+            violations.append(
+                _ontology_violation(
+                    "ontology-crosswalk-effect-invalid",
+                    f"Alignment effect {effect!r} is not in the closed effect vocabulary.",
+                    f"allowed: {sorted(ONTOLOGY_EFFECT_VOCABULARY)}",
+                )
+            )
+        if not isinstance(rationale, str) or not rationale.strip():
+            violations.append(
+                _ontology_violation("ontology-crosswalk-rationale-missing", f"Alignment ({gc_family} -> {aces_family}) must declare a non-empty rationale.")
+            )
+        if not isinstance(divergences, list) or any(not isinstance(item, str) or not item.strip() for item in divergences):
+            violations.append(
+                _ontology_violation("ontology-crosswalk-alignment-invalid", f"Alignment ({gc_family} -> {aces_family}) divergences must be a list of non-empty strings.")
+            )
+        elif effect == "aligns" and divergences:
+            violations.append(
+                _ontology_violation(
+                    "ontology-crosswalk-effect-divergence-mismatch",
+                    f"Alignment ({gc_family} -> {aces_family}) is `aligns` but records divergences; aligns means equivalent meaning with no divergence.",
+                )
+            )
+        elif effect == "refines" and not divergences:
+            violations.append(
+                _ontology_violation(
+                    "ontology-crosswalk-effect-divergence-mismatch",
+                    f"Alignment ({gc_family} -> {aces_family}) is `refines` but records no divergences; refines must record the narrowing explicitly.",
+                )
+            )
+
+    omissions = crosswalk.get("omissions")
+    time_omission_present = False
+    if not isinstance(omissions, list):
+        violations.append(_ontology_violation("ontology-crosswalk-omission-invalid", "Crosswalk omissions must be an array."))
+        omissions = []
+    for omission in omissions:
+        if not isinstance(omission, dict):
+            violations.append(_ontology_violation("ontology-crosswalk-omission-invalid", "Every omission must be an object."))
+            continue
+        topic = omission.get("topic")
+        reason = omission.get("reason")
+        aces_family = omission.get("aces_family")
+        if not isinstance(topic, str) or not topic.strip() or not isinstance(reason, str) or not reason.strip():
+            violations.append(_ontology_violation("ontology-crosswalk-omission-invalid", "Every omission must declare a non-empty topic and reason."))
+        if not isinstance(aces_family, str) or aces_family not in aces_family_ids:
+            violations.append(
+                _ontology_violation("ontology-crosswalk-omission-family-missing", f"Omission references unknown ACES family {aces_family!r}.")
+            )
+        elif aces_family == ONTOLOGY_CROSSWALK_TIME_FAMILY:
+            time_omission_present = True
+
+    # ADR-084 §5: crosswalk v1 MUST record the time omission explicitly.
+    if not time_omission_present:
+        violations.append(
+            _ontology_violation(
+                "ontology-crosswalk-time-omission-required",
+                f"Crosswalk v1 must record an omission for ACES `{ONTOLOGY_CROSSWALK_TIME_FAMILY}` (ADR-084 §5).",
+            )
+        )
+
+    return violations
+
+
+# ---------------------------------------------------------------------------
 # Contract surface foundation (GC-O014 / ADR-082).
 #
 # The contract surface is intentionally artifact-backed: backend-generated
@@ -4508,6 +4842,211 @@ def run_workflow_routing_contract(root: Path = REPO_ROOT) -> list[Violation]:
     return violations
 
 
+def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
+    """Enforce /implement's pre-routing principles and persistence boundary."""
+    violations: list[Violation] = []
+    paths = {
+        "skill": root / "skills/implement/SKILL.md",
+        "principles": root / "skills/implement/_development-principles.md",
+        "step1": root / "skills/implement/steps/step-01-issue-branch-resolution.md",
+        "completion": root / "skills/implement/steps/step-17-completion.md",
+        "cursor": root / ".cursor/skills/implement/SKILL.md",
+    }
+    missing = [str(path.relative_to(root)) for path in paths.values() if not path.is_file()]
+    if missing:
+        return [
+            Violation(
+                code="implement-execution-contract-missing",
+                message="/implement execution-contract surfaces are missing.",
+                details=missing,
+            )
+        ]
+
+    skill = paths["skill"].read_text(encoding="utf-8")
+    principles = paths["principles"].read_text(encoding="utf-8")
+    step1 = paths["step1"].read_text(encoding="utf-8")
+    completion = paths["completion"].read_text(encoding="utf-8")
+    cursor = paths["cursor"].read_text(encoding="utf-8")
+    principles_flat = " ".join(principles.split())
+    cursor_flat = " ".join(cursor.split()).lower()
+
+    principles_ref = skill.find("_development-principles.md")
+    route_ref = skill.find("gc_resolve_workflow_route")
+    if principles_ref < 0 or route_ref < 0 or principles_ref > route_ref:
+        violations.append(
+            Violation(
+                code="implement-principles-order",
+                message="The canonical development principles must load before route resolution.",
+                details=["place _development-principles.md before gc_resolve_workflow_route in SKILL.md"],
+            )
+        )
+    required_skill_tokens = (
+        "gc.implement.execution-contract/v1",
+        "development_principles_verbatim",
+        "execution_contract_mutation_attempt",
+        "invocation_root",
+        '"checkout_mode": "same_checkout"',
+        "Preparation, acknowledgment, and partial progress are not terminal success",
+    )
+    missing_tokens = [token for token in required_skill_tokens if token not in skill]
+    if missing_tokens:
+        violations.append(
+            Violation(
+                code="implement-contract-propagation",
+                message="Parent/delegated execution-contract propagation is incomplete.",
+                details=[f"missing token: {token}" for token in missing_tokens],
+            )
+        )
+
+    pause_tokens = (
+        "explicit workflow gate",
+        "unresolved ambiguity",
+        "significant architecture or security decision",
+        "unexpectedly material scope",
+        "destructive or externally consequential",
+        "hard external dependency",
+        "enforced cycle cap",
+        "Work size, difficulty,",
+    )
+    missing_pauses = [token for token in pause_tokens if token not in principles_flat]
+    if missing_pauses:
+        violations.append(
+            Violation(
+                code="implement-pause-contract",
+                message="The development principles do not carry the closed pause-class contract.",
+                details=[f"missing token: {token}" for token in missing_pauses],
+            )
+        )
+
+    verification_tokens = (
+        "Make local verification proportionate to risk",
+        "Batch related edits",
+        "narrowest tests",
+        "shared or cross-cutting",
+        "security-sensitive",
+        "repository-wide completion and policy suites once",
+        "mandatory pre-commit, completion, review, CI, Sonar, or final",
+    )
+    missing_verification = [
+        token for token in verification_tokens if token not in principles_flat
+    ]
+    if missing_verification:
+        violations.append(
+            Violation(
+                code="implement-proportionate-verification-contract",
+                message="The development principles do not enforce risk-proportionate verification.",
+                details=[f"missing token: {token}" for token in missing_verification],
+            )
+        )
+
+    review_rules = (
+        root / "skills/implement/steps/_review-loop-rules.md"
+    ).read_text(encoding="utf-8")
+    review_rules_flat = " ".join(review_rules.split())
+    step5 = (root / "skills/implement/steps/step-05-quality-assurance.md").read_text(
+        encoding="utf-8"
+    )
+    step6 = (root / "skills/implement/steps/step-06-completion-gate.md").read_text(
+        encoding="utf-8"
+    )
+    step7 = (root / "skills/implement/steps/step-07-stage-precommit.md").read_text(
+        encoding="utf-8"
+    )
+    verification_surface_tokens = (
+        (review_rules_flat, "Do not run `cfg.workflow.completion_command` or `make policy` after every small fix"),
+        (review_rules_flat, "once before leaving the review band on the final post-fix tree"),
+        (step5, "Do not run `pre-commit` here"),
+        (step6, "Run `make policy`"),
+        (step7, "single mandatory pre-publish"),
+    )
+    missing_surfaces = [
+        token for surface, token in verification_surface_tokens if token not in surface
+    ]
+    if missing_surfaces:
+        violations.append(
+            Violation(
+                code="implement-verification-boundary-drift",
+                message="/implement verification surfaces disagree on batching or mandatory boundaries.",
+                details=[f"missing token: {token}" for token in missing_surfaces],
+            )
+        )
+
+    if "gc_prepare_implement_branch" not in step1 or "checkout_mode" not in step1:
+        violations.append(
+            Violation(
+                code="implement-same-checkout-boundary",
+                message="Step 1 must use the same-checkout MCP branch operation.",
+                details=["require gc_prepare_implement_branch with checkout_mode=same_checkout"],
+            )
+        )
+    if "gc_mark_implement_issue_picked_up" not in step1:
+        violations.append(
+            Violation(
+                code="implement-pickup-side-effect-boundary",
+                message="Step 1 must route pickup label/comment mutations through MCP.",
+                details=["require gc_mark_implement_issue_picked_up in Step 1"],
+            )
+        )
+    implement_sources = [
+        paths["skill"],
+        paths["principles"],
+        *sorted((root / "skills/implement/steps").glob("*.md")),
+    ]
+    forbidden = []
+    for path in implement_sources:
+        text = path.read_text(encoding="utf-8")
+        direct_branch = re.search(
+            r"\bgit\s+worktree\s+add\b|\bgh\s+issue\s+develop\b",
+            text,
+        )
+        direct_pickup = (
+            path == paths["step1"]
+            and re.search(r"\bgh\s+(?:api|label|issue)\b[^\n]*\bin-progress\b", text)
+        )
+        if direct_branch or direct_pickup:
+            forbidden.append(str(path.relative_to(root)))
+    if forbidden:
+        violations.append(
+            Violation(
+                code="implement-direct-worktree-or-branch-command",
+                message="/implement workflow surfaces must use MCP branch and pickup boundaries.",
+                details=[f"direct branch/worktree/pickup command in {path}" for path in forbidden],
+            )
+        )
+
+    contradictory = []
+    for path in implement_sources:
+        text = path.read_text(encoding="utf-8").lower()
+        if "outside the diff's scope" in text or "no scope creep" in text:
+            contradictory.append(str(path.relative_to(root)))
+    if contradictory:
+        violations.append(
+            Violation(
+                code="implement-contradictory-scope-language",
+                message="Workflow text still permits scope-based non-action.",
+                details=contradictory,
+            )
+        )
+
+    if "completion_open_execution_obligations" not in completion:
+        violations.append(
+            Violation(
+                code="implement-obligation-completion-gate",
+                message="Step 17 must document completion refusal while obligations are open.",
+                details=["missing completion_open_execution_obligations"],
+            )
+        )
+    if "_development-principles.md" not in cursor or "before route resolution" not in cursor_flat:
+        violations.append(
+            Violation(
+                code="implement-driver-principles",
+                message="The Cursor driver wrapper must load the canonical principles before routing.",
+                details=["update .cursor/skills/implement/SKILL.md"],
+            )
+        )
+    return violations
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
     explicit_files = args.files if args.files is not None else args.paths
@@ -4533,10 +5072,12 @@ def main(argv: list[str] | None = None) -> int:
     violations.extend(run_methodology_catalog_drift())
     violations.extend(run_enum_contract_check())
     violations.extend(run_ontology_binding_check())
+    violations.extend(run_ontology_crosswalk_check())
     violations.extend(run_contract_surface_check())
     violations.extend(run_contract_invariant_enforcement_check())
     violations.extend(run_authz_matrix_sync_check())
     violations.extend(run_workflow_routing_contract())
+    violations.extend(run_implement_execution_contract())
     violations.extend(run_test_quality_decision_record_contract())
     violations.extend(run_traceability_reconciliation_gate_contract())
 

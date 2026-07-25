@@ -150,12 +150,33 @@ validated against the controlled vocabulary.
   discipline, portfolio-native.
 - **Crosswalk, not dependency.** Where a Ground Control family genuinely
   shares a concept with an ACES family - assets, observables/evidence,
-  provenance, time, tasks-runs-studies against workflow runs - the
-  crosswalk artifact records it with `aligns`/`refines` semantics and the
-  ACES family id as an external authority. The crosswalk is versioned,
-  policy-checked for referential validity, and carries no runtime
-  coupling: Ground Control does not parse SDL, ACES does not read the GC
-  graph.
+  provenance, and tasks-runs-studies against workflow runs - the crosswalk
+  artifact records one native/external family pair per row. The effect is
+  directional: it states the external family's effect on Ground Control's
+  native meaning, so `refines` means the external family is narrower than the
+  named Ground Control family. Each row retains a rationale or limitation;
+  grouped arrays and positional effect lists are not a valid substitute.
+- **Release-backed validation, not live upstream lookup.** An external pin names
+  the released distribution, release version, artifact path inside that
+  distribution, catalog schema version, and SHA-256 of the artifact's raw
+  bytes. The exact catalog bytes used for review are retained as an immutable,
+  repo-relative reference snapshot under
+  `contracts/ontology/external/aces-sdl/<release>/`; they are not imported into
+  the crosswalk or copied into policy constants. The existing ontology policy
+  gate reads the local and reference catalogs in-process, rejects unsafe paths
+  and malformed or duplicate-key JSON, recomputes the raw-byte hash, and checks
+  family references plus the closed effect vocabulary. It performs no branch
+  lookup, package import, dependency installation, network request, or
+  subprocess call. A release change therefore adds a new snapshot and updates
+  the crosswalk pin in one reviewed change; it does not mutate an older pinned
+  snapshot or require a parallel policy runner.
+- **Time is deliberately omitted from crosswalk v1.** Ground Control has no
+  time concept family against which ACES `time-and-apparatus` can be related.
+  The Envers revision spine in §5 is a temporal invariant, not an implicit
+  concept family and not authority to map an unrelated family. Crosswalk v1
+  records this as an omission. A later time-family alignment requires a Ground
+  Control time family and an ADR-084 amendment before a crosswalk row can be
+  added.
 - **Companion-spec extraction is the stated trajectory, with explicit
   gates.** When ACES's SEM-200 umbrella reaches ACTIVE and both sides
   operate their family sets, the shared metamodel - surface/boundary,
@@ -165,10 +186,15 @@ validated against the controlled vocabulary.
   evidence versus derived measures, and time - is extracted into a
   companion specification both products consume as domain packs. Because
   both sides use the same artifact shape from the start, extraction is a
-  merge of catalogs, not a rewrite. Ground Control's reconciliation
-  vocabulary (GC-GRC-009 impact/gap/stale, drift machinery) shall be
-  expressible in those delta terms so the convergence claim stays
-  checkable.
+  merge of catalogs, not a rewrite.
+- **Convergence requirements use the existing requirements graph.** ACES-side
+  requirements remain DRAFT while SEM-200 is DRAFT, state the `SEM-200 ACTIVE`
+  gate in their normative text, and use the existing requirement-relation
+  model to preserve the dependency where applicable. Ground Control's
+  project-scoped requirement service, server-side UID allocation, validation,
+  audit, and standard error handling remain authoritative; a GitHub issue,
+  crosswalk note, or locally invented identifier is not a substitute for those
+  requirement records.
 - **Full adoption of ACES SDL as Ground Control's ontology substrate is
   rejected for now** (assessment §3, option B): the semantic core is
   DRAFT, the needed domain families do not exist there, and coupling a

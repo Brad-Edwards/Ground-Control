@@ -10,8 +10,11 @@ This file exists for **Cursor skill discovery only**. The canonical source of tr
 
 **Execute the canonical workflow verbatim:**
 
-1. Read and follow [`skills/implement/SKILL.md`](../../../skills/implement/SKILL.md) in full.
-2. Resolve every step file under `skills/implement/steps/` (not under `.cursor/skills/implement/`).
-3. Pass the user's slash-command argument through as `$ARGUMENTS` (GitHub issue number or requirement UID).
+1. Before route resolution, issue lookup, branch handling, or delegation, read
+   [`skills/implement/_development-principles.md`](../../../skills/implement/_development-principles.md)
+   in full and preserve its immutable execution-contract fields.
+2. Read and follow [`skills/implement/SKILL.md`](../../../skills/implement/SKILL.md) in full.
+3. Resolve every step file under `skills/implement/steps/` (not under `.cursor/skills/implement/`).
+4. Pass the user's slash-command argument through as `$ARGUMENTS` (GitHub issue number or requirement UID).
 
 Do not treat this wrapper as an independent workflow definition. If the canonical SKILL and this wrapper disagree, the canonical SKILL wins.

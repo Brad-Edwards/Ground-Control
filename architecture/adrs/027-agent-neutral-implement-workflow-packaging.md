@@ -228,3 +228,18 @@ relative and validated via `resolveRepoRelativePath` + `assertRealpathInRepo`.
 ships the consumption machinery (Codex preflight + pre-push reviewers) and
 falls back to workflow-level defaults when absent. See issue #931 and the
 preflight note at `architecture/notes/ai-review-recalibration-preflight.md`.
+
+## 2026-07-25 amendment: immutable execution principles
+
+Issue #1416 adds `skills/implement/_development-principles.md` to the canonical
+agent-neutral package. Every driver loads it before routing or side effects and
+propagates the resulting immutable execution contract to delegated steps. The
+Cursor wrapper explicitly performs the same ordering. This is packaged workflow
+behavior, not an agent-specific preference: same-checkout branch preparation,
+exact-instruction persistence, durable problem obligations, the closed pause
+classes, and repair-focused reporting must remain identical across all
+supported drivers. Risk-proportionate verification is part of the same
+package: every driver batches related edits, uses targeted tests inside
+implementation/review-fix loops, widens for shared or security-sensitive risk,
+and runs repository-wide completion/policy plus pre-commit at their canonical
+boundaries without duplicating them per small edit.

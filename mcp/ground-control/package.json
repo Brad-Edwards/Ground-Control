@@ -6,13 +6,13 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "node --test lib.test.js gc-query.test.js gc-threat-model.test.js gc-risk-scenario.test.js gc-risk-governance.test.js gc-control.test.js gc-finding.test.js gc-evidence.test.js link-create.test.js test-case-tools.test.js traceability-tools.test.js gc-asset.test.js gc-observation.test.js knowledge_ingest.test.js knowledge_ingest_cli.test.js gc-integrate.test.js gc-assert-quality-gates.test.js gc-assert-completion.test.js telemetry.test.js tool-descriptions.test.js gc-workflow-run.test.js gc-workflow-run-ingest.test.js gc-workflow-execution.test.js oracle-battery.test.js",
+    "test": "node --test lib.test.js gc-query.test.js gc-threat-model.test.js gc-risk-scenario.test.js gc-risk-governance.test.js gc-control.test.js gc-finding.test.js gc-evidence.test.js link-create.test.js test-case-tools.test.js traceability-tools.test.js gc-asset.test.js gc-observation.test.js knowledge_ingest.test.js knowledge_ingest_cli.test.js gc-integrate.test.js gc-assert-quality-gates.test.js gc-assert-completion.test.js gc-implement-contract.test.js telemetry.test.js tool-descriptions.test.js gc-workflow-run.test.js gc-workflow-run-ingest.test.js gc-workflow-execution.test.js oracle-battery.test.js risk-control-mapping-retirement.test.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
-    "js-yaml": "^4.1.1",
+    "js-yaml": "^4.3.0",
     "proper-lockfile": "^4.1.2",
     "zod": "^3.23.0"
   },
@@ -20,5 +20,14 @@
     "eslint": "^9.39.2",
     "eslint-plugin-security": "^3.0.1",
     "fast-check": "^4.8.0"
+  },
+  "overrides": {
+    "@hono/node-server": "2.0.11",
+    "body-parser": "2.3.0",
+    "brace-expansion": "5.0.8",
+    "fast-uri": "3.1.4",
+    "hono": "4.12.27",
+    "ip-address": "10.1.1",
+    "qs": "6.15.3"
   }
 }

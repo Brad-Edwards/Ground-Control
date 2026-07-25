@@ -4,6 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
+import com.keplerops.groundcontrol.domain.graph.model.GraphEdge;
+import com.keplerops.groundcontrol.domain.graph.model.GraphEntityType;
+import com.keplerops.groundcontrol.domain.graph.model.GraphIds;
 import com.keplerops.groundcontrol.domain.graph.service.MixedGraphClient;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.repository.ProjectRepository;
@@ -18,10 +21,20 @@ import com.keplerops.groundcontrol.domain.requirements.state.ArtifactType;
 import com.keplerops.groundcontrol.domain.requirements.state.LinkType;
 import com.keplerops.groundcontrol.domain.requirements.state.RelationType;
 import com.keplerops.groundcontrol.domain.requirements.state.Status;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.PhaseEventType;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.TelemetryProvenance;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowPhaseEvent;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowRun;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.repository.WorkflowPhaseEventRepository;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.repository.WorkflowRunRepository;
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.transaction.TestTransaction;
 import org.springframework.transaction.annotation.Transactional;
 
 @Transactional
@@ -41,6 +54,12 @@ class AgeGraphServiceIntegrationTest extends BaseAgeIntegrationTest {
 
     @Autowired
     private TraceabilityLinkRepository traceabilityLinkRepository;
+
+    @Autowired
+    private WorkflowRunRepository workflowRunRepository;
+
+    @Autowired
+    private WorkflowPhaseEventRepository workflowPhaseEventRepository;
 
     @Autowired
     private ProjectRepository projectRepository;
@@ -201,6 +220,57 @@ class AgeGraphServiceIntegrationTest extends BaseAgeIntegrationTest {
     }
 
     @Test
+    void materializeGraphProjectsWorkflowRunAndRepeatedPhaseEvents() {
+        String repo = "autarchy-ai/age-workflow-" + UUID.randomUUID();
+        var run = new WorkflowRun("ground-control", "IMPLEMENT", TelemetryProvenance.ISSUE_THREAD);
+        run.setRepo(repo);
+        run.setIssueNumber(1311);
+        run = workflowRunRepository.saveAndFlush(run);
+
+        var started = new WorkflowPhaseEvent(
+                run.getId(),
+                "ground-control",
+                "ci",
+                PhaseEventType.STARTED,
+                Instant.parse("2026-07-19T12:00:00Z"),
+                null,
+                TelemetryProvenance.ISSUE_THREAD);
+        started.setCycleIndex(1);
+        var completed = new WorkflowPhaseEvent(
+                run.getId(),
+                "ground-control",
+                "ci",
+                PhaseEventType.COMPLETED,
+                Instant.parse("2026-07-19T12:05:00Z"),
+                300_000L,
+                TelemetryProvenance.ISSUE_THREAD);
+        workflowPhaseEventRepository.saveAllAndFlush(List.of(started, completed));
+
+        graphClient.materializeGraph();
+
+        var projection = mixedGraphClient.getVisualization(testProject.getId(), java.util.Set.of());
+        String runNodeId = GraphIds.nodeId(GraphEntityType.WORKFLOW_RUN, run.getId());
+        String workItemNodeId = GraphIds.workflowWorkItemReferenceNodeId(testProject.getId(), repo, 1311);
+        assertThat(projection.nodes())
+                .filteredOn(node -> node.id().equals(runNodeId))
+                .singleElement()
+                .satisfies(node -> assertThat(node.properties())
+                        .containsEntry("workflowType", "IMPLEMENT")
+                        .doesNotContainKeys("branch", "provider", "model"));
+        assertThat(projection.nodes())
+                .filteredOn(node -> node.id().equals(workItemNodeId))
+                .singleElement()
+                .satisfies(node -> assertThat(node.properties())
+                        .containsEntry("repo", repo)
+                        .containsEntry("issueNumber", 1311));
+        assertThat(projection.edges())
+                .filteredOn(edge ->
+                        edge.sourceId().equals(runNodeId) && edge.targetId().equals(workItemNodeId))
+                .extracting(GraphEdge::edgeType)
+                .containsExactlyInAnyOrder("RUN_FOR_WORK_ITEM", "WORKFLOW_PHASE_EVENT", "WORKFLOW_PHASE_EVENT");
+    }
+
+    @Test
     void materializeGraphOmitsArchivedRequirementTraceability() {
         var requirement = requirementRepository.save(
                 new Requirement(testProject, "AGE-TRACE-OLD", "Archived trace", "Archived requirements stay out"));
@@ -304,5 +374,56 @@ class AgeGraphServiceIntegrationTest extends BaseAgeIntegrationTest {
         // Sanity: the JPA row also has the original title (no DB-side corruption).
         var reloaded = requirementRepository.findById(req.getId()).orElseThrow();
         assertThat(reloaded.getTitle()).isEqualTo(trickyTitle);
+    }
+
+    @Test
+    void materializeGraph_recordsExactlyTheRevisionVisibleToItsProjection() {
+        // ADR-084 §5: the published snapshot's source_revision must be the revision that was
+        // actually current when the projection was built — a real, committed Envers revision (not
+        // a mock), and a fixed point-in-time capture rather than something re-derived later.
+        // TestTransaction commits are required between steps: Envers only assigns a revision at
+        // commit, and everything inside one uncommitted transaction shares a single revision.
+        //
+        // Uses the shared `testProject` ("ground-control"), not a new one: `ProjectService
+        // .resolveProject` treats "exactly one project exists" as the implicit default and throws
+        // a 422 the moment a second project exists, so creating even an isolated project here
+        // breaks every other test in the suite that omits an explicit `project` query parameter.
+        // The two requirements this test permanently commits are deleted again in the `finally`
+        // block by their unique UIDs, so "ground-control"'s requirement count is unchanged for
+        // every other test.
+        try {
+            requirementRepository.save(new Requirement(testProject, "AGE-REV-1", "Rev1", "stmt"));
+            TestTransaction.flagForCommit();
+            TestTransaction.end();
+
+            TestTransaction.start();
+            Integer expectedRevision = jdbcTemplate.queryForObject("SELECT MAX(rev) FROM revinfo", Integer.class);
+            graphClient.materializeGraph();
+            TestTransaction.flagForCommit();
+            TestTransaction.end();
+
+            TestTransaction.start();
+            Integer recorded = jdbcTemplate.queryForObject(
+                    "SELECT source_revision FROM age_graph_snapshot ORDER BY version DESC LIMIT 1", Integer.class);
+            assertThat(recorded).isEqualTo(expectedRevision);
+
+            // A revision created strictly AFTER this materialization must not retroactively change
+            // the already-published snapshot row's recorded coordinate.
+            requirementRepository.save(new Requirement(testProject, "AGE-REV-2", "Rev2", "stmt"));
+            TestTransaction.flagForCommit();
+            TestTransaction.end();
+
+            TestTransaction.start();
+            Integer latestRevisionNow = jdbcTemplate.queryForObject("SELECT MAX(rev) FROM revinfo", Integer.class);
+            Integer stillRecorded = jdbcTemplate.queryForObject(
+                    "SELECT source_revision FROM age_graph_snapshot ORDER BY version DESC LIMIT 1", Integer.class);
+            assertThat(latestRevisionNow).isGreaterThan(expectedRevision);
+            assertThat(stillRecorded).isEqualTo(expectedRevision).isNotEqualTo(latestRevisionNow);
+        } finally {
+            jdbcTemplate.update("DELETE FROM requirement WHERE uid IN ('AGE-REV-1', 'AGE-REV-2')");
+            TestTransaction.flagForCommit();
+            TestTransaction.end();
+            TestTransaction.start();
+        }
     }
 }

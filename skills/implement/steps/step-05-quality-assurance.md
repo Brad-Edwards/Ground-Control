@@ -4,9 +4,16 @@ step: "Step 5"
 tier: low
 ---
 
-# Step 5: Quality Assurance
+# Step 5: Proportionate Local Verification
 
-Run `pre-commit run --all-files` to ensure the codebase is in a healthy state before the completion gate.
+Batch the completed implementation edits and run the narrowest tests that
+exercise the changed behavior. Expand breadth for shared or cross-cutting
+boundaries, security-sensitive changes, or targeted failures that indicate
+wider risk. Record the commands and the tree state they verified for Step 6.
+
+Do not run `pre-commit` here; Step 7 owns its single mandatory pre-publish
+invocation. Do not run the repository-wide completion or policy suites here;
+Step 6 owns that meaningful boundary.
 
 ## Return contract
 
@@ -14,10 +21,12 @@ Run `pre-commit run --all-files` to ensure the codebase is in a healthy state be
 {
   "status": "ok",
   "cached_for_next_step": {
-    "precommit_passed": true,
-    "fixed_files": [ "<files auto-fixed by hooks, if any>" ]
+    "targeted_verification_passed": true,
+    "verification_commands": [ "<command>" ],
+    "wider_risk_reason": null
   }
 }
 ```
 
-On hook failure, fix the issue, re-stage, re-run. If the failure cannot be resolved automatically, return `status: "error"` with a short `message`.
+If targeted verification fails, fix the issue, batch related corrections, and
+rerun the affected tests. Preparation or partial verification is not success.

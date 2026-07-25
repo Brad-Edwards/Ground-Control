@@ -78,7 +78,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [058](058-derivation-first-continuous-grc.md) | Derivation-First Continuous GRC | Superseded by ADR-089 for active product and workflow behavior |
 | [059](059-mcp-usage-telemetry.md) | MCP Tool Usage Telemetry | Accepted |
 | [060](060-requirement-uid-identity.md) | Requirement UID identity | Accepted |
-| [061](061-workflow-run-telemetry-reporting.md) | Workflow-Run Telemetry & Economics Reporting Surface | Accepted |
+| [061](061-workflow-run-telemetry-reporting.md) | Workflow-Run Telemetry & Economics Reporting Surface | Accepted (amended 2026-07-19, #1311) |
 | [062](062-age-graph-projection-snapshot-publication.md) | AGE Graph Projection Snapshot Publication | Accepted |
 | [063](063-release-deployment-model.md) | Release & Deployment Model | Accepted (amended 2026-07-15, GC-P027/#1399 Release Please ownership) |
 | [064](064-research-run-lifecycle-and-stage-gating.md) | Research Run Lifecycle and Stage Gating | Accepted |
@@ -109,3 +109,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [089](089-retire-grc-product-and-next-issue-recommendation.md) | Retire the GRC Product Surface and Next-Issue Recommendation | Accepted |
 
 Prior ADRs from the old project frame are archived in `archive/architecture/adrs/`.
+
+Issue #1416 amends ADR-021, ADR-027, ADR-029, ADR-031, and ADR-036 to define
+`/implement` execution principles, same-checkout branch preparation, and
+durable execution-obligation completion gates.

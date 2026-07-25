@@ -15,8 +15,8 @@ Replaces the previous "poll `gh run view` every 15 seconds for up to 45 minutes"
 
 2. Read the returned envelope:
    - `conclusion: "success"` → CI passed. Advance to Step 11.
-   - `conclusion: "queued_too_long"` → no runner accepted the job within 5 minutes. STOP and report to the user. For self-hosted runner pools, suggest checking the pool (`gh api /repos/<owner>/<repo>/actions/runners`).
-   - `conclusion: "timed_out"` → run did not finish within 45 minutes. STOP and surface the run URL to the user.
+   - `conclusion: "queued_too_long"` → no runner accepted the job within 5 minutes. Record the runner outage as an open execution obligation. This is a hard external dependency, so escalate it with the run URL and a concrete request to restore/check the runner pool (`gh api /repos/<owner>/<repo>/actions/runners`); resume CI monitoring after restoration.
+   - `conclusion: "timed_out"` → record an open execution obligation with the run URL and evidence. Diagnose/retry when safe; escalate only when the timeout is a hard external dependency or requires user authority.
    - `conclusion: "failure"` (or `"cancelled"` / `"action_required"` / `"startup_failure"`) → CI failed. The envelope's `failed_steps[]` and `log_summary` (bounded UTF-8, from the tail of `gh run view --log-failed`) tell you which step + what to look at. Raw logs stay server-side; if you need to drill in, the `run_id` lets a separate `gh run view --log-failed` call retrieve them later.
 
 3. On failure, diagnose and fix, then `git add`, `git commit`, `git push`. After the new commit lands, re-invoke `gc_watch_ci_run` to watch the new run.

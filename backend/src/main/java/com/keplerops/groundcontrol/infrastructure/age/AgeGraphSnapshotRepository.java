@@ -49,18 +49,37 @@ public class AgeGraphSnapshotRepository {
         }
     }
 
-    /** Record a newly-published snapshot. The greatest-version row is the active one. */
+    /**
+     * Record a newly-published snapshot. The greatest-version row is the active one.
+     *
+     * <p>{@code sourceRevision} is the Envers revision (ADR-084 §5) visible to the
+     * REPEATABLE_READ transaction that built this snapshot's projection, or {@code null} when no
+     * revision has ever been created yet (a fresh database with nothing audited). It is a
+     * relational coordinate, never inferred or fabricated here.
+     *
+     * <p>{@code published_at} uses {@code clock_timestamp()}, not {@code now()} (which is
+     * transaction-start time): a long-running materialization would otherwise understate the
+     * actual publication instant, which also shortens {@code AgeSnapshotCleaner}'s retirement
+     * grace window (measured from {@code lead(published_at)}) that protects a mid-read snapshot.
+     */
     public void insertSnapshot(
-            long version, String graphName, String scope, int nodeCount, int edgeCount, String publishedBy) {
+            long version,
+            String graphName,
+            String scope,
+            int nodeCount,
+            int edgeCount,
+            Integer sourceRevision,
+            String publishedBy) {
         jdbcTemplate.update(
                 "INSERT INTO age_graph_snapshot "
-                        + "(version, graph_name, scope, node_count, edge_count, published_at, published_by) "
-                        + "VALUES (?, ?, ?, ?, ?, now(), ?)",
+                        + "(version, graph_name, scope, node_count, edge_count, source_revision, published_at, published_by) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, clock_timestamp(), ?)",
                 version,
                 graphName,
                 scope,
                 nodeCount,
                 edgeCount,
+                sourceRevision,
                 publishedBy);
     }
 

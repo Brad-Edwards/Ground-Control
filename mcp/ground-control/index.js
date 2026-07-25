@@ -78,6 +78,8 @@ import {
   runGetIssueThread, runWatchCiRun, runWatchSonarAnalysis,
   runCodexReviewCycle, runTestQualityReviewCycle,
   runReviewCapDisposition,
+  runPrepareImplementBranch, runMarkImplementIssuePickedUp,
+  runAuthorizeExecutionObligationWontfix, runRecordExecutionObligation,
   startReviewJob, pollReviewJob, cancelReviewJob,
   runResolveWorkflowRoute,
   DECISION_RECORD_REVIEWERS, DECISION_RECORD_DECISIONS, DECISION_RECORD_CLASSIFICATIONS,
@@ -86,6 +88,9 @@ import {
   buildCodexReviewToolDescription, buildCodexReviewOverrideCapDescription,
   buildCodexReviewOverrideReasonDescription,
   CODEX_REVIEW_HARD_CAP, CODEX_REVIEW_PREPUSH_HARD_CAP,
+  IMPLEMENT_CHECKOUT_MODES,
+  EXECUTION_OBLIGATION_EVENTS, EXECUTION_OBLIGATION_CATEGORIES,
+  EXECUTION_OBLIGATION_PAUSE_CLASSES, EXECUTION_OBLIGATION_DISPOSITIONS,
   // ---- embeddings ----
   embedRequirement, getEmbeddingStatus, embedProject,
   // ---- baselines + quality gates ----
@@ -130,7 +135,7 @@ import {
   updateRiskControlMapping, deleteRiskControlMapping,
   attachMappingObservation, detachMappingObservation, addMappingEvidenceRef,
   getUnmappedScenarios, getUnmappedRecords, getUnmappedControls, getAssessmentFeed,
-  getUnmappedThreats, getThreatUnmappedControls, getThreatsInsufficientEffectiveness,
+  getUnmappedThreats, getThreatUnmappedControls,
   MAPPING_CONTROL_ROLES,
   createVerificationResult, listVerificationResults, getVerificationResult,
   updateVerificationResult, deleteVerificationResult,
@@ -1315,6 +1320,146 @@ server.tool(
         initialWaitSeconds: initial_wait_seconds ?? 60,
         totalTimeoutSeconds: total_timeout_seconds ?? 1800,
         pollIntervalSeconds: poll_interval_seconds ?? 30,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_prepare_implement_branch",
+  "Create or switch to an issue branch inside the exact checkout where /implement was invoked. " +
+  "Inputs are repo_path, invocation_root, issue_number, branch_name, optional base_branch, and " +
+  "checkout_mode. This is the agent-neutral branch-mutation boundary: it supports only " +
+  "checkout_mode='same_checkout', " +
+  "binds repo_path and repository identity to values captured at MCP launch, rejects origin drift, " +
+  "uses fixed argv/cwd plus sanitized Git configuration that disables hooks and external commands, " +
+  "never invokes git worktree add, and " +
+  "verifies the canonical top-level, Git directory, origin, and compliant active branch after mutation. " +
+  "The response never exposes the raw origin URL. A worktree exception is intentionally unavailable " +
+  "until a lifecycle owner can guarantee cleanup.",
+  {
+    repo_path: z.string(),
+    invocation_root: z.string(),
+    issue_number: z.number().int().positive(),
+    branch_name: z.string().min(1).max(50),
+    base_branch: z.string().min(1).optional(),
+    checkout_mode: z.enum(IMPLEMENT_CHECKOUT_MODES).optional(),
+  },
+  async ({ repo_path, invocation_root, issue_number, branch_name, base_branch, checkout_mode }) => {
+    try {
+      return ok(JSON.stringify(await runPrepareImplementBranch({
+        repoPath: repo_path,
+        invocationRoot: invocation_root,
+        issueNumber: issue_number,
+        branchName: branch_name,
+        baseBranch: base_branch ?? "dev",
+        checkoutMode: checkout_mode ?? "same_checkout",
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_record_execution_obligation",
+  "Record a durable /implement execution-obligation event on the GitHub issue thread. " +
+  "Inputs include obligation_id, event, category, observed_state, evidence, impact, obligation, " +
+  "pause_class, decision_request, disposition, corrective_action, verification, and " +
+  "user_authorization. repo_path is bound to the MCP launch workspace. user_authorization for " +
+  "wontfix must be the structured authorization URL returned by " +
+  "gc_authorize_execution_obligation_wontfix; posting and replay verify its exact source command and " +
+  "every record author's effective repository permission. " +
+  "Events are opened, escalated, or resolved. Escalation preserves the open obligation and requires " +
+  "one documented pause class plus a concrete decision request; workload, difficulty, elapsed time, " +
+  "context pressure, and inconvenience are not pause classes. Resolution requires corrective action " +
+  "and verification; wontfix requires user authorization and not-applicable is limited to a factually " +
+  "false or inapplicable condition. gc_assert_completion re-reads trusted markers and refuses both " +
+  "readiness and completion while any obligation remains open.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    obligation_id: z.string().regex(/^[A-Z0-9][A-Z0-9._-]{0,63}$/),
+    event: z.enum(EXECUTION_OBLIGATION_EVENTS),
+    category: z.enum(EXECUTION_OBLIGATION_CATEGORIES),
+    observed_state: z.string().min(1).max(1200),
+    evidence: z.array(z.string().min(1).max(800)).min(1).max(10),
+    impact: z.string().min(1).max(1200),
+    obligation: z.string().min(1).max(1200),
+    pause_class: z.enum(EXECUTION_OBLIGATION_PAUSE_CLASSES).optional(),
+    decision_request: z.string().min(1).max(1200).optional(),
+    disposition: z.enum(EXECUTION_OBLIGATION_DISPOSITIONS).optional(),
+    corrective_action: z.string().min(1).max(1200).optional(),
+    verification: z.array(z.string().min(1).max(800)).min(1).max(10).optional(),
+    user_authorization: z.string().min(1).max(800).optional(),
+  },
+  async (args) => {
+    try {
+      return ok(JSON.stringify(await runRecordExecutionObligation({
+        repoPath: args.repo_path,
+        issueNumber: args.issue_number,
+        obligationId: args.obligation_id,
+        event: args.event,
+        category: args.category,
+        observedState: args.observed_state,
+        evidence: args.evidence,
+        impact: args.impact,
+        obligation: args.obligation,
+        pauseClass: args.pause_class ?? null,
+        decisionRequest: args.decision_request ?? null,
+        disposition: args.disposition ?? null,
+        correctiveAction: args.corrective_action ?? null,
+        verification: args.verification ?? null,
+        userAuthorization: args.user_authorization ?? null,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_mark_implement_issue_picked_up",
+  "Mark an /implement issue as actively owned through one server-side operation. " +
+  "Inputs are repo_path, issue_number, driver, and branch_name. repo_path is bound to the immutable " +
+  "MCP launch workspace and pinned GitHub repository identity. " +
+  "The operation creates the in-progress label only when absent, applies it, and posts the canonical " +
+  "timestamped pickup comment. Agents must not perform these privileged GitHub writes directly.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    driver: z.string().regex(/^[a-z0-9._-]{1,40}$/i),
+    branch_name: z.string().min(1).max(50),
+  },
+  async ({ repo_path, issue_number, driver, branch_name }) => {
+    try {
+      return ok(JSON.stringify(await runMarkImplementIssuePickedUp({
+        repoPath: repo_path,
+        issueNumber: issue_number,
+        driver,
+        branchName: branch_name,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_authorize_execution_obligation_wontfix",
+  "Convert an exact, durable user command into a structured wontfix authorization record. " +
+  "Inputs are repo_path, issue_number, obligation_id, and authorization_source_url. " +
+  "The source comment must be '/ground-control authorize-wontfix <OBLIGATION_ID>' exactly, must " +
+  "belong to this issue, and its author must have effective write permission on the pinned repository. " +
+  "Pass the returned authorization_comment_url to gc_record_execution_obligation; free-form approval " +
+  "prose, negations, questions, quotations, and reports of another actor's approval are never authority.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    obligation_id: z.string().regex(/^[A-Z0-9][A-Z0-9._-]{0,63}$/),
+    authorization_source_url: z.string().url(),
+  },
+  async ({ repo_path, issue_number, obligation_id, authorization_source_url }) => {
+    try {
+      return ok(JSON.stringify(await runAuthorizeExecutionObligationWontfix({
+        repoPath: repo_path,
+        issueNumber: issue_number,
+        obligationId: obligation_id,
+        authorizationSourceUrl: authorization_source_url,
       }), null, 2));
     } catch (e) { return err(e); }
   },
@@ -3311,7 +3456,7 @@ const RISK_CONTROL_MAPPING_ACTIONS = [
   // Coverage queries (risk-side)
   "unmapped-scenarios", "unmapped-records", "unmapped-controls", "assessment-feed",
   // Coverage queries (threat-side, GC-H006)
-  "unmapped-threats", "threat-unmapped-controls", "threats-insufficient-effectiveness",
+  "unmapped-threats", "threat-unmapped-controls",
 ];
 server.tool(
   "gc_risk_control_mapping",
@@ -3348,10 +3493,6 @@ server.tool(
     // Coverage query options
     transitive: z.boolean().optional(),
     assessment_result_id: z.string().uuid().optional(),
-    // Threat-coverage query options (GC-H006)
-    min_effectiveness: z.string().optional(),
-    as_of: z.string().optional(),
-    freshness_window_days: z.number().int().positive().optional(),
   },
   async (args) => {
     try {
@@ -3431,13 +3572,6 @@ server.tool(
           break;
         case "threat-unmapped-controls":
           result = await getThreatUnmappedControls(p);
-          break;
-        case "threats-insufficient-effectiveness":
-          result = await getThreatsInsufficientEffectiveness(p, {
-            minEffectiveness: args.min_effectiveness,
-            asOf: args.as_of,
-            freshnessWindowDays: args.freshness_window_days,
-          });
           break;
         default:
           throw new Error(`Unknown action: ${args.action}`);

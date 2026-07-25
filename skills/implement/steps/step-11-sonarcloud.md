@@ -22,7 +22,7 @@ This step runs AFTER Step 10 (CI Monitor) reports green. A green CI run does not
    - `quality_gate: "OK"` AND `issues_summary.open_count == 0` AND `hotspots_summary.open_count == 0` → all clean. Advance to Step 15.
    - Otherwise → there are findings. The envelope's `issues_summary` (counts by severity / type + `top_issues[]`) and `hotspots_summary` (counts + `top_hotspots[]`) tell you what to fix. For drill-down on the full issue list, the envelope's `full_issue_export_path` points at a server-side JSON file (`.gc/sonar/<pr>-<ts>.json`, gitignored) - read it on demand; do NOT bring its raw contents into parent context.
 
-3. **Fix every open issue the tool returns - code-smell, bug, vulnerability, and security hotspot, every severity from INFO to BLOCKER, pre-existing or not.** If you think a finding is dangerous to fix, unwise in context, or a false positive, STOP, post your reasoning as an issue comment with `decision: <fix|wontfix|not-applicable>` and the rationale, and ask the user. Wait for their answer; do not push commits while the question is open.
+3. **Fix every open issue the tool returns - code-smell, bug, vulnerability, and security hotspot, every severity from INFO to BLOCKER, regardless of provenance.** If repair requires significant architecture/security judgment or external authority, record an escalated execution obligation with evidence and a concrete decision request. A false positive may be `not-applicable` only when the condition is factually false for this codebase. Wait for required direction; the obligation remains open and current work.
 
 4. For each fix cycle:
    - Apply the fixes.
@@ -31,7 +31,7 @@ This step runs AFTER Step 10 (CI Monitor) reports green. A green CI run does not
    - Re-run Step 10 (CI Monitor) so SonarCloud re-analyzes the PR.
    - After CI is green, re-invoke this step.
 
-5. **Cycle cap: 5 iterations for SonarCloud.** If the issue list is still non-empty after 5 fix→re-analyze cycles, STOP, post the remaining findings as an issue comment, and escalate to the user.
+5. **Cycle cap: 5 iterations for SonarCloud.** If findings remain after the fifth fix→re-analyze cycle, record them as open execution obligations and escalate under the enforced-cycle-cap class with a concrete decision request. The cap pauses analysis; it does not defer or discard the repairs.
 
 6. Proceed to Step 15 only when: the quality gate is `OK` AND the issues summary's `open_count` is 0 AND the hotspots summary's `open_count` is 0. (Steps 13–14 were merged out in #906: test-quality review moved pre-push to Step 6.6, and there is no separate "final CI re-verify" because there is no post-push fix loop after Sonar clean.)
 

@@ -13,6 +13,8 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import org.hibernate.envers.Audited;
+import org.hibernate.envers.NotAudited;
 
 /**
  * One workflow run (issue #859): the run-level reporting projection for a single {@code /implement}
@@ -27,6 +29,7 @@ import java.util.Set;
  * completions, bearer tokens, provider/GitHub keys, and raw reviewer payloads are never persisted.
  */
 @Entity
+@Audited
 @Table(name = "workflow_run")
 public class WorkflowRun extends BaseEntity {
 
@@ -49,6 +52,7 @@ public class WorkflowRun extends BaseEntity {
     @Column(length = 100)
     private String runtimeDriver;
 
+    @NotAudited
     @ElementCollection
     @CollectionTable(name = "workflow_run_requirement_uid", joinColumns = @JoinColumn(name = "run_id"))
     @Column(name = "requirement_uid", length = 100)

@@ -377,3 +377,16 @@ ADR-036 (amendments) for the job model and `skills/implement/steps/step-02.5
 **2026-05-26 (issue #989 merge carve-out).** The single-human-touchpoint contract is amended to permit `gc_integration_manager` action=prepare mode=merge to execute the merge for queue entries that the same lane has just prepared (rebased, completion-gate green, CI green, Sonar green). The carve-out is narrow: merge is only legal when invoked through the integration manager's MCP tool boundary, only on PRs the same run has marked outcome=ready, and only when the repository has opted in via `workflow.integration_manager.merge_strategy`. All other agent paths to merge remain forbidden by skill prose and by the `.claude/hooks/git-merge-guard.py` PreToolUse hook that already blocks `gh pr merge` and `git merge` from agent Bash invocations. The MCP server itself is the only privileged-side-effect surface that can execute the merge; the hook layer does not apply to MCP server subprocesses, so the access-control surface is the gc_integration_manager tool registration.
 
 **2026-07-15 (issue #1382 base-to-feature maintenance merge).** `.claude/hooks/git-merge-guard.py` now permits an agent to merge the integration branch (`origin/dev`) into the current non-protected feature branch - branch maintenance that keeps an open PR current, completed with real conflict resolution plus an ordinary `git commit` - while continuing to block `gh pr merge`, protected-branch-destination merges, non-`origin/dev` sources, and every ambiguous invocation shape. This qualifies the 2026-05-26 (#989) note above that the hook blocks all agent `git merge` calls: it now blocks pull-request and protected-branch merges, not the base-to-feature maintenance merge. The single-merge-touchpoint contract (PR merge) is unchanged; the integration-manager carve-out remains the only automated PR-merge path. See ADR-029 (amendments) and `docs/DEVELOPMENT_WORKFLOW.md § Git Merge Guard`.
+
+**2026-07-25 (issue #1416 execution contract).** `/implement` begins by loading
+its canonical development principles and pins an immutable execution contract
+for the run. Issue-branch preparation stays in the checkout where the command
+was invoked; `/implement` does not create worktrees. Problems discovered during
+the run are fixed and verified regardless of provenance or anticipated scope,
+or are retained as durable open obligations when a permitted pause is required.
+Open obligations block both readiness and completion. Local verification is
+risk-proportionate: batch related edits, use targeted tests during
+implementation and review fixes, widen for shared/security-sensitive risk, and
+run broad completion/policy gates once at the meaningful final tree boundary.
+Pre-commit, completion, review, CI, SonarCloud, and final policy gates remain
+mandatory; efficient iteration does not waive them.

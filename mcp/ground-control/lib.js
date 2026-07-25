@@ -3606,6 +3606,305 @@ export async function ensureGitRepo(repoPath) {
   }
 }
 
+const IMPLEMENT_BRANCH_RE = /^[a-z0-9-]+$/;
+const IMPLEMENT_BRANCH_MAX_LENGTH = 50;
+export const IMPLEMENT_CHECKOUT_MODES = Object.freeze(["same_checkout"]);
+const MCP_LAUNCH_CWD = process.cwd();
+
+async function captureImplementWorkspaceAuthorization(cwd) {
+  const { stdout } = await execFile("git", ["-C", cwd, "rev-parse", "--show-toplevel"]);
+  const workspaceRoot = realpathSync(stdout.trim());
+  const identity = await readGitIdentity(workspaceRoot);
+  const { owner, name } = await getOwnerRepo(workspaceRoot, { allowGhFallback: false });
+  return Object.freeze({
+    workspaceRoot,
+    gitDir: identity.gitDir,
+    origin: identity.origin,
+    owner: owner.toLowerCase(),
+    name: name.toLowerCase(),
+  });
+}
+
+// Start the capture during module initialization. Deferring this until the
+// first tool call would let a caller rewrite .git/config before the server
+// established which GitHub repository its ambient credential may mutate.
+const MCP_LAUNCH_WORKSPACE_AUTHORIZATION = captureImplementWorkspaceAuthorization(
+  MCP_LAUNCH_CWD,
+).catch(() => null);
+
+async function resolveMcpLaunchWorkspaceAuthorization() {
+  return MCP_LAUNCH_WORKSPACE_AUTHORIZATION;
+}
+
+async function authorizeImplementRepoRoot(repoRoot, workspaceAuthorizationResolver) {
+  let authorization;
+  try {
+    authorization = await workspaceAuthorizationResolver();
+  } catch {
+    authorization = null;
+  }
+  if (
+    authorization == null
+    || typeof authorization !== "object"
+    || typeof authorization.workspaceRoot !== "string"
+    || typeof authorization.gitDir !== "string"
+    || typeof authorization.origin !== "string"
+    || typeof authorization.owner !== "string"
+    || typeof authorization.name !== "string"
+  ) {
+    return {
+      ok: false,
+      error: "implement_workspace_root_unavailable",
+      message: "The MCP launch workspace and repository identity could not be captured",
+    };
+  }
+  const workspaceRoot = realpathSync(authorization.workspaceRoot);
+  if (realpathSync(repoRoot) !== workspaceRoot) {
+    return {
+      ok: false,
+      error: "implement_repo_not_authorized",
+      message: "The requested repository is outside the MCP launch workspace authorized for this run",
+    };
+  }
+  let current;
+  let currentOwnerRepo;
+  try {
+    current = await readGitIdentity(repoRoot);
+    currentOwnerRepo = await getOwnerRepo(repoRoot, { allowGhFallback: false });
+  } catch {
+    return {
+      ok: false,
+      error: "implement_repo_identity_unverifiable",
+      message: "The requested repository identity could not be verified",
+    };
+  }
+  if (
+    current.gitDir !== realpathSync(authorization.gitDir)
+    || current.origin !== authorization.origin
+    || currentOwnerRepo.owner.toLowerCase() !== authorization.owner.toLowerCase()
+    || currentOwnerRepo.name.toLowerCase() !== authorization.name.toLowerCase()
+  ) {
+    return {
+      ok: false,
+      error: "implement_repo_identity_changed",
+      message: "The checkout origin or Git directory differs from the identity captured at MCP launch",
+    };
+  }
+  return {
+    ok: true,
+    workspaceRoot,
+    gitDir: current.gitDir,
+    origin: authorization.origin,
+    owner: authorization.owner,
+    name: authorization.name,
+  };
+}
+
+export function validateImplementBranchName(branchName, issueNumber) {
+  if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
+    return { ok: false, error: "implement_issue_number_invalid", message: "issueNumber must be a positive integer" };
+  }
+  if (typeof branchName !== "string" || branchName.trim() === "") {
+    return { ok: false, error: "implement_branch_name_invalid", message: "branchName must be a non-empty string" };
+  }
+  const prefix = `${issueNumber}-`;
+  if (
+    !branchName.startsWith(prefix)
+    || branchName.length <= prefix.length
+    || branchName.length > IMPLEMENT_BRANCH_MAX_LENGTH
+    || !IMPLEMENT_BRANCH_RE.test(branchName)
+  ) {
+    return {
+      ok: false,
+      error: "implement_branch_name_invalid",
+      message:
+        `branchName must start with '${prefix}', contain only lowercase ASCII letters, digits, and hyphens, ` +
+        `include a slug, and be at most ${IMPLEMENT_BRANCH_MAX_LENGTH} characters`,
+    };
+  }
+  return { ok: true };
+}
+
+async function readGitIdentity(repoRoot) {
+  const [top, gitDir, origin] = await Promise.all([
+    execFile("git", ["-C", repoRoot, "rev-parse", "--show-toplevel"]),
+    execFile("git", ["-C", repoRoot, "rev-parse", "--absolute-git-dir"]),
+    execFile("git", ["-C", repoRoot, "remote", "get-url", "origin"]),
+  ]);
+  return {
+    topLevel: realpathSync(top.stdout.trim()),
+    gitDir: realpathSync(gitDir.stdout.trim()),
+    origin: origin.stdout.trim(),
+  };
+}
+
+async function assertSafeImplementCheckoutConfiguration(repoRoot) {
+  const dangerousKey =
+    /^(?:core\.(?:hookspath|sshcommand|askpass|fsmonitor)|credential(?:\.|$)|filter\..*\.(?:clean|smudge|process|required)|diff\..*\.command|merge\..*\.driver|include(?:if\..*)?\.path|url\..*\.(?:insteadof|pushinsteadof)|remote\..*\.(?:proxy|uploadpack|receivepack))$/i;
+  const { stdout } = await execFile(
+    "git",
+    ["-C", repoRoot, "config", "--local", "--name-only", "--get-regexp", ".*"],
+  ).catch((error) => {
+    if (error.code === 1) return { stdout: "" };
+    throw error;
+  });
+  const configuredDangerousKeys = stdout
+    .split(/\r?\n/)
+    .map((key) => key.trim())
+    .filter((key) => key !== "" && dangerousKey.test(key));
+  if (configuredDangerousKeys.length > 0) {
+    throw new Error(
+      `caller-controlled executable Git configuration is not permitted: ${configuredDangerousKeys.join(", ")}`,
+    );
+  }
+}
+
+function sanitizedImplementGitEnvironment() {
+  const overrides = [
+    ["core.hooksPath", "/dev/null"],
+    ["core.sshCommand", "/usr/bin/false"],
+    ["core.askPass", "/usr/bin/false"],
+    ["core.fsmonitor", "false"],
+    ["credential.helper", ""],
+    ["credential.interactive", "false"],
+  ];
+  const env = {
+    ...process.env,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_SYSTEM: "/dev/null",
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_CONFIG_COUNT: String(overrides.length),
+  };
+  overrides.forEach(([key, value], index) => {
+    env[`GIT_CONFIG_KEY_${index}`] = key;
+    env[`GIT_CONFIG_VALUE_${index}`] = value;
+  });
+  return env;
+}
+
+export async function runPrepareImplementBranch({
+  repoPath,
+  invocationRoot,
+  issueNumber,
+  branchName,
+  baseBranch = "dev",
+  checkoutMode = "same_checkout",
+}, {
+  workspaceAuthorizationResolver = resolveMcpLaunchWorkspaceAuthorization,
+} = {}) {
+  if (!IMPLEMENT_CHECKOUT_MODES.includes(checkoutMode)) {
+    return {
+      ok: false,
+      error: "implement_checkout_mode_unsupported",
+      message: "Only checkout_mode='same_checkout' is supported; /implement cannot create or relocate into a worktree",
+    };
+  }
+  if (typeof invocationRoot !== "string" || !isAbsolute(invocationRoot)) {
+    return {
+      ok: false,
+      error: "implement_invocation_root_invalid",
+      message: "invocationRoot must be an absolute path",
+    };
+  }
+  const branchValidation = validateImplementBranchName(branchName, issueNumber);
+  if (!branchValidation.ok) return branchValidation;
+  if (!isSafeGitRefName(baseBranch)) {
+    return {
+      ok: false,
+      error: "implement_base_branch_invalid",
+      message: "baseBranch is not a safe Git ref name",
+    };
+  }
+
+  let repoRoot;
+  let pinnedRoot;
+  let before;
+  try {
+    repoRoot = realpathSync(await ensureGitRepo(repoPath));
+    pinnedRoot = realpathSync(invocationRoot);
+    before = await readGitIdentity(repoRoot);
+  } catch (error) {
+    return {
+      ok: false,
+      error: "implement_checkout_identity_failed",
+      message: `Unable to establish the invocation checkout identity: ${error.message}`,
+    };
+  }
+  const repoAuthorization = await authorizeImplementRepoRoot(
+    repoRoot,
+    workspaceAuthorizationResolver,
+  );
+  if (!repoAuthorization.ok) return repoAuthorization;
+  if (repoRoot !== pinnedRoot || before.topLevel !== pinnedRoot) {
+    return {
+      ok: false,
+      error: "implement_invocation_root_mismatch",
+      message: "The supplied repository is not the canonical checkout where /implement was invoked",
+    };
+  }
+  try {
+    await assertSafeImplementCheckoutConfiguration(repoRoot);
+    await execFile(
+      "gh",
+      [
+        "issue", "develop", String(issueNumber),
+        "--checkout",
+        "--base", baseBranch,
+        "--name", branchName,
+      ],
+      { cwd: pinnedRoot, env: sanitizedImplementGitEnvironment() },
+    );
+  } catch (error) {
+    return {
+      ok: false,
+      error: "implement_branch_prepare_failed",
+      message: `Unable to create or switch the issue branch in the invocation checkout: ${extractGhErrorMessage(error)}`,
+    };
+  }
+
+  let after;
+  let activeBranch;
+  try {
+    after = await readGitIdentity(pinnedRoot);
+    const branch = await execFile("git", ["-C", pinnedRoot, "branch", "--show-current"]);
+    activeBranch = branch.stdout.trim();
+  } catch (error) {
+    return {
+      ok: false,
+      error: "implement_checkout_postcondition_failed",
+      message: `Unable to verify the invocation checkout after branch preparation: ${error.message}`,
+    };
+  }
+  if (
+    after.topLevel !== pinnedRoot
+    || after.gitDir !== before.gitDir
+    || after.origin !== before.origin
+  ) {
+    return {
+      ok: false,
+      error: "implement_checkout_relocated",
+      message: "Branch preparation changed the checkout root, Git directory, or origin; refusing to continue",
+    };
+  }
+  const actualBranchValidation = validateImplementBranchName(activeBranch, issueNumber);
+  if (!actualBranchValidation.ok) {
+    return {
+      ok: false,
+      error: "implement_active_branch_noncompliant",
+      message: actualBranchValidation.message,
+      branch: activeBranch,
+    };
+  }
+  return {
+    ok: true,
+    repo_path: pinnedRoot,
+    invocation_root: pinnedRoot,
+    checkout_mode: checkoutMode,
+    branch: activeBranch,
+  };
+}
+
 export async function getIssueContext(issueNumber, repo, { cwd } = {}) {
   if (issueNumber == null) return null;
 
@@ -5054,6 +5353,227 @@ export function buildTestQualityReviewCycleMarker({
 export const PHASE_MARKER_PREFIX = "<!-- gc:phase";
 const PHASE_MARKER_RE = /<!--\s*gc:phase\s+phase="([a-z_]+)"\s+issue="(\d+)"[^]*?-->/g;
 
+export const EXECUTION_OBLIGATION_SCHEMA = "gc.implement.execution-obligation/v1";
+export const EXECUTION_OBLIGATION_AUTHORIZATION_SCHEMA =
+  "gc.implement.execution-obligation-authorization/v1";
+export const EXECUTION_OBLIGATION_EVENTS = Object.freeze(["opened", "escalated", "resolved"]);
+export const EXECUTION_OBLIGATION_CATEGORIES = Object.freeze([
+  "defect",
+  "failing_check",
+  "security",
+  "workflow",
+  "quality",
+]);
+export const EXECUTION_OBLIGATION_PAUSE_CLASSES = Object.freeze([
+  "explicit_workflow_gate",
+  "unresolved_ambiguity",
+  "significant_architecture_decision",
+  "significant_security_decision",
+  "unexpected_material_scope_expansion",
+  "destructive_or_external_authority",
+  "hard_external_dependency",
+  "enforced_cycle_cap",
+]);
+export const EXECUTION_OBLIGATION_DISPOSITIONS = Object.freeze(["fix", "wontfix", "not-applicable"]);
+const EXECUTION_OBLIGATION_ID_RE = /^[A-Z0-9][A-Z0-9._-]{0,63}$/;
+const ISSUE_COMMENT_URL_RE =
+  /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/issues\/(\d+)#issuecomment-(\d+)$/;
+const EXECUTION_OBLIGATION_MARKER_RE =
+  /<!--\s*gc:execution-obligation\s+schema="gc\.implement\.execution-obligation\/v1"\s+issue="(\d+)"\s+id="([A-Z0-9][A-Z0-9._-]{0,63})"\s+event="(opened|escalated|resolved)"(?:\s+disposition="(fix|wontfix|not-applicable)")?(?:\s+authorization_comment_id="(\d+)")?\s*-->/g;
+const EXECUTION_OBLIGATION_AUTHORIZATION_RE =
+  /<!--\s*gc:execution-obligation-authorization\s+schema="gc\.implement\.execution-obligation-authorization\/v1"\s+issue="(\d+)"\s+id="([A-Z0-9][A-Z0-9._-]{0,63})"\s+action="authorize_wontfix"\s+source_comment_id="(\d+)"\s*-->/g;
+
+function parseIssueCommentUrl(value) {
+  if (typeof value !== "string") return null;
+  const match = value.match(ISSUE_COMMENT_URL_RE);
+  if (match == null) return null;
+  return {
+    owner: match[1],
+    name: match[2],
+    issueNumber: Number(match[3]),
+    commentId: Number(match[4]),
+  };
+}
+
+export function buildExecutionObligationMarker({
+  issueNumber,
+  obligationId,
+  event,
+  disposition = null,
+  authorizationCommentId = null,
+  userAuthorization = null,
+}) {
+  const dispositionAttribute = disposition == null ? "" : ` disposition="${disposition}"`;
+  const parsedAuthorization = parseIssueCommentUrl(userAuthorization);
+  const resolvedAuthorizationId = authorizationCommentId ?? parsedAuthorization?.commentId ?? null;
+  const authorizationAttribute = resolvedAuthorizationId == null
+    ? ""
+    : ` authorization_comment_id="${resolvedAuthorizationId}"`;
+  return `<!-- gc:execution-obligation schema="${EXECUTION_OBLIGATION_SCHEMA}" issue="${issueNumber}" id="${obligationId}" event="${event}"${dispositionAttribute}${authorizationAttribute} -->`;
+}
+
+export function buildExecutionObligationAuthorizationMarker({
+  issueNumber,
+  obligationId,
+  sourceCommentId,
+}) {
+  return `<!-- gc:execution-obligation-authorization schema="${EXECUTION_OBLIGATION_AUTHORIZATION_SCHEMA}" issue="${issueNumber}" id="${obligationId}" action="authorize_wontfix" source_comment_id="${sourceCommentId}" -->`;
+}
+
+function parseExecutionObligationAuthorization(body, issueNumber, obligationId) {
+  if (typeof body !== "string") return null;
+  for (const match of body.matchAll(EXECUTION_OBLIGATION_AUTHORIZATION_RE)) {
+    if (Number(match[1]) === issueNumber && match[2] === obligationId) {
+      return { sourceCommentId: Number(match[3]) };
+    }
+  }
+  return null;
+}
+
+function isExactWontfixAuthorizationCommand(body, obligationId) {
+  return typeof body === "string"
+    && body.trim() === `/ground-control authorize-wontfix ${obligationId}`;
+}
+
+export function parseExecutionObligationMarkers(commentBodies, issueNumber) {
+  const events = [];
+  for (const body of commentBodies || []) {
+    if (typeof body !== "string") continue;
+    for (const match of body.matchAll(EXECUTION_OBLIGATION_MARKER_RE)) {
+      if (Number(match[1]) !== issueNumber) continue;
+      events.push({
+        issue_number: issueNumber,
+        obligation_id: match[2],
+        event: match[3],
+        disposition: match[4] ?? null,
+        authorization_comment_id: match[5] == null ? null : Number(match[5]),
+      });
+    }
+  }
+  return events;
+}
+
+export function evaluateExecutionObligations(events) {
+  const states = new Map();
+  for (const event of events || []) {
+    const current = states.get(event.obligation_id);
+    if (event.event === "opened") {
+      states.set(event.obligation_id, { status: "open", disposition: null });
+    } else if (event.event === "escalated" && current?.status === "open") {
+      states.set(event.obligation_id, { status: "open", disposition: null });
+    } else if (
+      event.event === "resolved"
+      && current?.status === "open"
+      && EXECUTION_OBLIGATION_DISPOSITIONS.includes(event.disposition)
+    ) {
+      states.set(event.obligation_id, { status: "resolved", disposition: event.disposition });
+    }
+  }
+  const open = [...states.entries()]
+    .filter(([, state]) => state.status === "open")
+    .map(([id]) => id)
+    .sort();
+  return {
+    open_obligation_ids: open,
+    clear: open.length === 0,
+  };
+}
+
+function validateBoundedText(value, field, errors, { required = true, max = 1200 } = {}) {
+  if (value == null || value === "") {
+    if (required) errors.push(`${field} must be a non-empty string`);
+    return;
+  }
+  if (typeof value !== "string" || value.trim() === "") {
+    errors.push(`${field} must be a non-empty string`);
+  } else if (Buffer.byteLength(value, "utf8") > max) {
+    errors.push(`${field} must be at most ${max} bytes`);
+  }
+}
+
+export function validateExecutionObligationInput(input) {
+  const errors = [];
+  if (input == null || typeof input !== "object") {
+    return { ok: false, errors: ["input must be an object"] };
+  }
+  const {
+    issueNumber,
+    obligationId,
+    event,
+    category,
+    observedState,
+    evidence,
+    impact,
+    obligation,
+    pauseClass,
+    decisionRequest,
+    disposition,
+    correctiveAction,
+    verification,
+    userAuthorization,
+  } = input;
+  if (!Number.isInteger(issueNumber) || issueNumber <= 0) errors.push("issueNumber must be a positive integer");
+  if (typeof obligationId !== "string" || !EXECUTION_OBLIGATION_ID_RE.test(obligationId)) {
+    errors.push("obligationId must be 1-64 uppercase ASCII letters, digits, dots, underscores, or hyphens");
+  }
+  if (!EXECUTION_OBLIGATION_EVENTS.includes(event)) {
+    errors.push(`event must be one of: ${EXECUTION_OBLIGATION_EVENTS.join(", ")}`);
+  }
+  if (!EXECUTION_OBLIGATION_CATEGORIES.includes(category)) {
+    errors.push(`category must be one of: ${EXECUTION_OBLIGATION_CATEGORIES.join(", ")}`);
+  }
+  validateBoundedText(observedState, "observedState", errors);
+  validateBoundedText(impact, "impact", errors);
+  validateBoundedText(obligation, "obligation", errors);
+  if (!Array.isArray(evidence) || evidence.length === 0 || evidence.length > 10) {
+    errors.push("evidence must contain 1-10 bounded strings");
+  } else {
+    evidence.forEach((item, index) => validateBoundedText(item, `evidence[${index}]`, errors, { max: 800 }));
+  }
+
+  if (event === "escalated") {
+    if (!EXECUTION_OBLIGATION_PAUSE_CLASSES.includes(pauseClass)) {
+      errors.push(`pauseClass must be one of: ${EXECUTION_OBLIGATION_PAUSE_CLASSES.join(", ")}`);
+    }
+    validateBoundedText(decisionRequest, "decisionRequest", errors);
+  } else {
+    if (pauseClass != null) errors.push("pauseClass is valid only for an escalated event");
+    if (decisionRequest != null) errors.push("decisionRequest is valid only for an escalated event");
+  }
+
+  if (event === "resolved") {
+    if (!EXECUTION_OBLIGATION_DISPOSITIONS.includes(disposition)) {
+      errors.push(`disposition must be one of: ${EXECUTION_OBLIGATION_DISPOSITIONS.join(", ")}`);
+    }
+    validateBoundedText(correctiveAction, "correctiveAction", errors);
+    if (!Array.isArray(verification) || verification.length === 0 || verification.length > 10) {
+      errors.push("verification must contain 1-10 bounded strings");
+    } else {
+      verification.forEach((item, index) =>
+        validateBoundedText(item, `verification[${index}]`, errors, { max: 800 }));
+    }
+    if (disposition === "wontfix") {
+      validateBoundedText(userAuthorization, "userAuthorization", errors, { max: 800 });
+      if (parseIssueCommentUrl(userAuthorization) == null) {
+        errors.push("userAuthorization must be a durable GitHub issue-comment URL");
+      }
+    }
+    if (
+      disposition === "not-applicable"
+      && typeof correctiveAction === "string"
+      && !/\b(?:factually false|does not apply|not present|no matching|cannot occur)\b/i.test(correctiveAction)
+    ) {
+      errors.push("not-applicable requires correctiveAction proving the condition is factually false or does not apply");
+    }
+  } else {
+    if (disposition != null) errors.push("disposition is valid only for a resolved event");
+    if (correctiveAction != null) errors.push("correctiveAction is valid only for a resolved event");
+    if (verification != null) errors.push("verification is valid only for a resolved event");
+    if (userAuthorization != null) errors.push("userAuthorization is valid only for a resolved event");
+  }
+  return errors.length === 0 ? { ok: true } : { ok: false, errors };
+}
+
 // Pure: scan a list of comment bodies and return the set of phases that have
 // been recorded for `issueNumber`. Set semantics — duplicates are collapsed.
 export function parsePhaseMarkers(commentBodies, issueNumber) {
@@ -6388,8 +6908,11 @@ async function readIssueCommentsWithAuthors(repoRoot, owner, name, issueNumber) 
   return comments
     .filter((c) => c && typeof c.body === "string")
     .map((c) => ({
+      id: Number.isInteger(c.id) ? c.id : null,
       body: c.body,
       authorLogin: c.user && typeof c.user.login === "string" ? c.user.login : null,
+      authorAssociation:
+        typeof c.author_association === "string" ? c.author_association.toUpperCase() : null,
     }));
 }
 
@@ -6406,6 +6929,71 @@ async function getAuthenticatedGitHubLogin(repoRoot) {
   } catch {
     return null;
   }
+}
+
+const EXECUTION_OBLIGATION_WRITE_PERMISSIONS = new Set(["admin", "maintain", "write"]);
+
+async function getEffectiveRepositoryPermission(repoRoot, owner, name, login) {
+  if (typeof login !== "string" || login.trim() === "") return null;
+  try {
+    const { stdout } = await execFile(
+      "gh",
+      [
+        "api",
+        "--method",
+        "GET",
+        `/repos/${owner}/${name}/collaborators/${encodeURIComponent(login)}/permission`,
+        "--jq",
+        ".permission",
+      ],
+      { cwd: repoRoot },
+    );
+    const permission = stdout.trim().toLowerCase();
+    return EXECUTION_OBLIGATION_WRITE_PERMISSIONS.has(permission) ? permission : null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveExecutionObligationTrust(repoRoot, owner, name, comments) {
+  const logins = [...new Set(
+    comments
+      .map((comment) => comment.authorLogin?.toLowerCase() ?? null)
+      .filter(Boolean),
+  )];
+  const permissions = new Map();
+  await Promise.all(logins.map(async (login) => {
+    permissions.set(
+      login,
+      await getEffectiveRepositoryPermission(repoRoot, owner, name, login),
+    );
+  }));
+  return {
+    isTrusted: (comment) => {
+      const login = comment.authorLogin?.toLowerCase() ?? null;
+      return login != null && permissions.get(login) != null;
+    },
+  };
+}
+
+function hasVerifiedStructuredWontfixAuthorization(
+  authorization,
+  comments,
+  trust,
+  issueNumber,
+  obligationId,
+) {
+  if (authorization == null || !trust.isTrusted(authorization)) return false;
+  const record = parseExecutionObligationAuthorization(
+    authorization.body,
+    issueNumber,
+    obligationId,
+  );
+  if (record == null) return false;
+  const source = comments.find((comment) => comment.id === record.sourceCommentId);
+  return source != null
+    && trust.isTrusted(source)
+    && isExactWontfixAuthorizationCommand(source.body, obligationId);
 }
 
 // Post a phase marker as an issue-comment so downstream tools can detect the
@@ -6433,6 +7021,498 @@ async function postPhaseMarker(repoRoot, owner, name, issueNumber, phase, extras
     return JSON.parse(stdout);
   } catch {
     return null;
+  }
+}
+
+function buildExecutionObligationBody(input) {
+  const marker = buildExecutionObligationMarker(input);
+  const eventLabel = input.event === "opened"
+    ? "Opened"
+    : input.event === "escalated"
+      ? "Escalated"
+      : "Resolved";
+  const lines = [
+    marker,
+    "",
+    `## Execution obligation ${input.obligationId} — ${eventLabel}`,
+    "",
+    `**Category:** ${input.category}  `,
+    `**Observed state:** ${input.observedState}  `,
+    `**Impact:** ${input.impact}  `,
+    `**Current obligation:** ${input.obligation}`,
+    "",
+    "### Evidence",
+    "",
+    ...input.evidence.map((item) => `- ${item}`),
+  ];
+  if (input.event === "escalated") {
+    lines.push(
+      "",
+      `**Pause class:** ${input.pauseClass}  `,
+      `**Decision request:** ${input.decisionRequest}`,
+      "",
+      "This obligation remains open while the decision is pending.",
+    );
+  }
+  if (input.event === "resolved") {
+    lines.push(
+      "",
+      `**Disposition:** ${input.disposition}  `,
+      `**Corrective action:** ${input.correctiveAction}`,
+      "",
+      "### Verification",
+      "",
+      ...input.verification.map((item) => `- ${item}`),
+    );
+    if (input.userAuthorization) {
+      lines.push("", `**User authorization:** ${input.userAuthorization}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+async function readTrustedExecutionObligationState(repoRoot, owner, name, issueNumber) {
+  const comments = await readIssueCommentsWithAuthors(repoRoot, owner, name, issueNumber);
+  const markerComments = comments
+    .map((comment) => ({
+      comment,
+      events: parseExecutionObligationMarkers([comment.body], issueNumber),
+    }))
+    .filter(({ events }) => events.length > 0);
+  if (markerComments.length === 0) {
+    return { ok: true, ...evaluateExecutionObligations([]) };
+  }
+  const trust = await resolveExecutionObligationTrust(
+    repoRoot,
+    owner,
+    name,
+    comments,
+  );
+  const untrustedMarker = markerComments.find(({ comment }) => !trust.isTrusted(comment));
+  if (untrustedMarker != null) {
+    return {
+      ok: false,
+      error: "execution_obligation_provenance_unverifiable",
+      message:
+        "An execution-obligation marker was authored outside the repository's authorized signer set",
+    };
+  }
+  const trustedEvents = markerComments.flatMap(({ events }) => events);
+  for (const event of trustedEvents) {
+    if (event.event !== "resolved" || event.disposition !== "wontfix") continue;
+    const authorization = comments.find(
+      (comment) => comment.id === event.authorization_comment_id,
+    );
+    if (
+      authorization == null
+      || !hasVerifiedStructuredWontfixAuthorization(
+        authorization,
+        comments,
+        trust,
+        issueNumber,
+        event.obligation_id,
+      )
+    ) {
+      return {
+        ok: false,
+        error: "execution_obligation_authorization_unverifiable",
+        message:
+          `The wontfix resolution for '${event.obligation_id}' lacks a verified structured authorization record`,
+      };
+    }
+  }
+  return {
+    ok: true,
+    ...evaluateExecutionObligations(trustedEvents),
+  };
+}
+
+export async function runAuthorizeExecutionObligationWontfix(input, {
+  workspaceAuthorizationResolver = resolveMcpLaunchWorkspaceAuthorization,
+} = {}) {
+  if (
+    input == null
+    || !Number.isInteger(input.issueNumber)
+    || input.issueNumber <= 0
+    || typeof input.obligationId !== "string"
+    || !EXECUTION_OBLIGATION_ID_RE.test(input.obligationId)
+  ) {
+    return {
+      ok: false,
+      error: "execution_obligation_authorization_input_invalid",
+      message: "issueNumber and a valid obligationId are required",
+    };
+  }
+  const sourceReference = parseIssueCommentUrl(input.authorizationSourceUrl);
+  if (sourceReference == null) {
+    return {
+      ok: false,
+      error: "execution_obligation_authorization_input_invalid",
+      message: "authorizationSourceUrl must be a durable GitHub issue-comment URL",
+    };
+  }
+  const repoRoot = await ensureGitRepo(input.repoPath);
+  const repoAuthorization = await authorizeImplementRepoRoot(
+    repoRoot,
+    workspaceAuthorizationResolver,
+  );
+  if (!repoAuthorization.ok) return repoAuthorization;
+  const { owner, name } = repoAuthorization;
+  if (
+    sourceReference.owner.toLowerCase() !== owner.toLowerCase()
+    || sourceReference.name.toLowerCase() !== name.toLowerCase()
+    || sourceReference.issueNumber !== input.issueNumber
+  ) {
+    return {
+      ok: false,
+      error: "execution_obligation_authorization_unverifiable",
+      message: "The authorization source must reference this repository and issue",
+    };
+  }
+  const comments = await readIssueCommentsWithAuthors(
+    repoRoot,
+    owner,
+    name,
+    input.issueNumber,
+  );
+  const trust = await resolveExecutionObligationTrust(
+    repoRoot,
+    owner,
+    name,
+    comments,
+  );
+  const source = comments.find((comment) => comment.id === sourceReference.commentId);
+  if (
+    source == null
+    || !trust.isTrusted(source)
+    || !isExactWontfixAuthorizationCommand(source.body, input.obligationId)
+  ) {
+    return {
+      ok: false,
+      error: "execution_obligation_authorization_unverifiable",
+      message:
+        `The source must be an exact '/ground-control authorize-wontfix ${input.obligationId}' command from a repository writer`,
+    };
+  }
+  const marker = buildExecutionObligationAuthorizationMarker({
+    issueNumber: input.issueNumber,
+    obligationId: input.obligationId,
+    sourceCommentId: source.id,
+  });
+  const body = [
+    marker,
+    "",
+    `Authorized wontfix for execution obligation ${input.obligationId}.`,
+    "",
+    `Source: ${input.authorizationSourceUrl}`,
+  ].join("\n");
+  try {
+    const { stdout } = await execFile(
+      "gh",
+      [
+        "api",
+        "--method",
+        "POST",
+        `/repos/${owner}/${name}/issues/${input.issueNumber}/comments`,
+        "-f",
+        `body=${body}`,
+      ],
+      { cwd: repoRoot },
+    );
+    const response = JSON.parse(stdout);
+    return {
+      ok: true,
+      issue_number: input.issueNumber,
+      obligation_id: input.obligationId,
+      authorization_comment_url: response?.html_url ?? null,
+      authorization_comment_id: response?.id ?? null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: "execution_obligation_authorization_post_failed",
+      message: extractGhErrorMessage(error),
+    };
+  }
+}
+
+export async function runMarkImplementIssuePickedUp(input, {
+  workspaceAuthorizationResolver = resolveMcpLaunchWorkspaceAuthorization,
+  now = () => new Date(),
+} = {}) {
+  if (
+    input == null
+    || !Number.isInteger(input.issueNumber)
+    || input.issueNumber <= 0
+    || typeof input.driver !== "string"
+    || !/^[a-z0-9._-]{1,40}$/i.test(input.driver)
+  ) {
+    return {
+      ok: false,
+      error: "implement_pickup_input_invalid",
+      message: "issueNumber and a simple 1-40 character driver identifier are required",
+    };
+  }
+  const branchValidation = validateImplementBranchName(input.branchName, input.issueNumber);
+  if (!branchValidation.ok) return branchValidation;
+  const repoRoot = await ensureGitRepo(input.repoPath);
+  const repoAuthorization = await authorizeImplementRepoRoot(
+    repoRoot,
+    workspaceAuthorizationResolver,
+  );
+  if (!repoAuthorization.ok) return repoAuthorization;
+  const { owner, name } = repoAuthorization;
+  const labelPath = `/repos/${owner}/${name}/labels/in-progress`;
+  try {
+    await execFile("gh", ["api", "--method", "GET", labelPath], { cwd: repoRoot });
+  } catch (error) {
+    const message = extractGhErrorMessage(error);
+    if (!/\b404\b|not found/i.test(message)) {
+      return { ok: false, error: "implement_pickup_label_read_failed", message };
+    }
+    try {
+      await execFile(
+        "gh",
+        [
+          "api",
+          "--method",
+          "POST",
+          `/repos/${owner}/${name}/labels`,
+          "-f",
+          "name=in-progress",
+          "-f",
+          "color=FBCA04",
+          "-f",
+          "description=An agent is actively working this issue via /implement",
+        ],
+        { cwd: repoRoot },
+      );
+    } catch (createError) {
+      return {
+        ok: false,
+        error: "implement_pickup_label_create_failed",
+        message: extractGhErrorMessage(createError),
+      };
+    }
+  }
+  try {
+    await execFile(
+      "gh",
+      [
+        "api",
+        "--method",
+        "POST",
+        `/repos/${owner}/${name}/issues/${input.issueNumber}/labels`,
+        "-f",
+        "labels[]=in-progress",
+      ],
+      { cwd: repoRoot },
+    );
+  } catch (error) {
+    return {
+      ok: false,
+      error: "implement_pickup_label_apply_failed",
+      message: extractGhErrorMessage(error),
+    };
+  }
+  const body =
+    `🛠️ Picked up by /implement - driver ${input.driver}, branch ` +
+    `\`${input.branchName}\`, ${now().toISOString()}.`;
+  try {
+    const { stdout } = await execFile(
+      "gh",
+      [
+        "api",
+        "--method",
+        "POST",
+        `/repos/${owner}/${name}/issues/${input.issueNumber}/comments`,
+        "-f",
+        `body=${body}`,
+      ],
+      { cwd: repoRoot },
+    );
+    const response = JSON.parse(stdout);
+    return {
+      ok: true,
+      issue_number: input.issueNumber,
+      branch: input.branchName,
+      label: "in-progress",
+      comment_url: response?.html_url ?? null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: "implement_pickup_comment_failed",
+      message: extractGhErrorMessage(error),
+    };
+  }
+}
+
+export async function runRecordExecutionObligation(input, {
+  workspaceAuthorizationResolver = resolveMcpLaunchWorkspaceAuthorization,
+} = {}) {
+  const validation = validateExecutionObligationInput(input);
+  if (!validation.ok) {
+    return {
+      ok: false,
+      error: "execution_obligation_input_invalid",
+      message: validation.errors.join("; "),
+      issue_number: input?.issueNumber ?? null,
+    };
+  }
+  const callerText = [
+    input.observedState,
+    input.impact,
+    input.obligation,
+    input.decisionRequest,
+    input.correctiveAction,
+    input.userAuthorization,
+    ...(input.evidence || []),
+    ...(input.verification || []),
+  ].filter((value) => typeof value === "string");
+  for (const [index, value] of callerText.entries()) {
+    const markerError = rejectReservedMarkerSequence(value, `caller_text[${index}]`);
+    if (markerError) {
+      return {
+        ok: false,
+        error: "execution_obligation_reserved_marker",
+        message: markerError,
+        issue_number: input.issueNumber,
+      };
+    }
+  }
+  const body = buildExecutionObligationBody(input);
+  const sensitiveError = detectSensitiveBodyContent(body);
+  if (sensitiveError) {
+    return {
+      ok: false,
+      error: "execution_obligation_body_rejected",
+      message: sensitiveError,
+      issue_number: input.issueNumber,
+    };
+  }
+  if (Buffer.byteLength(body, "utf8") > GITHUB_ISSUE_COMMENT_BODY_MAX) {
+    return {
+      ok: false,
+      error: "execution_obligation_body_too_large",
+      message: "Rendered execution-obligation record exceeds GitHub's issue-comment body limit",
+      issue_number: input.issueNumber,
+    };
+  }
+  const repoRoot = await ensureGitRepo(input.repoPath);
+  const repoAuthorization = await authorizeImplementRepoRoot(
+    repoRoot,
+    workspaceAuthorizationResolver,
+  );
+  if (!repoAuthorization.ok) {
+    return {
+      ...repoAuthorization,
+      error: repoAuthorization.error === "implement_repo_not_authorized"
+        ? "execution_obligation_repo_not_authorized"
+        : repoAuthorization.error,
+      issue_number: input.issueNumber,
+    };
+  }
+  const { owner, name } = repoAuthorization;
+  if (input.event === "resolved" && input.disposition === "wontfix") {
+    const authorizationReference = parseIssueCommentUrl(input.userAuthorization);
+    if (
+      authorizationReference == null
+      || authorizationReference.owner.toLowerCase() !== owner.toLowerCase()
+      || authorizationReference.name.toLowerCase() !== name.toLowerCase()
+      || authorizationReference.issueNumber !== input.issueNumber
+    ) {
+      return {
+        ok: false,
+        error: "execution_obligation_authorization_unverifiable",
+        message: "The wontfix authorization URL must reference this repository and issue",
+        issue_number: input.issueNumber,
+      };
+    }
+    const comments = await readIssueCommentsWithAuthors(
+      repoRoot, owner, name, input.issueNumber,
+    );
+    const trust = await resolveExecutionObligationTrust(
+      repoRoot,
+      owner,
+      name,
+      comments,
+    );
+    const authorization = comments.find(
+      (comment) => comment.id === authorizationReference.commentId,
+    );
+    if (
+      authorization == null
+      || !hasVerifiedStructuredWontfixAuthorization(
+        authorization,
+        comments,
+        trust,
+        input.issueNumber,
+        input.obligationId,
+      )
+    ) {
+      return {
+        ok: false,
+        error: "execution_obligation_authorization_unverifiable",
+        message:
+          "The referenced comment is not a structured wontfix authorization backed by an exact permission-checked source command",
+        issue_number: input.issueNumber,
+      };
+    }
+  }
+  const state = await readTrustedExecutionObligationState(
+    repoRoot, owner, name, input.issueNumber,
+  );
+  if (!state.ok) return { ...state, issue_number: input.issueNumber };
+  const isOpen = state.open_obligation_ids.includes(input.obligationId);
+  if (input.event === "opened" && isOpen) {
+    return {
+      ok: true,
+      issue_number: input.issueNumber,
+      obligation_id: input.obligationId,
+      event: input.event,
+      already_recorded: true,
+    };
+  }
+  if (input.event !== "opened" && !isOpen) {
+    return {
+      ok: false,
+      error: "execution_obligation_not_open",
+      message: `Execution obligation '${input.obligationId}' is not open`,
+      issue_number: input.issueNumber,
+    };
+  }
+  try {
+    const { stdout } = await execFile(
+      "gh",
+      [
+        "api",
+        "--method",
+        "POST",
+        `/repos/${owner}/${name}/issues/${input.issueNumber}/comments`,
+        "-f",
+        `body=${body}`,
+      ],
+      { cwd: repoRoot },
+    );
+    const response = JSON.parse(stdout);
+    return {
+      ok: true,
+      issue_number: input.issueNumber,
+      obligation_id: input.obligationId,
+      event: input.event,
+      disposition: input.disposition ?? null,
+      comment_url: response?.html_url ?? null,
+      comment_id: response?.id ?? null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: "execution_obligation_post_failed",
+      message: extractGhErrorMessage(error),
+      issue_number: input.issueNumber,
+      next_action: "retry_after_resolving_gh_failure",
+    };
   }
 }
 
@@ -11087,12 +12167,6 @@ export async function getThreatUnmappedControls(project) {
   return request("GET", "/api/v1/analysis/risk-control/threat-unmapped-controls", { params: { project } });
 }
 
-export async function getThreatsInsufficientEffectiveness(project, { minEffectiveness, asOf, freshnessWindowDays } = {}) {
-  return request("GET", "/api/v1/analysis/risk-control/threats-insufficient-effectiveness", {
-    params: { project, minEffectiveness, asOf, freshnessWindowDays },
-  });
-}
-
 // ---------------------------------------------------------------------------
 // Verification Result constants & API functions
 // ---------------------------------------------------------------------------
@@ -12437,6 +13511,16 @@ export async function runPostFinalReport(input) {
   // Cheap in-memory checks BEFORE any network I/O — same rationale as in
   // runPostDecisionRecord (codex cycle-2 F3).
   const body = buildFinalReport(rest);
+  const nonActionError = detectDeferralDisposition(body);
+  if (nonActionError) {
+    return {
+      ok: false,
+      error: "final_report_unresolved_work_excuse",
+      message: nonActionError,
+      issue_number: rest.issueNumber,
+      next_action: "fix_and_verify_the_real_problem_then_retry",
+    };
+  }
   const sensitiveError = detectSensitiveBodyContent(body);
   if (sensitiveError) {
     return {
@@ -13297,6 +14381,8 @@ const DEFERRAL_TIER1_PATTERNS = Object.freeze([
   /\b(?:will be |is |are |gets? |get )?(?:fixed|handled|landed?|done) (?:in|as) (?:a |the )?(?:follow[- ]?up|subsequent) (?:PR|issue|pull request)\b/i,
   /\bTBD later\b/i,
   /\bto be (?:done|filed|landed?) (?:later|separately)\b/i,
+  /\b(?:not|won'?t|will\s+not|cannot|can'?t|skip(?:ping)?)\s+(?:be\s+)?(?:fix|fixing|address|addressing|repair|repairing|resolve|resolving|handle|handling)\b[^.\n]{0,80}\b(?:because|since|as)\b[^.\n]{0,60}\b(?:pre-existing|unrelated|outside\s+(?:this\s+)?(?:PR'?s?\s+)?scope|out\s+of\s+scope|owned\s+by)\b/i,
+  /\b(?:pre-existing|unrelated|outside\s+(?:this\s+)?(?:PR'?s?\s+)?scope|out\s+of\s+scope|owned\s+by[^,.;\n]{0,40})\b[^.\n]{0,80}(?:\b(?:so|therefore|means)\b|[;:])[^.\n]{0,60}\b(?:not|won'?t|will\s+not|skip(?:ping)?|left\s+unresolved|leave\s+unresolved)\b/i,
 ]);
 
 // Returns null when the text is clean, else a short description of the first
@@ -17045,6 +18131,57 @@ export async function runAssertCompletion(input) {
       issue_number: issueNumber,
       assertions,
       final_report: null,
+    };
+  }
+
+  // A discovered real problem is a durable obligation of the current
+  // /implement run. Both the Phase D readiness record and Phase E completion
+  // fail closed while a trusted issue-thread obligation remains open. Cached
+  // arrays and caller summaries are intentionally ignored.
+  let obligationRepoRoot;
+  let obligationOwnerRepo;
+  try {
+    obligationRepoRoot = await ensureGitRepo(repoPath);
+    obligationOwnerRepo = await getOwnerRepo(obligationRepoRoot);
+  } catch (error) {
+    return {
+      ok: false,
+      error: "completion_obligation_state_failed",
+      message: error.message,
+      issue_number: issueNumber,
+      assertions,
+      final_report: null,
+    };
+  }
+  const obligationState = await readTrustedExecutionObligationState(
+    obligationRepoRoot,
+    obligationOwnerRepo.owner,
+    obligationOwnerRepo.name,
+    issueNumber,
+  );
+  if (!obligationState.ok) {
+    return {
+      ok: false,
+      error: obligationState.error,
+      message: obligationState.message,
+      issue_number: issueNumber,
+      assertions,
+      final_report: null,
+      next_action: "repair_execution_obligation_record_and_retry",
+    };
+  }
+  if (!obligationState.clear) {
+    return {
+      ok: false,
+      error: "completion_open_execution_obligations",
+      message:
+        `gc_assert_completion refuses readiness/completion while execution obligations remain open: ` +
+        obligationState.open_obligation_ids.join(", "),
+      issue_number: issueNumber,
+      open_obligation_ids: obligationState.open_obligation_ids,
+      assertions,
+      final_report: null,
+      next_action: "fix_and_resolve_open_obligations_then_retry",
     };
   }
 

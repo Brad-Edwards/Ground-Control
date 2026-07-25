@@ -24,6 +24,14 @@ public final class GraphIds {
         return GraphEntityType.ARTIFACT_REFERENCE.name() + ":" + HexFormat.of().formatHex(digest.digest());
     }
 
+    public static String workflowWorkItemReferenceNodeId(UUID projectId, String repository, int issueNumber) {
+        var digest = sha256();
+        updateLengthFramed(digest, projectId.toString());
+        updateLengthFramed(digest, repository);
+        updateLengthFramed(digest, Integer.toString(issueNumber));
+        return GraphEntityType.WORK_ITEM_REFERENCE.name() + ":" + HexFormat.of().formatHex(digest.digest());
+    }
+
     private static MessageDigest sha256() {
         try {
             return MessageDigest.getInstance("SHA-256");

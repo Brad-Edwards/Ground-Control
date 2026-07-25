@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.keplerops.groundcontrol.TestUtil;
+import com.keplerops.groundcontrol.domain.audit.service.AsOfRevisionResolver;
 import com.keplerops.groundcontrol.domain.baselines.model.Baseline;
 import com.keplerops.groundcontrol.domain.baselines.repository.BaselineRepository;
 import com.keplerops.groundcontrol.domain.baselines.service.BaselineService;
@@ -22,15 +23,14 @@ import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.repository.ProjectRepository;
 import com.keplerops.groundcontrol.domain.requirements.model.Requirement;
 import jakarta.persistence.EntityManager;
-import jakarta.persistence.Query;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -48,18 +48,15 @@ class BaselineServiceTest {
     @Mock
     private ProjectRepository projectRepository;
 
+    @SuppressWarnings("UnusedVariable") // Injected into BaselineService via @InjectMocks; Error Prone misses the wire.
     @Mock
     private EntityManager entityManager;
 
     @Mock
-    private Query nativeQuery;
+    private AsOfRevisionResolver asOfRevisionResolver;
 
+    @InjectMocks
     private BaselineService service;
-
-    @BeforeEach
-    void setUp() {
-        service = new BaselineService(baselineRepository, projectRepository, entityManager);
-    }
 
     private Project makeProject() {
         var project = new Project("test-project", "Test Project");
@@ -103,9 +100,7 @@ class BaselineServiceTest {
             when(projectRepository.findById(PROJECT_ID)).thenReturn(Optional.of(project));
             when(baselineRepository.existsByProjectIdAndName(PROJECT_ID, "v1.0"))
                     .thenReturn(false);
-            when(entityManager.createNativeQuery("SELECT COALESCE(MAX(rev), 0) FROM revinfo"))
-                    .thenReturn(nativeQuery);
-            when(nativeQuery.getSingleResult()).thenReturn(42);
+            when(asOfRevisionResolver.currentRevision()).thenReturn(Optional.of(42));
             when(baselineRepository.save(any(Baseline.class))).thenAnswer(inv -> inv.getArgument(0));
 
             var command = new CreateBaselineCommand(PROJECT_ID, "v1.0", "First release");
@@ -115,6 +110,27 @@ class BaselineServiceTest {
             assertThat(result.getDescription()).isEqualTo("First release");
             assertThat(result.getRevisionNumber()).isEqualTo(42);
             assertThat(result.getProject().getId()).isEqualTo(PROJECT_ID);
+        }
+
+        @Test
+        void mapsEmptyRevisionToOriginSentinelWhenNoRevisionsExistYet() {
+            // AsOfRevisionResolver.currentRevision() returns Optional.empty() when revinfo has no
+            // rows at all (nothing audited yet). Baseline.revisionNumber is a persisted int and
+            // getRequirementsAtRevision(0) is defined to return List.of() — BaselineService owns
+            // mapping the resolver's honest "no revision" to that local origin sentinel; the
+            // resolver itself must never invent a 0 revision (see AsOfRevisionResolverTest).
+            var project = makeProject();
+            when(projectRepository.findById(PROJECT_ID)).thenReturn(Optional.of(project));
+            when(baselineRepository.existsByProjectIdAndName(PROJECT_ID, "v1.0"))
+                    .thenReturn(false);
+            when(asOfRevisionResolver.currentRevision()).thenReturn(Optional.empty());
+            when(baselineRepository.save(any(Baseline.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var command = new CreateBaselineCommand(PROJECT_ID, "v1.0", "First release");
+            var result = service.create(command);
+
+            // 0 is the Baseline aggregate's origin sentinel, mapped here from Optional.empty().
+            assertThat(result.getRevisionNumber()).isZero();
         }
 
         @Test

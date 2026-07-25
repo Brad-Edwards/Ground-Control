@@ -15,7 +15,7 @@ import type {
   TestRunStepResultResponse,
 } from "@/types/api";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router";
 
 /**
  * TC-009 / ADR-050 — Browser-based manual test execution runner.

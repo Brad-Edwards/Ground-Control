@@ -11,7 +11,7 @@ import {
 import type { RelationResponse } from "@/types/api";
 import { Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router";
 
 function RelationRow({
   rel,

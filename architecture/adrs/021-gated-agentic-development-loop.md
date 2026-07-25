@@ -133,3 +133,25 @@ for the operative start-then-poll loop prose.
 **2026-07-11 (issue #1346, ADR-089 reversal of the Phase E recommendation clause).** The 2026-06-13 (#1156) amendment above bundled two unrelated changes. Its `plain_english_outcome` clause remains in force unchanged. Its `next_issue_recommendation` clause is reversed: `gc_close_issue_after_merge`'s Phase E close envelope no longer performs a best-effort next-issue lookup or returns `next_issue_recommendation` / `next_issue_recommendation_reason` / `next_issue_recommendation_error` in any form, including `null`. Step 20 now returns only the linked-PR resolution, merge-state verification, and idempotent close result. The one-human-touchpoint contract, the merge-verification gate, and every other Phase E decision in this ADR are unaffected. See ADR-089 for the full retirement decision.
 
 **2026-07-15 (issue #1399, GC-P027 Release Please adoption).** The issue-#848 changelog-fragment convention (the Phase B amendment above) is **retired**: Release Please now owns `CHANGELOG.md` and the product version, feature PRs no longer file `changelog.d/` fragments or edit `CHANGELOG.md`, and the Towncrier machinery (`changelog.d/`, `towncrier.toml`, `run_changelog_fragment_check`, the `.gitattributes` `merge=union` rule, and the Stop-hook fragment vocabulary) is removed. The changelog is generated from Conventional Commit history on `main`. The #901 conventional-commit PR-title rule (blockquote above) is now enforced **authoritatively in CI** by `.github/workflows/pr-title.yml` (`amannn/action-semantic-pull-request`), in addition to the skill's local check, using the same canonical type vocabulary and lowercase-subject rule. `run_changelog_fragment_check` is replaced by `run_version_mirror_consistency_check` (code `version-mirror-drift`), and `gc_render_pr_body` gains a `changelog_mode` input (`fragments` default | `release-please`), which the workflow passes for any repo that ships a root `release-please-config.json`, so Release Please repos require no fragment (#1336). The gate model (one human touchpoint, phase structure A–E, zero deferral, cycle caps) is unchanged; only the changelog artifact and its ownership move. See ADR-063 (2026-07-15 amendment) and `architecture/notes/release-please-preflight.md`; the `workflow-guardrail-sync` rule keeps `skills/implement`, `docs/DEVELOPMENT_WORKFLOW.md`, `docs/WORKFLOW.md`, ADR-021/029/031/036, and the /quickfix lane in lockstep.
+
+**2026-07-25 (issue #1416, execution principles and persistence).** `/implement`
+now loads `skills/implement/_development-principles.md` before configuration,
+routing, issue resolution, branch preparation, or delegation and propagates its
+immutable execution contract to every delegated step. Branch preparation is a
+same-checkout operation through `gc_prepare_implement_branch`; the workflow does
+not create or switch to another worktree. Discovered defects, failing checks,
+security concerns, workflow failures, and quality problems remain execution
+obligations regardless of provenance or the initial anticipated diff. A run may
+pause only for a required user decision, a hard external dependency, or an
+architectural/security decision that cannot safely be made under existing
+authority; workload and file count are not pause reasons. Open obligations are
+durable issue-thread state and block both pre-merge readiness and post-merge
+completion. The one-human-touchpoint contract and existing review caps are
+unchanged: a cap can pause a run but cannot erase the remaining obligations.
+The same canonical principles make local verification risk-proportionate:
+implementation and review-fix loops batch related edits and use the narrowest
+behavioral tests, widening for shared, cross-cutting, security-sensitive, or
+observably wider risk. Repository-wide completion and policy gates run once at
+their meaningful final-tree boundary rather than after every small fix, and
+Step 7 owns one mandatory pre-publish pre-commit boundary. No mandatory
+completion, review, CI, SonarCloud, or final policy gate is removed.

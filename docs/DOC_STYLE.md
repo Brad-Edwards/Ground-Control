@@ -183,7 +183,10 @@ Changes to any doc-coverage gate surface - `mcp/ground-control/index.js`,
 `mcp/ground-control/lib.js`, `tools/policy/checks.py`, `tools/install-vale.sh`,
 `.vale.ini`, or this file - trigger the `doc-coverage-gate-sync` rule per
 ADR-054, which requires this file and ADR-054 to stay current with the gate
-surface they describe.
+surface they describe. A new policy check in `tools/policy/checks.py` records
+its contract in the ADR that owns the surface it guards (for example, the ACES
+concept-family crosswalk check under ADR-084 §4); this file carries the
+gate-surface trigger inventory above, not per-check contracts.
 
 As of #1399 (GC-P027) Release Please owns `CHANGELOG.md`: contributors do not
 hand-edit it or file `changelog.d/` fragments (that Towncrier convention was
@@ -425,3 +428,34 @@ changes are recorded in an amendment to ADR-054 and the changelog fragment, not
 a documentation edit; the documentation-coverage classifier, Vale rule set,
 `tools/install-vale.sh`, and `.vale.ini` are unchanged and no new DOC_STYLE.md
 style rule is established.
+
+The `threats-insufficient-effectiveness` action on the `gc_risk_control_mapping`
+tool, and its `as_of` / `min_effectiveness` / `freshness_window_days` parameters,
+were removed from `mcp/ground-control/index.js` and the backing
+`getThreatsInsufficientEffectiveness` helper was removed from
+`mcp/ground-control/lib.js` (issue #1309, ADR-084 §5): the action called a REST
+route that `RiskControlAnalysisController` never exposed (ADR-089/V199 retired
+the composed GRC surface without ever wiring this one), and its `as_of`
+parameter was the last surviving divergent as-of surface in the repo. Per the
+convention above, retiring a dead tool-input surface is recorded in an
+amendment to ADR-054, not a documentation edit; the documentation-coverage
+classifier, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are
+unchanged and no new DOC_STYLE.md style rule is established.
+
+The `/implement` execution-contract policy check added for issue #1416 records
+its workflow contract in ADR-021, ADR-027, ADR-029, ADR-031, ADR-036, and the
+corresponding workflow documentation. Its MCP descriptions must name every
+enforced tool input and remain covered by the live description-parity test.
+This follows the existing convention for policy additions: the owning ADRs
+define behavior, while this document records the documentation obligation.
+
+The issue #1416 review hardening of the same MCP surfaces (launch-time
+workspace/origin binding, sanitized checkout, server-owned pickup writes,
+permission-checked obligation signers, structured `wontfix` authorization, and
+redacted branch results) is documented by the existing ADR-029, ADR-036, and
+ADR-054 amendments plus `docs/DEVELOPMENT_WORKFLOW.md`; it does not add a new
+documentation style rule.
+
+The issue #1416 risk-proportionate verification correction is likewise a
+workflow-contract clarification documented in those workflow ADRs and docs;
+it changes no documentation classification or style rule.

@@ -624,6 +624,9 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "197", // V197: grc_assessment_run audit (GC-GRC-016 audit parity)
                         "198", // V198: operator_signal_audit append-only log (GC-O009 (b), #1279)
                         "199", // V199: retire GRC product surface (ADR-089, #1346)
-                        "200"); // V200: drops V198 with the Temporal orchestration lane (#1359)
+                        "200", // V200: drops V198 with the Temporal orchestration lane (#1359)
+                        "201", // V201: age_graph_snapshot.source_revision (#1309, ADR-084 §5)
+                        "202", // V202: document_audit — Document joins the audited spine (#1309)
+                        "203"); // V203: workflow telemetry audit shadows for graph projection (#1311)
     }
 }

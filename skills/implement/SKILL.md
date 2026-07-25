@@ -7,6 +7,33 @@ disable-model-invocation: true
 
 # Implement (orchestrator): $ARGUMENTS
 
+## Development principles — load before every other action
+
+The parent's first executable action is to read
+[`_development-principles.md`](./_development-principles.md) in full. This
+happens before configuration lookup, route resolution, issue resolution,
+branch handling, or delegation.
+
+Capture the canonical invocation root at the same time and create the
+parent-owned immutable execution contract:
+
+```json
+{
+  "schema": "gc.implement.execution-contract/v1",
+  "principles_source": "skills/implement/_development-principles.md",
+  "principles_sha256": "<sha256 of the exact UTF-8 file bytes>",
+  "invocation_root": "<canonical absolute checkout root>",
+  "checkout_mode": "same_checkout"
+}
+```
+
+Cache this object as `execution_contract` and the full file contents as
+`development_principles_verbatim`. The parent validates both before every
+route or dispatch. Returned step state may add fields but must never replace
+`execution_contract`, `development_principles_verbatim`, `invocation_root`, or
+`checkout_mode`; discard an attempted replacement and fail the step with
+`execution_contract_mutation_attempt`.
+
 This skill is the canonical, agent-neutral implementation of the Ground Control `/implement` workflow. It runs from Claude Code, Codex, or Cursor CLI against the same content, with repo-specific values supplied by `gc_get_repo_ground_control_context` (per ADR-027).
 
 The workflow handles the entire lifecycle: plan, implement, verify, commit, push, PR, CI, reviews, fix, requirement transitions, traceability reconciliation. **The user's only synchronous touchpoint is PR merge** (per ADR-029). Plans, review findings, and decisions on findings are recorded as comments on the GitHub issue thread so the durable record survives PR merge/close.
@@ -23,11 +50,11 @@ This SKILL is a thin orchestrator. The 716-line monolithic prose that used to li
 
 **For each step in the list below**, the orchestrator does the following:
 
-1. Resolve the route through the `gc_resolve_workflow_route` MCP tool using the stage id (left column of the table). The resolver reads `.ground-control.yaml` and returns `{provider, agent, model, tier, fallback_policy}`. If routing is disabled or unavailable, follow the returned fallback policy.
-2. **If `agent: subagent`**: spawn an `Agent` (or driver-equivalent) subagent with the resolved model. The subagent's prompt is verbatim: *"Execute `skills/implement/steps/step-NN-<id>.md` against issue {issue_number}. Cached state from prior steps: `{cached_state_json}`. Return a single short envelope `{status, cached_for_next_step}` and nothing else."* Await the envelope.
+1. Revalidate the immutable execution contract and principles digest, then resolve the route through the `gc_resolve_workflow_route` MCP tool using the stage id (left column of the table). The resolver reads `.ground-control.yaml` and returns `{provider, agent, model, tier, fallback_policy}`. If routing is disabled or unavailable, follow the returned fallback policy.
+2. **If `agent: subagent`**: spawn an `Agent` (or driver-equivalent) subagent with the resolved model. The subagent's prompt is verbatim: *"Development principles (binding, verbatim):\n{development_principles_verbatim}\n\nImmutable execution contract: `{execution_contract_json}`.\n\nExecute `skills/implement/steps/step-NN-<id>.md` against issue {issue_number}. Cached state from prior steps: `{cached_state_json}`. Preparation, acknowledgment, and partial progress are not terminal success. Apply corrections and continue the requested operation unless a documented pause class applies. Record every discovered real problem as a current execution obligation; fix and verify it before returning success. Return a single short envelope `{status, cached_for_next_step}` and nothing else."* Await the envelope.
 3. **If `agent: parent`**: read the step file inline and execute. The parent runs the step locally.
 4. **Telemetry**: when `cfg.telemetry.enabled` is true, call `gc_log_step_telemetry` at the end of the step with `{step, tier, model, wall_time_ms, outcome, input_tokens: null, output_tokens: null}`. `wall_time_ms` is measured around the dispatch.
-5. Merge the returned `cached_for_next_step` fields into the running state passed to the next step.
+5. Reject a successful envelope that reports only instruction reading, inspection, planning, acknowledgment, or partial progress. Validate that parent-owned execution-contract fields are unchanged, then merge the other returned `cached_for_next_step` fields into the running state passed to the next step.
 
 The parent never sees verbatim subagent prose, raw `gh`/`git` output, full file contents, raw CI logs, raw Sonar payloads, or per-finding review bodies; those stay in the subagent's context or server-side in the MCP tool layer.
 
@@ -64,7 +91,7 @@ Steps 3.5, 12, 13, 14, 18, 19 are intentional tombstones (Step 3.5 GRC screening
 - **Step 4 work-already-complete branch**: when Step 4's envelope returns `work_already_complete: true`, skip Steps 4.4 / 4.5 / 5 / 6 / 6.5 / 6.6 / 7 / 8 / 9 / 10 / 11 (there's no diff to push) and jump to Step 15 to reconcile Ground Control state. This branch has **no PR** - the code it documents already shipped under an earlier merge - so its Step 15/16 transition + reconcile run immediately (the post-merge gate is for *this* run's PR, and there is none); it records state via Step 4's completion comment rather than the merge-gated Step 17 `post_merge` report.
 - **Step 10 CI failure**: on `ci_conclusion != "success"`, fix locally, return to Step 7 (re-stage), Step 8 (commit + push), then Step 10 again.
 - **Step 11 SonarCloud findings**: same loop - fix, push, re-run Step 10, then Step 11. Cap: 5 SonarCloud iterations.
-- **Steps 6.5 / 6.6 escalated or capped**: STOP and wait for the user. The label set in Step 1 stays until the issue is closed at Phase E. Do not push commits while waiting.
+- **Steps 6.5 / 6.6 escalated or capped**: record every remaining real finding as an open execution obligation and post a concrete decision request under the applicable documented pause class. Wait for the required decision without pushing; resume the same obligations afterward. The label set in Step 1 stays until the issue is closed at Phase E.
 - **Post-merge reconciliation ordering (issue #963)**: the requirement status transition (Step 15), traceability reconciliation (Step 16), and the reconciled completion record (Step 17 `phase="post_merge"`) run in **Phase E, after the PR merges** - never pre-merge. Phase D's terminal signal is Step 17 with `phase="pre_merge"`: a **readiness** record (carrying a `ready_for_review` phase marker - *not* a `gc:final-report` marker - that does NOT run the traceability assertion, since the requirement is still DRAFT and links do not exist yet) that means "all automated gates are green; ready for the user to review and merge." `gc_assert_completion` with `phase="post_merge"` is **merge-gated** - it refuses with `completion_pr_not_merged` unless the linked PR is merged (`merged_at` non-null AND state `MERGED`) - then sequences the traceability-reconciliation assertion (`traceability_reconciled` marker) and `gc_post_final_report` in one deterministic call. This marker is enforced server-side; without it the post-merge final report refuses. The post-merge final report must reflect the reconciled Ground Control graph; the pre-merge readiness record must not claim a reconciliation that has not happened. Do not surface any earlier user-facing "complete" message - Phase D's readiness record is "ready to merge," not "done"; escalations before Phase E are because input is needed, not because the workflow is finished.
 - **Plain-English outcome (issue #1156)**: both Step 17 invocations pass `plain_english_outcome` to `gc_assert_completion`. The tool renders it as the outcome section before the structured evidence, so both the pre-merge readiness record and the post-merge final report explain what the change means in product/operator terms without weakening CI, SonarCloud, or traceability gates.
 - **Issue close mechanism (issue #1058 + #1156)**: the GitHub issue is closed at **Phase E (Step 20)** by `gc_close_issue_after_merge`, which verifies the linked PR is merged (`merged_at` non-null AND state `MERGED`) before running the close. The `Closes #<issue-number>` keyword in the PR body (rendered by `gc_render_pr_body` in Step 9) remains as the GitHub UI cross-link and may auto-close the issue at merge time; Step 20 is the idempotent backup that no-ops when the issue is already closed. **Because reconciliation now runs post-merge (issue #963), the issue may auto-close at merge BEFORE Phase E runs — that is expected and safe.** Phase E's transition (Step 15), reconciliation (Step 16), and final report (Step 17) operate on the requirement graph and the issue thread regardless of the issue's open/closed state (you can transition a requirement and comment on a closed issue), so the auto-close does not block Phase E; Step 20 then no-ops. The `in-progress` label is operational-only; its removal is optional best-effort and no longer a mandatory step gate (#1103). Closing from the agent without the merge-verification gate decouples the close from the merge - an unmerged or rolled-back PR would leave a closed issue with no shipped code behind it, and GitHub does not re-open on revert. Phase E is invoked by re-running `/implement <issue>` after the merge; Step 1's orchestrator detects the Phase-D-complete state - the `ready_for_review` marker present + a merged linked PR + post-merge reconciliation not yet recorded (no `gc:final-report` marker) - and short-circuits to **Step 15** (the start of Phase E: transition → reconcile → post-merge report → close), not back into Phase A–D. The detection keys on the reconciliation-marker state, NOT on the issue being open, precisely because the issue may have auto-closed at merge. If the PR exists but is not yet merged, Phase D is complete and the run STOPS awaiting the user's merge; it does not redo Phase A–D. `gc_close_issue_after_merge` performs only linked-PR resolution, merge-state verification, and the idempotent close (ADR-089); it does not list open issues, rank candidates, or return a next-issue recommendation.

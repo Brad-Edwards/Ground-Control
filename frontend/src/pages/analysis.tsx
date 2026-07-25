@@ -13,7 +13,7 @@ import { LINK_TYPES } from "@/types/api";
 import * as Tabs from "@radix-ui/react-tabs";
 import { Activity } from "lucide-react";
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router";
 
 export function Analysis() {
   const { activeProject, isLoading } = useProjectContext();

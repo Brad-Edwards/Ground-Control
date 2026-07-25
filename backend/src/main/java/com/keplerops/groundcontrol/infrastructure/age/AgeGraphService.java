@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.keplerops.groundcontrol.domain.audit.ActorHolder;
+import com.keplerops.groundcontrol.domain.audit.service.AsOfRevisionResolver;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.graph.GraphTraversalLimits;
@@ -69,6 +70,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * row), repeatable-read raises no write-serialization conflict for concurrent publishers, which are
  * additionally serialized by an advisory lock.
  */
+// This is an infrastructure adapter; ArchitectureTest reserves @Service for ..service.. packages.
+@SuppressWarnings("java:S5673")
 @Component
 @Transactional(isolation = Isolation.REPEATABLE_READ)
 public class AgeGraphService implements GraphClient, MixedGraphClient {
@@ -260,7 +263,22 @@ public class AgeGraphService implements GraphClient, MixedGraphClient {
             "attemptNo",
             "contentHash",
             "kind",
-            "externalIdentifier");
+            "externalIdentifier",
+            // Workflow reporting graph projection (ADR-061 amendment, #1311). Only the bounded
+            // correlation, lifecycle, and phase-event fields needed for traversal are admitted.
+            "repo",
+            "issueNumber",
+            "workflowType",
+            "runtimeDriver",
+            "finalState",
+            "outcome",
+            "provenance",
+            "endedAt",
+            "phase",
+            "eventType",
+            "cycleIndex",
+            "occurredAt",
+            "durationMs");
     // AGE's ag_catalog.cypher() function takes cstring/cstring/agtype. Its first two arguments
     // are parsed at SQL parse time by AGE's parser hook, so they cannot be JDBC bind parameters
     // — they must be SQL literals. The third argument (params agtype) is the user-data carrier
@@ -289,6 +307,7 @@ public class AgeGraphService implements GraphClient, MixedGraphClient {
     private final ProjectRepository projectRepository;
     private final AgeGraphSnapshotRepository snapshotRepository;
     private final AgeSnapshotCleaner snapshotCleaner;
+    private final AsOfRevisionResolver asOfRevisionResolver;
 
     public AgeGraphService(
             JdbcTemplate jdbcTemplate,
@@ -296,13 +315,15 @@ public class AgeGraphService implements GraphClient, MixedGraphClient {
             GraphProjectionRegistryService graphProjectionRegistryService,
             ProjectRepository projectRepository,
             AgeGraphSnapshotRepository snapshotRepository,
-            AgeSnapshotCleaner snapshotCleaner) {
+            AgeSnapshotCleaner snapshotCleaner,
+            AsOfRevisionResolver asOfRevisionResolver) {
         this.jdbcTemplate = jdbcTemplate;
         this.ageProperties = ageProperties;
         this.graphProjectionRegistryService = graphProjectionRegistryService;
         this.projectRepository = projectRepository;
         this.snapshotRepository = snapshotRepository;
         this.snapshotCleaner = snapshotCleaner;
+        this.asOfRevisionResolver = asOfRevisionResolver;
     }
 
     @Override
@@ -319,6 +340,13 @@ public class AgeGraphService implements GraphClient, MixedGraphClient {
         // Serialize concurrent publishers: only one materialization at a time builds a snapshot and
         // advances the active version. Held until this transaction ends (ADR-062).
         jdbcTemplate.execute("SELECT pg_advisory_xact_lock(" + GRAPH_PUBLICATION_ADVISORY_LOCK_KEY + ")");
+
+        // ADR-084 §5: resolve the as-of revision here, strictly after the advisory lock and
+        // strictly before buildProjection() below, so this query and every contributor read
+        // inside the projection share the same REPEATABLE_READ snapshot (established at the
+        // transaction's first statement — the advisory lock above). Empty means no revision has
+        // ever been created yet (a fresh database); that stays NULL, never a fabricated 0/-1.
+        Integer sourceRevision = asOfRevisionResolver.currentRevision().orElse(null);
 
         long version = snapshotRepository.nextVersion();
         String snapshotGraph = validateGraphName(baseGraph + "_v" + version);
@@ -349,14 +377,16 @@ public class AgeGraphService implements GraphClient, MixedGraphClient {
                 SNAPSHOT_SCOPE_GLOBAL,
                 projection.nodes().size(),
                 projection.edges().size(),
+                sourceRevision,
                 ActorHolder.get());
 
         log.info(
-                "graph_snapshot_published: graph={} nodes={} edges={} version={}",
+                "graph_snapshot_published: graph={} nodes={} edges={} version={} sourceRevision={}",
                 snapshotGraph,
                 projection.nodes().size(),
                 projection.edges().size(),
-                version);
+                version,
+                sourceRevision);
 
         // Drop snapshots beyond retention only AFTER this swap commits — never before, so a reader
         // mid-resolution cannot lose its snapshot. Skipped when no transaction synchronization is
