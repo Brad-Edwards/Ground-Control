@@ -27,10 +27,10 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -48,18 +48,15 @@ class BaselineServiceTest {
     @Mock
     private ProjectRepository projectRepository;
 
+    @SuppressWarnings("UnusedVariable") // Injected into BaselineService via @InjectMocks; Error Prone misses the wire.
     @Mock
     private EntityManager entityManager;
 
     @Mock
     private AsOfRevisionResolver asOfRevisionResolver;
 
+    @InjectMocks
     private BaselineService service;
-
-    @BeforeEach
-    void setUp() {
-        service = new BaselineService(baselineRepository, projectRepository, entityManager, asOfRevisionResolver);
-    }
 
     private Project makeProject() {
         var project = new Project("test-project", "Test Project");
