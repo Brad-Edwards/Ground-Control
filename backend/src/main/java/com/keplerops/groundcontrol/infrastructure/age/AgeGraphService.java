@@ -70,6 +70,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * row), repeatable-read raises no write-serialization conflict for concurrent publishers, which are
  * additionally serialized by an advisory lock.
  */
+// This is an infrastructure adapter; ArchitectureTest reserves @Service for ..service.. packages.
+@SuppressWarnings("java:S5673")
 @Component
 @Transactional(isolation = Isolation.REPEATABLE_READ)
 public class AgeGraphService implements GraphClient, MixedGraphClient {

@@ -9,10 +9,10 @@ import com.keplerops.groundcontrol.domain.audit.repository.RevisionRepository;
 import com.keplerops.groundcontrol.domain.audit.service.AsOfRevisionResolver;
 import java.time.Instant;
 import java.util.Optional;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -22,12 +22,8 @@ class AsOfRevisionResolverTest {
     @Mock
     private RevisionRepository revisionRepository;
 
+    @InjectMocks
     private AsOfRevisionResolver resolver;
-
-    @BeforeEach
-    void setUp() {
-        resolver = new AsOfRevisionResolver(revisionRepository);
-    }
 
     @Test
     void resolveAsOf_convertsInstantToExactEpochMillisBoundary() {
