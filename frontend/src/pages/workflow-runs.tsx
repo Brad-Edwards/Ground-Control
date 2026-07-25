@@ -10,7 +10,7 @@ import type {
   WorkflowRunResponse,
 } from "@/types/api";
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams } from "react-router";
 
 // ---------------------------------------------------------------------------
 // Formatting helpers

@@ -8,7 +8,7 @@ import {
   useEffect,
   useMemo,
 } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router";
 
 interface ProjectContextValue {
   projects: ProjectResponse[];

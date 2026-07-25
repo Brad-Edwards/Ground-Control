@@ -14,7 +14,7 @@ import type {
 } from "@/types/api";
 import { ExternalLink, Pencil } from "lucide-react";
 import { useCallback, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router";
 
 interface RequirementDetailPanelProps {
   requirement: RequirementResponse;
