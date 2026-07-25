@@ -7,7 +7,7 @@ import {
   Outlet,
   useLocation,
   useParams,
-} from "react-router-dom";
+} from "react-router";
 
 function NavItem({
   to,

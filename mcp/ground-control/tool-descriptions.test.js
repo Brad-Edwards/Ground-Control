@@ -70,6 +70,21 @@ const REQUIRED_FIELD_REGISTRY = {
   gc_threat_model: [
     "uid", "title", "threat_source", "threat_event", "effect",
   ],
+  gc_prepare_implement_branch: [
+    "repo_path", "invocation_root", "issue_number", "branch_name",
+    "base_branch", "checkout_mode",
+  ],
+  gc_record_execution_obligation: [
+    "obligation_id", "event", "category", "observed_state", "evidence",
+    "impact", "obligation", "pause_class", "decision_request", "disposition",
+    "corrective_action", "verification", "user_authorization",
+  ],
+  gc_mark_implement_issue_picked_up: [
+    "repo_path", "issue_number", "driver", "branch_name",
+  ],
+  gc_authorize_execution_obligation_wontfix: [
+    "repo_path", "issue_number", "obligation_id", "authorization_source_url",
+  ],
 };
 
 describe("MCP tool description parity (issue #1169)", { timeout: 30000 }, () => {

@@ -20,7 +20,7 @@ import type { UpdateRequirementRequest } from "@/types/api";
 import * as Tabs from "@radix-ui/react-tabs";
 import { Archive, ArrowLeft, Copy } from "lucide-react";
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router";
 
 export function RequirementDetail() {
   const { id, projectId } = useParams<{ id: string; projectId: string }>();

@@ -114,6 +114,12 @@ function makeCompletionShimRepo({
   commentIdSeq = [9500, 9501, 9502],
   prNumber = 42,
   prMerged = true,
+  permissions = {
+    fake: "write",
+    "other-collaborator": "write",
+    automation: "write",
+    "repository-owner": "admin",
+  },
 } = {}) {
   // We need to handle multiple POSTs. Use a counter in a wrapper script.
   // Build a shim that cycles through commentIdSeq for each POST call.
@@ -143,6 +149,10 @@ function makeCompletionShimRepo({
   const ghHandler = {
     routes: [
       {
+        argv_prefix: ["api", "user", "--jq", ".login"],
+        stdout: "fake\n",
+      },
+      {
         argv_prefix: ["repo", "view", "--json", GH_NAME_WITH_OWNER],
         stdout: JSON.stringify({ nameWithOwner: "fake/repo" }),
       },
@@ -163,6 +173,7 @@ function makeCompletionShimRepo({
 const fs = require("node:fs");
 const cfg = JSON.parse(fs.readFileSync(${JSON.stringify(configPath)}, "utf8"));
 const counterData = JSON.parse(fs.readFileSync(${JSON.stringify(counterPath)}, "utf8"));
+const permissions = ${JSON.stringify(permissions)};
 const argv = process.argv.slice(2);
 function match(prefix) { return prefix.every((p, i) => argv[i] === p); }
 
@@ -174,6 +185,16 @@ if (argv[0] === "api" && argv[1] === "--method" && argv[2] === "POST") {
   fs.writeFileSync(${JSON.stringify(counterPath)}, JSON.stringify(counterData));
   process.stdout.write(JSON.stringify({ id, html_url: "https://github.com/fake/repo/issues/1103#issuecomment-" + id }));
   process.exit(0);
+}
+const permissionEndpoint = argv.find((arg) => arg.includes("/collaborators/") && arg.endsWith("/permission"));
+if (permissionEndpoint) {
+  const login = decodeURIComponent(permissionEndpoint.split("/collaborators/")[1].split("/permission")[0]);
+  if (permissions[login]) {
+    process.stdout.write(permissions[login] + "\\n");
+    process.exit(0);
+  }
+  process.stderr.write("HTTP 404");
+  process.exit(1);
 }
 
 for (const route of cfg.routes) {
@@ -562,5 +583,227 @@ describe("buildFinalReport — phase-aware marker and heading", () => {
     assert.ok(post.includes(`<!-- gc:final-report issue="963" pr="42" -->`), post);
     assert.ok(post.includes("## Final report — issue #963 complete"), post);
     assert.ok(!post.includes("ready_for_review"), "post_merge must NOT carry the readiness marker");
+  });
+});
+
+describe("runAssertCompletion — open execution obligations block readiness", () => {
+  it("refuses before posting a pre-merge readiness record", async () => {
+    const marker =
+      '<!-- gc:execution-obligation schema="gc.implement.execution-obligation/v1" ' +
+      'issue="1416" id="OB-SECURITY" event="opened" -->';
+    const shim = makeCompletionShimRepo({
+      comments: [{ body: marker, user: { login: "fake" }, author_association: "OWNER" }],
+      prMerged: false,
+    });
+    try {
+      const result = await withShimPath(shim.binDir, () =>
+        runAssertCompletion({
+          repoPath: shim.repoDir,
+          issueNumber: 1416,
+          prNumber: 42,
+          requirements: [],
+          reviews: [{ reviewer: "codex", summary: "1 cycle, clean" }],
+          ciStatus: "green",
+          sonarStatus: "skipped",
+          plainEnglishOutcome: "Ready for review.",
+          phase: "pre_merge",
+        }),
+      );
+      assert.equal(result.ok, false);
+      assert.equal(result.error, "completion_open_execution_obligations");
+      assert.deepEqual(result.open_obligation_ids, ["OB-SECURITY"]);
+      assert.equal(result.next_action, "fix_and_resolve_open_obligations_then_retry");
+      assert.equal(result.final_report, null);
+    } finally {
+      shim.cleanup();
+    }
+  });
+});
+
+describe("runAssertCompletion — stable execution-obligation authority", () => {
+  it("retains an obligation opened by a different authorized collaborator", async () => {
+    const marker =
+      '<!-- gc:execution-obligation schema="gc.implement.execution-obligation/v1" ' +
+      'issue="1416" id="OB-COLLABORATOR" event="opened" -->';
+    const shim = makeCompletionShimRepo({
+      comments: [{
+        id: 7001,
+        body: marker,
+        user: { login: "other-collaborator" },
+        author_association: "COLLABORATOR",
+      }],
+      prMerged: false,
+    });
+    try {
+      const result = await withShimPath(shim.binDir, () =>
+        runAssertCompletion({
+          repoPath: shim.repoDir,
+          issueNumber: 1416,
+          prNumber: 42,
+          requirements: [],
+          reviews: [{ reviewer: "codex", summary: "1 cycle, clean" }],
+          ciStatus: "green",
+          sonarStatus: "skipped",
+          plainEnglishOutcome: "Ready for review.",
+          phase: "pre_merge",
+        }),
+      );
+      assert.equal(result.ok, false);
+      assert.equal(result.error, "completion_open_execution_obligations");
+      assert.deepEqual(result.open_obligation_ids, ["OB-COLLABORATOR"]);
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  it("fails closed when a wontfix resolution lacks a verified authorization record", async () => {
+    const comments = [
+      {
+        id: 7001,
+        body:
+          '<!-- gc:execution-obligation schema="gc.implement.execution-obligation/v1" ' +
+          'issue="1416" id="OB-WONTFIX" event="opened" -->',
+        user: { login: "fake" },
+        author_association: "OWNER",
+      },
+      {
+        id: 7002,
+        body:
+          '<!-- gc:execution-obligation schema="gc.implement.execution-obligation/v1" ' +
+          'issue="1416" id="OB-WONTFIX" event="resolved" disposition="wontfix" -->',
+        user: { login: "fake" },
+        author_association: "OWNER",
+      },
+    ];
+    const shim = makeCompletionShimRepo({ comments, prMerged: false });
+    try {
+      const result = await withShimPath(shim.binDir, () =>
+        runAssertCompletion({
+          repoPath: shim.repoDir,
+          issueNumber: 1416,
+          prNumber: 42,
+          requirements: [],
+          reviews: [{ reviewer: "codex", summary: "1 cycle, clean" }],
+          ciStatus: "green",
+          sonarStatus: "skipped",
+          plainEnglishOutcome: "Ready for review.",
+          phase: "pre_merge",
+        }),
+      );
+      assert.equal(result.ok, false);
+      assert.equal(result.error, "execution_obligation_authorization_unverifiable");
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  it("accepts a wontfix resolution bound to a structured authorized record", async () => {
+    const comments = [
+      {
+        id: 6999,
+        body: "/ground-control authorize-wontfix OB-WONTFIX",
+        user: { login: "repository-owner" },
+        author_association: "OWNER",
+      },
+      {
+        id: 7000,
+        body:
+          '<!-- gc:execution-obligation-authorization ' +
+          'schema="gc.implement.execution-obligation-authorization/v1" ' +
+          'issue="1416" id="OB-WONTFIX" action="authorize_wontfix" ' +
+          'source_comment_id="6999" -->',
+        user: { login: "automation" },
+        author_association: "MEMBER",
+      },
+      {
+        id: 7001,
+        body:
+          '<!-- gc:execution-obligation schema="gc.implement.execution-obligation/v1" ' +
+          'issue="1416" id="OB-WONTFIX" event="opened" -->',
+        user: { login: "automation" },
+        author_association: "MEMBER",
+      },
+      {
+        id: 7002,
+        body:
+          '<!-- gc:execution-obligation schema="gc.implement.execution-obligation/v1" ' +
+          'issue="1416" id="OB-WONTFIX" event="resolved" disposition="wontfix" ' +
+          'authorization_comment_id="7000" -->',
+        user: { login: "automation" },
+        author_association: "MEMBER",
+      },
+    ];
+    const shim = makeCompletionShimRepo({ comments, prMerged: false });
+    try {
+      const result = await withShimPath(shim.binDir, () =>
+        runAssertCompletion({
+          repoPath: shim.repoDir,
+          issueNumber: 1416,
+          prNumber: 42,
+          requirements: [],
+          reviews: [{ reviewer: "codex", summary: "1 cycle, clean" }],
+          ciStatus: "green",
+          sonarStatus: "skipped",
+          plainEnglishOutcome: "Ready for review.",
+          phase: "pre_merge",
+        }),
+      );
+      assert.equal(result.ok, true, JSON.stringify(result));
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  it("does not trust an organization member without effective repository permission", async () => {
+    const marker =
+      '<!-- gc:execution-obligation schema="gc.implement.execution-obligation/v1" ' +
+      'issue="1416" id="OB-OUTSIDER" event="opened" -->';
+    const shim = makeCompletionShimRepo({
+      comments: [{
+        id: 7001,
+        body: marker,
+        user: { login: "org-member" },
+        author_association: "MEMBER",
+      }],
+      prMerged: false,
+      permissions: {},
+    });
+    try {
+      const result = await withShimPath(shim.binDir, () =>
+        runAssertCompletion({
+          repoPath: shim.repoDir,
+          issueNumber: 1416,
+          prNumber: 42,
+          requirements: [],
+          reviews: [{ reviewer: "codex", summary: "1 cycle, clean" }],
+          ciStatus: "green",
+          sonarStatus: "skipped",
+          plainEnglishOutcome: "Ready for review.",
+          phase: "pre_merge",
+        }),
+      );
+      assert.equal(result.ok, false);
+      assert.equal(result.error, "execution_obligation_provenance_unverifiable");
+    } finally {
+      shim.cleanup();
+    }
+  });
+});
+
+describe("runPostFinalReport — unresolved-work excuses are rejected", () => {
+  it("rejects scope/provenance as justification for non-action before posting", async () => {
+    const result = await runPostFinalReport({
+      repoPath: "/does/not/need/to/exist",
+      issueNumber: 1416,
+      prNumber: 42,
+      requirements: [],
+      reviews: [{ reviewer: "codex", summary: "The failure is unrelated, so it will be left unresolved." }],
+      ciStatus: "green",
+      sonarStatus: "passed",
+      plainEnglishOutcome: "The requested workflow hardening is ready.",
+      phase: "pre_merge",
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "final_report_unresolved_work_excuse");
   });
 });

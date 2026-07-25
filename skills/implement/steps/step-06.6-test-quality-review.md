@@ -14,9 +14,16 @@ This step moved from post-PR (former Step 13) to pre-push by issue #906 so the P
 
 ## Subagent prompt template
 
-The orchestrator spawns the subagent with this prompt (substituting `{issue_number}`, `{repo_path}`):
+The orchestrator spawns the subagent with this prompt (substituting
+`{issue_number}`, `{repo_path}`, `{development_principles_verbatim}`, and
+`{execution_contract_json}`):
 
-> Drive the **test-quality pre-push review** for issue {issue_number} to completion. Apply the canonical review loop rules at `skills/implement/steps/_review-loop-rules.md`.
+> Binding development principles (verbatim):
+> {development_principles_verbatim}
+>
+> Immutable execution contract: {execution_contract_json}
+>
+> Drive the **test-quality pre-push review** for issue {issue_number} to completion. Apply the canonical review loop rules at `skills/implement/steps/_review-loop-rules.md`. Every real finding remains a current execution obligation until fixed and verified; a cap pauses an open obligation and never converts it to deferred work.
 >
 > Loop:
 > 1. Stage everything with `git add -A`.
@@ -24,8 +31,8 @@ The orchestrator spawns the subagent with this prompt (substituting `{issue_numb
 > 3. Poll the job: call `gc_codex_job` with `action="poll"`, `job_id=<the job_id from step 2>`. While it returns `status:"running"`, sleep ~60s and poll again. When it returns `status:"done"`, the cycle envelope is in the response's `result` field. If a poll returns `error:"job_not_found"` (job expired or MCP server restarted), restart from step 2. To abandon a stuck job, call `gc_codex_job` with `action="cancel"`.
 > 4. Read the cycle envelope from the poll response's `result` (`{ok, reviewer, cycle, cap, status, next_action, findings_summary, findings_record_url, decision_record_url}`). Do NOT echo verbatim review prose. Dispatch on `next_action`:
 >    - `post_clean_decision_record_and_advance_to_phase_c` → return `status: "clean"`. The decision record was auto-posted.
->    - `fix_findings_and_reinvoke` → classify findings (one-off vs class) - test-quality findings often arrive without a classification, so classify yourself first. Fix them per the loop rules in the same turn (do NOT stop and echo findings to the user as a status report - that is the #884 regression in a different shape). Self-verify locally (`cfg.workflow.completion_command`, `make policy`, the relevant test suite), `git add -A`, then re-invoke the cycle tool.
->    - `fix_findings_then_summarize_and_escalate` (last-in-cap) → fix and self-verify, but do NOT re-invoke; return `status: "escalated"`.
+>    - `fix_findings_and_reinvoke` → classify findings (one-off vs class) - test-quality findings often arrive without a classification, so classify yourself first. Batch and fix them per the loop rules in the same turn (do NOT stop and echo findings to the user as a status report - that is the #884 regression in a different shape). Run the narrowest relevant tests, expanding only when risk warrants, `git add -A`, then re-invoke. Do not run repository-wide completion/policy suites per small fix.
+>    - `fix_findings_then_summarize_and_escalate` (last-in-cap) → fix and run proportionate verification, then run `cfg.workflow.completion_command` and `make policy` once on the final post-fix tree; do NOT re-invoke; return `status: "escalated"`.
 >    - `post_summary_and_escalate_to_user` (cap-refused) → no fixes; return `status: "capped"`.
 > 5. The cycle wrapper auto-posts `decision: "fix"` per finding. Advance ONLY after the cycle envelope's `decision_record_url` is non-null on a clean cycle - the durable record per ADR-029 / issue #884 must be in place before the workflow proceeds.
 >

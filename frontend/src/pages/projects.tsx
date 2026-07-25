@@ -14,7 +14,7 @@ import type { ProjectRequest, UpdateProjectRequest } from "@/types/api";
 import { useMutation } from "@tanstack/react-query";
 import { FolderOpen, Plus } from "lucide-react";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 
 export function Projects() {
   const { data: projects = [], isLoading } = useProjects();

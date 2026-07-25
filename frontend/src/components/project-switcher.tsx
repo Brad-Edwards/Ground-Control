@@ -2,7 +2,7 @@ import { useProjectContext } from "@/contexts/project-context";
 import { cn } from "@/lib/utils";
 import * as Select from "@radix-ui/react-select";
 import { ChevronDown, FolderOpen } from "lucide-react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router";
 
 export function ProjectSwitcher() {
   const { projects, activeProject, isLoading } = useProjectContext();

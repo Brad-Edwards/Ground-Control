@@ -684,6 +684,58 @@ marker.
 
 To roll production back to a prior version: `make rollback VERSION=<x.y.z>` (or `./scripts/rollback.sh <version-or-digest>`). The wrapper patches `GC_IMAGE` in `/opt/gc/.env` and drives the same validated deploy path as `make deploy` (health gate, auto-rollback on failure, deploy-state publish). A digest target auto-sets `GC_ALLOW_IMAGE_PIN=1`. Full runbook: `skills/deploy/SKILL.md` (`/deploy` → §Rollback).
 
+## `/implement` execution principles and problem obligations
+
+`/implement` loads `skills/implement/_development-principles.md` before it
+reads workflow configuration, resolves routing, resolves the issue, prepares a
+branch, or delegates work. The run pins those principles in an immutable
+execution contract and passes that contract to every delegated step.
+
+Local verification is risk-proportionate and agent-neutral. Related edits are
+batched; implementation and review-fix iteration use the narrowest tests that
+exercise changed behavior, widening for shared/cross-cutting boundaries,
+security-sensitive changes, or evidence of wider risk. Step 6 runs the
+repository completion command and `make policy` once on its meaningful tree
+boundary. Review fixes use targeted tests between cycles, then rerun those
+broad gates once on the final post-fix tree only if review changed it. Step 7
+owns the single mandatory pre-publish pre-commit boundary. This avoids
+duplicated broad work without weakening pre-commit, completion, review, CI,
+SonarCloud, quality-gate, or final-report requirements.
+
+Branch preparation uses `gc_prepare_implement_branch` and stays in the checkout
+where `/implement` was invoked. The lane does not create a worktree or migrate
+execution to another checkout. The server pins both the checkout and GitHub
+repository identity at launch, rejects later origin drift, and runs checkout
+with hooks and caller-selected executable Git configuration disabled.
+`gc_mark_implement_issue_picked_up` then owns label creation/application and
+the pickup comment; agents do not perform those GitHub writes directly.
+
+Defects, failing checks, security concerns, workflow failures, and quality
+problems found during the run become execution obligations even when they
+predate the branch or exceed the anticipated diff. The normal response is to
+fix, verify, and resume the requested workflow. Preparation, acknowledgment, or
+a partial result is not a terminal success response.
+
+A run may pause only for a required user decision, a hard external dependency,
+or an architectural/security decision that cannot safely be made under the
+authority already granted. Workload and file count do not qualify. When a
+pause is necessary, `gc_record_execution_obligation` preserves each unresolved
+problem on the issue thread. `gc_assert_completion` refuses both pre-merge
+readiness and post-merge completion while any trusted obligation remains open.
+
+The `/implement` mutation tools are repository-bound at the server boundary. Their
+`repo_path` must resolve to the Git workspace captured when that repository's
+MCP server launched and retain the exact launch-time origin identity; supplying
+another on-host checkout or retargeting origin is rejected. Raw remote URLs
+never enter branch-tool results. Obligation replay checks every record author
+for effective repository write permission rather than trusting organization
+membership or coarse comment associations. `wontfix` authorization is a
+structured two-step record: an authorized repository writer posts exactly
+`/ground-control authorize-wontfix <OBLIGATION_ID>`, then
+`gc_authorize_execution_obligation_wontfix` emits the durable authorization
+record referenced by the resolution. Posting and replay re-verify the exact
+source command, repository permission, and record binding.
+
 ## Key Lessons (from GC-J001 first run)
 
 - **Write `@WebMvcTest` controller tests**, not just integration tests. SonarCloud CI doesn't run Testcontainers. The controller-parity gate (`run_controller_contracts` in `tools/policy/checks.py` and the `ControllerPolicyTest` ArchUnit-style test) maps a controller to its slice by the controller's **fully qualified class**, resolved from each test's `@WebMvcTest(...)` annotation and its `import`. Same-named controllers in different packages (`api/audit/AuditController` versus `api/audits/AuditController`) each match their real companion, and the companion test does not have to be named `<Controller>Test.java`.

@@ -1,7 +1,7 @@
 import { StatusBadge } from "@/components/ui/badge";
 import { useImpact } from "@/hooks/use-analysis";
 import type { RequirementSummaryResponse } from "@/types/api";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router";
 
 export function ImpactTab({ requirementId }: { requirementId: string }) {
   const { projectId } = useParams<{ projectId: string }>();

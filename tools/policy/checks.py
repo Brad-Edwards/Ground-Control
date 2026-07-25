@@ -197,6 +197,19 @@ _DEFERRAL_TIER1_PATTERNS: tuple[tuple[str, str], ...] = (
         r"(?:in|as)\s+(?:a\s+|the\s+|another\s+)?(?:follow[-\s]?up|subsequent)\s+"
         r"(?:PR|pull\s+request|issue|ticket|commit|change)\b",
     ),
+    (
+        "nonaction-because-provenance",
+        r"\b(?:not|won'?t|will\s+not|cannot|can'?t|skip(?:ping)?)\s+"
+        r"(?:be\s+)?(?:fix|fixing|address|addressing|repair|repairing|resolve|resolving|handle|handling)\b"
+        r"[^.\n]{0,80}\b(?:because|since|as)\b[^.\n]{0,60}"
+        r"\b(?:pre-existing|unrelated|outside\s+(?:this\s+)?(?:PR'?s?\s+)?scope|out\s+of\s+scope|owned\s+by)\b",
+    ),
+    (
+        "provenance-used-for-nonaction",
+        r"\b(?:pre-existing|unrelated|outside\s+(?:this\s+)?(?:PR'?s?\s+)?scope|out\s+of\s+scope|owned\s+by[^,.;\n]{0,40})\b"
+        r"[^.\n]{0,80}(?:\b(?:so|therefore|means)\b|[;:])[^.\n]{0,60}"
+        r"\b(?:not|won'?t|will\s+not|skip(?:ping)?|left\s+unresolved|leave\s+unresolved)\b",
+    ),
 )
 
 _DEFERRAL_TIER2_PATTERNS: tuple[tuple[str, str], ...] = (
@@ -4829,6 +4842,211 @@ def run_workflow_routing_contract(root: Path = REPO_ROOT) -> list[Violation]:
     return violations
 
 
+def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
+    """Enforce /implement's pre-routing principles and persistence boundary."""
+    violations: list[Violation] = []
+    paths = {
+        "skill": root / "skills/implement/SKILL.md",
+        "principles": root / "skills/implement/_development-principles.md",
+        "step1": root / "skills/implement/steps/step-01-issue-branch-resolution.md",
+        "completion": root / "skills/implement/steps/step-17-completion.md",
+        "cursor": root / ".cursor/skills/implement/SKILL.md",
+    }
+    missing = [str(path.relative_to(root)) for path in paths.values() if not path.is_file()]
+    if missing:
+        return [
+            Violation(
+                code="implement-execution-contract-missing",
+                message="/implement execution-contract surfaces are missing.",
+                details=missing,
+            )
+        ]
+
+    skill = paths["skill"].read_text(encoding="utf-8")
+    principles = paths["principles"].read_text(encoding="utf-8")
+    step1 = paths["step1"].read_text(encoding="utf-8")
+    completion = paths["completion"].read_text(encoding="utf-8")
+    cursor = paths["cursor"].read_text(encoding="utf-8")
+    principles_flat = " ".join(principles.split())
+    cursor_flat = " ".join(cursor.split()).lower()
+
+    principles_ref = skill.find("_development-principles.md")
+    route_ref = skill.find("gc_resolve_workflow_route")
+    if principles_ref < 0 or route_ref < 0 or principles_ref > route_ref:
+        violations.append(
+            Violation(
+                code="implement-principles-order",
+                message="The canonical development principles must load before route resolution.",
+                details=["place _development-principles.md before gc_resolve_workflow_route in SKILL.md"],
+            )
+        )
+    required_skill_tokens = (
+        "gc.implement.execution-contract/v1",
+        "development_principles_verbatim",
+        "execution_contract_mutation_attempt",
+        "invocation_root",
+        '"checkout_mode": "same_checkout"',
+        "Preparation, acknowledgment, and partial progress are not terminal success",
+    )
+    missing_tokens = [token for token in required_skill_tokens if token not in skill]
+    if missing_tokens:
+        violations.append(
+            Violation(
+                code="implement-contract-propagation",
+                message="Parent/delegated execution-contract propagation is incomplete.",
+                details=[f"missing token: {token}" for token in missing_tokens],
+            )
+        )
+
+    pause_tokens = (
+        "explicit workflow gate",
+        "unresolved ambiguity",
+        "significant architecture or security decision",
+        "unexpectedly material scope",
+        "destructive or externally consequential",
+        "hard external dependency",
+        "enforced cycle cap",
+        "Work size, difficulty,",
+    )
+    missing_pauses = [token for token in pause_tokens if token not in principles_flat]
+    if missing_pauses:
+        violations.append(
+            Violation(
+                code="implement-pause-contract",
+                message="The development principles do not carry the closed pause-class contract.",
+                details=[f"missing token: {token}" for token in missing_pauses],
+            )
+        )
+
+    verification_tokens = (
+        "Make local verification proportionate to risk",
+        "Batch related edits",
+        "narrowest tests",
+        "shared or cross-cutting",
+        "security-sensitive",
+        "repository-wide completion and policy suites once",
+        "mandatory pre-commit, completion, review, CI, Sonar, or final",
+    )
+    missing_verification = [
+        token for token in verification_tokens if token not in principles_flat
+    ]
+    if missing_verification:
+        violations.append(
+            Violation(
+                code="implement-proportionate-verification-contract",
+                message="The development principles do not enforce risk-proportionate verification.",
+                details=[f"missing token: {token}" for token in missing_verification],
+            )
+        )
+
+    review_rules = (
+        root / "skills/implement/steps/_review-loop-rules.md"
+    ).read_text(encoding="utf-8")
+    review_rules_flat = " ".join(review_rules.split())
+    step5 = (root / "skills/implement/steps/step-05-quality-assurance.md").read_text(
+        encoding="utf-8"
+    )
+    step6 = (root / "skills/implement/steps/step-06-completion-gate.md").read_text(
+        encoding="utf-8"
+    )
+    step7 = (root / "skills/implement/steps/step-07-stage-precommit.md").read_text(
+        encoding="utf-8"
+    )
+    verification_surface_tokens = (
+        (review_rules_flat, "Do not run `cfg.workflow.completion_command` or `make policy` after every small fix"),
+        (review_rules_flat, "once before leaving the review band on the final post-fix tree"),
+        (step5, "Do not run `pre-commit` here"),
+        (step6, "Run `make policy`"),
+        (step7, "single mandatory pre-publish"),
+    )
+    missing_surfaces = [
+        token for surface, token in verification_surface_tokens if token not in surface
+    ]
+    if missing_surfaces:
+        violations.append(
+            Violation(
+                code="implement-verification-boundary-drift",
+                message="/implement verification surfaces disagree on batching or mandatory boundaries.",
+                details=[f"missing token: {token}" for token in missing_surfaces],
+            )
+        )
+
+    if "gc_prepare_implement_branch" not in step1 or "checkout_mode" not in step1:
+        violations.append(
+            Violation(
+                code="implement-same-checkout-boundary",
+                message="Step 1 must use the same-checkout MCP branch operation.",
+                details=["require gc_prepare_implement_branch with checkout_mode=same_checkout"],
+            )
+        )
+    if "gc_mark_implement_issue_picked_up" not in step1:
+        violations.append(
+            Violation(
+                code="implement-pickup-side-effect-boundary",
+                message="Step 1 must route pickup label/comment mutations through MCP.",
+                details=["require gc_mark_implement_issue_picked_up in Step 1"],
+            )
+        )
+    implement_sources = [
+        paths["skill"],
+        paths["principles"],
+        *sorted((root / "skills/implement/steps").glob("*.md")),
+    ]
+    forbidden = []
+    for path in implement_sources:
+        text = path.read_text(encoding="utf-8")
+        direct_branch = re.search(
+            r"\bgit\s+worktree\s+add\b|\bgh\s+issue\s+develop\b",
+            text,
+        )
+        direct_pickup = (
+            path == paths["step1"]
+            and re.search(r"\bgh\s+(?:api|label|issue)\b[^\n]*\bin-progress\b", text)
+        )
+        if direct_branch or direct_pickup:
+            forbidden.append(str(path.relative_to(root)))
+    if forbidden:
+        violations.append(
+            Violation(
+                code="implement-direct-worktree-or-branch-command",
+                message="/implement workflow surfaces must use MCP branch and pickup boundaries.",
+                details=[f"direct branch/worktree/pickup command in {path}" for path in forbidden],
+            )
+        )
+
+    contradictory = []
+    for path in implement_sources:
+        text = path.read_text(encoding="utf-8").lower()
+        if "outside the diff's scope" in text or "no scope creep" in text:
+            contradictory.append(str(path.relative_to(root)))
+    if contradictory:
+        violations.append(
+            Violation(
+                code="implement-contradictory-scope-language",
+                message="Workflow text still permits scope-based non-action.",
+                details=contradictory,
+            )
+        )
+
+    if "completion_open_execution_obligations" not in completion:
+        violations.append(
+            Violation(
+                code="implement-obligation-completion-gate",
+                message="Step 17 must document completion refusal while obligations are open.",
+                details=["missing completion_open_execution_obligations"],
+            )
+        )
+    if "_development-principles.md" not in cursor or "before route resolution" not in cursor_flat:
+        violations.append(
+            Violation(
+                code="implement-driver-principles",
+                message="The Cursor driver wrapper must load the canonical principles before routing.",
+                details=["update .cursor/skills/implement/SKILL.md"],
+            )
+        )
+    return violations
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
     explicit_files = args.files if args.files is not None else args.paths
@@ -4859,6 +5077,7 @@ def main(argv: list[str] | None = None) -> int:
     violations.extend(run_contract_invariant_enforcement_check())
     violations.extend(run_authz_matrix_sync_check())
     violations.extend(run_workflow_routing_contract())
+    violations.extend(run_implement_execution_contract())
     violations.extend(run_test_quality_decision_record_contract())
     violations.extend(run_traceability_reconciliation_gate_contract())
 

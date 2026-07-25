@@ -1,7 +1,7 @@
 import { useProjectContext } from "@/contexts/project-context";
 import { useTestRuns } from "@/hooks/use-test-runs";
 import type { TestRunResponse, TestRunStatus } from "@/types/api";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 /**
  * TC-008 / ADR-049 + TC-009 / ADR-050 — Minimal read-only index of test

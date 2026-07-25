@@ -241,3 +241,10 @@ orphaned by the MCP client's tool-call timeout (issue #893). See ADR-036
 **2026-06-18 (issue #1181 model-tier refresh).** The high-tier capability model id resolved by the shared `gc_resolve_workflow_route` resolver was bumped from `claude-opus-4-7` to `claude-opus-4-8`. /quickfix routes a high-tier stage only when `--review` is supplied (the `review_cycle_1_consume` consume step), so this changes which Claude model runs that step; the reused stage set, the cap-1 default, and the routing/telemetry opt-in knobs are unchanged.
 
 **2026-07-01 (issue #1264 Sonnet-tier refresh).** The `medium`-tier capability model id resolved by the shared `gc_resolve_workflow_route` resolver (and the `gc_test_quality_review` engine default) was bumped from `claude-sonnet-4-6` to `claude-sonnet-5`. /quickfix routes `medium`-tier stages (e.g. `implementation`, `codebase_assessment`) and, when `--review` is supplied, the `test_quality_review` poll stage, so this changes which Claude model runs those steps; the reused stage set, the cap-1 default, and the routing/telemetry opt-in knobs are unchanged. The routing model-id validator now also accepts single-segment canonical ids such as `claude-sonnet-5`.
+
+**2026-07-25 (issue #1416 `/implement` execution contract).** The canonical
+development-principles file, same-checkout branch-preparation MCP boundary, and
+execution-obligation marker family are added to `/implement`. `/quickfix`
+remains a distinct lower-ceremony lane and does not silently import the
+`/implement` orchestration contract; its existing upgrade path to `/implement`
+is unchanged.

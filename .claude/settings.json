@@ -26,6 +26,11 @@
             "type": "command",
             "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/block-defer-language.py",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/block-implement-worktree.py",
+            "timeout": 10
           }
         ]
       }

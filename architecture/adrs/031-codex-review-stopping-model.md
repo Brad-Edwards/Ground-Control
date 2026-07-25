@@ -287,3 +287,18 @@ result, never when the loop stops. See ADR-036 (amendments) for the job model.
 **2026-07-11 (issue #1346, ADR-089 GRC retirement).** ADR-089 retires the composed GRC product surface referenced by three amendments above. (1) The 2026-06-10 (#1099) Step 3.5 GRC screening gate is removed from the active `/implement` workflow; there is no screening step between codebase assessment and planning. (2) The 2026-06-14 (#1103) `gc_assert_completion` composition no longer includes `gc_assert_grc_reconciled`; it composes only `gc_assert_traceability_reconciled` and `gc_post_final_report`. (3) The 2026-06-13 (#1156) `next_issue_recommendation` clause is reversed - `gc_close_issue_after_merge` no longer performs a next-issue lookup or returns that field; its `plain_english_outcome` clause is unaffected. (4) The 2026-06-28 (#1245) `gc_review_cap_disposition` scorer no longer reads or emits a GRC verdict signal; its risk model is recalibrated over its remaining signals (diff size, changed-surface class, finding shape, prior auto-overrides) so removing the GRC input does not silently reclassify a formerly high-risk case as an automatic proceed. None of these changes touch the stopping model, per-cycle caps, severity rubric, or the reviewer-of-record invariant this ADR defines. See ADR-089 for the full retirement decision.
 
 **2026-07-15 (issue #1399, GC-P027 Release Please adoption).** Release Please adoption retires the Towncrier changelog-fragment convention and adds a CI Conventional-Commit PR-title gate; the codex/test-quality stopping model, severity rubric, per-cycle caps, per-issue cycle counters, and the reviewer-of-record invariant are unchanged. Cross-referenced for the `workflow-guardrail-sync` contract. See ADR-021 (2026-07-15 amendment).
+
+**2026-07-25 (issue #1416, caps pause rather than discard).** Review caps keep
+their existing bounds and stopping purpose, but reaching a cap is not a
+disposition for unresolved findings. Each remaining actionable finding is
+recorded as an open execution obligation and the run pauses only under one of
+the closed pause classes. Workload, file count, provenance, ownership, and the
+anticipated diff are not stopping reasons. `not-applicable` remains a narrow
+factual classification, not a substitute for repair.
+Review-fix verification is proportionate rather than repetitive: related fixes
+are batched and exercised by the narrowest relevant tests between cycles;
+shared/cross-cutting or security-sensitive changes expand the test surface.
+The completion command and repository policy suite run once on the final
+post-fix tree before leaving the review band when that tree changed, not after
+each small fix. This affects local scheduling only; review caps and every
+mandatory pre-commit, review, CI, SonarCloud, and completion gate remain intact.

@@ -18,7 +18,7 @@ import {
   Rocket,
   Unlink,
 } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router";
 
 export function Dashboard() {
   const { activeProject, isLoading } = useProjectContext();
