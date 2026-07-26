@@ -206,3 +206,23 @@ gains the same treatment through `workflow.precommit_command`, normalized to
 `pre-commit run --all-files`: the boundary stays mandatory and non-skippable,
 while the tool that satisfies it becomes repo-native. See ADR-027
 (2026-07-26 amendment) for the configuration contract.
+
+### 2026-07-26 amendment: workflow-guardrail-sync requires one gate record, not all
+
+The `workflow-guardrail-sync` rule in `architecture/policies/adr-policy.json`
+required every one of ADR-021, ADR-029, ADR-031, ADR-036, and the `/quickfix`
+sibling lane in the same diff as any workflow-guardrail change. The intent is
+that guardrail prose must not drift away from the gate record. Requiring all of
+them at once did not serve that intent: a change to one topic had to write into
+ADRs it did not touch, which produces contentless amendments and degrades the
+ADR record it was meant to protect. Issue #1434 hit this - a requirement-identity
+fix in the mechanical tool was asked to amend ADR-031, the codex review stopping
+model.
+
+The workflow documents (`docs/DEVELOPMENT_WORKFLOW.md`, `docs/WORKFLOW.md`)
+remain unconditionally required, because a guardrail change is always visible in
+the workflow narrative. The four gate-model ADRs and the `/quickfix` lane move
+to `requireAny`: the change must be recorded in at least one of them, and the
+author picks the one the change actually concerns. The rule does not become a
+no-op - a guardrail change that records itself nowhere in the gate model still
+fails - and no gate is skipped, weakened, or made non-blocking.

@@ -1391,7 +1391,10 @@ server.tool(
   "fetched_base_sha, and outcome; it mechanically runs the configured completion command and the configured " +
   "workflow.policy_command (default `make policy`), binds the " +
   "unchanged verified tree to the merge commit, verifies the merge graph, pushes without force, and idempotently posts " +
-  "the trusted versioned issue-thread attestation. It never creates a worktree, rebases, resets, aborts, discards work, " +
+  "the trusted versioned issue-thread attestation. Optional requested_requirement_uid supplies the requirement under " +
+  "test to those repository gates through the child environment, for a run whose issue branch carries no UID; it is " +
+  "resolved server-side against the target issue's Requirements section and an unlisted UID is refused before any gate runs. " +
+  "It never creates a worktree, rebases, resets, aborts, discards work, " +
   "or chooses a conflict side.",
   {
     repo_path: z.string(),
@@ -1402,8 +1405,9 @@ server.tool(
     pre_sync_sha: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/).optional(),
     fetched_base_sha: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/).optional(),
     outcome: z.enum(IMPLEMENT_BASE_SYNC_OUTCOMES).optional(),
+    requested_requirement_uid: z.string().regex(EXACT_REQUIREMENT_UID_RE).optional(),
   },
-  async ({ repo_path, issue_number, branch_name, action, record_id, pre_sync_sha, fetched_base_sha, outcome }) => {
+  async ({ repo_path, issue_number, branch_name, action, record_id, pre_sync_sha, fetched_base_sha, outcome, requested_requirement_uid }) => {
     try {
       return ok(JSON.stringify(await runSynchronizeImplementBranch({
         repoPath: repo_path,
@@ -1414,6 +1418,7 @@ server.tool(
         preSyncSha: pre_sync_sha ?? null,
         fetchedBaseSha: fetched_base_sha ?? null,
         outcome: outcome ?? null,
+        requestedRequirementUid: requested_requirement_uid ?? null,
       }), null, 2));
     } catch (e) { return err(e); }
   },
