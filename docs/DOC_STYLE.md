@@ -197,7 +197,10 @@ ADR-054, which requires this file and ADR-054 to stay current with the gate
 surface they describe. A new policy check in `tools/policy/checks.py` records
 its contract in the ADR that owns the surface it guards (for example, the ACES
 concept-family crosswalk check under ADR-084 §4); this file carries the
-gate-surface trigger inventory above, not per-check contracts.
+gate-surface trigger inventory above, not per-check contracts. Changing the
+behavior of an existing validator or recognizer on a gate surface follows the
+same rule: record the new contract in the ADR that owns it, and note in ADR-054
+whether the change touched documentation-coverage classification.
 
 As of #1399 (GC-P027) Release Please owns `CHANGELOG.md`: contributors do not
 hand-edit it or file `changelog.d/` fragments (that Towncrier convention was

@@ -24,6 +24,7 @@ import {
   runCloseIssueAfterMerge,
   detectSensitiveBodyContent,
   EXACT_REQUIREMENT_UID_RE,
+  isRequirementUidToken,
   runImplementGitCommand,
   runImplementPreCommit,
   resolveWorkflowPolicyCommand,
@@ -185,7 +186,12 @@ export function extractInScopeRequirementUids(issueBody) {
     if (!bullet) continue;
     for (const token of bullet[1].split(/[\s,;]+/)) {
       const candidate = token.replace(/^[`[(]+|[`)\].:]+$/g, "");
-      if (!EXACT_REQUIREMENT_UID_RE.test(candidate)) break;
+      // Recognition, not identity validation: these tokens come from free-form
+      // issue prose, so the bounded-identifier contract would accept ordinary
+      // words. The anchored recognizer still finds allocator-minted short UIDs
+      // like APP-2, so a requirement-backed run is not silently reduced to a
+      // requirement-free one (issue #1425).
+      if (!isRequirementUidToken(candidate)) break;
       if (!seen.has(candidate)) {
         seen.add(candidate);
         result.push(candidate);
