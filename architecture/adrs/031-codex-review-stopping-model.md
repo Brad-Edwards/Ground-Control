@@ -319,3 +319,94 @@ or test-quality review tools, their findings, cap counters, disposition
 records, or escalation rules. Review agents still run only inside the existing
 bounded review-cycle tools; the primary handles returned findings and cap
 decisions under this ADR.
+
+**2026-07-26 (issue #1414, review evidence over an over-cap diff).** Above
+`GC_CODEX_REVIEW_MAX_DIFF_BYTES` (default 256 KiB), `gc_codex_review` used to
+replace the diff with a numstat manifest and instruct the reviewer to fetch
+per-file diffs through its own shell tool. Nothing verified that fetch, and both
+reviewers were observed returning `verdict: ship` caveated on the manifest
+alone. One described a 3:1 deletion-weighted change as introducing the feature
+it deleted. The cycle recorded that as a clean pass indistinguishable at the
+envelope level from a real one, spending the cap-1 cycle. A manifest is now
+routing metadata, never review evidence: the MCP server splits the authoritative
+diff into bounded inline slices (`diff --git` file boundaries, falling back to
+`@@` hunk boundaries when one file exceeds the budget) and runs both reviewers
+over every slice. Findings, architectural reads, and notes are aggregated
+deterministically through the existing `dedupFindings`,
+`checkVerdictBlockingConsistency`, and architectural-read merge logic: an empty
+union is the only path to `ship`, and `don't-ship` survives only with a
+structural blocker. **The stopping model is unchanged:** all slices of a review
+are ONE logical cycle against the per-issue counter, slices are never counted as
+cycles, no per-slice marker family exists, and the cap, `override_cap`
+semantics, and auto-grant ceiling are untouched. Two bounded fields now travel
+on the direct result, the compact cycle envelope, and the durable findings
+record: `diff_mode` (`inline` | `manifest`, the transport fact) and
+`review_coverage` (`strategy`, `chunks_total`, `chunks_completed`,
+`files_total`, `files_covered`, `complete`). Coverage is validated before any
+GitHub write; an incomplete slice set returns `ok: false`,
+`status: "post_failed"`, `error: "review_coverage_incomplete"` with no findings
+record, decision record, or cycle marker written and no cycle consumed, so a
+retry is free. `review_partial_failure` is correspondingly narrowed to the case
+where the review completed but publishing it partially failed; an unparseable
+reviewer envelope is now a coverage failure in both inline and manifest mode.
+`gc_review_cap_disposition` re-derives `diff_mode` server-side from the post-fix
+tree and adds a bounded 0.15 risk contribution for a sliced or unknown-coverage
+review, so it is never scored as low-risk as a fully inlined one; the
+deterministic ceiling, fast paths, and judge boundary are unchanged. Two related
+diff-correctness repairs land with it: an `uncommitted=true` review now covers
+untracked files (previously absent from both the diff and the manifest while the
+prompt claimed they were included), and the slice budget stays on the existing
+`GC_CODEX_REVIEW_MAX_DIFF_BYTES` seam with its documented `0`-disables behavior
+rather than adding a second knob. See
+`architecture/notes/codex-manifest-review-evidence-preflight.md` for the binding
+preflight guidance.
+
+**2026-07-26 (issue #1414 review cycle 1).** Three fixes tighten the boundary
+the amendment above establishes, with no change to the stopping model, caps, or
+durable-record ordering. (1) Slice boundaries now descend through file, hunk,
+and line, so a binary/rename-only block or a single oversized hunk can no longer
+become an unbounded prompt. A single line larger than the budget is the smallest
+unit that survives splitting intact; it is emitted whole and counted in
+`review_coverage.oversized_slices` rather than truncated, because dropped bytes
+read as reviewed content nobody saw. (2) A slice engine failure (a dead or
+failing `codex` child) is captured as an incomplete reviewer result and returns
+the same `review_coverage_incomplete` envelope as an invalid reviewer tail,
+instead of escaping as an untyped exception the cycle wrapper never sees; the
+failing reviewer stops launching further slices once coverage is already lost.
+(3) Untracked content is screened before any reviewer prompt is built. Untracked
+files are the one review input the developer never selected, and the branch under
+review controls `.gitignore`, so a narrowed ignore rule could expose a
+pre-existing local credential file to the model provider ahead of
+`detectSensitiveBodyContent`, which guards GitHub publication only. Matching
+paths are withheld from the reviewed diff and reported by path alone in
+`review_coverage.withheld_untracked_paths` and the manifest, keeping the
+exclusion visible without disclosing the body.
+
+**2026-07-26 (issue #1414 review cycle 2).** Two further corrections, both to
+the cycle-1 fixes above. (1) A sub-file fragment must be a valid standalone
+diff. Because every slice is reviewed by an independent process, repeating an
+oversized hunk's original `@@` header on later fragments would make each
+`line` in a finding point at the wrong code, and a metadata-only fragment
+without its `diff --git` line has no file attribution at all. Line-split hunks
+now carry a recomputed header whose old/new starts and counts describe the
+fragment (walking the body the way git does: context advances both sides, `-`
+the old, `+` the new, `\ No newline` neither), and metadata-only fragments
+repeat their `diff --git` line. (2) The untracked-file coverage added in the
+first #1414 amendment is **withdrawn as an egress channel**. That amendment
+followed the preflight note's guidance to include untracked content; the
+security review established a concrete attacker model that supersedes it. A
+branch under review controls `.gitignore`, so narrowing a rule exposes a
+developer's local `.pgpass` or `.dockercfg`, and neither a filename deny-list
+(credential filenames are unbounded) nor content inspection (an opaque token
+reads as ordinary text) can serve as the authorization boundary for sending
+unselected working-tree content to a model provider. Staging is the
+repository's existing explicit consent boundary and is now the one the tool
+uses: untracked bodies are never transmitted. The prompt states that it reviews
+staged and unstaged changes rather than claiming untracked coverage, the
+reviewer-visible manifest carries a count of unreviewed untracked paths, and
+the caller receives the path list off-prompt in
+`review_coverage.unreviewed_untracked_paths`. The original defect this
+addressed, a prompt asserting coverage the diff did not have, is closed by
+correcting the claim rather than by widening the transmitted content.
+`/implement` Step 6.5 stages with `git add -A` before review, so genuinely new
+work is still reviewed, as staged content.

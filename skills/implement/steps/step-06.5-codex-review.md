@@ -30,6 +30,11 @@ The codex review is THE review pass for the PR - there is no second post-push co
 
 When the cycle finishes:
 - `status: "clean"` → advance to Step 6.6.
+- `status: "post_failed"` with `error: "review_coverage_incomplete"` → the
+  review did not cover the whole diff (issue #1414). No findings record,
+  decision record, or cycle marker was written and no cycle was consumed, so
+  re-invoke this step. Do not treat it as clean and do not escalate a cap that
+  was never spent.
 - `status: "escalated"` → if `workflow.review_disposition.enabled` is true, run the automated cap disposition (`gc_review_cap_disposition`) per [_review-loop-rules.md](_review-loop-rules.md) § "Automated cap disposition" before escalating: `proceed` advances to Step 6.6, `one_more_cycle` re-invokes this step with `override_cap=true` + `auto_grant=true`, `escalate_to_human` (or `shadow` mode) summarizes to the user and waits. With the knob off, summarize to the user and wait. Do NOT push commits while waiting.
 - `status: "capped"` → summarize to the user. They may authorize an over-cap cycle (rerun this step with `override_cap=true` + `override_reason`); otherwise treat as terminal.
 
@@ -41,5 +46,6 @@ decision_record_urls, escalation_reason}` envelope to the next workflow step.
 ## Notes
 
 - **Cap source**: the cycle tool reads `workflow.codex_review.pre_push_cap` from `.ground-control.yaml`; default 1 per issue #906. The cap is enforced at the MCP layer (issue #794 / #796), not in agent prose.
-- **Findings record**: every successful cycle posts a verbatim findings comment to the resolved issue thread (per ADR-029). The comment carries the cycle/cap/mode header and both reviewers' verbatim text. The primary session needs only the compact cycle envelope.
+- **Findings record**: every successful cycle posts a verbatim findings comment to the resolved issue thread (per ADR-029). The comment carries the cycle/cap/mode header, the `Diff mode` line describing how the diff reached the reviewers, and both reviewers' verbatim text. The primary session needs only the compact cycle envelope.
+- **Oversized diffs**: a diff larger than one prompt is split server-side into bounded inline slices that both reviewers read within this single cycle (issue #1414). Expect a longer wall-clock for a large diff and a `diff_mode: "manifest"` envelope; that is not a degraded review and needs no caller action.
 - **Skip predicate**: skip this step only if the diff is so trivial (one-liner typo fix) that codex would have nothing to find. When in doubt, run it.

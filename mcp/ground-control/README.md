@@ -368,4 +368,31 @@ Per-finding schema:
 
 The tool response carries both findings and write results, including any per-finding POST failures under `post_failures` (so callers can see partial-write conditions without parsing logs) and any per-reviewer parse errors under `parse_errors`.
 
+### Diff transport and review coverage (issue #1414)
+
+The MCP server owns diff retrieval end to end. Two independent facts are reported:
+
+| Field | Meaning |
+|-------|---------|
+| `diff_mode` | Transport. `inline` when the complete diff fit one prompt; `manifest` when it exceeded `GC_CODEX_REVIEW_MAX_DIFF_BYTES` (default 256 KiB; `0` disables the cap). |
+| `review_coverage` | Coverage. `{strategy, chunks_total, chunks_completed, files_total, files_covered, oversized_slices, unreviewed_untracked_paths, complete}`. Counts and paths only, never diff content. `strategy` is `whole-diff`, `file-slices`, or `hunk-slices`. |
+
+Above the cap the server splits the authoritative diff into bounded inline slices and runs **both** reviewers over **every** slice as one logical review cycle. Boundaries are tried in descending order of fidelity: `diff --git` file blocks, then `@@` hunks, then whole lines. A single line larger than the budget is the smallest unit that survives splitting intact, so it is emitted whole and counted in `oversized_slices` rather than truncated; dropped bytes would read as reviewed content nobody saw.
+
+Every fragment is a valid standalone diff. Each slice goes to an independent reviewer process, so a sub-file fragment carries its `diff --git` attribution and, for a line-split hunk, a **recomputed** `@@` header whose old/new starts and counts describe that fragment. Repeating the original header would make every `line` in a finding from a later fragment point at the wrong code. The numstat manifest is still supplied, but as whole-change context only. Slices are not cycles: the per-issue cycle counter, the marker family, and the cap are unchanged no matter how many slices a diff needs.
+
+This replaces the prior behavior, where an over-cap diff became a manifest plus an instruction telling the reviewer to fetch per-file diffs through its own shell tool. Nothing verified that fetch, and reviewers were observed returning a `ship` verdict caveated on the manifest alone, a result indistinguishable at the envelope level from a real clean pass.
+
+Coverage is validated before any GitHub write. If any slice fails to yield a valid reviewer envelope, the tool returns `ok: false` with `error: "review_coverage_incomplete"` and `next_action: "retry_review_after_resolving_coverage_failure"`, having written **no** findings record, decision record, or cycle marker. The attempt therefore does not consume a review cycle and a retry is free. `review_partial_failure` now covers only the case where the review itself completed but publishing it partially failed.
+
+`gc_review_cap_disposition` re-derives `diff_mode` server-side from the post-fix tree with the same selector and carries it in `signals_snapshot`; a sliced or unknown-coverage review scores as slightly higher risk than a fully inlined one. Callers cannot assert either field.
+
+### Untracked files and the consent boundary
+
+An `uncommitted=true` review covers staged and unstaged changes. Untracked file **bodies are never transmitted**, and the prompt says so rather than claiming coverage it does not have.
+
+Untracked content is the one review input the developer never selected: it is simply present in the working directory, and the branch under review controls `.gitignore`. A narrowed ignore rule makes a developer's pre-existing local `.env`, `.pgpass`, or `.dockercfg` visible to `git ls-files --others`, and sending those bodies to the model provider is an egress decision a heuristic cannot authorize. Credential filenames are unbounded, and an opaque token is indistinguishable from ordinary text, so a deny-list is defense in depth at best, never the authorization boundary. `detectSensitiveBodyContent` does not help here either: it guards GitHub publication, which happens long after the prompt is built.
+
+Staging is the repository's existing explicit consent boundary, so it is the one this tool uses. Untracked paths are enumerated only to report the omission: the reviewer-visible manifest carries a **count**, and the caller receives the path list off-prompt in `review_coverage.unreviewed_untracked_paths`. `/implement` Step 6.5 stages with `git add -A` before review, so genuinely new work is reviewed as staged content and nothing is lost in the normal lane.
+
 `gc_codex_verify_finding` and `gc_codex_architecture_preflight` follow the same boundary: codex emits a structured decision (verify) or modifies design docs in-place (preflight); the MCP server posts the threaded reply, resolves the review thread, and writes phase markers from the host.
