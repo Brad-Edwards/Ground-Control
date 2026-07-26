@@ -16,7 +16,14 @@ COPY --from=frontend /app/dist src/main/resources/static/
 RUN ./gradlew bootJar --no-daemon -x test
 
 FROM eclipse-temurin:21-jre-alpine
-RUN apk add --no-cache github-cli \
+# `apk upgrade` before installing: the temurin base tag lags Alpine's security
+# updates, so it currently ships fixable HIGH CVEs (libexpat CVE-2026-56131 /
+# -56407 / -56408, p11-kit CVE-2026-2100). Patching here is what lets the CI
+# trivy gate block on fixable CRITICAL/HIGH instead of being report-only, and it
+# means the image we actually ship carries the fixes rather than waiting on an
+# upstream tag refresh.
+RUN apk --no-cache upgrade \
+ && apk add --no-cache github-cli \
  && addgroup -S gc && adduser -S gc -G gc
 WORKDIR /app
 COPY --from=build /app/build/libs/*.jar app.jar
