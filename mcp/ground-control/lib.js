@@ -4186,6 +4186,24 @@ async function runImplementFinalTreeGates(
     ["status", "--porcelain=v1", "--untracked-files=normal"],
     commandRunner,
   );
+  // The gates read the working tree, but the merge commit is built from the
+  // index. An unstaged modification or an untracked file therefore gets
+  // verified and then left behind, so the attestation would bind a tree the
+  // gates never saw. Staged entries (`X ` in porcelain v1) are the merge
+  // itself and are expected here; anything with a worktree-column status is
+  // not. Refuse before running the gates rather than after.
+  const unstaged = beforeStatus
+    .split(/\r?\n/)
+    .filter((line) => line !== "")
+    .filter((line) => line[1] !== " ");
+  if (unstaged.length > 0) {
+    const error = new Error(
+      "The final-tree gates require every change to be staged; "
+      + "stage or revert the working-tree changes and retry",
+    );
+    error.code = "implement_base_sync_worktree_not_staged";
+    throw error;
+  }
   const beforeTree = await readImplementIndexTreeOid(repoRoot, commandRunner);
   await commandRunner(
     "bash",

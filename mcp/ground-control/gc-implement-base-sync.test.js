@@ -464,6 +464,43 @@ describe("pre-PR implement synchronization", () => {
     assert.equal(calls.some(([command]) => command === "gh"), false);
   });
 
+  it("refuses to bind a verified tree while unstaged work is on disk (#1429)", async () => {
+    // The gates execute against the working tree; the merge commit is built
+    // from the index. An unstaged edit means the content that passed the gates
+    // is not the content that ships, which silently voids the attestation's
+    // verified-tree guarantee.
+    const calls = [];
+    const runner = async (command, args) => {
+      calls.push([command, args]);
+      if (command === "bash" || command === "make") return { stdout: "" };
+      const op = gitOperation(args);
+      if (op[0] === "symbolic-ref") return { stdout: `${BRANCH}\n` };
+      if (op[0] === "status") return { stdout: "M  staged.txt\n M unstaged.txt\n" };
+      if (op[0] === "rev-parse") {
+        const ref = op[op.length - 1];
+        if (ref.endsWith("^{tree}")) return { stdout: `${TREE}\n` };
+        if (ref.startsWith("MERGE_HEAD")) return { stdout: `${BASE}\n` };
+        return { stdout: `${PRE}\n` };
+      }
+      if (op[0] === "write-tree") return { stdout: `${TREE}\n` };
+      if (op[0] === "ls-files") return { stdout: "" };
+      throw new Error(`unexpected git operation: ${op.join(" ")}`);
+    };
+    const result = await runSynchronizeImplementBranch(completeInput(), {
+      workspaceAuthorizationResolver: workspaceAuthorization,
+      commandRunner: runner,
+      contextResolver: async () => context(),
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "implement_base_sync_worktree_not_staged");
+    assert.equal(
+      calls.some(([command]) => command === "bash"),
+      false,
+      "the gates must not run against a tree that will not be committed",
+    );
+    assert.equal(calls.some(([, args]) => gitOperation(args)[0] === "commit"), false);
+  });
+
   it("refuses an invalid repository context before touching the checkout (#1429)", async () => {
     const calls = [];
     const result = await runSynchronizeImplementBranch({
