@@ -49,7 +49,6 @@ cross_cutting_concerns:
 routing:
   enabled: true
   default_provider: claude
-  default_fallback: parent
   stages:
     issue_branch_resolution:
       tier: low
@@ -60,19 +59,12 @@ routing:
     architecture_preflight:
       tier: low
       model: claude-haiku-4-5
-      # Runs at the parent: this step drives a gc_codex_job async poll loop
-      # (gc_codex_architecture_preflight). A dispatched subagent cannot resume
-      # on the background-sleep poll notification, so it must poll at the parent
-      # (issue #1168, enforced by run_workflow_routing_contract).
-      agent: parent
     codebase_assessment:
       tier: medium
       model: claude-sonnet-5
     planning:
       tier: high
       model: claude-opus-4-8
-      agent: parent
-      fallback: error
     implementation:
       tier: medium
       model: claude-sonnet-5
@@ -88,12 +80,13 @@ routing:
     review_cycle_1_consume:
       tier: high
       model: claude-opus-4-8
-      agent: parent
-      fallback: error
     review_fix_application:
       tier: medium
       model: claude-sonnet-5
     git_publish:
+      tier: low
+      model: claude-haiku-4-5
+    base_sync:
       tier: low
       model: claude-haiku-4-5
     pr_body:
@@ -108,9 +101,6 @@ routing:
     test_quality_review:
       tier: medium
       model: claude-sonnet-5
-      # Runs at the parent: drives a gc_codex_job async poll loop
-      # (gc_test_quality_review_cycle); see architecture_preflight (issue #1168).
-      agent: parent
     final_ci_verify:
       tier: low
       model: claude-haiku-4-5

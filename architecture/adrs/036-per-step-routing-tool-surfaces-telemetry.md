@@ -506,3 +506,17 @@ risk-proportionate verification is driver-neutral: targeted iteration,
 risk-triggered breadth, one final post-fix completion/policy boundary, and the
 single pre-publish pre-commit gate apply identically to parent and subagent
 routes.
+
+**2026-07-26 (issue #1421, advisory routing and synchronized PR tools).**
+Routing no longer returns or accepts an `agent` or fallback execution-control
+decision. The resolver returns advisory provider/model/tier metadata; routine
+steps, including both review-cycle poll loops, execute in the primary
+invocation session. Server-side background review jobs remain unchanged and
+are not agent delegation. A new low-tier `base_sync` stage describes Step 8.5.
+The deterministic tool family adds `gc_synchronize_implement_branch` and
+`gc_create_synchronized_implement_pr`; their durable synchronization marker
+uses ADR-029. The synchronization completion action owns final-tree completion
+and policy execution, binds their unchanged tree to the merge commit, and
+resumes safely after post-commit failures. PR lookup and creation are pinned to
+the authorized repository and validate an existing PR before idempotent reuse.
+Existing step telemetry remains operational-only.

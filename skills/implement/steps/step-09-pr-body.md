@@ -6,8 +6,7 @@ tier: low
 
 # Step 9: Create PR
 
-1. Check if a PR already exists for this branch: `gh pr list --head <branch> --json number,url`
-2. If no PR exists, **render the PR body via `gc_render_pr_body`** (per ADR-036). Pass:
+1. **Render the PR body via `gc_render_pr_body`** (per ADR-036). Pass:
    - `repo_path`, `issue_number`
    - `change_class`: `doc-only` if the diff is entirely documentation per Step 6's two-check sweep; `source+migration` if the diff includes a database migration; otherwise `source`.
    - `requirement_uids`: the in-scope UIDs from Step 1.
@@ -26,7 +25,8 @@ tier: low
 
    **No-requirements runs** (`in_scope_requirements[]` is empty - typical for bug fixes, refactors, dependency bumps): the renderer emits `- (none - bug/refactor/maintenance run; see Traceability section below)` in the Requirement UIDs section. The whole-body UID check (`PR_REQUIREMENT_RE`) still needs SOME UID-shaped token in the body - for these runs, satisfy it by passing at least one ADR reference in `adr_refs`. ADR identifiers like `ADR-021` / `ADR-029` / `ADR-036` match the UID regex. Use `ADR-021` ("Gated Agentic Development Loop") as the foundational default for any `/implement`-driven PR, since every `/implement` run is gated by ADR-021 - that's not fabricated traceability, it's an honest acknowledgment of the workflow contract that produced the PR.
 
-3. **Shape the PR title locally before calling `gh pr create`.** Downstream Ground-Control-aware repos run `amannn/action-semantic-pull-request` (or an equivalent conventional-commit title linter) and reject titles that fail either of two rules. Catching them here removes the edit-cycle-per-failure cost the agent otherwise pays after every `gh pr create`.
+2. **Shape the PR title before PR creation.** The repository-bound creation
+   tool validates the same configured rules before any GitHub write.
 
    - **Rule 1 - single conventional-commit type with optional scope.** Title must match `<type>(<optional-scope>): <subject>`. Compound type prefixes like `security/docs:` or `fix/refactor:` are rejected outright. For bundled PRs that ship multiple change classes, pick the dominant type (typically `security:` for security/initial-release bundles, even when docs/refactor changes ride along) and describe the rest in the subject. The canonical allow-list, when the repo does not declare its own (see configuration knob below), is: `security`, `added`, `changed`, `deprecated`, `removed`, `fixed`, `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`, `build`, `perf`, `revert`.
    - **Rule 2 - subject starts lowercase** (matches `^[a-z].*$`). Project or acronym names that conventionally appear uppercase (`NGFW`, `GCP`, `AWS`, `MCP`) must be reshaped so the **first character of the subject is lowercase**. Either lowercase the leading word (`ngfw doc cleanup`), relocate it inside a path prefix (`mcp/ngfw doc cleanup` - slash-prefixed paths read as lowercase), or front the sentence with a verb (`harden mcp/ngfw secret handling`).
@@ -41,13 +41,20 @@ tier: low
      ```
    - **Failure handling.** If the title fails either rule, reshape it and re-validate locally. Do NOT push to GitHub and let the lint workflow report it - that costs a full CI cycle for a one-line edit.
 
-4. Create the PR with the rendered body:
-   ```
-   gh pr create --base {cfg.workflow.base_branch|default dev} --title "<validated title>" --body "<rendered body from gc_render_pr_body>"
-   ```
-   The renderer emits `Closes #<issue-number>` under Related Issues, so GitHub's UI cross-link is wired automatically.
+3. Call `gc_create_synchronized_implement_pr` with `repo_path`,
+   `issue_number`, `branch_name`, the `synchronization_record_id` from Step
+   8.5, the validated `title`, and the rendered `body`.
+   - The tool re-fetches the configured integration branch immediately before
+     the GitHub write.
+   - It re-reads the trusted synchronization record and requires the current
+     base SHA, local feature SHA, and remote feature SHA to match it exactly.
+   - On a missing/stale/mismatched record, follow `next_action` back to Step
+     8.5. Never bypass the refusal with direct CLI PR creation.
+   - If a PR already exists for the branch, the tool returns its number and URL
+     without creating another one.
 
-5. Note the PR number and URL. Tier for this step: `low` - the tool does the rendering; the agent just collects structured input.
+4. Note the PR number and URL. The renderer emits `Closes #<issue-number>`
+   under Related Issues, so GitHub's UI cross-link is wired automatically.
 
 ## Return contract
 

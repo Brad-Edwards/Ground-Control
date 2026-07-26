@@ -2360,11 +2360,19 @@ export function normalizeIntegrationManagerConfig(raw) {
 function isSafeGitRefName(s) {
   if (typeof s !== "string" || s === "") return false;
   if (!/^[A-Za-z0-9._/-]+$/.test(s)) return false;
+  if (s.startsWith("-")) return false;
   if (s.startsWith("/") || s.endsWith("/")) return false;
   if (s.startsWith(".") || s.endsWith(".")) return false;
   if (s.endsWith(".lock")) return false;
   if (s.includes("..")) return false;
   if (s.includes("//")) return false;
+  const components = s.split("/");
+  if (components.some((part) => (
+    part === ""
+    || part.startsWith(".")
+    || part.endsWith(".")
+    || part.endsWith(".lock")
+  ))) return false;
   return true;
 }
 
@@ -2717,12 +2725,12 @@ function normalizeCrossCuttingConcernsConfig(raw) {
 
 function normalizeRoutingConfig(raw) {
   if (raw == null) {
-    return { ok: true, value: { enabled: false, default_provider: "claude", default_fallback: "parent", stages: {} } };
+    return { ok: true, value: { enabled: false, default_provider: "claude", stages: {} } };
   }
   if (typeof raw !== "object" || Array.isArray(raw)) {
     return { ok: false, errors: ["routing must be a mapping, not a list or scalar"] };
   }
-  const allowed = ["enabled", "default_provider", "default_fallback", "stages"];
+  const allowed = ["enabled", "default_provider", "stages"];
   const errors = [];
   for (const key of Object.keys(raw)) {
     if (!allowed.includes(key)) {
@@ -2745,21 +2753,13 @@ function normalizeRoutingConfig(raw) {
       defaultProvider = raw.default_provider;
     }
   }
-  let defaultFallback = "parent";
-  if (raw.default_fallback != null) {
-    if (!ROUTING_FALLBACKS.includes(raw.default_fallback)) {
-      errors.push(`routing.default_fallback must be one of: ${ROUTING_FALLBACKS.join(", ")}`);
-    } else {
-      defaultFallback = raw.default_fallback;
-    }
-  }
   const stages = {};
   if (raw.stages != null) {
     if (typeof raw.stages !== "object" || Array.isArray(raw.stages)) {
       errors.push("routing.stages must be a mapping from stage name to route config");
     } else {
       for (const [stage, route] of Object.entries(raw.stages)) {
-        const normalized = normalizeRoutingStageConfig(stage, route, { defaultProvider, defaultFallback });
+        const normalized = normalizeRoutingStageConfig(stage, route, { defaultProvider });
         if (!normalized.ok) {
           errors.push(...normalized.errors);
         } else {
@@ -2769,10 +2769,10 @@ function normalizeRoutingConfig(raw) {
     }
   }
   if (errors.length) return { ok: false, errors };
-  return { ok: true, value: { enabled, default_provider: defaultProvider, default_fallback: defaultFallback, stages } };
+  return { ok: true, value: { enabled, default_provider: defaultProvider, stages } };
 }
 
-function normalizeRoutingStageConfig(stage, raw, { defaultProvider, defaultFallback }) {
+function normalizeRoutingStageConfig(stage, raw, { defaultProvider }) {
   const prefix = `routing.stages.${stage}`;
   const errors = [];
   if (!ROUTING_STAGE_NAME_RE.test(stage)) {
@@ -2781,7 +2781,7 @@ function normalizeRoutingStageConfig(stage, raw, { defaultProvider, defaultFallb
   if (raw == null || typeof raw !== "object" || Array.isArray(raw)) {
     return { ok: false, errors: [...errors, `${prefix} must be a mapping`] };
   }
-  const allowed = ["tier", "provider", "model", "agent", "fallback"];
+  const allowed = ["tier", "provider", "model"];
   for (const key of Object.keys(raw)) {
     if (!allowed.includes(key)) {
       errors.push(`${prefix} has unknown key '${key}'`);
@@ -2795,14 +2795,6 @@ function normalizeRoutingStageConfig(stage, raw, { defaultProvider, defaultFallb
   if (!ROUTING_PROVIDERS.includes(provider)) {
     errors.push(`${prefix}.provider must be one of: ${ROUTING_PROVIDERS.join(", ")}`);
   }
-  const fallback = raw.fallback ?? defaultFallback;
-  if (!ROUTING_FALLBACKS.includes(fallback)) {
-    errors.push(`${prefix}.fallback must be one of: ${ROUTING_FALLBACKS.join(", ")}`);
-  }
-  const agent = raw.agent ?? (tier === "high" ? "parent" : "subagent");
-  if (!ROUTING_AGENTS.includes(agent)) {
-    errors.push(`${prefix}.agent must be one of: ${ROUTING_AGENTS.join(", ")}`);
-  }
   const model = raw.model ?? CLAUDE_MODEL_BY_TIER[tier];
   if (provider === "claude" && typeof model === "string" && !/^claude-(haiku|sonnet|opus)-[0-9]+(-[0-9]+)?$/.test(model)) {
     errors.push(`${prefix}.model must be a canonical Claude model id like claude-sonnet-5`);
@@ -2810,7 +2802,7 @@ function normalizeRoutingStageConfig(stage, raw, { defaultProvider, defaultFallb
     errors.push(`${prefix}.model must be a non-empty string`);
   }
   if (errors.length) return { ok: false, errors };
-  return { ok: true, value: { tier, provider, model, agent, fallback } };
+  return { ok: true, value: { tier, provider, model } };
 }
 
 function normalizeTelemetryConfig(raw) {
@@ -3426,8 +3418,6 @@ export function resolveWorkflowRouteFromConfig({ routing, stage, tier = null }) 
     };
   }
   const provider = configured?.provider ?? routing.default_provider ?? "claude";
-  const fallback = configured?.fallback ?? defaultStage?.fallback ?? routing.default_fallback ?? "parent";
-  const agent = configured?.agent ?? defaultStage?.agent ?? (resolvedTier === "high" ? "parent" : "subagent");
   const model = configured?.model ?? CLAUDE_MODEL_BY_TIER[resolvedTier];
   return {
     ok: true,
@@ -3435,9 +3425,7 @@ export function resolveWorkflowRouteFromConfig({ routing, stage, tier = null }) 
     stage: normalizedStage,
     tier: resolvedTier,
     provider,
-    agent,
     model,
-    fallback,
     source: configured ? "config" : (defaultStage ? "default" : "tier"),
   };
 }
@@ -3748,10 +3736,23 @@ async function assertSafeImplementCheckoutConfiguration(repoRoot) {
     if (error.code === 1) return { stdout: "" };
     throw error;
   });
-  const configuredDangerousKeys = stdout
+  let configuredDangerousKeys = stdout
     .split(/\r?\n/)
     .map((key) => key.trim())
     .filter((key) => key !== "" && dangerousKey.test(key));
+  if (configuredDangerousKeys.some((key) => key.toLowerCase() === "core.hookspath")) {
+    const [{ stdout: hooksPath }, { stdout: gitDir }] = await Promise.all([
+      execFile("git", ["-C", repoRoot, "config", "--local", "--path", "--get", "core.hooksPath"]),
+      execFile("git", ["-C", repoRoot, "rev-parse", "--absolute-git-dir"]),
+    ]);
+    const configuredPath = resolvePath(repoRoot, hooksPath.trim());
+    const defaultPath = resolvePath(gitDir.trim(), "hooks");
+    if (configuredPath === defaultPath) {
+      configuredDangerousKeys = configuredDangerousKeys.filter(
+        (key) => key.toLowerCase() !== "core.hookspath",
+      );
+    }
+  }
   if (configuredDangerousKeys.length > 0) {
     throw new Error(
       `caller-controlled executable Git configuration is not permitted: ${configuredDangerousKeys.join(", ")}`,
@@ -3903,6 +3904,1047 @@ export async function runPrepareImplementBranch({
     checkout_mode: checkoutMode,
     branch: activeBranch,
   };
+}
+
+export const IMPLEMENT_BASE_SYNC_SCHEMA = "gc.implement.remote-base-sync/v1";
+export const IMPLEMENT_BASE_SYNC_ACTIONS = Object.freeze(["start", "complete"]);
+export const IMPLEMENT_BASE_SYNC_OUTCOMES = Object.freeze([
+  "already_current",
+  "merged_clean",
+  "merged_conflicts_resolved",
+]);
+const IMPLEMENT_BASE_SYNC_MARKER_PREFIX = "<!-- gc:implement-base-sync";
+const GIT_OBJECT_ID_RE = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+const DEFAULT_PR_TITLE_TYPES = Object.freeze([
+  "security", "added", "changed", "deprecated", "removed", "fixed",
+  "feat", "fix", "chore", "docs", "refactor", "test", "ci", "build",
+  "perf", "revert",
+]);
+
+function implementNetworkGitEnvironment() {
+  const overrides = [
+    ["core.hooksPath", "/dev/null"],
+    ["core.fsmonitor", "false"],
+    ["credential.interactive", "false"],
+  ];
+  const env = {
+    ...process.env,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_SYSTEM: "/dev/null",
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_CONFIG_COUNT: String(overrides.length),
+  };
+  overrides.forEach(([key, value], index) => {
+    env[`GIT_CONFIG_KEY_${index}`] = key;
+    env[`GIT_CONFIG_VALUE_${index}`] = value;
+  });
+  return env;
+}
+
+async function runImplementGit(repoRoot, args, commandRunner = execFile) {
+  return commandRunner(
+    "git",
+    ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgSign=false", "-C", repoRoot, ...args],
+    { cwd: repoRoot, env: implementNetworkGitEnvironment() },
+  );
+}
+
+async function readImplementGitOid(repoRoot, ref, commandRunner = execFile) {
+  const { stdout } = await runImplementGit(
+    repoRoot,
+    ["rev-parse", "--verify", `${ref}^{commit}`],
+    commandRunner,
+  );
+  const oid = stdout.trim().toLowerCase();
+  if (!GIT_OBJECT_ID_RE.test(oid)) {
+    throw new Error("Git returned an invalid object ID");
+  }
+  return oid;
+}
+
+async function readImplementTreeOid(repoRoot, ref, commandRunner = execFile) {
+  const { stdout } = await runImplementGit(
+    repoRoot,
+    ["rev-parse", "--verify", `${ref}^{tree}`],
+    commandRunner,
+  );
+  const oid = stdout.trim().toLowerCase();
+  if (!GIT_OBJECT_ID_RE.test(oid)) {
+    throw new Error("Git returned an invalid tree object ID");
+  }
+  return oid;
+}
+
+async function readImplementIndexTreeOid(repoRoot, commandRunner = execFile) {
+  const { stdout } = await runImplementGit(repoRoot, ["write-tree"], commandRunner);
+  const oid = stdout.trim().toLowerCase();
+  if (!GIT_OBJECT_ID_RE.test(oid)) {
+    throw new Error("Git returned an invalid index tree object ID");
+  }
+  return oid;
+}
+
+async function readImplementActiveBranch(repoRoot, commandRunner = execFile) {
+  const { stdout } = await runImplementGit(
+    repoRoot,
+    ["symbolic-ref", "--quiet", "--short", "HEAD"],
+    commandRunner,
+  );
+  return stdout.trim();
+}
+
+async function assertImplementSyncCheckout({
+  repoRoot,
+  issueNumber,
+  branchName,
+  commandRunner = execFile,
+  allowMergeState = false,
+}) {
+  const activeBranch = await readImplementActiveBranch(repoRoot, commandRunner);
+  if (activeBranch !== branchName) {
+    return {
+      ok: false,
+      error: "implement_base_sync_branch_mismatch",
+      message: `The active branch must be '${branchName}'`,
+      next_action: "return_to_the_issue_branch_and_retry",
+    };
+  }
+  const branchValidation = validateImplementBranchName(activeBranch, issueNumber);
+  if (!branchValidation.ok) return branchValidation;
+  const { stdout } = await runImplementGit(
+    repoRoot,
+    ["status", "--porcelain=v1", "--untracked-files=normal"],
+    commandRunner,
+  );
+  if (!allowMergeState && stdout.trim() !== "") {
+    return {
+      ok: false,
+      error: "implement_base_sync_dirty_tree",
+      message: "The pre-PR synchronization boundary requires a clean feature checkout",
+      next_action: "finish_and_commit_feature_work_then_retry",
+    };
+  }
+  return { ok: true };
+}
+
+async function fetchImplementBase(repoRoot, baseBranch, commandRunner = execFile) {
+  const remoteRef = `refs/remotes/origin/${baseBranch}`;
+  await runImplementGit(
+    repoRoot,
+    [
+      "fetch",
+      "--no-tags",
+      "origin",
+      `+refs/heads/${baseBranch}:${remoteRef}`,
+    ],
+    commandRunner,
+  );
+  return {
+    remoteRef,
+    fetchedBaseSha: await readImplementGitOid(repoRoot, remoteRef, commandRunner),
+  };
+}
+
+async function isImplementAncestor(repoRoot, ancestor, descendant, commandRunner = execFile) {
+  try {
+    await runImplementGit(
+      repoRoot,
+      ["merge-base", "--is-ancestor", ancestor, descendant],
+      commandRunner,
+    );
+    return true;
+  } catch (error) {
+    if (error?.code === 1) return false;
+    throw error;
+  }
+}
+
+async function readRemoteImplementBranchSha(repoRoot, branchName, commandRunner = execFile) {
+  const { stdout } = await runImplementGit(
+    repoRoot,
+    ["ls-remote", "--heads", "origin", `refs/heads/${branchName}`],
+    commandRunner,
+  );
+  const lines = stdout.trim().split(/\r?\n/).filter(Boolean);
+  if (lines.length !== 1) return null;
+  const [oid, ref] = lines[0].split(/\s+/);
+  if (ref !== `refs/heads/${branchName}` || !GIT_OBJECT_ID_RE.test(oid?.toLowerCase())) {
+    return null;
+  }
+  return oid.toLowerCase();
+}
+
+function newImplementSyncRecordId() {
+  return randomBytes(16).toString("hex");
+}
+
+async function runImplementFinalTreeGates(
+  repoRoot,
+  context,
+  commandRunner = execFile,
+) {
+  const completionCommand =
+    context?.workflow?.completion_command ?? context?.workflow?.test_command;
+  if (typeof completionCommand !== "string" || completionCommand.trim() === "") {
+    const error = new Error("No completion command is configured");
+    error.code = "implement_base_sync_completion_command_missing";
+    throw error;
+  }
+  const [{ stdout: beforeStatus }, beforeTree] = await Promise.all([
+    runImplementGit(
+      repoRoot,
+      ["status", "--porcelain=v1", "--untracked-files=normal"],
+      commandRunner,
+    ),
+    readImplementIndexTreeOid(repoRoot, commandRunner),
+  ]);
+  await commandRunner(
+    "bash",
+    ["-c", completionCommand],
+    { cwd: repoRoot },
+  );
+  await commandRunner("make", ["policy"], { cwd: repoRoot });
+  const [{ stdout: afterStatus }, afterTree] = await Promise.all([
+    runImplementGit(
+      repoRoot,
+      ["status", "--porcelain=v1", "--untracked-files=normal"],
+      commandRunner,
+    ),
+    readImplementIndexTreeOid(repoRoot, commandRunner),
+  ]);
+  if (afterTree !== beforeTree || afterStatus !== beforeStatus) {
+    const error = new Error("The final-tree gates changed the Git index or checkout");
+    error.code = "implement_base_sync_gate_tree_changed";
+    throw error;
+  }
+  return afterTree;
+}
+
+export function buildImplementBaseSyncMarker(record) {
+  return [
+    IMPLEMENT_BASE_SYNC_MARKER_PREFIX,
+    `schema="${IMPLEMENT_BASE_SYNC_SCHEMA}"`,
+    `record="${record.recordId}"`,
+    `issue="${record.issueNumber}"`,
+    `branch="${record.branchName}"`,
+    `base="${record.baseBranch}"`,
+    `source="${record.remoteRef}"`,
+    `pre="${record.preSyncSha}"`,
+    `fetched="${record.fetchedBaseSha}"`,
+    `outcome="${record.outcome}"`,
+    `result="${record.resultingFeatureSha}"`,
+    `verified="${record.verifiedTreeSha}"`,
+    "-->",
+  ].join(" ");
+}
+
+export function parseImplementBaseSyncMarkers(commentBodies, issueNumber) {
+  const records = [];
+  const markerRe = /<!--\s*gc:implement-base-sync\s+([^>]*?)-->/g;
+  for (const body of Array.isArray(commentBodies) ? commentBodies : []) {
+    if (typeof body !== "string") continue;
+    let match;
+    while ((match = markerRe.exec(body)) !== null) {
+      const attrs = {};
+      const attrRe = /([a-z]+)="([^"]*)"/g;
+      let attr;
+      while ((attr = attrRe.exec(match[1])) !== null) attrs[attr[1]] = attr[2];
+      const parsedIssue = Number.parseInt(attrs.issue ?? "", 10);
+      if (
+        attrs.schema !== IMPLEMENT_BASE_SYNC_SCHEMA
+        || parsedIssue !== issueNumber
+        || !/^[0-9a-f]{32}$/.test(attrs.record ?? "")
+        || validateImplementBranchName(attrs.branch, issueNumber).ok !== true
+        || !isSafeGitRefName(attrs.base)
+        || attrs.source !== `refs/remotes/origin/${attrs.base}`
+        || !GIT_OBJECT_ID_RE.test(attrs.pre ?? "")
+        || !GIT_OBJECT_ID_RE.test(attrs.fetched ?? "")
+        || !IMPLEMENT_BASE_SYNC_OUTCOMES.includes(attrs.outcome)
+        || !GIT_OBJECT_ID_RE.test(attrs.result ?? "")
+        || !GIT_OBJECT_ID_RE.test(attrs.verified ?? "")
+      ) {
+        records.push({ valid: false, raw: match[0] });
+        continue;
+      }
+      records.push({
+        valid: true,
+        recordId: attrs.record,
+        issueNumber: parsedIssue,
+        branchName: attrs.branch,
+        baseBranch: attrs.base,
+        remoteRef: attrs.source,
+        preSyncSha: attrs.pre,
+        fetchedBaseSha: attrs.fetched,
+        outcome: attrs.outcome,
+        resultingFeatureSha: attrs.result,
+        verifiedTreeSha: attrs.verified,
+      });
+    }
+  }
+  return records;
+}
+
+async function postImplementBaseSyncRecord(
+  repoRoot,
+  owner,
+  name,
+  record,
+  commandRunner = execFile,
+) {
+  const marker = buildImplementBaseSyncMarker(record);
+  const body = [
+    marker,
+    "",
+    "## Pre-PR base synchronization",
+    "",
+    `- Source: \`${record.remoteRef}\` at \`${record.fetchedBaseSha}\``,
+    `- Outcome: \`${record.outcome}\``,
+    `- Published feature head: \`${record.resultingFeatureSha}\``,
+    `- Verified tree: \`${record.verifiedTreeSha}\``,
+  ].join("\n");
+  const sensitiveError = detectSensitiveBodyContent(body);
+  if (sensitiveError) throw new Error(sensitiveError);
+  if (Buffer.byteLength(body, "utf8") > GITHUB_ISSUE_COMMENT_BODY_MAX) {
+    throw new Error("Rendered synchronization record exceeds GitHub's issue-comment body limit");
+  }
+  const { stdout } = await commandRunner(
+    "gh",
+    [
+      "api",
+      "--method",
+      "POST",
+      `/repos/${owner}/${name}/issues/${record.issueNumber}/comments`,
+      "-f",
+      `body=${body}`,
+    ],
+    { cwd: repoRoot },
+  );
+  const response = JSON.parse(stdout);
+  return {
+    commentUrl: typeof response?.html_url === "string" ? response.html_url : null,
+    commentId: Number.isInteger(response?.id) ? response.id : null,
+  };
+}
+
+async function verifyPublishedImplementHead(
+  repoRoot,
+  branchName,
+  expectedSha,
+  commandRunner = execFile,
+) {
+  const localSha = await readImplementGitOid(repoRoot, "HEAD", commandRunner);
+  const remoteSha = await readRemoteImplementBranchSha(repoRoot, branchName, commandRunner);
+  return localSha === expectedSha && remoteSha === expectedSha;
+}
+
+export async function runSynchronizeImplementBranch(input, {
+  workspaceAuthorizationResolver = resolveMcpLaunchWorkspaceAuthorization,
+  commandRunner = execFile,
+  contextResolver = getRepoGroundControlContext,
+  syncRecordReader = readTrustedImplementSyncRecord,
+} = {}) {
+  if (
+    input == null
+    || !IMPLEMENT_BASE_SYNC_ACTIONS.includes(input.action)
+    || !Number.isInteger(input.issueNumber)
+    || input.issueNumber <= 0
+  ) {
+    return {
+      ok: false,
+      error: "implement_base_sync_input_invalid",
+      message: "action and a positive issueNumber are required",
+    };
+  }
+  const branchValidation = validateImplementBranchName(input.branchName, input.issueNumber);
+  if (!branchValidation.ok) return branchValidation;
+  let repoRoot;
+  let context;
+  try {
+    repoRoot = realpathSync(await ensureGitRepo(input.repoPath));
+    context = await contextResolver(repoRoot);
+  } catch (error) {
+    return {
+      ok: false,
+      error: "implement_base_sync_context_failed",
+      message: error.message,
+      next_action: "repair_repository_context_and_retry",
+    };
+  }
+  const repoAuthorization = await authorizeImplementRepoRoot(
+    repoRoot,
+    workspaceAuthorizationResolver,
+  );
+  if (!repoAuthorization.ok) return repoAuthorization;
+  const baseBranch = context?.workflow?.base_branch ?? "dev";
+  if (!isSafeGitRefName(baseBranch)) {
+    return {
+      ok: false,
+      error: "implement_base_sync_base_invalid",
+      message: "The configured integration branch is not a safe Git ref name",
+    };
+  }
+  try {
+    await assertSafeImplementCheckoutConfiguration(repoRoot);
+    const checkout = await assertImplementSyncCheckout({
+      repoRoot,
+      issueNumber: input.issueNumber,
+      branchName: input.branchName,
+      commandRunner,
+      allowMergeState: input.action === "complete",
+    });
+    if (!checkout.ok) return checkout;
+    if (input.action === "start") {
+      const preSyncSha = await readImplementGitOid(repoRoot, "HEAD", commandRunner);
+      let fetched;
+      try {
+        fetched = await fetchImplementBase(repoRoot, baseBranch, commandRunner);
+      } catch {
+        return {
+          ok: false,
+          error: "implement_base_sync_fetch_failed",
+          message: `Unable to fetch origin/${baseBranch}; no local base ref can satisfy this boundary`,
+          next_action: "repair_remote_access_and_retry_the_synchronization_boundary",
+        };
+      }
+      const { remoteRef, fetchedBaseSha } = fetched;
+      const recordId = newImplementSyncRecordId();
+      if (await isImplementAncestor(repoRoot, fetchedBaseSha, preSyncSha, commandRunner)) {
+        if (!await verifyPublishedImplementHead(
+          repoRoot,
+          input.branchName,
+          preSyncSha,
+          commandRunner,
+        )) {
+          return {
+            ok: false,
+            error: "implement_base_sync_feature_not_published",
+            message: "The local and origin feature heads must match before synchronization can complete",
+            next_action: "push_the_feature_branch_without_force_and_retry",
+          };
+        }
+        const record = {
+          recordId,
+          issueNumber: input.issueNumber,
+          branchName: input.branchName,
+          baseBranch,
+          remoteRef,
+          preSyncSha,
+          fetchedBaseSha,
+          outcome: "already_current",
+          resultingFeatureSha: preSyncSha,
+          verifiedTreeSha: await readImplementTreeOid(repoRoot, "HEAD", commandRunner),
+        };
+        const posted = await postImplementBaseSyncRecord(
+          repoRoot,
+          repoAuthorization.owner,
+          repoAuthorization.name,
+          record,
+          commandRunner,
+        );
+        return {
+          ok: true,
+          status: "complete",
+          ...record,
+          ...posted,
+        };
+      }
+      try {
+        await runImplementGit(
+          repoRoot,
+          ["merge", "--no-ff", "--no-commit", remoteRef],
+          commandRunner,
+        );
+        return {
+          ok: true,
+          status: "merge_ready",
+          recordId,
+          issueNumber: input.issueNumber,
+          branchName: input.branchName,
+          baseBranch,
+          remoteRef,
+          preSyncSha,
+          fetchedBaseSha,
+          outcome: "merged_clean",
+          next_action: "run_final_tree_gates_then_complete_sync",
+        };
+      } catch (error) {
+        const { stdout: unmerged } = await runImplementGit(
+          repoRoot,
+          ["ls-files", "--unmerged"],
+          commandRunner,
+        );
+        const mergeHead = await readImplementGitOid(repoRoot, "MERGE_HEAD", commandRunner)
+          .catch(() => null);
+        if (unmerged.trim() !== "" && mergeHead === fetchedBaseSha) {
+          return {
+            ok: true,
+            status: "conflicts",
+            recordId,
+            issueNumber: input.issueNumber,
+            branchName: input.branchName,
+            baseBranch,
+            remoteRef,
+            preSyncSha,
+            fetchedBaseSha,
+            outcome: "merged_conflicts_resolved",
+            next_action: "resolve_every_conflict_run_proportionate_checks_then_complete_sync",
+          };
+        }
+        throw error;
+      }
+    }
+
+    if (
+      typeof input.recordId !== "string"
+      || !/^[0-9a-f]{32}$/.test(input.recordId)
+      || !GIT_OBJECT_ID_RE.test(input.preSyncSha ?? "")
+      || !GIT_OBJECT_ID_RE.test(input.fetchedBaseSha ?? "")
+      || !["merged_clean", "merged_conflicts_resolved"].includes(input.outcome)
+    ) {
+      return {
+        ok: false,
+        error: "implement_base_sync_completion_input_invalid",
+        message: "complete requires the record ID, pre-sync SHA, fetched base SHA, and merge outcome returned by start",
+      };
+    }
+    const remoteRef = `refs/remotes/origin/${baseBranch}`;
+    const mergeHead = await readImplementGitOid(repoRoot, "MERGE_HEAD", commandRunner)
+      .catch(() => null);
+    let resultingFeatureSha;
+    let verifiedTreeSha;
+    if (mergeHead != null) {
+      if (mergeHead !== input.fetchedBaseSha) {
+        return {
+          ok: false,
+          error: "implement_base_sync_merge_head_mismatch",
+          message: "MERGE_HEAD does not match the fetched integration commit",
+          next_action: "return_to_the_synchronization_boundary",
+        };
+      }
+      const currentHead = await readImplementGitOid(repoRoot, "HEAD", commandRunner);
+      if (currentHead !== input.preSyncSha) {
+        return {
+          ok: false,
+          error: "implement_base_sync_pre_merge_head_mismatch",
+          message: "The merge started from a different feature commit",
+          next_action: "inspect_the_preserved_merge_state",
+        };
+      }
+      const { stdout: unmerged } = await runImplementGit(
+        repoRoot,
+        ["ls-files", "--unmerged"],
+        commandRunner,
+      );
+      if (unmerged.trim() !== "") {
+        return {
+          ok: false,
+          error: "implement_base_sync_conflicts_unresolved",
+          message: "Every merge conflict must be resolved before synchronization can complete",
+          next_action: "resolve_every_conflict_and_retry",
+        };
+      }
+      try {
+        verifiedTreeSha = await runImplementFinalTreeGates(
+          repoRoot,
+          context,
+          commandRunner,
+        );
+      } catch (error) {
+        return {
+          ok: false,
+          error: error.code ?? "implement_base_sync_gate_failed",
+          message: `The final merged tree did not pass its completion boundary: ${error.message}`,
+          next_action: "fix_the_preserved_merge_tree_and_retry_completion",
+        };
+      }
+      await runImplementGit(
+        repoRoot,
+        ["commit", "-m", `Merge origin/${baseBranch} into ${input.branchName}`],
+        commandRunner,
+      );
+      resultingFeatureSha = await readImplementGitOid(repoRoot, "HEAD", commandRunner);
+    } else {
+      resultingFeatureSha = await readImplementGitOid(repoRoot, "HEAD", commandRunner);
+      const { stdout: status } = await runImplementGit(
+        repoRoot,
+        ["status", "--porcelain=v1", "--untracked-files=normal"],
+        commandRunner,
+      );
+      if (status.trim() !== "") {
+        return {
+          ok: false,
+          error: "implement_base_sync_retry_tree_dirty",
+          message: "A committed synchronization retry requires a clean checkout",
+          next_action: "inspect_the_preserved_checkout_and_retry",
+        };
+      }
+    }
+    const { stdout: parentsOutput } = await runImplementGit(
+      repoRoot,
+      ["show", "-s", "--format=%P", resultingFeatureSha],
+      commandRunner,
+    );
+    const parents = parentsOutput.trim().split(/\s+/);
+    if (
+      parents.length < 2
+      || !parents.includes(input.preSyncSha)
+      || !parents.includes(input.fetchedBaseSha)
+    ) {
+      return {
+        ok: false,
+        error: "implement_base_sync_graph_invalid",
+        message: "The resulting commit does not preserve both feature and fetched-base parents",
+        next_action: "inspect_the_merge_graph_without_rewriting_history",
+      };
+    }
+    const committedTreeSha = await readImplementTreeOid(
+      repoRoot,
+      resultingFeatureSha,
+      commandRunner,
+    );
+    if (mergeHead == null) {
+      try {
+        verifiedTreeSha = await runImplementFinalTreeGates(
+          repoRoot,
+          context,
+          commandRunner,
+        );
+      } catch (error) {
+        return {
+          ok: false,
+          error: error.code ?? "implement_base_sync_gate_failed",
+          message: `The committed merge retry did not pass its completion boundary: ${error.message}`,
+          next_action: "fix_the_preserved_checkout_and_retry_completion",
+        };
+      }
+    }
+    if (committedTreeSha !== verifiedTreeSha) {
+      return {
+        ok: false,
+        error: "implement_base_sync_verified_tree_mismatch",
+        message: "The merge commit tree does not equal the tree that passed the final gates",
+        next_action: "inspect_the_merge_graph_without_rewriting_history",
+      };
+    }
+    await runImplementGit(
+      repoRoot,
+      ["push", "origin", `refs/heads/${input.branchName}:refs/heads/${input.branchName}`],
+      commandRunner,
+    );
+    if (!await verifyPublishedImplementHead(
+      repoRoot,
+      input.branchName,
+      resultingFeatureSha,
+      commandRunner,
+    )) {
+      return {
+        ok: false,
+        error: "implement_base_sync_publish_mismatch",
+        message: "The published feature head does not equal the verified merge result",
+        next_action: "repair_the_ordinary_push_and_retry_completion",
+      };
+    }
+    const record = {
+      recordId: input.recordId,
+      issueNumber: input.issueNumber,
+      branchName: input.branchName,
+      baseBranch,
+      remoteRef,
+      preSyncSha: input.preSyncSha,
+      fetchedBaseSha: input.fetchedBaseSha,
+      outcome: input.outcome,
+      resultingFeatureSha,
+      verifiedTreeSha,
+    };
+    const existing = await syncRecordReader(
+      repoRoot,
+      repoAuthorization.owner,
+      repoAuthorization.name,
+      input.issueNumber,
+      input.recordId,
+    );
+    let posted;
+    if (existing.ok) {
+      const fields = [
+        "recordId", "issueNumber", "branchName", "baseBranch", "remoteRef",
+        "preSyncSha", "fetchedBaseSha", "outcome", "resultingFeatureSha",
+        "verifiedTreeSha",
+      ];
+      if (fields.some((field) => existing.record[field] !== record[field])) {
+        return {
+          ok: false,
+          error: "implement_base_sync_existing_record_mismatch",
+          message: "The existing synchronization record does not match this completion",
+          next_action: "inspect_the_issue_thread_and_preserved_checkout",
+        };
+      }
+      posted = {
+        commentId: existing.commentId ?? null,
+        commentUrl: existing.commentUrl ?? null,
+      };
+    } else if (existing.error === "implement_pr_sync_record_missing") {
+      posted = await postImplementBaseSyncRecord(
+        repoRoot,
+        repoAuthorization.owner,
+        repoAuthorization.name,
+        record,
+        commandRunner,
+      );
+    } else {
+      return {
+        ...existing,
+        next_action: "inspect_the_issue_thread_and_preserved_checkout",
+      };
+    }
+    return {
+      ok: true,
+      status: "complete",
+      ...record,
+      ...posted,
+    };
+  } catch {
+    return {
+      ok: false,
+      error: input.action === "start"
+        ? "implement_base_sync_failed"
+        : "implement_base_sync_completion_failed",
+      message:
+        "Pre-PR synchronization failed; inspect the preserved checkout state before retrying",
+      next_action: "inspect_preserved_git_state_and_retry_the_same_boundary",
+    };
+  }
+}
+
+export function validateImplementPrTitle(title, config = null) {
+  if (typeof title !== "string" || title.includes("\n") || title.includes("\r")) {
+    return { ok: false, message: "title must be a single-line string" };
+  }
+  const match = /^([a-z]+)(?:\(([^()\r\n]+)\))?: (.+)$/.exec(title);
+  if (match == null) {
+    return { ok: false, message: "title must match <type>(<optional-scope>): <subject>" };
+  }
+  const types = Array.isArray(config?.types) ? config.types : DEFAULT_PR_TITLE_TYPES;
+  if (!types.includes(match[1])) {
+    return { ok: false, message: `title type must be one of: ${types.join(", ")}` };
+  }
+  if (config?.require_scope === true && !match[2]) {
+    return { ok: false, message: "title scope is required by repository configuration" };
+  }
+  let subjectRe;
+  try {
+    subjectRe = new RegExp(config?.subject_pattern ?? "^[a-z].*$");
+  } catch {
+    return { ok: false, message: "configured PR title subject pattern is invalid" };
+  }
+  if (!subjectRe.test(match[3])) {
+    return { ok: false, message: "title subject does not satisfy repository configuration" };
+  }
+  return { ok: true };
+}
+
+function validateExistingSynchronizedImplementPr(
+  candidate,
+  {
+    owner,
+    name,
+    baseBranch,
+    branchName,
+    featureSha,
+    title,
+    body,
+  },
+) {
+  const headOwner = typeof candidate?.headRepositoryOwner === "string"
+    ? candidate.headRepositoryOwner
+    : candidate?.headRepositoryOwner?.login ?? candidate?.headRepositoryOwner?.name;
+  const headName = typeof candidate?.headRepository === "string"
+    ? candidate.headRepository
+    : candidate?.headRepository?.name;
+  const expectedUrlPrefix = `https://github.com/${owner}/${name}/pull/`.toLowerCase();
+  if (
+    !Number.isInteger(candidate?.number)
+    || typeof candidate?.url !== "string"
+    || !candidate.url.toLowerCase().startsWith(expectedUrlPrefix)
+    || candidate.baseRefName !== baseBranch
+    || candidate.headRefName !== branchName
+    || candidate.headRefOid?.toLowerCase() !== featureSha
+    || candidate.isCrossRepository === true
+    || typeof headOwner !== "string"
+    || headOwner.toLowerCase() !== owner.toLowerCase()
+    || typeof headName !== "string"
+    || headName.toLowerCase() !== name.toLowerCase()
+    || candidate.title !== title
+    || candidate.body !== body
+  ) {
+    return {
+      ok: false,
+      error: "implement_pr_existing_identity_mismatch",
+      message: "An existing PR for the feature branch does not match the synchronized base, head, repository, title, and body",
+      next_action: "inspect_the_existing_pr_without_bypassing_the_sync_gate",
+    };
+  }
+  return { ok: true };
+}
+
+async function readTrustedImplementSyncRecord(
+  repoRoot,
+  owner,
+  name,
+  issueNumber,
+  recordId,
+) {
+  const comments = await readIssueCommentsWithAuthors(repoRoot, owner, name, issueNumber);
+  const trust = await resolveExecutionObligationTrust(repoRoot, owner, name, comments);
+  const markerComments = comments
+    .map((comment) => ({
+      comment,
+      records: parseImplementBaseSyncMarkers([comment.body], issueNumber),
+    }))
+    .filter(({ records }) => records.length > 0);
+  if (markerComments.some(({ comment }) => !trust.isTrusted(comment))) {
+    return {
+      ok: false,
+      error: "implement_pr_sync_record_untrusted",
+      message: "A synchronization marker was authored outside the repository writer set",
+    };
+  }
+  if (markerComments.some(({ records }) => records.some((record) => !record.valid))) {
+    return {
+      ok: false,
+      error: "implement_pr_sync_record_malformed",
+      message: "A malformed synchronization marker exists on the issue thread",
+    };
+  }
+  const matches = markerComments
+    .flatMap(({ comment, records }) => records.map((record) => ({ comment, record })))
+    .filter(({ record }) => record.recordId === recordId);
+  if (matches.length !== 1) {
+    return {
+      ok: false,
+      error: matches.length === 0
+        ? "implement_pr_sync_record_missing"
+        : "implement_pr_sync_record_ambiguous",
+      message: "Exactly one trusted synchronization record must match the requested record ID",
+    };
+  }
+  const match = matches[0];
+  return {
+    ok: true,
+    record: match.record,
+    commentId: match.comment.id,
+    commentUrl: match.comment.id == null
+      ? null
+      : `https://github.com/${owner}/${name}/issues/${issueNumber}#issuecomment-${match.comment.id}`,
+  };
+}
+
+export async function runCreateSynchronizedImplementPr(input, {
+  workspaceAuthorizationResolver = resolveMcpLaunchWorkspaceAuthorization,
+  commandRunner = execFile,
+  contextResolver = getRepoGroundControlContext,
+  syncRecordReader = readTrustedImplementSyncRecord,
+} = {}) {
+  if (
+    input == null
+    || !Number.isInteger(input.issueNumber)
+    || input.issueNumber <= 0
+    || typeof input.recordId !== "string"
+    || !/^[0-9a-f]{32}$/.test(input.recordId)
+  ) {
+    return {
+      ok: false,
+      error: "implement_pr_input_invalid",
+      message: "issueNumber and a synchronization record ID are required",
+    };
+  }
+  const branchValidation = validateImplementBranchName(input.branchName, input.issueNumber);
+  if (!branchValidation.ok) return branchValidation;
+  if (typeof input.body !== "string" || !checkPrBodyShape(input.body).ok) {
+    return {
+      ok: false,
+      error: "implement_pr_body_invalid",
+      message: "body must satisfy the canonical Ground Control PR-body shape",
+    };
+  }
+  const sensitiveError = detectSensitiveBodyContent(input.body);
+  if (sensitiveError) {
+    return { ok: false, error: "implement_pr_body_rejected", message: sensitiveError };
+  }
+  const reservedError = rejectReservedMarkerSequence(input.body, "body");
+  if (reservedError) {
+    return { ok: false, error: "implement_pr_body_rejected", message: reservedError };
+  }
+  let repoRoot;
+  let context;
+  try {
+    repoRoot = realpathSync(await ensureGitRepo(input.repoPath));
+    context = await contextResolver(repoRoot);
+  } catch (error) {
+    return { ok: false, error: "implement_pr_context_failed", message: error.message };
+  }
+  const repoAuthorization = await authorizeImplementRepoRoot(
+    repoRoot,
+    workspaceAuthorizationResolver,
+  );
+  if (!repoAuthorization.ok) return repoAuthorization;
+  const baseBranch = context?.workflow?.base_branch ?? "dev";
+  const titleValidation = validateImplementPrTitle(input.title, context?.workflow?.pr_title);
+  if (!titleValidation.ok) {
+    return {
+      ok: false,
+      error: "implement_pr_title_invalid",
+      message: titleValidation.message,
+      next_action: "reshape_the_title_and_retry",
+    };
+  }
+  try {
+    await assertSafeImplementCheckoutConfiguration(repoRoot);
+    const checkout = await assertImplementSyncCheckout({
+      repoRoot,
+      issueNumber: input.issueNumber,
+      branchName: input.branchName,
+      commandRunner,
+    });
+    if (!checkout.ok) return checkout;
+    const trusted = await syncRecordReader(
+      repoRoot,
+      repoAuthorization.owner,
+      repoAuthorization.name,
+      input.issueNumber,
+      input.recordId,
+    );
+    if (!trusted.ok) {
+      return { ...trusted, next_action: "return_to_the_synchronization_boundary" };
+    }
+    const record = trusted.record;
+    if (
+      record.issueNumber !== input.issueNumber
+      || record.branchName !== input.branchName
+      || record.baseBranch !== baseBranch
+      || record.remoteRef !== `refs/remotes/origin/${baseBranch}`
+    ) {
+      return {
+        ok: false,
+        error: "implement_pr_sync_record_identity_mismatch",
+        message: "The synchronization record does not belong to this issue, branch, or configured base",
+        next_action: "return_to_the_synchronization_boundary",
+      };
+    }
+    const { fetchedBaseSha } = await fetchImplementBase(repoRoot, baseBranch, commandRunner);
+    const localSha = await readImplementGitOid(repoRoot, "HEAD", commandRunner);
+    const localTreeSha = await readImplementTreeOid(repoRoot, "HEAD", commandRunner);
+    const remoteSha = await readRemoteImplementBranchSha(repoRoot, input.branchName, commandRunner);
+    if (
+      fetchedBaseSha !== record.fetchedBaseSha
+      || localSha !== record.resultingFeatureSha
+      || localTreeSha !== record.verifiedTreeSha
+      || remoteSha !== record.resultingFeatureSha
+      || !await isImplementAncestor(
+        repoRoot,
+        record.fetchedBaseSha,
+        record.resultingFeatureSha,
+        commandRunner,
+      )
+    ) {
+      return {
+        ok: false,
+        error: "implement_pr_sync_stale",
+        message: "The base or feature branch changed after synchronization",
+        next_action: "return_to_the_synchronization_boundary",
+      };
+    }
+    const repoSlug = `${repoAuthorization.owner}/${repoAuthorization.name}`;
+    try {
+      const { stdout } = await commandRunner(
+        "gh",
+        [
+          "pr", "list",
+          "--repo", repoSlug,
+          "--state", "open",
+          "--head", `${repoAuthorization.owner}:${input.branchName}`,
+          "--json",
+          "number,url,baseRefName,headRefName,headRefOid,headRepository,headRepositoryOwner,isCrossRepository,title,body",
+          "--limit", "2",
+        ],
+        { cwd: repoRoot },
+      );
+      const existing = JSON.parse(stdout);
+      if (!Array.isArray(existing) || existing.length > 1) {
+        return {
+          ok: false,
+          error: "implement_pr_existing_ambiguous",
+          message: "The synchronized feature branch must have at most one open pull request",
+          next_action: "inspect_the_existing_prs_without_bypassing_the_sync_gate",
+        };
+      }
+      if (existing.length === 1) {
+        const validation = validateExistingSynchronizedImplementPr(existing[0], {
+          owner: repoAuthorization.owner,
+          name: repoAuthorization.name,
+          baseBranch,
+          branchName: input.branchName,
+          featureSha: localSha,
+          title: input.title,
+          body: input.body,
+        });
+        if (!validation.ok) return validation;
+        return {
+          ok: true,
+          already_exists: true,
+          pr_number: existing[0].number,
+          pr_url: existing[0].url,
+          synchronization_record_id: record.recordId,
+        };
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        error: "implement_pr_existing_lookup_failed",
+        message: extractGhErrorMessage(error),
+        next_action: "repair_the_repository_scoped_pr_lookup_and_retry",
+      };
+    }
+    const { stdout } = await commandRunner(
+      "gh",
+      [
+        "pr", "create",
+        "--repo", repoSlug,
+        "--base", baseBranch,
+        "--head", input.branchName,
+        "--title", input.title,
+        "--body", input.body,
+      ],
+      { cwd: repoRoot },
+    );
+    const prUrl = stdout.trim();
+    const expectedUrlPrefix =
+      `https://github.com/${repoAuthorization.owner}/${repoAuthorization.name}/pull/`.toLowerCase();
+    if (!prUrl.toLowerCase().startsWith(expectedUrlPrefix)) {
+      return {
+        ok: false,
+        error: "implement_pr_created_repository_mismatch",
+        message: "GitHub returned a PR outside the authorized repository",
+        next_action: "inspect_the_repository_scoped_pr_write",
+      };
+    }
+    const numberMatch = /\/pull\/(\d+)(?:\D|$)/.exec(prUrl);
+    return {
+      ok: true,
+      already_exists: false,
+      pr_number: numberMatch == null ? null : Number.parseInt(numberMatch[1], 10),
+      pr_url: prUrl,
+      synchronization_record_id: record.recordId,
+      fetched_base_sha: fetchedBaseSha,
+      feature_sha: localSha,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: "implement_pr_create_failed",
+      message: extractGhErrorMessage(error),
+      next_action: "repair_the_refused_condition_and_retry_without_bypassing_the_sync_gate",
+    };
+  }
 }
 
 export async function getIssueContext(issueNumber, repo, { cwd } = {}) {
@@ -17285,8 +18327,6 @@ export const TELEMETRY_TIERS = Object.freeze(["low", "medium", "high"]);
 export const TELEMETRY_OUTCOMES = Object.freeze(["ok", "error", "skipped"]);
 export const ROUTING_TIERS = TELEMETRY_TIERS;
 export const ROUTING_PROVIDERS = Object.freeze(["claude"]);
-export const ROUTING_AGENTS = Object.freeze(["parent", "subagent", "cli"]);
-export const ROUTING_FALLBACKS = Object.freeze(["parent", "error", "skip"]);
 export const ROUTING_STAGE_NAME_RE = /^[a-z][a-z0-9_-]*$/;
 export const CLAUDE_MODEL_BY_TIER = Object.freeze({
   low: "claude-haiku-4-5",
@@ -17298,14 +18338,15 @@ export const DEFAULT_IMPLEMENT_ROUTING_STAGES = Object.freeze({
   read_issue_context: { tier: "low" },
   architecture_preflight: { tier: "low" },
   codebase_assessment: { tier: "medium" },
-  planning: { tier: "high", agent: "parent", fallback: "error" },
+  planning: { tier: "high" },
   implementation: { tier: "medium" },
   clause_mapping: { tier: "medium" },
   precommit: { tier: "low" },
   completion_gate: { tier: "low" },
-  review_cycle_1_consume: { tier: "high", agent: "parent", fallback: "error" },
+  review_cycle_1_consume: { tier: "high" },
   review_fix_application: { tier: "medium" },
   git_publish: { tier: "low" },
+  base_sync: { tier: "low" },
   pr_body: { tier: "low" },
   ci_monitor: { tier: "low" },
   sonarcloud: { tier: "low" },

@@ -1,6 +1,6 @@
 ---
 name: implement
-description: End-to-end issue implementation - from plan through merged PR. Agent-neutral (Claude Code, Codex, Cursor CLI). Parameterized by .ground-control.yaml. Thin orchestrator that delegates per-step work to subagents per ADR-036 + issue #934.
+description: End-to-end issue implementation - from plan through merged PR. Agent-neutral primary-session workflow with structurally enforced MCP gates.
 disable-model-invocation: true
 ---
 
@@ -10,7 +10,7 @@ This file exists for **Cursor skill discovery only**. The canonical source of tr
 
 **Execute the canonical workflow verbatim:**
 
-1. Before route resolution, issue lookup, branch handling, or delegation, read
+1. Before route resolution, issue lookup, branch handling, or workflow execution, read
    [`skills/implement/_development-principles.md`](../../../skills/implement/_development-principles.md)
    in full and preserve its immutable execution-contract fields.
 2. Read and follow [`skills/implement/SKILL.md`](../../../skills/implement/SKILL.md) in full.

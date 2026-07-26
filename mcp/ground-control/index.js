@@ -79,6 +79,7 @@ import {
   runCodexReviewCycle, runTestQualityReviewCycle,
   runReviewCapDisposition,
   runPrepareImplementBranch, runMarkImplementIssuePickedUp,
+  runSynchronizeImplementBranch, runCreateSynchronizedImplementPr,
   runAuthorizeExecutionObligationWontfix, runRecordExecutionObligation,
   startReviewJob, pollReviewJob, cancelReviewJob,
   runResolveWorkflowRoute,
@@ -89,6 +90,7 @@ import {
   buildCodexReviewOverrideReasonDescription,
   CODEX_REVIEW_HARD_CAP, CODEX_REVIEW_PREPUSH_HARD_CAP,
   IMPLEMENT_CHECKOUT_MODES,
+  IMPLEMENT_BASE_SYNC_ACTIONS, IMPLEMENT_BASE_SYNC_OUTCOMES,
   EXECUTION_OBLIGATION_EVENTS, EXECUTION_OBLIGATION_CATEGORIES,
   EXECUTION_OBLIGATION_PAUSE_CLASSES, EXECUTION_OBLIGATION_DISPOSITIONS,
   // ---- embeddings ----
@@ -1354,6 +1356,73 @@ server.tool(
         branchName: branch_name,
         baseBranch: base_branch ?? "dev",
         checkoutMode: checkout_mode ?? "same_checkout",
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_synchronize_implement_branch",
+  "Synchronize an /implement feature branch with the freshly fetched configured integration branch in the invocation checkout. " +
+  "Inputs are repo_path, issue_number, branch_name, and action. action=start fetches an explicit " +
+  "refs/heads/<base>:refs/remotes/origin/<base> refspec, returns already-current or leaves a real --no-ff --no-commit merge " +
+  "ready for verification/conflict resolution. action=complete additionally requires record_id, pre_sync_sha, " +
+  "fetched_base_sha, and outcome; it mechanically runs the configured completion command and make policy, binds the " +
+  "unchanged verified tree to the merge commit, verifies the merge graph, pushes without force, and idempotently posts " +
+  "the trusted versioned issue-thread attestation. It never creates a worktree, rebases, resets, aborts, discards work, " +
+  "or chooses a conflict side.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    branch_name: z.string().min(1).max(50),
+    action: z.enum(IMPLEMENT_BASE_SYNC_ACTIONS),
+    record_id: z.string().regex(/^[0-9a-f]{32}$/).optional(),
+    pre_sync_sha: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/).optional(),
+    fetched_base_sha: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/).optional(),
+    outcome: z.enum(IMPLEMENT_BASE_SYNC_OUTCOMES).optional(),
+  },
+  async ({ repo_path, issue_number, branch_name, action, record_id, pre_sync_sha, fetched_base_sha, outcome }) => {
+    try {
+      return ok(JSON.stringify(await runSynchronizeImplementBranch({
+        repoPath: repo_path,
+        issueNumber: issue_number,
+        branchName: branch_name,
+        action,
+        recordId: record_id ?? null,
+        preSyncSha: pre_sync_sha ?? null,
+        fetchedBaseSha: fetched_base_sha ?? null,
+        outcome: outcome ?? null,
+      }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_create_synchronized_implement_pr",
+  "Create an /implement pull request only after revalidating a trusted pre-PR synchronization attestation. " +
+  "Inputs are repo_path, issue_number, branch_name, synchronization record_id, title, and the body rendered by " +
+  "gc_render_pr_body. Immediately before the GitHub write it re-fetches the configured integration branch, verifies " +
+  "the trusted issue-thread record, verified tree, local feature SHA, remote feature SHA, fetched base SHA, ancestry, " +
+  "repository identity, repository-scoped existing PR identity/content, and configured Conventional Commit title policy. " +
+  "Any stale or missing evidence refuses with a next_action returning " +
+  "the workflow to gc_synchronize_implement_branch; callers must not fall back to direct gh pr create.",
+  {
+    repo_path: z.string(),
+    issue_number: z.number().int().positive(),
+    branch_name: z.string().min(1).max(50),
+    record_id: z.string().regex(/^[0-9a-f]{32}$/),
+    title: z.string().min(1).max(256),
+    body: z.string().min(1).max(65535),
+  },
+  async ({ repo_path, issue_number, branch_name, record_id, title, body }) => {
+    try {
+      return ok(JSON.stringify(await runCreateSynchronizedImplementPr({
+        repoPath: repo_path,
+        issueNumber: issue_number,
+        branchName: branch_name,
+        recordId: record_id,
+        title,
+        body,
       }), null, 2));
     } catch (e) { return err(e); }
   },

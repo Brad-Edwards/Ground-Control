@@ -1257,10 +1257,14 @@ describe("parseGroundControlYaml", () => {
       "'dev > /tmp/x'", // redirection
       "'../etc/passwd'", // path traversal in ref
       "'/dev'", // leading slash
+      "'-dev'", // option-shaped ref
       "'dev/'", // trailing slash
       "'.dev'", // leading dot
+      "'topic/.dev'", // dot-prefixed component
       "'dev.'", // trailing dot
+      "'topic/dev.'", // dot-suffixed component
       "'dev.lock'", // .lock suffix
+      "'topic/dev.lock'", // .lock-suffixed component
       "'feat..ure'", // double-dot
       "'feat//ure'", // double-slash
       "'dev space'", // whitespace
@@ -8636,7 +8640,6 @@ describe("parseGroundControlYaml routing/telemetry knobs", () => {
     assert.deepEqual(r.value.routing, {
       enabled: false,
       default_provider: "claude",
-      default_fallback: "parent",
       stages: {},
     });
     assert.deepEqual(r.value.telemetry, { enabled: false });
@@ -8655,7 +8658,6 @@ describe("parseGroundControlYaml routing/telemetry knobs", () => {
     assert.equal(r.ok, true);
     assert.equal(r.value.routing.enabled, true);
     assert.equal(r.value.routing.default_provider, "claude");
-    assert.equal(r.value.routing.default_fallback, "parent");
     assert.deepEqual(r.value.routing.stages, {});
     assert.equal(r.value.telemetry.enabled, true);
   });
@@ -8666,13 +8668,10 @@ describe("parseGroundControlYaml routing/telemetry knobs", () => {
       "project: gc",
       "routing:",
       "  enabled: true",
-      "  default_fallback: error",
       "  stages:",
       "    implementation:",
       "      tier: medium",
       "      model: claude-sonnet-4-6",
-      "      agent: cli",
-      "      fallback: parent",
       "",
     ].join("\n"));
     assert.equal(r.ok, true);
@@ -8680,8 +8679,6 @@ describe("parseGroundControlYaml routing/telemetry knobs", () => {
       tier: "medium",
       provider: "claude",
       model: "claude-sonnet-4-6",
-      agent: "cli",
-      fallback: "parent",
     });
   });
 
@@ -8747,15 +8744,13 @@ describe("parseGroundControlYaml routing/telemetry knobs", () => {
       "    implementation:",
       "      tier: medium",
       "      model: claude-sonnet-5",
-      "      agent: cli",
-      "      fallback: parent",
       "",
     ].join("\n"));
     assert.equal(r.ok, true);
     assert.equal(r.value.routing.stages.implementation.model, "claude-sonnet-5");
   });
 
-  it("rejects malformed stage names and route fields", () => {
+  it("rejects malformed stage names and retired execution-control fields", () => {
     const r = parseGroundControlYaml([
       "schema_version: 1",
       "project: gc",
@@ -8773,15 +8768,15 @@ describe("parseGroundControlYaml routing/telemetry knobs", () => {
     assert.ok(r.errors.some((e) => /routing\.default_provider/.test(e)));
     assert.ok(r.errors.some((e) => /routing\.stages\.Implementation key/.test(e)));
     assert.ok(r.errors.some((e) => /routing\.stages\.Implementation\.tier/.test(e)));
-    assert.ok(r.errors.some((e) => /routing\.stages\.Implementation\.agent/.test(e)));
-    assert.ok(r.errors.some((e) => /routing\.stages\.Implementation\.fallback/.test(e)));
+    assert.ok(r.errors.some((e) => /unknown key 'agent'/.test(e)));
+    assert.ok(r.errors.some((e) => /unknown key 'fallback'/.test(e)));
   });
 });
 
 describe("resolveWorkflowRouteFromConfig", () => {
   it("reports disabled routing without inventing a model", () => {
     const r = resolveWorkflowRouteFromConfig({
-      routing: { enabled: false, default_provider: "claude", default_fallback: "parent", stages: {} },
+      routing: { enabled: false, default_provider: "claude", stages: {} },
       stage: "implementation",
     });
     assert.equal(r.ok, true);
@@ -8790,28 +8785,26 @@ describe("resolveWorkflowRouteFromConfig", () => {
   });
 
   it("resolves default implement stages to canonical Claude model ids", () => {
-    const routing = { enabled: true, default_provider: "claude", default_fallback: "parent", stages: {} };
+    const routing = { enabled: true, default_provider: "claude", stages: {} };
     const r = resolveWorkflowRouteFromConfig({ routing, stage: "implementation" });
     assert.equal(r.ok, true);
     assert.equal(r.enabled, true);
     assert.equal(r.source, "default");
     assert.equal(r.tier, DEFAULT_IMPLEMENT_ROUTING_STAGES.implementation.tier);
     assert.equal(r.model, CLAUDE_MODEL_BY_TIER.medium);
-    assert.equal(r.agent, "subagent");
+    assert.equal("agent" in r, false);
+    assert.equal("fallback" in r, false);
   });
 
   it("lets config override a default stage route", () => {
     const routing = {
       enabled: true,
       default_provider: "claude",
-      default_fallback: "parent",
       stages: {
         implementation: {
           tier: "low",
           provider: "claude",
           model: "claude-haiku-4-5",
-          agent: "cli",
-          fallback: "error",
         },
       },
     };
@@ -8820,19 +8813,19 @@ describe("resolveWorkflowRouteFromConfig", () => {
     assert.equal(r.source, "config");
     assert.equal(r.tier, "low");
     assert.equal(r.model, "claude-haiku-4-5");
-    assert.equal(r.agent, "cli");
-    assert.equal(r.fallback, "error");
+    assert.equal("agent" in r, false);
+    assert.equal("fallback" in r, false);
   });
 
   it("returns a structured unavailable response for unknown stages without a tier", () => {
-    const routing = { enabled: true, default_provider: "claude", default_fallback: "parent", stages: {} };
+    const routing = { enabled: true, default_provider: "claude", stages: {} };
     const r = resolveWorkflowRouteFromConfig({ routing, stage: "novel_stage" });
     assert.equal(r.ok, false);
     assert.equal(r.error, "routing_stage_unconfigured");
   });
 
   it("can resolve an ad hoc stage when the caller supplies a tier", () => {
-    const routing = { enabled: true, default_provider: "claude", default_fallback: "parent", stages: {} };
+    const routing = { enabled: true, default_provider: "claude", stages: {} };
     const r = resolveWorkflowRouteFromConfig({ routing, stage: "one_off_review", tier: "medium" });
     assert.equal(r.ok, true);
     assert.equal(r.source, "tier");

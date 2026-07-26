@@ -155,3 +155,18 @@ observably wider risk. Repository-wide completion and policy gates run once at
 their meaningful final-tree boundary rather than after every small fix, and
 Step 7 owns one mandatory pre-publish pre-commit boundary. No mandatory
 completion, review, CI, SonarCloud, or final policy gate is removed.
+
+**2026-07-26 (issue #1421, primary execution and pre-PR synchronization).**
+Phase C now ends with mandatory Step 8.5 after the initial commit/push:
+`gc_synchronize_implement_branch` fetches the configured integration branch
+into its exact `refs/remotes/origin/<base>` ref, merges it in the invocation
+checkout, mechanically runs the completion and policy gates on the exact
+merged tree, verifies/publishes the resulting graph, and posts an idempotent
+trusted issue-thread attestation. Step 9 creates a PR only through
+`gc_create_synchronized_implement_pr`, which re-fetches the base and requires
+the attestation, verified tree, authorized repository, existing PR identity,
+and local/remote feature heads to remain exact. The same
+amendment retires Ground Control's forced-delegation contract: routine steps
+run in the primary invocation session, while routing retains advisory
+stage/tier/model metadata only. Explicit user/runtime delegation remains
+possible outside that contract. `/integrate` is unchanged.

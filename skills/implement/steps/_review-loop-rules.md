@@ -72,9 +72,10 @@ For every cycle, after applying fixes the agent must update the tree the reviewe
 
 Decision records (`gc_post_decision_record`) are posted per cycle for both reviewers via the cycle wrapper - that's the durable record per ADR-029 - but neither review needs a fix-commit since iteration is local.
 
-## Subagent envelope
+## Review envelope
 
-The orchestrator drives each reviewer through a single subagent invocation (issue #934, item 2). The subagent runs the loop above to completion and returns a compact envelope:
+The primary invocation session drives each reviewer loop and keeps only this
+compact envelope in workflow state:
 
 ```json
 {
@@ -89,4 +90,6 @@ The orchestrator drives each reviewer through a single subagent invocation (issu
 
 `commit_shas` is empty pre-push (no commits between cycles). `escalation_reason` is null when `status: "clean"`; a string when `status: "escalated"` or `status: "capped"`.
 
-The parent sees only this envelope - never verbatim review prose, never per-finding bodies, never the cycle tool's full output.
+Verbatim review prose and per-finding bodies stay in the server-posted durable
+record. Ground Control does not create a subagent solely to contain this
+routine workflow context.
