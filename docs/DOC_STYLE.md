@@ -293,6 +293,18 @@ contract-surface edit to the description, not a new doc page.
 
 Per-action required-field enumeration in an action-multiplexed tool's description string (issue #1169) is a contract-surface edit to that tool's description, not a new doc page.
 
+An additive optional input that changes how a tool invokes a repository command
+follows the same convention, with one addition. The
+`requested_requirement_uid` field added to `gc_synchronize_implement_branch`
+for issue #1434 is documented by that tool's description string and by the
+`gc_implement_mechanical` description. Because the field also establishes an
+execution-boundary contract - the `ACES_REQUIREMENT_UID` environment variable
+that repo-authored gates read - the boundary itself belongs in
+`docs/DEVELOPMENT_WORKFLOW.md` and in an ADR-027 amendment. The rule is the
+distinction: the field is a contract surface, but a new environment variable
+that a repository's own commands depend on is a durable interface and needs a
+durable record.
+
 Mirrored API-boundary enum constants follow the same convention: the
 `NORMALIZED_CONCEPTS` and `CROSSWALK_VOCABULARY_SURFACES` arrays added to
 `mcp/ground-control/lib.js` for GC-T012 / #719 mirror two new Java enums on

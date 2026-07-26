@@ -44,6 +44,9 @@ import {
   DEFAULT_PRECOMMIT_COMMAND,
   resolveWorkflowPrecommitCommand,
   runImplementPreCommit,
+  REQUIREMENT_UID_GATE_ENV_VAR,
+  implementGateEnvironment,
+  requestedRequirementUidAuthorization,
   PR_BODY_POLICY_CHECK_LINE,
   resolveWorkflowRouteFromConfig,
   runResolveWorkflowRoute,
@@ -1145,6 +1148,78 @@ describe("resolveWorkflowPolicyCommand", () => {
   });
 });
 
+describe("implementGateEnvironment (#1434)", () => {
+  const base = Object.freeze({ PATH: "/usr/bin", GIT_TERMINAL_PROMPT: "0" });
+
+  it("injects the requested requirement UID without dropping the base environment", () => {
+    const env = implementGateEnvironment("DSL-437", base);
+    assert.equal(env[REQUIREMENT_UID_GATE_ENV_VAR], "DSL-437");
+    assert.equal(env.PATH, "/usr/bin");
+    assert.equal(env.GIT_TERMINAL_PROMPT, "0");
+  });
+
+  it("returns the base environment untouched when no UID is requested", () => {
+    // A branch that already carries its UID keeps deriving requirement context
+    // the way it always has; the fix must not start overriding that.
+    for (const absent of [undefined, null, ""]) {
+      const env = implementGateEnvironment(absent, base);
+      assert.equal(REQUIREMENT_UID_GATE_ENV_VAR in env, false);
+      assert.deepEqual(env, base);
+    }
+  });
+
+  it("refuses a UID that is not a bounded requirement identifier", () => {
+    for (const hostile of ["DSL-437; rm -rf /", "$(id)", "a".repeat(51), "-leading"]) {
+      assert.throws(
+        () => implementGateEnvironment(hostile, base),
+        (error) => error.code === "implement_requested_requirement_uid_invalid",
+        `expected refusal for ${hostile}`,
+      );
+    }
+  });
+});
+
+describe("requestedRequirementUidAuthorization (#1434)", () => {
+  const body = "## Requirements\n- DSL-437\n- DSL-438\n";
+
+  it("authorizes a UID the issue's Requirements section actually lists", () => {
+    const result = requestedRequirementUidAuthorization(body, "DSL-437");
+    assert.equal(result.ok, true);
+    assert.equal(result.requirementUid, "DSL-437");
+  });
+
+  it("refuses a syntactically valid UID that the target issue does not list", () => {
+    // Syntax is not authority: a UID belonging to another issue or project
+    // must never become the gate's requirement identity.
+    const result = requestedRequirementUidAuthorization(body, "OTHER-999");
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "implement_requested_requirement_uid_out_of_scope");
+    // These envelopes reach tool results, and the environment is the only place
+    // the requested UID may exist, so the message must not echo it back.
+    assert.equal(result.message.includes("OTHER-999"), false);
+  });
+
+  it("refuses a UID that is not a bounded requirement identifier", () => {
+    const result = requestedRequirementUidAuthorization(body, "DSL-437; rm -rf /");
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "implement_requested_requirement_uid_invalid");
+  });
+
+  it("authorizes an absent UID without binding anything", () => {
+    for (const absent of [undefined, null, ""]) {
+      const result = requestedRequirementUidAuthorization(body, absent);
+      assert.equal(result.ok, true);
+      assert.equal(result.requirementUid, null);
+    }
+  });
+
+  it("refuses every UID when the issue has no Requirements section", () => {
+    const result = requestedRequirementUidAuthorization("## Problem\nNo requirements.\n", "DSL-437");
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "implement_requested_requirement_uid_out_of_scope");
+  });
+});
+
 describe("resolveWorkflowPrecommitCommand / runImplementPreCommit", () => {
   function recordingRunner() {
     const calls = [];
@@ -1186,6 +1261,23 @@ describe("resolveWorkflowPrecommitCommand / runImplementPreCommit", () => {
       DEFAULT_PRECOMMIT_COMMAND,
     );
     assert.equal(resolveWorkflowPrecommitCommand(null), DEFAULT_PRECOMMIT_COMMAND);
+  });
+
+  it("carries the requested requirement UID to the pre-commit gate (#1434)", async () => {
+    const { calls, runner } = recordingRunner();
+    await runImplementPreCommit("/repo", runner, { workflow: {} }, "DSL-437");
+    assert.equal(calls[0][2].env[REQUIREMENT_UID_GATE_ENV_VAR], "DSL-437");
+    assert.equal(
+      calls[0][2].env.GIT_TERMINAL_PROMPT,
+      "0",
+      "the hardened Git environment must survive the UID injection",
+    );
+  });
+
+  it("leaves the pre-commit gate environment alone when no UID is requested", async () => {
+    const { calls, runner } = recordingRunner();
+    await runImplementPreCommit("/repo", runner, { workflow: {} });
+    assert.equal(REQUIREMENT_UID_GATE_ENV_VAR in calls[0][2].env, false);
   });
 });
 
