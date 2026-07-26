@@ -6,6 +6,12 @@ tier: medium
 
 # Step 17: Completion (Readiness pre-merge, Assertions + Final Report post-merge)
 
+Use `gc_implement_mechanical action="readiness"` for the pre-merge invocation.
+After Steps 15–16 have run post-merge, use
+`gc_implement_mechanical action="finalize"`; that action performs the
+post-merge completion assertion and the idempotent Step 20 issue close in one
+deterministic call.
+
 This step calls `gc_assert_completion`, and it is invoked **twice across the run** with a different `phase` (issue #963):
 
 - **Phase D terminal - `phase="pre_merge"`.** Runs after Step 11 (SonarCloud) once all automated gates are green. It posts a **readiness record** (a "Ready for review" comment carrying a `ready_for_review` phase marker - *not* a `gc:final-report` marker). It does **not** run the traceability assertion, because the requirement transition and traceability reconciliation have not happened yet. Then the run **STOPS** for the user to review and merge the PR. This is the single human touchpoint.

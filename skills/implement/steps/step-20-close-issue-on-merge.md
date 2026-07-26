@@ -6,6 +6,11 @@ tier: low
 
 # Step 20: Close the Issue (Phase E, Post-Merge)
 
+On the normal path this step is already completed by
+`gc_implement_mechanical action="finalize"` immediately after the post-merge
+completion assertion. Use the standalone close primitive only to repair a
+bounded finalize failure.
+
 This step runs in **Phase E**, AFTER the user merges the PR, as the **last** Phase E step - it follows Step 15 (transition), Step 16 (reconcile), and Step 17 `phase="post_merge"` (the reconciled final report). The /implement orchestrator detects the post-merge state at Step 1 - the Phase D readiness marker (`ready_for_review`, alongside `preflight` and `plan`) is present, a linked PR is merged, and the post-merge reconciliation has not yet run (no `gc:final-report` marker) - and short-circuits to **Step 15** to run the Phase E sequence (transition → reconcile → post-merge report → this close). Detection does **not** require the issue to be open: because reconciliation now runs post-merge, the PR body's `Closes #<n>` keyword may have auto-closed the issue at merge before Phase E runs. That is the case this step's idempotent already-closed path handles - Phase E's Steps 15–17 operate on the requirement graph and issue thread regardless of issue state, and this close then returns `already_closed: true`. There is no Phase A–D work to redo. The transition/reconcile/report markers (`traceability_reconciled`, `gc:final-report`) are produced *during* Phase E by Steps 15–17, not before it (issue #963).
 
 Per ADR-089 (issue #1346), this step performs **only** linked-PR resolution, merge-state verification, and idempotent issue closure. It does not list open issues, rank candidates, or return a next-issue recommendation in any form - closure and next-work selection are separate concerns, and the merge-verified close envelope carries only the close result.

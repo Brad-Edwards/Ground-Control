@@ -534,3 +534,13 @@ risk-proportionate local-test principle, reconciles the review and completion
 step text, and extends the structural policy test. It changes workflow
 scheduling documentation, not documentation classification, Vale rules, or
 style policy.
+
+**2026-07-26 (issue #1426 deterministic phase tool).**
+`mcp/ground-control/index.js` registers `gc_implement_mechanical`, whose six
+actions compose existing `/implement` primitives. Its public inputs are listed
+in `mcp/ground-control/README.md` and enforced by the live
+tool-description-parity test. The workflow behavior is synchronized across
+ADR-021, ADR-029, ADR-031, ADR-036, the implement/quickfix skills, and workflow
+documentation. The documentation-coverage classifier, `outcome_required`
+mapping, Vale rules, installer, and `.vale.ini` are unchanged; no new style
+rule is established.

@@ -51,24 +51,55 @@ file per step under `skills/implement/steps/step-NN-<id>.md`. The canonical
 review-loop rules live at `skills/implement/steps/_review-loop-rules.md`
 (Step 6.5 and Step 6.6 reference it; do not restate elsewhere).
 
-**For each step in the list below**, the orchestrator does the following:
+The orchestrator dispatches the execution bands below. Mechanical bands are
+one `gc_implement_mechanical` call on the successful path; their constituent
+step files remain the detailed contract and recovery reference, but they are
+not separate model turns. Agent work is reserved for interpretation,
+architecture, implementation, review findings, conflict resolution, and
+traceability decisions.
 
-1. Revalidate the immutable execution contract and principles digest. Resolve
-   advisory stage metadata through `gc_resolve_workflow_route`; it returns
-   `{provider, model, tier}` and never selects an executor.
-2. Read the step file and execute it in the primary invocation session.
+For each agent or script/agent band:
+
+1. Revalidate the immutable execution contract and principles digest.
+2. Read the applicable step files and execute them in the primary invocation
+   session. Resolve advisory stage metadata through
+   `gc_resolve_workflow_route` only when a model will actually perform work;
+   successful script-only bands do not need a route-resolution model turn.
    Ground Control does not manufacture subagents for routine development,
    review, polling, or context containment. A driver may delegate when the user
    explicitly requests it or runtime circumstances independently justify it,
    but delegation is outside this routing contract.
-3. When telemetry is enabled, call `gc_log_step_telemetry` with the advisory
-   tier/model and measured wall time.
+3. When telemetry is enabled, record one event for the band rather than one
+   event per mechanical sub-step.
 4. Reject a successful envelope that reports only instruction reading,
    inspection, planning, acknowledgment, or partial progress. Validate the
    primary-owned execution contract, then merge the remaining cached state.
 
 Keep raw CI/Sonar payloads and verbatim review findings server-side in their
 MCP records. The primary consumes compact structured envelopes.
+
+## Execution bands
+
+| Steps | Execution | Successful-path action |
+|---|---|---|
+| 1–2 | script/agent | Resolve issue/branch naming inputs, then `gc_implement_mechanical action=bootstrap`; interpret the returned discussion in the next semantic band |
+| 2.5–5 | agent | Architecture preflight, code assessment, plan, TDD implementation, clause mapping, and proportionate targeted tests |
+| 6 | script | `gc_implement_mechanical action=verify` |
+| 6.5–6.6 | script/agent | Existing bounded review-cycle tools run reviewers; the primary acts only on returned findings or cap decisions |
+| 7–8.5 | script | `gc_implement_mechanical action=publish`; an agent enters only for a returned merge conflict or failed hook |
+| 9 | script/agent | The primary supplies semantic PR inputs; existing render and synchronized-create tools enforce and publish them |
+| 10–11 | script | `gc_implement_mechanical action=monitor`; an agent enters only when CI or Sonar returns an actionable failure |
+| 15–16 | agent | Post-merge requirement transition and semantic traceability reconciliation |
+| 17 pre-merge | script | `gc_implement_mechanical action=readiness` |
+| 17 post-merge and 20 | script | `gc_implement_mechanical action=finalize` |
+
+Every mechanical action is resumable or idempotent at its existing durable
+boundary. A successful envelope advances to the named next band. An
+`agent_required: true` envelope preserves the stage evidence and names the
+bounded repair; repair that condition and retry the same action. For a
+`publish` merge conflict, pass the returned `retry_input` as
+`synchronization` after resolving every conflict. Never replace a failed
+mechanical gate with an agent assertion.
 
 ## Step list (in order)
 

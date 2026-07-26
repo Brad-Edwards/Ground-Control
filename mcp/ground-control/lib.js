@@ -3726,6 +3726,17 @@ async function readGitIdentity(repoRoot) {
   };
 }
 
+export function isDefaultImplementHooksPath({
+  repoRoot,
+  hooksPath,
+  gitDir,
+  gitCommonDir,
+}) {
+  const configuredPath = resolvePath(repoRoot, hooksPath);
+  return configuredPath === resolvePath(gitDir, "hooks")
+    || configuredPath === resolvePath(repoRoot, gitCommonDir, "hooks");
+}
+
 async function assertSafeImplementCheckoutConfiguration(repoRoot) {
   const dangerousKey =
     /^(?:core\.(?:hookspath|sshcommand|askpass|fsmonitor)|credential(?:\.|$)|filter\..*\.(?:clean|smudge|process|required)|diff\..*\.command|merge\..*\.driver|include(?:if\..*)?\.path|url\..*\.(?:insteadof|pushinsteadof)|remote\..*\.(?:proxy|uploadpack|receivepack))$/i;
@@ -3741,13 +3752,17 @@ async function assertSafeImplementCheckoutConfiguration(repoRoot) {
     .map((key) => key.trim())
     .filter((key) => key !== "" && dangerousKey.test(key));
   if (configuredDangerousKeys.some((key) => key.toLowerCase() === "core.hookspath")) {
-    const [{ stdout: hooksPath }, { stdout: gitDir }] = await Promise.all([
+    const [{ stdout: hooksPath }, { stdout: gitDir }, { stdout: gitCommonDir }] = await Promise.all([
       execFile("git", ["-C", repoRoot, "config", "--local", "--path", "--get", "core.hooksPath"]),
       execFile("git", ["-C", repoRoot, "rev-parse", "--absolute-git-dir"]),
+      execFile("git", ["-C", repoRoot, "rev-parse", "--git-common-dir"]),
     ]);
-    const configuredPath = resolvePath(repoRoot, hooksPath.trim());
-    const defaultPath = resolvePath(gitDir.trim(), "hooks");
-    if (configuredPath === defaultPath) {
+    if (isDefaultImplementHooksPath({
+      repoRoot,
+      hooksPath: hooksPath.trim(),
+      gitDir: gitDir.trim(),
+      gitCommonDir: gitCommonDir.trim(),
+    })) {
       configuredDangerousKeys = configuredDangerousKeys.filter(
         (key) => key.toLowerCase() !== "core.hookspath",
       );
@@ -3945,6 +3960,48 @@ async function runImplementGit(repoRoot, args, commandRunner = execFile) {
   return commandRunner(
     "git",
     ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgSign=false", "-C", repoRoot, ...args],
+    { cwd: repoRoot, env: implementNetworkGitEnvironment() },
+  );
+}
+
+export async function authorizeImplementMutationCheckout(repoPath, {
+  workspaceAuthorizationResolver = resolveMcpLaunchWorkspaceAuthorization,
+} = {}) {
+  let repoRoot;
+  try {
+    repoRoot = realpathSync(await ensureGitRepo(repoPath));
+  } catch (error) {
+    return {
+      ok: false,
+      error: "implement_mutation_checkout_invalid",
+      message: error.message,
+    };
+  }
+  const authorization = await authorizeImplementRepoRoot(
+    repoRoot,
+    workspaceAuthorizationResolver,
+  );
+  if (!authorization.ok) return authorization;
+  try {
+    await assertSafeImplementCheckoutConfiguration(repoRoot);
+  } catch (error) {
+    return {
+      ok: false,
+      error: "implement_mutation_checkout_unsafe",
+      message: error.message,
+    };
+  }
+  return { ok: true, repoRoot };
+}
+
+export async function runImplementGitCommand(repoRoot, args, commandRunner = execFile) {
+  return runImplementGit(repoRoot, args, commandRunner);
+}
+
+export async function runImplementPreCommit(repoRoot, commandRunner = execFile) {
+  return commandRunner(
+    "pre-commit",
+    ["run", "--all-files"],
     { cwd: repoRoot, env: implementNetworkGitEnvironment() },
   );
 }

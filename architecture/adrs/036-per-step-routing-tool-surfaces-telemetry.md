@@ -520,3 +520,14 @@ and policy execution, binds their unchanged tree to the merge commit, and
 resumes safely after post-commit failures. PR lookup and creation are pinned to
 the authorized repository and validate an existing PR before idempotent reuse.
 Existing step telemetry remains operational-only.
+
+**2026-07-26 (issue #1426, mechanical execution bands).**
+`gc_implement_mechanical` is an action-multiplexed deterministic tool with
+`bootstrap`, `verify`, `publish`, `monitor`, `readiness`, and `finalize`
+actions. Successful script-only bands do not resolve a model route; route
+resolution remains advisory and is performed only when a model will do
+semantic or repair work. Telemetry may record one event per band instead of
+one per mechanical sub-step. The tool uses the existing guarded primitives and
+durable evidence, invokes no LLM, and returns `agent_required: true` only with
+a bounded repair reason. Existing routing stages and telemetry's
+operational-only status remain unchanged.

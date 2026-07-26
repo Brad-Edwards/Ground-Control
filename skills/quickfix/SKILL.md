@@ -11,6 +11,16 @@ Canonical, agent-neutral implementation of the Ground Control `/quickfix` workfl
 
 **Sibling to `skills/implement/SKILL.md`.** This skill cross-references the canonical full workflow at every step rather than duplicating prose - the contract surfaces (branch shape, in-progress signal, PR-title rules, `gc_render_pr_body`, CI/SonarCloud, no-deferral, user-owns-merge) are identical. The only differences are the dropped ceremony.
 
+The shared successful-path mechanics introduced by issue #1426 also apply
+here where the lane contracts match: Q1 uses
+`gc_implement_mechanical action="bootstrap"` after issue-only input
+validation; Q6 uses `action="verify"` after quickfix acceptance mapping; Q7
+through Q8.5 use `action="publish"`; and Q10 through Q11 use
+`action="monitor"`. Quickfix does not use `readiness` or `finalize`, because
+its lightweight close record and requirement-free lifecycle intentionally
+differ from `/implement`. A mechanical failure hands control to the primary
+only for the named repair, after which the same action is retried.
+
 ## When to pick `/quickfix` vs `/implement`
 
 Judgment call, gating heuristic:

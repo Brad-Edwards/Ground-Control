@@ -230,6 +230,11 @@ import {
   classifyChangedSurface,
 } from "./lib.js";
 import {
+  GC_IMPLEMENT_MECHANICAL_DESCRIPTION,
+  gcImplementMechanicalToolHandler,
+  gcImplementMechanicalZodShape,
+} from "./gc-implement-mechanical.js";
+import {
   executeGcQuery,
   gcQueryToolHandler,
   gcQuerySchema,
@@ -1357,6 +1362,17 @@ server.tool(
         baseBranch: base_branch ?? "dev",
         checkoutMode: checkout_mode ?? "same_checkout",
       }), null, 2));
+    } catch (e) { return err(e); }
+  },
+);
+
+server.tool(
+  "gc_implement_mechanical",
+  GC_IMPLEMENT_MECHANICAL_DESCRIPTION,
+  gcImplementMechanicalZodShape,
+  async (args) => {
+    try {
+      return ok(JSON.stringify(await gcImplementMechanicalToolHandler(args), null, 2));
     } catch (e) { return err(e); }
   },
 );
