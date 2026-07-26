@@ -39,6 +39,12 @@ import {
   buildSuggestedGroundControlYaml,
   parseGroundControlYaml,
   getRepoGroundControlContext,
+  DEFAULT_POLICY_COMMAND,
+  resolveWorkflowPolicyCommand,
+  DEFAULT_PRECOMMIT_COMMAND,
+  resolveWorkflowPrecommitCommand,
+  runImplementPreCommit,
+  PR_BODY_POLICY_CHECK_LINE,
   resolveWorkflowRouteFromConfig,
   runResolveWorkflowRoute,
   CLAUDE_MODEL_BY_TIER,
@@ -1115,6 +1121,74 @@ describe("buildSuggestedGroundControlYaml", () => {
   });
 });
 
+describe("resolveWorkflowPolicyCommand", () => {
+  it("returns the configured repository policy command", () => {
+    assert.equal(
+      resolveWorkflowPolicyCommand({ workflow: { policy_command: "bin/gate --ci" } }),
+      "bin/gate --ci",
+    );
+  });
+
+  it("falls back to the default for a context that does not carry the field", () => {
+    // Guards against a context shape older than issue #1429 (or a hand-built
+    // test double) silently disabling the gate.
+    assert.equal(resolveWorkflowPolicyCommand({ workflow: {} }), DEFAULT_POLICY_COMMAND);
+    assert.equal(resolveWorkflowPolicyCommand({}), DEFAULT_POLICY_COMMAND);
+    assert.equal(resolveWorkflowPolicyCommand(null), DEFAULT_POLICY_COMMAND);
+  });
+
+  it("never resolves to an empty command", () => {
+    assert.equal(
+      resolveWorkflowPolicyCommand({ workflow: { policy_command: "   " } }),
+      DEFAULT_POLICY_COMMAND,
+    );
+  });
+});
+
+describe("resolveWorkflowPrecommitCommand / runImplementPreCommit", () => {
+  function recordingRunner() {
+    const calls = [];
+    return {
+      calls,
+      runner: async (...args) => {
+        calls.push(args);
+        return { stdout: "", stderr: "" };
+      },
+    };
+  }
+
+  it("runs the repository's configured pre-commit command", async () => {
+    const { calls, runner } = recordingRunner();
+    await runImplementPreCommit("/repo", runner, {
+      workflow: { precommit_command: "lefthook run pre-commit" },
+    });
+    assert.equal(calls[0][0], "bash");
+    assert.deepEqual(calls[0][1], ["-c", "lefthook run pre-commit"]);
+    assert.equal(calls[0][2].cwd, "/repo");
+  });
+
+  it("defaults to the pre-commit framework invocation", async () => {
+    const { calls, runner } = recordingRunner();
+    await runImplementPreCommit("/repo", runner, { workflow: {} });
+    assert.equal(DEFAULT_PRECOMMIT_COMMAND, "pre-commit run --all-files");
+    assert.deepEqual(calls[0][1], ["-c", DEFAULT_PRECOMMIT_COMMAND]);
+  });
+
+  it("keeps the hardened Git environment the boundary already used", async () => {
+    const { calls, runner } = recordingRunner();
+    await runImplementPreCommit("/repo", runner, { workflow: {} });
+    assert.ok(calls[0][2].env, "pre-commit must keep its sanitized environment");
+  });
+
+  it("never resolves to an empty command", () => {
+    assert.equal(
+      resolveWorkflowPrecommitCommand({ workflow: { precommit_command: "  " } }),
+      DEFAULT_PRECOMMIT_COMMAND,
+    );
+    assert.equal(resolveWorkflowPrecommitCommand(null), DEFAULT_PRECOMMIT_COMMAND);
+  });
+});
+
 describe("parseGroundControlYaml", () => {
   // Most cases build a YAML document from an array of lines and parse it.
   // `parseYamlLines` removes the repeated `[...].join("\n")` + parse scaffold,
@@ -1142,6 +1216,8 @@ describe("parseGroundControlYaml", () => {
       completion_command: null,
       lint_command: null,
       format_command: null,
+      policy_command: "make policy",
+      precommit_command: "pre-commit run --all-files",
       base_branch: null,
       codex_review: { pre_push_cap: null },
       test_quality_review: { pre_push_cap: null },
@@ -1239,6 +1315,64 @@ describe("parseGroundControlYaml", () => {
     const result = parseGroundControlYaml(yaml);
     assert.equal(result.ok, false);
     assert.ok(result.errors.some((e) => e.includes("workflow has unknown key")));
+  });
+
+  it("normalizes an omitted workflow.policy_command to the default policy command", () => {
+    const result = parseGroundControlYaml("schema_version: 1\nproject: x\n");
+    assert.equal(result.ok, true);
+    assert.equal(result.value.workflow.policy_command, DEFAULT_POLICY_COMMAND);
+    assert.equal(DEFAULT_POLICY_COMMAND, "make policy");
+  });
+
+  it("normalizes an omitted workflow.precommit_command to the default", () => {
+    const result = parseGroundControlYaml("schema_version: 1\nproject: x\n");
+    assert.equal(result.ok, true);
+    assert.equal(result.value.workflow.precommit_command, DEFAULT_PRECOMMIT_COMMAND);
+  });
+
+  it("accepts a repo-authored workflow.precommit_command", () => {
+    const yaml = [
+      "schema_version: 1",
+      "project: x",
+      "workflow:",
+      "  precommit_command: lefthook run pre-commit",
+      "",
+    ].join("\n");
+    const result = parseGroundControlYaml(yaml);
+    assert.equal(result.ok, true, JSON.stringify(result.errors));
+    assert.equal(result.value.workflow.precommit_command, "lefthook run pre-commit");
+  });
+
+  it("rejects an empty workflow.precommit_command", () => {
+    expectYamlError(
+      ["schema_version: 1", "project: x", "workflow:", '  precommit_command: ""', ""],
+      "workflow.precommit_command must be a non-empty string when set",
+    );
+  });
+
+  it("accepts a repo-authored workflow.policy_command", () => {
+    const yaml = [
+      "schema_version: 1",
+      "project: x",
+      "workflow:",
+      "  policy_command: python3 scripts/adr_guard/adr_guard.py --all --level ci",
+      "",
+    ].join("\n");
+    const result = parseGroundControlYaml(yaml);
+    assert.equal(result.ok, true, JSON.stringify(result.errors));
+    assert.equal(
+      result.value.workflow.policy_command,
+      "python3 scripts/adr_guard/adr_guard.py --all --level ci",
+    );
+  });
+
+  it("rejects an empty workflow.policy_command rather than silently defaulting", () => {
+    // A misconfigured gate must fail loudly. Falling back to the default here
+    // would let a repo that meant to name its own gate lose it unnoticed.
+    expectYamlError(
+      ["schema_version: 1", "project: x", "workflow:", '  policy_command: "   "', ""],
+      "workflow.policy_command must be a non-empty string when set",
+    );
   });
 
   it("accepts safe workflow.base_branch values", () => {
@@ -8496,9 +8630,38 @@ describe("buildPrBody", () => {
 
   it("includes the three exact Ground Control Checks lines (policy: pr-ground-control-checks)", () => {
     const body = buildPrBody(baseInput());
-    assert.ok(body.includes("- [x] `make policy` passes"));
+    assert.ok(body.includes(PR_BODY_POLICY_CHECK_LINE));
     assert.ok(body.includes("- [x] `gc_evaluate_quality_gates` passes or is unchanged by this repo-only change"));
     assert.ok(body.includes("- [x] `gc_run_sweep` reviewed; findings fixed or recorded with rationale"));
+  });
+
+  it("names the policy gate semantically, never a concrete repo command (#1429)", () => {
+    // The rendered body is durable GitHub content shared by every consuming
+    // repo. It states that the *configured* gate passed; it must not assert a
+    // Make target the repo may not have, and must not copy command text
+    // (which can carry repo-internal paths) into the record.
+    const body = buildPrBody(baseInput());
+    assert.equal(PR_BODY_POLICY_CHECK_LINE, "- [x] Configured repository policy command passes");
+    assert.ok(!body.includes("`make policy`"), "PR body must not name a concrete policy command");
+  });
+
+  it("names the completion gate semantically too, for both change classes (#1429)", () => {
+    // Same reason as the policy line: `completion_command` is repo config, so
+    // a rendered `make check` is false in any repo that configures something
+    // else. The issue's own notes call this out alongside `make policy`.
+    for (const changeClass of ["source", "doc-only"]) {
+      const body = buildPrBody(baseInput({
+        changeClass,
+        changelogFragment: changeClass === "doc-only" ? null : "changelog.d/868.changed.md",
+      }));
+      assert.ok(
+        body.includes("- [x] Configured completion command passes"),
+        `${changeClass}: missing semantic completion line`,
+      );
+      for (const target of ["`make check`", "`make test`", "`make integration`"]) {
+        assert.ok(!body.includes(target), `${changeClass}: must not name ${target}`);
+      }
+    }
   });
 
   it("emits 'Closes #N' under Related Issues", () => {
@@ -8518,8 +8681,8 @@ describe("buildPrBody", () => {
     }));
     assert.match(body, /Unit tests \/ integration tests: N\/A — docs-only change/);
     assert.match(body, /Changelog fragment: N\/A — docs-only change/);
-    // Even doc-only must keep `make policy` line for the policy gate.
-    assert.match(body, /- \[x\] `make policy` passes/);
+    // Even doc-only must keep the policy-gate line.
+    assert.ok(body.includes(PR_BODY_POLICY_CHECK_LINE));
   });
 
   it("source+migration adds the MigrationSmokeTest reminder", () => {
@@ -8929,6 +9092,12 @@ describe("checkPrBodyShape (policy-shape predicate)", () => {
   }
   it("accepts a well-formed renderer output", () => {
     assert.deepEqual(checkPrBodyShape(goodBody()), { ok: true });
+  });
+  it("rejects a body whose policy-gate check line was dropped (#1429)", () => {
+    const body = goodBody().replace(PR_BODY_POLICY_CHECK_LINE, "- [x] whatever");
+    const r = checkPrBodyShape(body);
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes(PR_BODY_POLICY_CHECK_LINE)));
   });
   it("rejects a body missing a required header", () => {
     const body = goodBody().replace("## Traceability", "## Trace");

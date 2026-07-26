@@ -53,6 +53,12 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     "#   completion_command: <how to run the full CI gate>",
     "#   lint_command: <how to run the linter>",
     "#   format_command: <how to run the formatter>",
+    "#   # Repo-native policy/governance gate. Defaults to `make policy`; set it",
+    "#   # when your gate is named differently. It is never skipped.",
+    "#   policy_command: make policy",
+    "#   # Pre-publish hook boundary. Defaults to `pre-commit run --all-files`;",
+    "#   # set it for lefthook, husky, or a bespoke script.",
+    "#   precommit_command: pre-commit run --all-files",
     "#   # Per-reviewer pre-push caps (issue #906). Omit to use MCP-tool defaults.",
     "#   codex_review:",
     "#     pre_push_cap: 1",
@@ -2007,12 +2013,40 @@ export function assertRealpathInRepo(repoRootReal, targetAbs, fieldName) {
   return { ok: true, canonical: effective };
 }
 
+// Repository policy gate (issue #1429, ADR-027 2026-07-26 amendment). The
+// command that satisfies a repo's policy gate is repo-native, so it comes from
+// configuration exactly like `completion_command` does. `make policy` is the
+// normalized default so repos that already use it need no config change.
+// Absence of a `policy` target must fail loudly — a skipped policy gate is a
+// silently weakened gate.
+export const DEFAULT_POLICY_COMMAND = "make policy";
+
+export function resolveWorkflowPolicyCommand(context) {
+  const configured = context?.workflow?.policy_command;
+  if (typeof configured === "string" && configured.trim() !== "") return configured;
+  return DEFAULT_POLICY_COMMAND;
+}
+
+// Pre-publish hook boundary (issue #1429). Same reasoning as the policy gate:
+// the *boundary* is mandatory, the *tool* is repo-native. A repository using
+// lefthook, husky, or a bespoke script was previously blocked at Step 7 by the
+// hardcoded pre-commit framework invocation.
+export const DEFAULT_PRECOMMIT_COMMAND = "pre-commit run --all-files";
+
+export function resolveWorkflowPrecommitCommand(context) {
+  const configured = context?.workflow?.precommit_command;
+  if (typeof configured === "string" && configured.trim() !== "") return configured;
+  return DEFAULT_PRECOMMIT_COMMAND;
+}
+
 function emptyWorkflowConfig() {
   return {
     test_command: null,
     completion_command: null,
     lint_command: null,
     format_command: null,
+    policy_command: DEFAULT_POLICY_COMMAND,
+    precommit_command: DEFAULT_PRECOMMIT_COMMAND,
     base_branch: null,
     // Per-reviewer pre-push cap defaults. `null` means "use the MCP tool
     // default" (issue #906 lowered the tool default from 3 to 1; repos that
@@ -2478,7 +2512,7 @@ function normalizeWorkflowConfig(raw) {
   }
   // Scalar string-typed keys handled inline; nested-mapping keys delegated to
   // their own normalizers below.
-  const allowedScalar = ["test_command", "completion_command", "lint_command", "format_command", "base_branch"];
+  const allowedScalar = ["test_command", "completion_command", "lint_command", "format_command", "policy_command", "precommit_command", "base_branch"];
   const allowedNested = ["codex_review", "test_quality_review", "pr_title", "integration_manager", "dev_start_gate", "review_disposition"];
   const allowed = [...allowedScalar, ...allowedNested];
   const value = emptyWorkflowConfig();
@@ -3998,10 +4032,10 @@ export async function runImplementGitCommand(repoRoot, args, commandRunner = exe
   return runImplementGit(repoRoot, args, commandRunner);
 }
 
-export async function runImplementPreCommit(repoRoot, commandRunner = execFile) {
+export async function runImplementPreCommit(repoRoot, commandRunner = execFile, context = null) {
   return commandRunner(
-    "pre-commit",
-    ["run", "--all-files"],
+    "bash",
+    ["-c", resolveWorkflowPrecommitCommand(context)],
     { cwd: repoRoot, env: implementNetworkGitEnvironment() },
   );
 }
@@ -4152,13 +4186,37 @@ async function runImplementFinalTreeGates(
     ["status", "--porcelain=v1", "--untracked-files=normal"],
     commandRunner,
   );
+  // The gates read the working tree, but the merge commit is built from the
+  // index. An unstaged modification or an untracked file therefore gets
+  // verified and then left behind, so the attestation would bind a tree the
+  // gates never saw. Staged entries (`X ` in porcelain v1) are the merge
+  // itself and are expected here; anything with a worktree-column status is
+  // not. Refuse before running the gates rather than after.
+  const unstaged = beforeStatus
+    .split(/\r?\n/)
+    .filter((line) => line !== "")
+    .filter((line) => line[1] !== " ");
+  if (unstaged.length > 0) {
+    const error = new Error(
+      "The final-tree gates require every change to be staged; "
+      + "stage or revert the working-tree changes and retry",
+    );
+    error.code = "implement_base_sync_worktree_not_staged";
+    throw error;
+  }
   const beforeTree = await readImplementIndexTreeOid(repoRoot, commandRunner);
   await commandRunner(
     "bash",
     ["-c", completionCommand],
     { cwd: repoRoot },
   );
-  await commandRunner("make", ["policy"], { cwd: repoRoot });
+  // Completion and policy are separate mandatory gates; neither substitutes
+  // for the other. Both run through the same repo-authored-command boundary.
+  await commandRunner(
+    "bash",
+    ["-c", resolveWorkflowPolicyCommand(context)],
+    { cwd: repoRoot },
+  );
   const { stdout: afterStatus } = await runImplementGit(
     repoRoot,
     ["status", "--porcelain=v1", "--untracked-files=normal"],
@@ -4321,6 +4379,18 @@ export async function runSynchronizeImplementBranch(input, {
       error: "implement_base_sync_context_failed",
       message: error.message,
       next_action: "repair_repository_context_and_retry",
+    };
+  }
+  // An unreadable or invalid `.ground-control.yaml` must not fall through to
+  // defaults: the base branch and the policy command both come from it, and a
+  // silent default here would fetch, merge, and gate against the wrong
+  // contract (issue #1429).
+  if (context?.status !== "ok") {
+    return {
+      ok: false,
+      error: "implement_base_sync_context_invalid",
+      message: "The repository Ground Control context is invalid",
+      next_action: "repair_ground_control_configuration_and_retry",
     };
   }
   const repoAuthorization = await authorizeImplementRepoRoot(
@@ -4654,6 +4724,12 @@ export async function runSynchronizeImplementBranch(input, {
       status: "complete",
       ...record,
       ...posted,
+      // Name the gate that actually ran. `policy_command` is repository
+      // configuration, so a caller/operator can see when a branch has pointed
+      // the mandatory gate somewhere other than the repository default. Kept
+      // out of `record` deliberately: the durable issue-thread marker carries
+      // Git identity, not command text.
+      policyCommand: resolveWorkflowPolicyCommand(context),
     };
   } catch {
     return {
@@ -4834,6 +4910,14 @@ export async function runCreateSynchronizedImplementPr(input, {
     context = await contextResolver(repoRoot);
   } catch (error) {
     return { ok: false, error: "implement_pr_context_failed", message: error.message };
+  }
+  if (context?.status !== "ok") {
+    return {
+      ok: false,
+      error: "implement_pr_context_invalid",
+      message: "The repository Ground Control context is invalid",
+      next_action: "repair_ground_control_configuration_and_retry",
+    };
   }
   const repoAuthorization = await authorizeImplementRepoRoot(
     repoRoot,
@@ -16015,9 +16099,9 @@ async function closeIssueIdempotently({ repoRoot, owner, name, issueNumber, pr }
 //     bullet, or carrying the explicit `- (none — ...)` marker.
 //   - ADR impact line either references `ADR-` or contains the literal
 //     "No ADR required".
-//   - Three Ground Control Checks lines exactly: `- [x] \`make policy\`
-//     passes`, `- [x] \`gc_evaluate_quality_gates\` ...`, `- [x] \`gc_run_sweep\`
-//     ...`.
+//   - Three Ground Control Checks lines exactly: `- [x] Configured repository
+//     policy command passes`, `- [x] \`gc_evaluate_quality_gates\` ...`,
+//     `- [x] \`gc_run_sweep\` ...`.
 //   - `- IMPLEMENTS:` and `- TESTS:` markers under Traceability.
 //   - No deferral-disposition language anywhere.
 //
@@ -16118,8 +16202,16 @@ export const REQUIREMENT_UID_CONTRACT_DESCRIPTION =
   `a single requirement UID: 1-${REQUIREMENT_UID_MAX_LENGTH} characters, starting with a letter or digit, `
   + "containing only letters, digits, '.', '_', or '-'";
 
+// The policy gate is named semantically, not by command (issue #1429). The
+// rendered body is durable GitHub content in every consuming repo, so it must
+// not assert a Make target the repo may not have, and must not copy the
+// configured command text — which can carry repo-internal paths — into the
+// record. `workflow.policy_command` is what actually ran; this line attests
+// that it passed.
+export const PR_BODY_POLICY_CHECK_LINE = "- [x] Configured repository policy command passes";
+
 const PR_BODY_GC_CHECK_LINES = Object.freeze([
-  "- [x] `make policy` passes",
+  PR_BODY_POLICY_CHECK_LINE,
   "- [x] `gc_evaluate_quality_gates` passes or is unchanged by this repo-only change",
   "- [x] `gc_run_sweep` reviewed; findings fixed or recorded with rationale",
 ]);
@@ -16433,14 +16525,18 @@ export function buildPrBody(input) {
   lines.push("");
   lines.push("## Test Plan");
   lines.push("");
+  // Named semantically for the same reason as the policy line: the completion
+  // and policy commands are repo configuration (`workflow.completion_command`,
+  // `workflow.policy_command`), so a rendered Make target would be a false
+  // claim in any consuming repo that runs something else (issue #1429).
   if (changeClass === "doc-only") {
-    lines.push("- [x] `make check` passes (Spotless, SpotBugs, Error Prone, Checkstyle, JaCoCo)");
-    lines.push("- [x] `make policy` passes (documentation/workflow guardrails)");
+    lines.push("- [x] Configured completion command passes");
+    lines.push("- [x] Configured repository policy command passes (documentation/workflow guardrails)");
     lines.push("- Unit tests / integration tests: N/A — docs-only change");
   } else {
-    lines.push("- [x] Unit tests pass (`make test`)");
-    lines.push("- [x] Integration tests pass if applicable (`make integration`)");
-    lines.push("- [x] `make check` passes (Spotless, SpotBugs, Error Prone, Checkstyle, JaCoCo)");
+    lines.push("- [x] Unit tests pass");
+    lines.push("- [x] Integration tests pass if applicable");
+    lines.push("- [x] Configured completion command passes");
     lines.push("- [x] No coverage regression");
   }
   if (testNotes && testNotes.trim() !== "") {

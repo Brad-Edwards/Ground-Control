@@ -410,3 +410,12 @@ addressed, a prompt asserting coverage the diff did not have, is closed by
 correcting the claim rather than by widening the transmitted content.
 `/implement` Step 6.5 stages with `git add -A` before review, so genuinely new
 work is still reviewed, as staged content.
+
+**2026-07-26 (issue #1429, configuration-derived policy gate).** The
+review-loop batching rule in `skills/implement/steps/_review-loop-rules.md`
+now names `cfg.workflow.policy_command` where it previously named `make policy`;
+the rule itself is unchanged - broad repository gates run once on the final
+post-fix tree, not after every small fix. The stopping model, severity rubric,
+per-cycle caps, per-issue cycle counters, and the reviewer-of-record invariant
+are unchanged. Cross-referenced for the `workflow-guardrail-sync` contract. See
+ADR-021 and ADR-027 (2026-07-26 amendments).

@@ -55,6 +55,12 @@ workflow:
   completion_command: make check
   lint_command: make lint
   format_command: make format
+  # Repo-native policy/governance gate. Defaults to `make policy`; set it when
+  # your gate is named differently. It is never skipped when absent.
+  policy_command: make policy
+  # Pre-publish hook boundary. Defaults to `pre-commit run --all-files`; set it
+  # for lefthook, husky, or a bespoke script.
+  precommit_command: pre-commit run --all-files
   base_branch: dev
 
 sonarcloud:
@@ -143,7 +149,7 @@ flowchart TB
   S5[5 · Post plan as issue comment]
   S6[6 · TDD implementation]
   S7[7 · pre-commit run]
-  S8[8 · Completion gate · make policy + make check + gc_assert_quality_gates]
+  S8[8 · Completion gate · configured completion + policy commands + gc_assert_quality_gates]
   S8b[8.5 · Pre-push gc_codex_review · core + security · default cap 1 · posts findings record to issue thread]
   S8c[8.6 · Pre-push gc_test_quality_review · default cap 1 · posts findings record to issue thread]
   S9[9 · Stage + commit + push]
@@ -697,7 +703,8 @@ Local verification is risk-proportionate and agent-neutral. Related edits are
 batched; implementation and review-fix iteration use the narrowest tests that
 exercise changed behavior, widening for shared/cross-cutting boundaries,
 security-sensitive changes, or evidence of wider risk. Step 6 runs the
-repository completion command and `make policy` once on its meaningful tree
+repository completion command and the repository policy command
+(`workflow.policy_command`, default `make policy`) once on its meaningful tree
 boundary. Review fixes use targeted tests between cycles, then rerun those
 broad gates once on the final post-fix tree only if review changed it. Step 7
 owns the single mandatory pre-publish pre-commit boundary. This avoids
@@ -716,7 +723,7 @@ After the initial Step 8 push, `gc_synchronize_implement_branch` owns the
 mandatory remote-base merge in that same checkout. It never uses local `dev`,
 creates a worktree, rebases, force-pushes, resets, aborts, discards work, or
 chooses a conflict side. Its completion action mechanically runs the configured
-completion command and `make policy` on the exact tree bound to the merge
+completion command and the configured policy command on the exact tree bound to the merge
 commit, and it resumes safely after a transient post-commit failure.
 `gc_create_synchronized_implement_pr` is the only canonical Step 9 PR-write
 path. It closes the race by fetching the integration branch again immediately

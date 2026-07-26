@@ -27,6 +27,7 @@ import {
   isRequirementUidToken,
   runImplementGitCommand,
   runImplementPreCommit,
+  resolveWorkflowPolicyCommand,
 } from "./lib.js";
 
 const execFileAsync = promisify(execFileCb);
@@ -103,7 +104,8 @@ export const gcImplementMechanicalZodShape = {
 
 export const GC_IMPLEMENT_MECHANICAL_DESCRIPTION =
   "Run coarse-grained deterministic /implement phases without a model turn per mechanical step. " +
-  "Actions: bootstrap (issue/branch/context/pickup), verify (completion command + policy + quality gates), " +
+  "Actions: bootstrap (issue/branch/context/pickup), verify (configured completion command + configured " +
+  "workflow.policy_command + quality gates), " +
   "publish (stage + pre-commit + commit + push + remote-base synchronization), monitor (CI + Sonar), " +
   "readiness (pre-merge completion assertion), finalize (post-merge assertion + idempotent issue close). " +
   "Always pass action, repo_path, and issue_number. Depending on action, also pass invocation_root, branch_name, " +
@@ -359,8 +361,9 @@ async function runVerify(args, deps) {
   } catch (error) {
     return commandFailure(action, "completion_gate", error);
   }
+  const policyCommand = resolveWorkflowPolicyCommand(context);
   try {
-    await deps.execFile("make", ["policy"], { cwd: repoRoot });
+    await deps.execFile("bash", ["-c", policyCommand], { cwd: repoRoot });
   } catch (error) {
     return commandFailure(action, "policy_gate", error);
   }
@@ -391,6 +394,7 @@ async function runVerify(args, deps) {
     action,
     phase: "verification_complete",
     completion_command: command,
+    policy_command: policyCommand,
     policy: "passed",
     quality,
     next_action: "run_required_agent_reviews_or_publish",
@@ -450,6 +454,18 @@ async function runPublish(args, deps) {
     );
   }
   const repoRoot = authorization.repoRoot;
+  // The pre-publish hook command is repository configuration, so a broken
+  // .ground-control.yaml must refuse here rather than silently fall back to
+  // the default boundary command.
+  const context = await deps.getContext(args.repoPath);
+  if (context?.status !== "ok") {
+    return failure(
+      action,
+      "implement_mechanical_context_invalid",
+      context?.errors?.join("; ") ?? "Ground Control repository context is unavailable",
+      "repair_ground_control_context_and_retry",
+    );
+  }
   const { stdout: activeBranch } = await deps.runGit(
     repoRoot,
     ["branch", "--show-current"],
@@ -535,7 +551,7 @@ async function runPublish(args, deps) {
       );
     }
     try {
-      await deps.preCommit(repoRoot, deps.execFile);
+      await deps.preCommit(repoRoot, deps.execFile, context);
     } catch (error) {
       return commandFailure(action, "precommit", error);
     }

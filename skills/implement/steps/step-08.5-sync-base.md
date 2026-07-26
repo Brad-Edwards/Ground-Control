@@ -28,7 +28,8 @@ This boundary is mandatory after Step 8 and immediately before Step 9.
 4. For `merge_ready` or `conflicts`, call the same tool with
    `action: "complete"` plus the exact `record_id`, `pre_sync_sha`,
    `fetched_base_sha`, and `outcome` returned by `start`. The tool runs the
-   configured completion command and `make policy`, requires the Git index and
+   configured completion command and the configured policy command
+   (`cfg.workflow.policy_command`, default `make policy`), requires the Git index and
    checkout to remain identical across both gates, binds the verified tree to
    the merge commit, verifies the merge graph, pushes normally, and writes the
    durable issue-thread attestation. A retry resumes a valid merge commit after

@@ -32,8 +32,9 @@ Both AI-assisted reviews run **pre-push**: codex review at Step 6.5, test-qualit
    related fixes and run the narrowest tests that exercise their changed
    behavior. Expand to broader suites when the fix changes a shared or
    cross-cutting boundary, is security-sensitive, or targeted evidence exposes
-   wider risk. Do not run `cfg.workflow.completion_command` or `make policy`
-   after every small fix. Run those repository-wide gates once before leaving
+   wider risk. Do not run `cfg.workflow.completion_command` or
+   `cfg.workflow.policy_command` after every small fix. Run those
+   repository-wide gates once before leaving
    the review band on the final post-fix tree; if no relevant tree state
    changed since their last successful required boundary, reuse that evidence
    instead of rerunning it. This batching rule never waives the mandatory

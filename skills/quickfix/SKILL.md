@@ -91,7 +91,7 @@ The full TDD discipline from `skills/implement/SKILL.md` Step 4.4 (write failing
 
 ### Step Q5: Pre-commit
 
-**Identical to `skills/implement/SKILL.md` Step 5.** Run `pre-commit run --all-files` until clean (up to 5 retries; escalate to user on the sixth failure).
+**Identical to `skills/implement/SKILL.md` Step 5.** Run the configured pre-publish hook command (`workflow.precommit_command`, default `pre-commit run --all-files`) until clean (up to 5 retries; escalate to user on the sixth failure).
 
 ### Step Q6: Completion Gate
 
@@ -135,8 +135,9 @@ configured integration branch from `origin` with an explicit remote-tracking
 refspec, performs a real merge when needed, verifies the merge graph, pushes
 normally, and records the durable synchronization attestation. Run
 proportionate targeted checks while resolving integration conflicts; the tool's
-completion action mechanically runs the configured completion command and
-`make policy` once on the exact tree it binds to the merge commit. Do not
+completion action mechanically runs the configured completion command and the
+configured policy command (`workflow.policy_command`, default `make policy`)
+once on the exact tree it binds to the merge commit. Do not
 substitute a local base branch, worktree, rebase, force-push, or discarded
 feature state.
 
@@ -209,7 +210,7 @@ Every mechanical guardrail the repo enforces. Adding to this list is a `bin/poli
 - **PR-title rules** (issue #901). Single conventional-commit type + lowercase subject; per-repo override via `workflow.pr_title`. Load-bearing under Release Please (GC-P027, issue #1399): CI (`.github/workflows/pr-title.yml`) enforces the same contract, since Release Please derives `CHANGELOG.md` and the version bump from Conventional Commit history rather than a per-PR fragment.
 - **`gc_render_pr_body`** for the PR body (ADR-036) so `tools/policy/checks.py::check_pr_body` accepts it.
 - **CI + SonarCloud green** before merge handoff.
-- **`make check` + `make policy` clean** before commit (Step Q6 / pre-commit).
+- **Configured completion + policy commands clean** before commit (Step Q6 / pre-commit).
 - **User merges, not the agent.**
 
 ## What `/quickfix` drops (compared to `/implement`)

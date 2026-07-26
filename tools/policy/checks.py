@@ -4214,7 +4214,12 @@ def check_pr_body(body: str) -> list[Violation]:
         )
 
     required_checks = [
-        "- [x] `make policy` passes",
+        # The policy gate is named semantically, not by command (issue #1429).
+        # `workflow.policy_command` in `.ground-control.yaml` decides what
+        # actually runs, so the PR body attests that the configured gate
+        # passed rather than asserting a Make target. Mirrors
+        # `PR_BODY_POLICY_CHECK_LINE` in `mcp/ground-control/lib.js`.
+        "- [x] Configured repository policy command passes",
         "- [x] `gc_evaluate_quality_gates` passes or is unchanged by this repo-only change",
         "- [x] `gc_run_sweep` reviewed; findings fixed or recorded with rationale",
     ]
@@ -4942,15 +4947,21 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
     step6 = (root / "skills/implement/steps/step-06-completion-gate.md").read_text(
         encoding="utf-8"
     )
+    step6_flat = " ".join(step6.split())
     step7 = (root / "skills/implement/steps/step-07-stage-precommit.md").read_text(
         encoding="utf-8"
     )
     verification_surface_tokens = (
-        (review_rules_flat, "Do not run `cfg.workflow.completion_command` or `make policy` after every small fix"),
+        (
+            review_rules_flat,
+            "Do not run `cfg.workflow.completion_command` or "
+            "`cfg.workflow.policy_command` after every small fix",
+        ),
         (review_rules_flat, "once before leaving the review band on the final post-fix tree"),
         (step5, "Do not run `pre-commit` here"),
-        (step6, "Run `make policy`"),
+        (step6_flat, "Run `cfg.workflow.policy_command`"),
         (step7, "single mandatory pre-publish"),
+        (step7, "cfg.workflow.precommit_command"),
     )
     missing_surfaces = [
         token for surface, token in verification_surface_tokens if token not in surface
@@ -4990,7 +5001,7 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
         "merged_clean",
         "merged_conflicts_resolved",
         "refs/remotes/origin/",
-        "make policy",
+        "cfg.workflow.policy_command",
     )
     missing_sync = [token for token in sync_tokens if token not in step8_5]
     pr_tokens = (

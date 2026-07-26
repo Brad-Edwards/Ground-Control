@@ -6,6 +6,10 @@ workflow:
   completion_command: make check
   lint_command: cd backend && ./gradlew spotlessCheck
   format_command: cd backend && ./gradlew spotlessApply
+  # policy_command is intentionally omitted (#1429): this repo's policy gate is
+  # `make policy`, which is the normalized default. A repo whose gate is named
+  # differently sets `policy_command` here. Note that an MCP server started
+  # before #1429 rejects the key as unknown, so restart it after upgrading.
   codex_review:
     pre_push_cap: 1
   test_quality_review:
