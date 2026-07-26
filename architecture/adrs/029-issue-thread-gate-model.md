@@ -504,3 +504,13 @@ post-commit failure instead of manufacturing duplicate attestations. Only a
 permission-verified record author is trusted. Step 9 re-reads that record and
 re-fetches the base immediately before PR creation; cached step state alone
 never authorizes the write.
+
+**2026-07-26 (issue #1426, mechanical phase composition).**
+`gc_implement_mechanical` composes existing issue-thread-aware primitives
+without introducing a second durable state store. Pickup, synchronization
+attestations, readiness, final report, and issue close remain authoritative in
+their existing GitHub/MCP records. Successful mechanical stages need no model
+turn; actionable failures return preserved evidence, including exact
+synchronization retry input for a conflict. The issue thread remains the
+durable workflow record, and user-owned PR merge remains the only synchronous
+human touchpoint.

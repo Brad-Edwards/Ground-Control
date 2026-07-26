@@ -6,6 +6,7 @@ import { describe, it } from "node:test";
 
 import {
   buildImplementBaseSyncMarker,
+  isDefaultImplementHooksPath,
   parseImplementBaseSyncMarkers,
   resolveWorkflowRouteFromConfig,
   runCreateSynchronizedImplementPr,
@@ -122,6 +123,21 @@ function startRunner({ current = false, conflict = false, fetchFailure = false }
 }
 
 describe("pre-PR implement synchronization", () => {
+  it("accepts the canonical common hooks directory for a linked worktree", () => {
+    assert.equal(isDefaultImplementHooksPath({
+      repoRoot: "/repo/worktree",
+      hooksPath: "/repo/main/.git/hooks",
+      gitDir: "/repo/main/.git/worktrees/worktree",
+      gitCommonDir: "/repo/main/.git",
+    }), true);
+    assert.equal(isDefaultImplementHooksPath({
+      repoRoot: "/repo/worktree",
+      hooksPath: "/tmp/caller-hooks",
+      gitDir: "/repo/main/.git/worktrees/worktree",
+      gitCommonDir: "/repo/main/.git",
+    }), false);
+  });
+
   it("renders and parses the complete versioned attestation", () => {
     const record = {
       recordId: RECORD,

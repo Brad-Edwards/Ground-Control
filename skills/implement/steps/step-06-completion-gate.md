@@ -6,6 +6,13 @@ tier: low
 
 # Step 6: Completion Gate
 
+On the normal path call `gc_implement_mechanical` with `action="verify"`,
+`requirements` populated from Step 1, and the issue/repository identifiers.
+The action runs the configured completion command, `make policy`, verifies
+that those gates did not mutate the checkout, and calls
+`gc_assert_quality_gates`. Continue only on `ok: true`; a failed envelope
+names the exact gate an agent must repair before retrying the same action.
+
 Implementation is NOT ready for commit until ALL of the following are verified:
 
 1. **Completion gate passes once on the final Phase-B implementation tree** -

@@ -468,3 +468,9 @@ documentation style rule.
 The issue #1416 risk-proportionate verification correction is likewise a
 workflow-contract clarification documented in those workflow ADRs and docs;
 it changes no documentation classification or style rule.
+
+The issue #1426 `gc_implement_mechanical` registration follows the same
+tool-surface convention: the public inputs are documented in the MCP README
+and description-parity test, while the execution contract is synchronized in
+ADR-021, ADR-029, ADR-031, ADR-036, ADR-054, and the workflow documents. It
+changes no documentation classification, Vale rule, or style rule.

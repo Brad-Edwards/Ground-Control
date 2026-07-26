@@ -6,7 +6,10 @@ tier: low
 
 # Step 2: Read the Issue and Gather Context
 
-The issue thread was fetched in Step 1 via `gc_get_issue_thread` and cached behind a content hash. Re-read the cached body, labels, and comments for any user discussion that affects the plan.
+The issue thread was fetched by Step 1's `gc_implement_mechanical
+action="bootstrap"` call and cached behind a content hash. Consume that
+returned context in the same primary-session turn as the following semantic
+work; Step 2 does not require another model dispatch.
 
 If the orchestrator forwarded `issue_thread_hash` from Step 1, call `gc_get_issue_thread` again with `expected_hash=<that hash>`. If the cache hit returns `{unchanged: true}`, use the prior cached state directly - no re-fetch needed. On hash mismatch the tool refetches; pass the new hash forward.
 
