@@ -309,6 +309,20 @@ describe("runImplementMechanical publish", () => {
     );
   });
 
+  it("allows a non-secret environment template to publish", async () => {
+    const git = publishExec({ paths: [".env.example"] });
+    const result = await runImplementMechanical({
+      action: "publish",
+      repoPath: "/repo",
+      issueNumber: 1426,
+      branchName: "1426-script-phases",
+      commitMessage: "test: cover environment templates",
+    }, baseDeps({ execFile: git.execFile }));
+
+    assert.equal(result.ok, true);
+    assert.ok(git.calls.some(([file, ...argv]) => file === "git" && argv.includes("add")));
+  });
+
   it("returns durable retry input on conflict and completes from it after resolution", async () => {
     const git = publishExec();
     const conflict = await runImplementMechanical({
