@@ -4090,28 +4090,24 @@ async function runImplementFinalTreeGates(
     error.code = "implement_base_sync_completion_command_missing";
     throw error;
   }
-  const [{ stdout: beforeStatus }, beforeTree] = await Promise.all([
-    runImplementGit(
-      repoRoot,
-      ["status", "--porcelain=v1", "--untracked-files=normal"],
-      commandRunner,
-    ),
-    readImplementIndexTreeOid(repoRoot, commandRunner),
-  ]);
+  const { stdout: beforeStatus } = await runImplementGit(
+    repoRoot,
+    ["status", "--porcelain=v1", "--untracked-files=normal"],
+    commandRunner,
+  );
+  const beforeTree = await readImplementIndexTreeOid(repoRoot, commandRunner);
   await commandRunner(
     "bash",
     ["-c", completionCommand],
     { cwd: repoRoot },
   );
   await commandRunner("make", ["policy"], { cwd: repoRoot });
-  const [{ stdout: afterStatus }, afterTree] = await Promise.all([
-    runImplementGit(
-      repoRoot,
-      ["status", "--porcelain=v1", "--untracked-files=normal"],
-      commandRunner,
-    ),
-    readImplementIndexTreeOid(repoRoot, commandRunner),
-  ]);
+  const { stdout: afterStatus } = await runImplementGit(
+    repoRoot,
+    ["status", "--porcelain=v1", "--untracked-files=normal"],
+    commandRunner,
+  );
+  const afterTree = await readImplementIndexTreeOid(repoRoot, commandRunner);
   if (afterTree !== beforeTree || afterStatus !== beforeStatus) {
     const error = new Error("The final-tree gates changed the Git index or checkout");
     error.code = "implement_base_sync_gate_tree_changed";
