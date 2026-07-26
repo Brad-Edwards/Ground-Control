@@ -477,3 +477,10 @@ tool-surface convention: the public inputs are documented in the MCP README
 and description-parity test, while the execution contract is synchronized in
 ADR-021, ADR-029, ADR-031, ADR-036, ADR-054, and the workflow documents. It
 changes no documentation classification, Vale rule, or style rule.
+
+The issue #1414 review-coverage change follows the same tool-surface
+convention: the new `diff_mode` and `review_coverage` output fields are
+documented in the MCP README and the tool descriptions, while the workflow
+contract is synchronized in ADR-021, ADR-029, ADR-031, ADR-036, ADR-054, and the
+workflow documents. It changes no documentation classification, Vale rule, or
+style rule.
