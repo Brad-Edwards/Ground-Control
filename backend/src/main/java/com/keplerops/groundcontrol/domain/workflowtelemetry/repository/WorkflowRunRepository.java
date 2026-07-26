@@ -1,12 +1,14 @@
 package com.keplerops.groundcontrol.domain.workflowtelemetry.repository;
 
 import com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowRun;
+import jakarta.persistence.LockModeType;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -16,6 +18,9 @@ public interface WorkflowRunRepository extends JpaRepository<WorkflowRun, UUID> 
      * Idempotency key lookup for ingestion: a run is uniquely identified by
      * {@code (project, repo, issueNumber, branch)}. Any of repo/issueNumber/branch may be null, so
      * each is matched null-safely rather than with {@code = null} (which never matches in SQL).
+     *
+     * <p>Unlocked, so it stays usable as an ordinary read. The write path takes
+     * {@link #findRunForUpdate} instead.
      */
     @Query("SELECT r FROM WorkflowRun r WHERE r.project = :project "
             + "AND ((:repo IS NULL AND r.repo IS NULL) OR r.repo = :repo) "
@@ -27,8 +32,50 @@ public interface WorkflowRunRepository extends JpaRepository<WorkflowRun, UUID> 
             @Param("issueNumber") Integer issueNumber,
             @Param("branch") String branch);
 
+    /**
+     * Same lookup as {@link #findRunForUpsert}, holding {@code PESSIMISTIC_WRITE} on the matched row
+     * (issue #1435). Live emission writes to one run from several phase boundaries and the merge is
+     * read-modify-write: without the row lock two concurrent observations both read the pre-merge row
+     * and the second {@code save} silently drops the first one's fields. The unique index protects
+     * only the insert race, not this one.
+     *
+     * <p>Separate from the unlocked variant because a pessimistic lock requires an active
+     * transaction; forcing every reader of the natural key into one would be a wider contract change
+     * than the write path needs.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT r FROM WorkflowRun r WHERE r.project = :project "
+            + "AND ((:repo IS NULL AND r.repo IS NULL) OR r.repo = :repo) "
+            + "AND ((:issueNumber IS NULL AND r.issueNumber IS NULL) OR r.issueNumber = :issueNumber) "
+            + "AND ((:branch IS NULL AND r.branch IS NULL) OR r.branch = :branch)")
+    Optional<WorkflowRun> findRunForUpdate(
+            @Param("project") String project,
+            @Param("repo") String repo,
+            @Param("issueNumber") Integer issueNumber,
+            @Param("branch") String branch);
+
     /** Recent runs for one project, newest first; for the active-status table and run list. */
     List<WorkflowRun> findByProjectOrderByCreatedAtDesc(String project, Pageable pageable);
+
+    /**
+     * Still-open runs for the same work item on a different branch (issue #1435). A new live attempt
+     * on the same {@code (project, repo, issueNumber)} means the earlier attempt was abandoned; this
+     * is the only abandonment the tool layer can actually observe, because an agent that walks away
+     * never calls anything. {@code repo} and {@code branch} are matched null-safely, mirroring
+     * {@link #findRunForUpsert}.
+     */
+    @Query("SELECT r FROM WorkflowRun r WHERE r.project = :project "
+            + "AND ((:repo IS NULL AND r.repo IS NULL) OR r.repo = :repo) "
+            + "AND r.issueNumber = :issueNumber "
+            + "AND ((:branch IS NULL AND r.branch IS NOT NULL) OR r.branch <> :branch) "
+            + "AND r.finalState IN (com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowRunState.RUNNING, "
+            + "com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowRunState.READY_FOR_REVIEW, "
+            + "com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowRunState.ESCALATED)")
+    List<WorkflowRun> findOpenRunsForWorkItem(
+            @Param("project") String project,
+            @Param("repo") String repo,
+            @Param("issueNumber") Integer issueNumber,
+            @Param("branch") String branch);
 
     /** Project-scoped read for the mixed graph, resolving its UUID to the immutable identifier. */
     @Query("SELECT r FROM WorkflowRun r "
@@ -42,6 +89,18 @@ public interface WorkflowRunRepository extends JpaRepository<WorkflowRun, UUID> 
      * not-found and cannot write to or read back another project's run (issue #859 security review).
      */
     Optional<WorkflowRun> findByIdAndProject(UUID id, String project);
+
+    /**
+     * Same project-scoped lookup, holding {@code PESSIMISTIC_WRITE} on the run row (issue #1435).
+     * Appending a phase event is a check-then-insert: derive the attempt ordinal and the source
+     * identity, look for an existing row, insert if absent. Two concurrent deliveries of the same
+     * logical fact would otherwise both observe absence, and one would fail at flush against the
+     * unique index instead of returning the stored event as the contract promises. Serializing event
+     * creation on the parent run makes the whole sequence atomic.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT r FROM WorkflowRun r WHERE r.id = :id AND r.project = :project")
+    Optional<WorkflowRun> findByIdAndProjectForUpdate(@Param("id") UUID id, @Param("project") String project);
 
     /**
      * Roll up the runs matching the scope into a single row in the database. Counting, outcome

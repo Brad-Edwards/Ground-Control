@@ -1,6 +1,30 @@
 # Contract Changes
 
-Current contract version: 0.6.0
+Current contract version: 0.7.0
+
+## 0.7.0 - 2026-07-26
+
+Live workflow-run lifecycle emission (issue #1435, ADR-061 amendment, ADR-090).
+
+- Additive only; no field or value is removed or renamed, so
+  `contracts/schemas/workflow/workflow-run-record.v1.schema.json` stays at `v1`.
+- Added `FAILED` to the `finalState` vocabulary. The prior set could not tell a
+  non-recoverable failure apart from an abandonment or a pause awaiting a human
+  decision, and collapsed all three into one bucket.
+- Added `LIVE_EMISSION` to the `provenance` vocabulary for a fact the MCP tool
+  layer observed as a workflow phase transitioned, rather than one reconstructed
+  from the issue thread afterwards. The two have different freshness and
+  different reconciliation semantics.
+- Added `sourceId` to the phase-event request and response: the deterministic
+  identity of the logical fact, unique within a run, so live emission and
+  `gc_workflow_run_ingest` converge on one row per attempt instead of
+  double-counting it. Derived by the backend when a caller omits it.
+- Added `GET /api/v1/workflow-runs/{runId}/events` (project-scoped, bounded) for
+  event-level retrieval of a run in flight; the existing aggregate only exposes
+  per-phase hot spots across a window.
+- Regenerated the OpenAPI document and TypeScript client via `make contracts`.
+  Consumers that switch exhaustively over `WorkflowRunFinalState` or
+  `WorkflowRunProvenance` must handle the new members.
 
 ## 0.6.0 - 2026-07-15
 

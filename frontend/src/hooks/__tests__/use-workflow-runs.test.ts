@@ -200,3 +200,34 @@ describe("useWorkflowRunAggregate", () => {
     expect(mockApiFetch).not.toHaveBeenCalled();
   });
 });
+
+describe("live refresh", () => {
+  // A run now advances while the page is open (issue #1435), so a snapshot taken at mount goes
+  // stale within a phase. These assert the polling actually happens: dropping refetchInterval
+  // reverts the page to static data, which no other test in this suite would notice.
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("refetches the run list on an interval", async () => {
+    mockApiFetch.mockResolvedValue([mockRun]);
+    renderHook(() => useWorkflowRuns("ground-control"), { wrapper: createWrapper() });
+
+    await vi.waitFor(() => expect(mockApiFetch).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(31_000);
+    await vi.waitFor(() => expect(mockApiFetch.mock.calls.length).toBeGreaterThan(1));
+  });
+
+  it("refetches the aggregate on an interval", async () => {
+    mockApiFetch.mockResolvedValue(mockAggregate);
+    renderHook(() => useWorkflowRunAggregate("ground-control"), { wrapper: createWrapper() });
+
+    await vi.waitFor(() => expect(mockApiFetch).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(31_000);
+    await vi.waitFor(() => expect(mockApiFetch.mock.calls.length).toBeGreaterThan(1));
+  });
+});

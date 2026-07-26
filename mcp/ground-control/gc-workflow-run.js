@@ -15,6 +15,7 @@ import {
   recordWorkflowRunEvent,
   importWorkflowRunCost,
   listWorkflowRuns,
+  listWorkflowRunEvents,
   aggregateWorkflowRuns,
   crossProjectAggregateWorkflowRuns,
   pick,
@@ -30,6 +31,7 @@ export const GC_WORKFLOW_RUN_ACTIONS = [
   "record_event",
   "import_cost",
   "list",
+  "list_events",
   "aggregate",
   "cross_project_aggregate",
 ];
@@ -56,6 +58,7 @@ export const WORKFLOW_RUN_FINAL_STATES = [
   "ESCALATED",
   "ABANDONED",
   "SUPERSEDED",
+  "FAILED",
 ];
 
 export const WORKFLOW_RUN_OUTCOMES = ["MERGED", "CLOSED_WITHOUT_MERGE", "NONE"];
@@ -64,6 +67,7 @@ export const WORKFLOW_RUN_PROVENANCES = [
   "ISSUE_THREAD",
   "TEMPORAL_VISIBILITY",
   "MANUAL_IMPORT",
+  "LIVE_EMISSION",
 ];
 
 export const WORKFLOW_RUN_EVENT_TYPES = [
@@ -108,6 +112,9 @@ export const WORKFLOW_RUN_EVENT_FIELDS = [
   "duration_ms",
   "outcome",
   "provenance",
+  // Deterministic identity of the logical fact (issue #1435). Supplied when the emitter can attest
+  // it; the backend derives phase:eventType:cycleIndex otherwise.
+  "source_id",
 ];
 
 export const WORKFLOW_RUN_COST_FIELDS = [
@@ -156,6 +163,11 @@ export const gcWorkflowRunZodShape = {
   cycle_index: z.number().int().nonnegative().optional(),
   occurred_at: z.string().optional().describe("ISO-8601 datetime (required for record_event)"),
   duration_ms: z.number().int().nonnegative().optional(),
+  source_id: z
+    .string()
+    .max(200)
+    .optional()
+    .describe("Deterministic identity of the logical phase fact; derived by the backend when absent"),
   // list/aggregate filters
   limit: z.number().int().positive().optional(),
   runtime: z.string().optional(),
@@ -171,6 +183,7 @@ export const GC_WORKFLOW_RUN_DESCRIPTION =
   `record_event: append a phase event; requires run_id, project, phase, event_type, occurred_at, provenance (project scopes the run lookup). ` +
   `import_cost: attach cost/token metadata; requires run_id and project (project scopes the run lookup). ` +
   `list: list recent runs for a project; accepts project, limit. ` +
+  `list_events: phase events for one run, oldest first; requires run_id and project, accepts limit. ` +
   `aggregate: project-scoped aggregate statistics; accepts project plus optional filters (repo, runtime, requirement, workflow_type, outcome, from, to). ` +
   `cross_project_aggregate: ADMIN-only cross-project aggregate; accepts the same filters minus project. ` +
   `Reads (list, aggregate) are also reachable via gc_query against /api/v1/workflow-runs.`;
@@ -206,6 +219,14 @@ export async function gcWorkflowRunToolHandler(args, { adminEnabled = false } = 
     }
     case "list": {
       return listWorkflowRuns({ project: args.project, limit: args.limit });
+    }
+    case "list_events": {
+      // Event-level retrieval for one run (issue #1435). The aggregate only reports per-phase hot
+      // spots across a window, so without this there is no way to see which gate an in-flight run
+      // is sitting in. project scopes the run lookup, so a run id alone never authorizes the read.
+      reqArg(args, "run_id", "list_events");
+      reqArg(args, "project", "list_events");
+      return listWorkflowRunEvents(args.run_id, { project: args.project, limit: args.limit });
     }
     case "aggregate": {
       return aggregateWorkflowRuns({

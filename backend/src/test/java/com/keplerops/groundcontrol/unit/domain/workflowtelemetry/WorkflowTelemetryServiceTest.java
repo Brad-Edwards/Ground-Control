@@ -3,6 +3,7 @@ package com.keplerops.groundcontrol.unit.domain.workflowtelemetry;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -57,7 +58,7 @@ class WorkflowTelemetryServiceTest {
     @Test
     void recordRunCreatesNewRunWhenNoneMatchesTheUpsertKey() {
         // The new-run path inserts via saveAndFlush so a unique-key violation surfaces eagerly.
-        when(runRepository.findRunForUpsert(any(), any(), any(), any())).thenReturn(Optional.empty());
+        when(runRepository.findRunForUpdate(any(), any(), any(), any())).thenReturn(Optional.empty());
         when(runRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
 
         var command = runCommand()
@@ -84,7 +85,7 @@ class WorkflowTelemetryServiceTest {
     void recordRunRaisesConflictWhenConcurrentInsertViolatesTheUniqueKey() {
         // Two concurrent observations of the same key: the loser's insert is rejected by the unique
         // index, surfaced as a retryable ConflictException (a retry then takes the update path).
-        when(runRepository.findRunForUpsert(any(), any(), any(), any())).thenReturn(Optional.empty());
+        when(runRepository.findRunForUpdate(any(), any(), any(), any())).thenReturn(Optional.empty());
         when(runRepository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("duplicate key"));
 
         var command = runCommand().build();
@@ -100,7 +101,7 @@ class WorkflowTelemetryServiceTest {
         existing.setIssueNumber(859);
         existing.setBranch("859-feature");
         existing.setStartedAt(FROM);
-        when(runRepository.findRunForUpsert(any(), any(), any(), any())).thenReturn(Optional.of(existing));
+        when(runRepository.findRunForUpdate(any(), any(), any(), any())).thenReturn(Optional.of(existing));
         when(runRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         var update = new RecordWorkflowRunCommand(
@@ -133,6 +134,82 @@ class WorkflowTelemetryServiceTest {
         assertThat(existing.getPrNumber()).isEqualTo(42);
         assertThat(existing.getFinalState()).isEqualTo(WorkflowRunState.MERGED);
         assertThat(existing.getOutcome()).isEqualTo(WorkflowRunOutcome.MERGED);
+    }
+
+    // ---- recordRun: monotonic merge (issue #1435) ----------------------------------------------
+
+    @Test
+    void recordRunKeepsTheEarliestStartedAt() {
+        // A later observation of the same run must not push the run's start time forward: cycle time
+        // is measured from when the run actually began.
+        var existing = openRun(FROM);
+        when(runRepository.findRunForUpdate(any(), any(), any(), any())).thenReturn(Optional.of(existing));
+        when(runRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.recordRun(liveCommand(TO, null, WorkflowRunState.RUNNING));
+
+        assertThat(existing.getStartedAt()).isEqualTo(FROM);
+    }
+
+    @Test
+    void recordRunRejectsEndedAtBeforeStartedAt() {
+        var existing = openRun(TO);
+        when(runRepository.findRunForUpdate(any(), any(), any(), any())).thenReturn(Optional.of(existing));
+
+        var command = liveCommand(null, FROM, WorkflowRunState.MERGED);
+        assertThatThrownBy(() -> service.recordRun(command))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("endedAt");
+    }
+
+    @Test
+    void recordRunDoesNotReopenATerminalRun() {
+        // A delayed live write or a stale issue-thread backfill arriving after the merge must never
+        // put a completed run back into RUNNING, which would corrupt every active-run count.
+        var existing = openRun(FROM);
+        existing.setFinalState(WorkflowRunState.MERGED);
+        existing.setOutcome(WorkflowRunOutcome.MERGED);
+        existing.setEndedAt(TO);
+        when(runRepository.findRunForUpdate(any(), any(), any(), any())).thenReturn(Optional.of(existing));
+        when(runRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.recordRun(liveCommand(FROM, null, WorkflowRunState.RUNNING));
+
+        assertThat(existing.getFinalState()).isEqualTo(WorkflowRunState.MERGED);
+        assertThat(existing.getOutcome()).isEqualTo(WorkflowRunOutcome.MERGED);
+        assertThat(existing.getEndedAt()).isEqualTo(TO);
+    }
+
+    @Test
+    void recordRunSupersedesOtherOpenRunsOfTheSameWorkItemOnALiveOpen() {
+        // A fresh live attempt on a new branch is the only abandonment the tool layer can observe:
+        // the previous attempt for the same issue is over, so it gets a terminal state and an end.
+        var abandoned = new WorkflowRun("ground-control", "implement", TelemetryProvenance.LIVE_EMISSION);
+        abandoned.setIssueNumber(859);
+        abandoned.setBranch("859-old-attempt");
+        abandoned.setStartedAt(FROM);
+        when(runRepository.findRunForUpdate(any(), any(), any(), any())).thenReturn(Optional.empty());
+        when(runRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(runRepository.findOpenRunsForWorkItem("ground-control", null, 859, "859-feature"))
+                .thenReturn(List.of(abandoned));
+        when(runRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.recordRun(liveCommand(FROM, null, WorkflowRunState.RUNNING));
+
+        assertThat(abandoned.getFinalState()).isEqualTo(WorkflowRunState.SUPERSEDED);
+        assertThat(abandoned.getEndedAt()).isNotNull();
+    }
+
+    @Test
+    void recordRunDoesNotSupersedeWhenTheObservationIsABackfill() {
+        // Reconstructing an old thread with gc_workflow_run_ingest must never close a live run.
+        when(runRepository.findRunForUpdate(any(), any(), any(), any())).thenReturn(Optional.empty());
+        when(runRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.recordRun(
+                runCommand().withProvenance(TelemetryProvenance.ISSUE_THREAD).build());
+
+        verify(runRepository, never()).findOpenRunsForWorkItem(any(), any(), any(), any());
     }
 
     @Test
@@ -174,9 +251,18 @@ class WorkflowTelemetryServiceTest {
         // A foreign-project run resolves to empty via findByIdAndProject, so a cross-project caller
         // is treated the same as not-found and cannot append events to another project's run.
         var runId = UUID.randomUUID();
-        when(runRepository.findByIdAndProject(runId, "gc")).thenReturn(Optional.empty());
+        when(runRepository.findByIdAndProjectForUpdate(runId, "gc")).thenReturn(Optional.empty());
         var command = new RecordPhaseEventCommand(
-                runId, "gc", "ci", PhaseEventType.FAILED, 1, FROM, 1000L, "failure", TelemetryProvenance.ISSUE_THREAD);
+                runId,
+                "gc",
+                "ci",
+                PhaseEventType.FAILED,
+                1,
+                FROM,
+                1000L,
+                "failure",
+                TelemetryProvenance.ISSUE_THREAD,
+                null);
         assertThatThrownBy(() -> service.recordPhaseEvent(command)).isInstanceOf(NotFoundException.class);
     }
 
@@ -184,7 +270,7 @@ class WorkflowTelemetryServiceTest {
     void recordPhaseEventDenormalizesRunProjectOntoEvent() {
         var runId = UUID.randomUUID();
         var run = new WorkflowRun("ground-control", "implement", TelemetryProvenance.ISSUE_THREAD);
-        when(runRepository.findByIdAndProject(runId, "ground-control")).thenReturn(Optional.of(run));
+        when(runRepository.findByIdAndProjectForUpdate(runId, "ground-control")).thenReturn(Optional.of(run));
         when(phaseEventRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         service.recordPhaseEvent(new RecordPhaseEventCommand(
@@ -196,7 +282,8 @@ class WorkflowTelemetryServiceTest {
                 FROM,
                 5000L,
                 "clean",
-                TelemetryProvenance.ISSUE_THREAD));
+                TelemetryProvenance.ISSUE_THREAD,
+                null));
 
         var captor = ArgumentCaptor.forClass(WorkflowPhaseEvent.class);
         verify(phaseEventRepository).save(captor.capture());
@@ -218,7 +305,133 @@ class WorkflowTelemetryServiceTest {
                 FROM,
                 null,
                 null,
-                TelemetryProvenance.ISSUE_THREAD);
+                TelemetryProvenance.ISSUE_THREAD,
+                null);
+        assertThatThrownBy(() -> service.recordPhaseEvent(command))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("reserved");
+    }
+
+    // ---- recordPhaseEvent: attempt ordinal + deterministic identity (issue #1435) ---------------
+
+    @Test
+    void recordPhaseEventAssignsTheNextAttemptOrdinalToAStartedEventWithNoCycleIndex() {
+        // STARTED opens an attempt. An emitter cannot know how many earlier attempts a restart or a
+        // different process already recorded, so the ordinal is derived from durable history.
+        var runId = UUID.randomUUID();
+        var run = new WorkflowRun("ground-control", "implement", TelemetryProvenance.LIVE_EMISSION);
+        when(runRepository.findByIdAndProjectForUpdate(runId, "ground-control")).thenReturn(Optional.of(run));
+        when(phaseEventRepository.countByRunIdAndPhaseAndEventType(runId, "ci", PhaseEventType.STARTED))
+                .thenReturn(2L);
+        when(phaseEventRepository.findByRunIdAndSourceId(any(), any())).thenReturn(Optional.empty());
+        when(phaseEventRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var saved = service.recordPhaseEvent(phaseEvent(runId, "ci", PhaseEventType.STARTED, null, null));
+
+        assertThat(saved.getCycleIndex()).isEqualTo(2);
+        assertThat(saved.getSourceId()).isEqualTo("ci:STARTED:2");
+    }
+
+    @Test
+    void recordPhaseEventAssignsAttemptZeroToANonStartedEventWithNoCycleIndex() {
+        // An emitter that cannot attest attempt order (issue-thread backfill) lands on the first
+        // attempt, so its record converges with live emission instead of appending a phantom retry.
+        var runId = UUID.randomUUID();
+        var run = new WorkflowRun("ground-control", "implement", TelemetryProvenance.ISSUE_THREAD);
+        when(runRepository.findByIdAndProjectForUpdate(runId, "ground-control")).thenReturn(Optional.of(run));
+        when(phaseEventRepository.findByRunIdAndSourceId(any(), any())).thenReturn(Optional.empty());
+        when(phaseEventRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var saved = service.recordPhaseEvent(phaseEvent(runId, "ci", PhaseEventType.COMPLETED, null, null));
+
+        assertThat(saved.getCycleIndex()).isZero();
+        assertThat(saved.getSourceId()).isEqualTo("ci:COMPLETED:0");
+    }
+
+    @Test
+    void recordPhaseEventReturnsTheExistingEventWhenTheSameLogicalFactIsRecordedTwice() {
+        // Live emission and a later backfill describe the same attempt. The append-only table stays
+        // append-only per LOGICAL fact: the second write is a no-op, not a duplicated event.
+        var runId = UUID.randomUUID();
+        var run = new WorkflowRun("ground-control", "implement", TelemetryProvenance.LIVE_EMISSION);
+        var already = new WorkflowPhaseEvent(
+                runId, "ground-control", "ci", PhaseEventType.COMPLETED, FROM, 10L, TelemetryProvenance.LIVE_EMISSION);
+        already.setSourceId("ci:COMPLETED:0");
+        when(runRepository.findByIdAndProjectForUpdate(runId, "ground-control")).thenReturn(Optional.of(run));
+        when(phaseEventRepository.findByRunIdAndSourceId(runId, "ci:COMPLETED:0"))
+                .thenReturn(Optional.of(already));
+
+        var saved = service.recordPhaseEvent(phaseEvent(runId, "ci", PhaseEventType.COMPLETED, 0, null));
+
+        assertThat(saved).isSameAs(already);
+        verify(phaseEventRepository, never()).save(any());
+    }
+
+    @Test
+    void recordPhaseEventKeepsAnExplicitSourceIdSuppliedByTheEmitter() {
+        var runId = UUID.randomUUID();
+        var run = new WorkflowRun("ground-control", "implement", TelemetryProvenance.LIVE_EMISSION);
+        when(runRepository.findByIdAndProjectForUpdate(runId, "ground-control")).thenReturn(Optional.of(run));
+        when(phaseEventRepository.findByRunIdAndSourceId(runId, "custom-key")).thenReturn(Optional.empty());
+        when(phaseEventRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var saved = service.recordPhaseEvent(phaseEvent(runId, "ci", PhaseEventType.COMPLETED, 1, "custom-key"));
+
+        assertThat(saved.getSourceId()).isEqualTo("custom-key");
+    }
+
+    @Test
+    void deriveSourceIdTreatsAnAbsentOrdinalAsTheFirstAttempt() {
+        // The entity fills this in on persist and the service computes the same value before its
+        // idempotency lookup. If the two ever disagreed, a re-recorded fact would be deduplicated
+        // against a key that is not the one stored, and the duplicate would land anyway.
+        assertThat(WorkflowPhaseEvent.deriveSourceId("ci", PhaseEventType.COMPLETED, null))
+                .isEqualTo("ci:COMPLETED:0");
+        assertThat(WorkflowPhaseEvent.deriveSourceId("ci", PhaseEventType.STARTED, 2))
+                .isEqualTo("ci:STARTED:2");
+    }
+
+    @Test
+    void recordPhaseEventRejectsANegativeCycleIndex() {
+        // A negative ordinal would flow into the derived identity as "ci:COMPLETED:-1", which no
+        // other emitter and no V204 backfill row can ever produce, so the fact would never converge.
+        var command = new RecordPhaseEventCommand(
+                UUID.randomUUID(),
+                "ground-control",
+                "ci",
+                PhaseEventType.COMPLETED,
+                -1,
+                FROM,
+                10L,
+                null,
+                TelemetryProvenance.LIVE_EMISSION,
+                null);
+        assertThatThrownBy(() -> service.recordPhaseEvent(command))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("cycleIndex");
+    }
+
+    @Test
+    void recordPhaseEventRejectsANegativeDuration() {
+        var command = new RecordPhaseEventCommand(
+                UUID.randomUUID(),
+                "ground-control",
+                "ci",
+                PhaseEventType.COMPLETED,
+                0,
+                FROM,
+                -1L,
+                null,
+                TelemetryProvenance.LIVE_EMISSION,
+                null);
+        assertThatThrownBy(() -> service.recordPhaseEvent(command))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("durationMs");
+    }
+
+    @Test
+    void recordPhaseEventRejectsReservedMarkerInSourceId() {
+        var command = phaseEvent(UUID.randomUUID(), "ci", PhaseEventType.COMPLETED, 0, "<!-- gc:phase -->");
         assertThatThrownBy(() -> service.recordPhaseEvent(command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("reserved");
@@ -307,6 +520,55 @@ class WorkflowTelemetryServiceTest {
 
     private static RunCommandBuilder runCommand() {
         return new RunCommandBuilder();
+    }
+
+    /** A run already open on the canonical (project, issue, branch) identity, started at {@code at}. */
+    private static WorkflowRun openRun(Instant at) {
+        var run = new WorkflowRun("ground-control", "implement", TelemetryProvenance.LIVE_EMISSION);
+        run.setIssueNumber(859);
+        run.setBranch("859-feature");
+        run.setStartedAt(at);
+        return run;
+    }
+
+    /** A live-emission observation of the same run identity, varying only the timestamps and state. */
+    private static RecordWorkflowRunCommand liveCommand(Instant startedAt, Instant endedAt, WorkflowRunState state) {
+        return new RecordWorkflowRunCommand(
+                "ground-control",
+                null,
+                859,
+                null,
+                "859-feature",
+                "implement",
+                "claude-code",
+                null,
+                startedAt,
+                endedAt,
+                state,
+                WorkflowRunOutcome.NONE,
+                TelemetryProvenance.LIVE_EMISSION,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+    }
+
+    private static RecordPhaseEventCommand phaseEvent(
+            UUID runId, String phase, PhaseEventType eventType, Integer cycleIndex, String sourceId) {
+        return new RecordPhaseEventCommand(
+                runId,
+                "ground-control",
+                phase,
+                eventType,
+                cycleIndex,
+                FROM,
+                25L,
+                null,
+                TelemetryProvenance.LIVE_EMISSION,
+                sourceId);
     }
 
     /** Small fluent builder so each validation test varies exactly one field. */

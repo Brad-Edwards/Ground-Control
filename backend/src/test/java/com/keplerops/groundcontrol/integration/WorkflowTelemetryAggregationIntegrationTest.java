@@ -273,7 +273,8 @@ class WorkflowTelemetryAggregationIntegrationTest extends BaseIntegrationTest {
                 START,
                 100L,
                 "x",
-                TelemetryProvenance.ISSUE_THREAD);
+                TelemetryProvenance.ISSUE_THREAD,
+                null);
         assertThatThrownBy(() -> service.recordPhaseEvent(foreignEvent)).isInstanceOf(NotFoundException.class);
         var foreignCost = new ImportRunCostCommand(
                 run.getId(), "other", null, null, null, null, new BigDecimal("5.0000"), "USD", null);
@@ -290,7 +291,8 @@ class WorkflowTelemetryAggregationIntegrationTest extends BaseIntegrationTest {
                 START,
                 100L,
                 "x",
-                TelemetryProvenance.ISSUE_THREAD));
+                TelemetryProvenance.ISSUE_THREAD,
+                null));
         service.importCost(new ImportRunCostCommand(
                 run.getId(), "gc", null, null, null, null, new BigDecimal("5.0000"), "USD", null));
         assertThat(phaseEventRepository.count()).isEqualTo(1);
@@ -310,6 +312,94 @@ class WorkflowTelemetryAggregationIntegrationTest extends BaseIntegrationTest {
         var duplicate = new WorkflowRun("gc", "implement", TelemetryProvenance.ISSUE_THREAD);
         assertThatThrownBy(() -> runRepository.saveAndFlush(duplicate))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    // ---- V204 phase-event dedup (issue #1435) --------------------------------------------------
+
+    @Test
+    void theSameLogicalPhaseFactRecordedTwiceIsStoredOnce() {
+        // The convergence this PR exists to deliver: live emission records a completed CI attempt,
+        // then issue-thread reconciliation describes the same attempt. Both must resolve to one row,
+        // or every per-phase count and first-pass-yield denominator double-counts it.
+        var run = saveRun("gc", 1, START, null, WorkflowRunState.RUNNING, WorkflowRunOutcome.NONE, null);
+
+        var live = new RecordPhaseEventCommand(
+                run.getId(),
+                "gc",
+                "ci",
+                PhaseEventType.COMPLETED,
+                0,
+                START,
+                1000L,
+                "green",
+                TelemetryProvenance.LIVE_EMISSION,
+                null);
+        var backfill = new RecordPhaseEventCommand(
+                run.getId(),
+                "gc",
+                "ci",
+                PhaseEventType.COMPLETED,
+                // The reconciliation path cannot attest attempt order, so it omits the ordinal.
+                null,
+                START.plusSeconds(3600),
+                null,
+                null,
+                TelemetryProvenance.ISSUE_THREAD,
+                null);
+
+        var first = service.recordPhaseEvent(live);
+        var second = service.recordPhaseEvent(backfill);
+
+        assertThat(phaseEventRepository.count()).isEqualTo(1);
+        assertThat(second.getId()).isEqualTo(first.getId());
+        // The original observation wins: reconciliation refines coverage, it does not overwrite a
+        // first-hand measurement with a reconstructed one.
+        assertThat(second.getProvenance()).isEqualTo(TelemetryProvenance.LIVE_EMISSION);
+        assertThat(second.getDurationMs()).isEqualTo(1000L);
+    }
+
+    @Test
+    void aSecondAttemptAtTheSamePhaseIsStoredSeparately() {
+        // The flip side: dedup must not swallow a genuine retry, or iterations-to-green collapses
+        // to 1 for every station.
+        var run = saveRun("gc", 2, START, null, WorkflowRunState.RUNNING, WorkflowRunOutcome.NONE, null);
+
+        service.recordPhaseEvent(phaseCommand(run.getId(), PhaseEventType.STARTED, null));
+        service.recordPhaseEvent(phaseCommand(run.getId(), PhaseEventType.STARTED, null));
+
+        assertThat(phaseEventRepository.count()).isEqualTo(2);
+        assertThat(phaseEventRepository.findAll().stream()
+                        .map(WorkflowPhaseEvent::getCycleIndex)
+                        .sorted()
+                        .toList())
+                .containsExactly(0, 1);
+    }
+
+    @Test
+    void theUniqueSourceIndexRejectsADuplicateAtTheDatabaseLevel() {
+        // The service check-then-insert is serialized on the run row, but the index is the backstop
+        // that holds if any future writer bypasses the service. Mirrors
+        // uniqueUpsertKeyTreatsNullColumnsAsEqual for workflow_run.
+        var run = saveRun("gc", 3, START, null, WorkflowRunState.RUNNING, WorkflowRunOutcome.NONE, null);
+        runRepository.flush();
+
+        phaseEventRepository.saveAndFlush(rawEvent(run.getId()));
+        var duplicate = rawEvent(run.getId());
+        assertThatThrownBy(() -> phaseEventRepository.saveAndFlush(duplicate))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    private static RecordPhaseEventCommand phaseCommand(java.util.UUID runId, PhaseEventType type, Integer cycleIndex) {
+        return new RecordPhaseEventCommand(
+                runId, "gc", "ci", type, cycleIndex, START, 5L, null, TelemetryProvenance.LIVE_EMISSION, null);
+    }
+
+    /** An event built straight from the entity, bypassing the service, to exercise the index itself. */
+    private static WorkflowPhaseEvent rawEvent(java.util.UUID runId) {
+        var event = new WorkflowPhaseEvent(
+                runId, "gc", "ci", PhaseEventType.COMPLETED, START, 10L, TelemetryProvenance.LIVE_EMISSION);
+        event.setCycleIndex(0);
+        return event;
     }
 
     // ---- helpers -------------------------------------------------------------------------------

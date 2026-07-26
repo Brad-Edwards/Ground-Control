@@ -152,6 +152,16 @@ const mergedRun: WorkflowRunResponse = {
   endedAt: "2026-06-23T10:00:00Z",
 };
 
+const failedRun: WorkflowRunResponse = {
+  ...activeRun,
+  id: "run-4",
+  graphNodeId: "WORKFLOW_RUN:run-4",
+  finalState: "FAILED",
+  outcome: "CLOSED_WITHOUT_MERGE",
+  branch: "feature/failed",
+  endedAt: "2026-06-23T11:00:00Z",
+};
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -244,6 +254,22 @@ describe("WorkflowRuns — data loaded", () => {
     expect(screen.getAllByText("feature/ready").length).toBeGreaterThan(0);
     // feature/done belongs to merged run — verify merged run IS excluded
     expect(screen.queryByText("feature/done")).toBeNull();
+  });
+
+  it("excludes a failed run from the active table and keeps its badge styled", () => {
+    // FAILED is terminal (issue #1435): a run that failed is not in flight, and a state with no
+    // badge entry would render an unstyled label rather than reading as an end state.
+    mockUseRuns.mockReturnValue({
+      data: [activeRun, failedRun],
+      isLoading: false,
+      isError: false,
+      error: null,
+    } as ReturnType<typeof useWorkflowRuns>);
+
+    render(<WorkflowRuns />);
+
+    expect(screen.queryByText("feature/failed")).toBeNull();
+    expect(screen.queryByLabelText("Final state: FAILED")).toBeNull();
   });
 
   it("renders filters panel with all filter fields", () => {

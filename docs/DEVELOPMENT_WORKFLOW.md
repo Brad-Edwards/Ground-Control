@@ -257,6 +257,35 @@ Per ADR-036 the `/implement` skill carries three cost-side optimizations layered
 
 Each new tool is deterministic and structured-input/output, with no LLM call in the tool itself.
 
+### Live workflow-run recording (issue #1435, ADR-061)
+
+`gc_implement_mechanical` records the run into the ADR-061 reporting model as it happens, so an
+in-flight run is queryable rather than reconstructable only after it ends:
+
+- the run is opened at `bootstrap` (`final_state=RUNNING`, `started_at`, `provenance=LIVE_EMISSION`),
+  keyed on the existing `(project, repo, issue_number, branch)` upsert key;
+- each mechanical band records one station attempt (`issue_branch_resolution`, `completion_gate`,
+  `git_publish`, `ready_for_review`, `post_merge`, plus `ci` and `sonarcloud` for the two gates
+  `monitor` runs) as a `STARTED` event followed by `COMPLETED` or `FAILED` with the measured
+  duration and the stable error code;
+- the run reaches `READY_FOR_REVIEW` (still open, no end time) after readiness, `MERGED` after the
+  post-merge phase, `CLOSED`/`CLOSED_WITHOUT_MERGE` when the linked PR is observed closed unmerged,
+  and `SUPERSEDED` when a later attempt opens on a different branch for the same issue.
+
+Three properties are load-bearing. Recording is **fail-open and off the control path**: each
+transition is timestamped the moment it happens and its write is queued, so the workflow never waits
+on the backend, neither to start a phase nor to return its result. Writes are individually bounded
+by a timeout, and the first failure disables emission for the rest of the run rather than retrying
+at every boundary. A phase can never fail, change, or stall because telemetry did.
+A failed **phase attempt is not a failed run**; the agent repairs and retries while the run stays
+open. And this is **not** governed by `telemetry.enabled`, which covers the ADR-036 local JSONL
+economics, a different measurement axis.
+
+`gc_workflow_run_ingest` remains the backfill and reconciliation path. The two converge on
+`workflow_phase_event.source_id` instead of double-counting an attempt. `RUNNING` means that no
+terminal observation has been recorded, not that a process is alive: a killed agent cannot write its
+own ending, and strict liveness needs the lease/heartbeat design the ADR-061 amendment defers.
+
 ## Review Pipeline
 
 One mandatory pre-implementation architecture pass, then a single pre-push codex review pass (Step 6.5), then test-quality review before the user sees the PR. The post-push codex review (former Step 12) was removed by issue #804 - the canonical codex pass is the pre-push one, which catches everything codex would normally flag while collapsing the asymmetric "post-push finding → guaranteed CI/SonarCloud roundtrip" cost. Merge-commit drift relative to base is the responsibility of CI (compile/tests/integration) and SonarCloud (quality), not a separate codex pass.

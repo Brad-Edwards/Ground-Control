@@ -29,6 +29,7 @@ import {
   runImplementPreCommit,
   resolveWorkflowPolicyCommand,
 } from "./lib.js";
+import { createWorkflowRunLifecycleEmitter } from "./workflow-run-lifecycle.js";
 
 const execFileAsync = promisify(execFileCb);
 
@@ -654,9 +655,18 @@ async function runMonitor(args, deps) {
     const invalid = requireField(args, field, action);
     if (invalid) return invalid;
   }
-  const ci = await deps.watchCi({
-    repoPath: args.repoPath,
-    branch: args.branchName,
+  // CI and SonarCloud are two distinct gates with distinct rework profiles, so this action records
+  // two station attempts rather than one. The outer dispatcher leaves `monitor` un-instrumented for
+  // exactly this reason.
+  let ci;
+  await deps.emitter.station("ci", async () => {
+    ci = await deps.watchCi({
+      repoPath: args.repoPath,
+      branch: args.branchName,
+    });
+    return ci.ok && ci.conclusion === "success"
+      ? { ok: true }
+      : { ok: false, error: ci.error ?? `ci_${ci.conclusion ?? "unknown"}` };
   });
   if (!ci.ok || ci.conclusion !== "success") {
     return failure(
@@ -667,20 +677,25 @@ async function runMonitor(args, deps) {
       { failed_stage: "ci", ci },
     );
   }
-  const sonar = await deps.watchSonar({
-    repoPath: args.repoPath,
-    prNumber: args.prNumber,
+  let sonar;
+  let sonarPassed;
+  await deps.emitter.station("sonarcloud", async () => {
+    sonar = await deps.watchSonar({
+      repoPath: args.repoPath,
+      prNumber: args.prNumber,
+    });
+    sonarPassed =
+      sonar.ok
+      && (
+        sonar.skipped === true
+        || (
+          sonar.quality_gate === "OK"
+          && sonar.issues_summary?.open_count === 0
+          && sonar.hotspots_summary?.open_count === 0
+        )
+      );
+    return sonarPassed ? { ok: true } : { ok: false, error: sonar.error ?? "sonar_findings_open" };
   });
-  const sonarPassed =
-    sonar.ok
-    && (
-      sonar.skipped === true
-      || (
-        sonar.quality_gate === "OK"
-        && sonar.issues_summary?.open_count === 0
-        && sonar.hotspots_summary?.open_count === 0
-      )
-    );
   if (!sonarPassed) {
     return failure(
       action,
@@ -794,8 +809,143 @@ async function runFinalize(args, deps) {
   };
 }
 
+/**
+ * Station id per mechanical action (issue #1435). These are stable machine ids from the workflow's
+ * own phase vocabulary — never a SKILL step number, display label, MCP tool name, or `next_action`
+ * value, all of which are aliases that change without the gate changing.
+ *
+ * `monitor` is deliberately absent: it runs two distinct gates and instruments them itself.
+ */
+const STATION_BY_ACTION = Object.freeze({
+  bootstrap: "issue_branch_resolution",
+  verify: "completion_gate",
+  publish: "git_publish",
+  readiness: "ready_for_review",
+  finalize: "post_merge",
+});
+
+/** No-op lifecycle emitter used whenever the run identity cannot be resolved. */
+const INERT_EMITTER = Object.freeze({
+  openRun: async () => null,
+  ensureRun: async () => null,
+  markState: async () => null,
+  closeRun: async () => null,
+  recordRequirementUids: async () => null,
+  station: async (_phase, fn) => fn(),
+});
+
+/**
+ * Wrap an emitter so a defect inside it can never surface as a workflow failure.
+ *
+ * `station` is the delicate one: when the call throws, the failure is either the phase's own (which
+ * must propagate unchanged) or the emitter's (which must be invisible). Tracking whether the phase
+ * ran, and what it produced, is what tells those two apart — and it guarantees the phase runs
+ * exactly once either way.
+ */
+function guardEmitter(emitter) {
+  const swallow = (name) => async (...callArgs) => {
+    try {
+      return await emitter[name](...callArgs);
+    } catch {
+      return null;
+    }
+  };
+  return {
+    openRun: swallow("openRun"),
+    ensureRun: swallow("ensureRun"),
+    markState: swallow("markState"),
+    closeRun: swallow("closeRun"),
+    recordRequirementUids: swallow("recordRequirementUids"),
+    async station(phase, fn) {
+      let ran = false;
+      let phaseResult;
+      let phaseError;
+      const tracked = async () => {
+        ran = true;
+        try {
+          phaseResult = await fn();
+          return phaseResult;
+        } catch (error) {
+          phaseError = error;
+          throw error;
+        }
+      };
+      try {
+        return await emitter.station(phase, tracked);
+      } catch (error) {
+        if (phaseError) throw phaseError;
+        return ran ? phaseResult : fn();
+      }
+    },
+  };
+}
+
+/**
+ * The branch half of the run's natural key. `readiness` and `finalize` do not take `branch_name`,
+ * so without this the emitter would upsert a *different*, nullable-branch run and mark that one
+ * merged while the branch-qualified run opened at bootstrap stayed RUNNING forever. The checkout is
+ * on the issue branch by construction, so reading it is an observation, not a guess.
+ */
+async function resolveRunBranch(args, deps) {
+  if (args.branchName) return args.branchName;
+  try {
+    const { stdout } = await deps.runGit(args.repoPath, ["branch", "--show-current"], deps.execFile);
+    const branch = stdout.trim();
+    return branch === "" ? null : branch;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the run identity from repository context. Returns the inert emitter when any part of the
+ * natural key is unavailable: a partial key would fabricate a second run rather than observe the
+ * real one, which is worse than recording nothing.
+ */
+async function resolveEmitter(args, deps) {
+  try {
+    const context = await deps.getContext(args.repoPath);
+    if (context?.status !== "ok" || !context.project) return INERT_EMITTER;
+    const branch = await resolveRunBranch(args, deps);
+    if (!branch) return INERT_EMITTER;
+    return deps.createLifecycle({
+      project: context.project,
+      repo: context.github_repo,
+      issueNumber: args.issueNumber,
+      branch,
+      workflowType: "IMPLEMENT",
+      runtimeDriver: args.driver,
+      requirementUids: args.requirements?.map((item) => item.uid),
+    });
+  } catch {
+    return INERT_EMITTER;
+  }
+}
+
+/**
+ * Apply the run-state transitions this action's outcome demonstrates. Only transitions the tool
+ * layer can actually observe are recorded: a merged PR, a PR closed without merging, and the paused
+ * ready-for-review state. An `agent_required` failure is a failed *attempt*, not a failed run — the
+ * caller repairs it and retries — so it leaves the run open.
+ */
+async function applyRunStateTransition(action, result, emitter) {
+  if (action === "readiness" && result.ok) {
+    await emitter.markState("READY_FOR_REVIEW");
+    return;
+  }
+  if (action !== "finalize") return;
+  if (result.ok) {
+    await emitter.closeRun({ finalState: "MERGED", outcome: "MERGED" });
+    return;
+  }
+  if (result.close?.error === "close_pr_not_merged" && result.close.pr_state === "CLOSED") {
+    await emitter.closeRun({ finalState: "CLOSED", outcome: "CLOSED_WITHOUT_MERGE" });
+  }
+}
+
 const defaultDeps = {
   execFile: execFileAsync,
+  createLifecycle: createWorkflowRunLifecycleEmitter,
   authorizeRepo: authorizeImplementMutationCheckout,
   runGit: runImplementGitCommand,
   preCommit: runImplementPreCommit,
@@ -813,8 +963,7 @@ const defaultDeps = {
   closeIssue: runCloseIssueAfterMerge,
 };
 
-export async function runImplementMechanical(args, overrides = {}) {
-  const deps = { ...defaultDeps, ...overrides };
+function dispatch(args, deps) {
   switch (args.action) {
     case "bootstrap":
       return runBootstrap(args, deps);
@@ -829,13 +978,41 @@ export async function runImplementMechanical(args, overrides = {}) {
     case "finalize":
       return runFinalize(args, deps);
     default:
-      return {
+      return Promise.resolve({
         ok: false,
         error: "implement_mechanical_action_invalid",
         message: `Unknown action '${args.action}'`,
         agent_required: false,
-      };
+      });
   }
+}
+
+export async function runImplementMechanical(args, overrides = {}) {
+  const deps = { ...defaultDeps, ...overrides };
+  if (!IMPLEMENT_MECHANICAL_ACTIONS.includes(args.action)) {
+    return dispatch(args, deps);
+  }
+
+  // Lifecycle observation (issue #1435). A phase is never allowed to fail, change, or stall because
+  // recording it failed, so every emitter call goes through the guard above. The emitter timestamps
+  // each transition immediately and queues the transport, so none of the calls below waits on the
+  // backend — the awaits here settle on the next microtask regardless of how the network behaves.
+  const emitter = guardEmitter(await resolveEmitter(args, deps));
+  // Recorded as opening before dispatch, not after: a run that only becomes visible once it
+  // finishes is exactly the gap this closes.
+  await (args.action === "bootstrap" ? emitter.openRun() : emitter.ensureRun());
+
+  const station = STATION_BY_ACTION[args.action];
+  const instrumented = { ...deps, emitter };
+  const result = station
+    ? await emitter.station(station, () => dispatch(args, instrumented))
+    : await dispatch(args, instrumented);
+
+  if (args.action === "bootstrap" && result.ok) {
+    await emitter.recordRequirementUids(result.requirement_uids);
+  }
+  await applyRunStateTransition(args.action, result, emitter);
+  return result;
 }
 
 export async function gcImplementMechanicalToolHandler(args, overrides = {}) {

@@ -1,6 +1,7 @@
 package com.keplerops.groundcontrol.unit.api;
 
 import static com.keplerops.groundcontrol.TestUtil.setField;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
@@ -14,6 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.keplerops.groundcontrol.api.workflowtelemetry.WorkflowRunController;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
+import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.PhaseEventType;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.TelemetryProvenance;
@@ -26,7 +28,11 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -152,7 +158,112 @@ class WorkflowRunControllerTest {
                                 }
                                 """))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.phase", is("ci")));
+                .andExpect(jsonPath("$.phase", is("ci")))
+                .andExpect(jsonPath("$.eventType", is("COMPLETED")))
+                .andExpect(jsonPath("$.cycleIndex", is(1)))
+                .andExpect(jsonPath("$.outcome", is("clean")))
+                .andExpect(jsonPath("$.provenance", is("ISSUE_THREAD")))
+                .andExpect(jsonPath("$.sourceId", is("ci:COMPLETED:1")))
+                .andExpect(jsonPath("$.project", is("ground-control")))
+                .andExpect(jsonPath("$.durationMs", is(1000)));
+    }
+
+    @Test
+    void recordPhaseEventReplayReturnsTheStoredEventWithoutDuplicating() throws Exception {
+        // The idempotent path V204 exists to support: the same logical fact delivered twice (live
+        // emission, then issue-thread reconciliation) resolves to one event, not two.
+        var runId = UUID.randomUUID();
+        when(projectService.requireProjectIdentifier(any())).thenReturn("ground-control");
+        when(telemetryService.recordPhaseEvent(any())).thenReturn(sampleEvent(runId));
+
+        var body =
+                """
+                {
+                  "phase": "ci",
+                  "eventType": "COMPLETED",
+                  "cycleIndex": 1,
+                  "occurredAt": "2026-06-01T12:00:00Z",
+                  "provenance": "ISSUE_THREAD"
+                }
+                """;
+        var first = mockMvc.perform(post("/api/v1/workflow-runs/" + runId + "/events")
+                        .param("project", "ground-control")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        var second = mockMvc.perform(post("/api/v1/workflow-runs/" + runId + "/events")
+                        .param("project", "ground-control")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        assertThat(second).isEqualTo(first);
+    }
+
+    @Test
+    void recordPhaseEventForAnUnknownRunReturns404() throws Exception {
+        var runId = UUID.randomUUID();
+        when(projectService.requireProjectIdentifier(any())).thenReturn("ground-control");
+        when(telemetryService.recordPhaseEvent(any())).thenThrow(new NotFoundException("Workflow run not found"));
+
+        mockMvc.perform(
+                        post("/api/v1/workflow-runs/" + runId + "/events")
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                        {
+                          "phase": "ci",
+                          "eventType": "COMPLETED",
+                          "occurredAt": "2026-06-01T12:00:00Z",
+                          "provenance": "ISSUE_THREAD"
+                        }
+                        """))
+                .andExpect(status().isNotFound());
+    }
+
+    @ParameterizedTest(name = "rejects a phase event with an invalid {0}")
+    @MethodSource("invalidPhaseEventBodies")
+    void recordPhaseEventRejectsEachConstrainedField(String field, String body) throws Exception {
+        mockMvc.perform(post("/api/v1/workflow-runs/" + UUID.randomUUID() + "/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    /** One case per constrained field on RecordPhaseEventRequest, so no constraint can be dropped silently. */
+    static Stream<Arguments> invalidPhaseEventBodies() {
+        return Stream.of(
+                Arguments.of(
+                        "eventType",
+                        """
+                        {"phase":"ci","occurredAt":"2026-06-01T12:00:00Z","provenance":"ISSUE_THREAD"}"""),
+                Arguments.of(
+                        "occurredAt",
+                        """
+                        {"phase":"ci","eventType":"COMPLETED","provenance":"ISSUE_THREAD"}"""),
+                Arguments.of(
+                        "provenance",
+                        """
+                        {"phase":"ci","eventType":"COMPLETED","occurredAt":"2026-06-01T12:00:00Z"}"""),
+                Arguments.of(
+                        "cycleIndex",
+                        """
+                        {"phase":"ci","eventType":"COMPLETED","occurredAt":"2026-06-01T12:00:00Z",                        "provenance":"ISSUE_THREAD","cycleIndex":-1}"""),
+                Arguments.of(
+                        "durationMs",
+                        """
+                        {"phase":"ci","eventType":"COMPLETED","occurredAt":"2026-06-01T12:00:00Z",                        "provenance":"ISSUE_THREAD","durationMs":-1}"""),
+                Arguments.of(
+                        "sourceId",
+                        "{\"phase\":\"ci\",\"eventType\":\"COMPLETED\",\"occurredAt\":\"2026-06-01T12:00:00Z\","
+                                + "\"provenance\":\"ISSUE_THREAD\",\"sourceId\":\"" + "s".repeat(201) + "\"}"));
     }
 
     @Test
@@ -170,6 +281,51 @@ class WorkflowRunControllerTest {
                                 }
                                 """))
                 .andExpect(status().isUnprocessableEntity());
+    }
+
+    // ---- GET /{runId}/events (issue #1435) -----------------------------------------------------
+
+    @Test
+    void listEventsReturnsThePhaseEventsOfARunInOrder() throws Exception {
+        var runId = UUID.randomUUID();
+        when(projectService.requireProjectIdentifier(any())).thenReturn("ground-control");
+        when(telemetryService.listPhaseEvents(any(), any(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(List.of(startedEvent(runId), sampleEvent(runId)));
+
+        mockMvc.perform(get("/api/v1/workflow-runs/" + runId + "/events").param("project", "ground-control"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[0].eventType", is("STARTED")))
+                .andExpect(jsonPath("$[0].sourceId", is("ci:STARTED:0")))
+                .andExpect(jsonPath("$[1].eventType", is("COMPLETED")));
+    }
+
+    @Test
+    void listEventsResolvesTheProjectBeforeReadingSoARunIdAloneNeverAuthorizes() throws Exception {
+        // The run id is not a capability: without a resolvable project the read never reaches the
+        // service, so a caller holding a foreign run id cannot page that project's events.
+        var runId = UUID.randomUUID();
+        when(projectService.requireProjectIdentifier(any()))
+                .thenThrow(new DomainValidationException("project must not be blank"));
+
+        mockMvc.perform(get("/api/v1/workflow-runs/" + runId + "/events")).andExpect(status().isUnprocessableEntity());
+
+        verify(telemetryService, never()).listPhaseEvents(any(), any(), org.mockito.ArgumentMatchers.anyInt());
+    }
+
+    @Test
+    void listEventsPassesTheRequestedLimitThrough() throws Exception {
+        var runId = UUID.randomUUID();
+        when(projectService.requireProjectIdentifier(any())).thenReturn("ground-control");
+        when(telemetryService.listPhaseEvents(any(), any(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/workflow-runs/" + runId + "/events")
+                        .param("project", "ground-control")
+                        .param("limit", "5"))
+                .andExpect(status().isOk());
+
+        verify(telemetryService).listPhaseEvents(runId, "ground-control", 5);
     }
 
     // ---- POST /{runId}/cost --------------------------------------------------------------------
@@ -263,6 +419,15 @@ class WorkflowRunControllerTest {
                 runId, "ground-control", "ci", PhaseEventType.COMPLETED, FROM, 1000L, TelemetryProvenance.ISSUE_THREAD);
         event.setCycleIndex(1);
         event.setOutcome("clean");
+        event.setSourceId("ci:COMPLETED:1");
+        return event;
+    }
+
+    private static WorkflowPhaseEvent startedEvent(UUID runId) {
+        var event = new WorkflowPhaseEvent(
+                runId, "ground-control", "ci", PhaseEventType.STARTED, FROM, null, TelemetryProvenance.LIVE_EMISSION);
+        event.setCycleIndex(0);
+        event.setSourceId("ci:STARTED:0");
         return event;
     }
 
