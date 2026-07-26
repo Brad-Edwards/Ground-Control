@@ -190,3 +190,19 @@ expand itself. A cycle that does not achieve complete coverage fails closed
 without writing durable state and without consuming a cycle. The gate sequence,
 the single human touchpoint at PR merge, the zero-deferral rule, and post-merge
 reconciliation are unchanged.
+
+**2026-07-26 (issue #1429, configuration-derived policy gate).** The repository
+policy gate keeps its position and blocking behavior in Phase B (Step 6) and at
+the Phase C base-synchronization boundary (Step 8.5), but the command it runs
+is no longer hardcoded to `make policy`. It comes from
+`workflow.policy_command` in `.ground-control.yaml`, normalized to `make policy`
+when omitted, so repositories whose policy gate is named differently can satisfy
+the boundary at all. Completion and policy remain two separate mandatory gates;
+neither substitutes for the other, and an absent target fails loudly rather than
+causing the gate to be skipped. Phase structure A-E, the single human touchpoint
+at PR merge, the zero-deferral rule, cycle caps, and post-merge reconciliation
+are unchanged. Phase C's single mandatory pre-publish hook boundary (Step 7)
+gains the same treatment through `workflow.precommit_command`, normalized to
+`pre-commit run --all-files`: the boundary stays mandatory and non-skippable,
+while the tool that satisfies it becomes repo-native. See ADR-027
+(2026-07-26 amendment) for the configuration contract.

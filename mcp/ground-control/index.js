@@ -84,7 +84,8 @@ import {
   startReviewJob, pollReviewJob, cancelReviewJob,
   runResolveWorkflowRoute,
   DECISION_RECORD_REVIEWERS, DECISION_RECORD_DECISIONS, DECISION_RECORD_CLASSIFICATIONS,
-  PR_BODY_CHANGE_CLASSES, PR_REQUIREMENT_RE, EXACT_REQUIREMENT_UID_RE,
+  PR_BODY_CHANGE_CLASSES, EXACT_REQUIREMENT_UID_RE,
+
   TELEMETRY_TIERS, TELEMETRY_OUTCOMES,
   buildCodexReviewToolDescription, buildCodexReviewOverrideCapDescription,
   buildCodexReviewOverrideReasonDescription,
@@ -441,7 +442,10 @@ server.tool(
   "gc_get_requirement",
   "Get a requirement by its human-readable UID (e.g. 'GC-O007').",
   {
-    uid: z.string().describe("Requirement UID"),
+    // Same bounded structured-UID contract as every other curated tool that
+    // takes a requirement UID (issue #1425); a bare z.string() here is how the
+    // direct read and the completion tools drifted apart.
+    uid: z.string().regex(EXACT_REQUIREMENT_UID_RE).describe("Requirement UID"),
     project: z.string().optional(),
   },
   async ({ uid, project }) => {
@@ -1019,9 +1023,10 @@ server.tool(
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
     change_class: z.enum(PR_BODY_CHANGE_CLASSES),
-    // Use the ANCHORED EXACT_REQUIREMENT_UID_RE for structured UID fields
-    // (codex cycle-4 F2). The unanchored PR_REQUIREMENT_RE is a body-search
-    // predicate; here each array element must BE a UID, not contain one.
+    // Renderer input uses the anchored recognizer, not the looser identity
+    // contract, so every UID this tool renders is one the `pr-requirement-uid`
+    // policy gate can find in the emitted body (issue #1425). Each array
+    // element must BE a UID, not contain one.
     requirement_uids: z.array(z.string().regex(EXACT_REQUIREMENT_UID_RE)),
     adr_refs: z.array(z.string().min(1)),
     summary: z.string().min(1).max(PR_BODY_SUMMARY_MAX),
@@ -1383,7 +1388,8 @@ server.tool(
   "Inputs are repo_path, issue_number, branch_name, and action. action=start fetches an explicit " +
   "refs/heads/<base>:refs/remotes/origin/<base> refspec, returns already-current or leaves a real --no-ff --no-commit merge " +
   "ready for verification/conflict resolution. action=complete additionally requires record_id, pre_sync_sha, " +
-  "fetched_base_sha, and outcome; it mechanically runs the configured completion command and make policy, binds the " +
+  "fetched_base_sha, and outcome; it mechanically runs the configured completion command and the configured " +
+  "workflow.policy_command (default `make policy`), binds the " +
   "unchanged verified tree to the merge commit, verifies the merge graph, pushes without force, and idempotently posts " +
   "the trusted versioned issue-thread attestation. It never creates a worktree, rebases, resets, aborts, discards work, " +
   "or chooses a conflict side.",

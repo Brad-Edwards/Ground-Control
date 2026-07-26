@@ -23,6 +23,7 @@ import {
   runLogStepTelemetry,
   PR_BODY_CHANGE_CLASSES,
   PR_REQUIREMENT_RE,
+  isRequirementUidToken,
   sanitizeTelemetryBranch,
   buildTelemetryRecord,
   buildTelemetryRelPath,
@@ -38,6 +39,12 @@ import {
   buildSuggestedGroundControlYaml,
   parseGroundControlYaml,
   getRepoGroundControlContext,
+  DEFAULT_POLICY_COMMAND,
+  resolveWorkflowPolicyCommand,
+  DEFAULT_PRECOMMIT_COMMAND,
+  resolveWorkflowPrecommitCommand,
+  runImplementPreCommit,
+  PR_BODY_POLICY_CHECK_LINE,
   resolveWorkflowRouteFromConfig,
   runResolveWorkflowRoute,
   CLAUDE_MODEL_BY_TIER,
@@ -1114,6 +1121,74 @@ describe("buildSuggestedGroundControlYaml", () => {
   });
 });
 
+describe("resolveWorkflowPolicyCommand", () => {
+  it("returns the configured repository policy command", () => {
+    assert.equal(
+      resolveWorkflowPolicyCommand({ workflow: { policy_command: "bin/gate --ci" } }),
+      "bin/gate --ci",
+    );
+  });
+
+  it("falls back to the default for a context that does not carry the field", () => {
+    // Guards against a context shape older than issue #1429 (or a hand-built
+    // test double) silently disabling the gate.
+    assert.equal(resolveWorkflowPolicyCommand({ workflow: {} }), DEFAULT_POLICY_COMMAND);
+    assert.equal(resolveWorkflowPolicyCommand({}), DEFAULT_POLICY_COMMAND);
+    assert.equal(resolveWorkflowPolicyCommand(null), DEFAULT_POLICY_COMMAND);
+  });
+
+  it("never resolves to an empty command", () => {
+    assert.equal(
+      resolveWorkflowPolicyCommand({ workflow: { policy_command: "   " } }),
+      DEFAULT_POLICY_COMMAND,
+    );
+  });
+});
+
+describe("resolveWorkflowPrecommitCommand / runImplementPreCommit", () => {
+  function recordingRunner() {
+    const calls = [];
+    return {
+      calls,
+      runner: async (...args) => {
+        calls.push(args);
+        return { stdout: "", stderr: "" };
+      },
+    };
+  }
+
+  it("runs the repository's configured pre-commit command", async () => {
+    const { calls, runner } = recordingRunner();
+    await runImplementPreCommit("/repo", runner, {
+      workflow: { precommit_command: "lefthook run pre-commit" },
+    });
+    assert.equal(calls[0][0], "bash");
+    assert.deepEqual(calls[0][1], ["-c", "lefthook run pre-commit"]);
+    assert.equal(calls[0][2].cwd, "/repo");
+  });
+
+  it("defaults to the pre-commit framework invocation", async () => {
+    const { calls, runner } = recordingRunner();
+    await runImplementPreCommit("/repo", runner, { workflow: {} });
+    assert.equal(DEFAULT_PRECOMMIT_COMMAND, "pre-commit run --all-files");
+    assert.deepEqual(calls[0][1], ["-c", DEFAULT_PRECOMMIT_COMMAND]);
+  });
+
+  it("keeps the hardened Git environment the boundary already used", async () => {
+    const { calls, runner } = recordingRunner();
+    await runImplementPreCommit("/repo", runner, { workflow: {} });
+    assert.ok(calls[0][2].env, "pre-commit must keep its sanitized environment");
+  });
+
+  it("never resolves to an empty command", () => {
+    assert.equal(
+      resolveWorkflowPrecommitCommand({ workflow: { precommit_command: "  " } }),
+      DEFAULT_PRECOMMIT_COMMAND,
+    );
+    assert.equal(resolveWorkflowPrecommitCommand(null), DEFAULT_PRECOMMIT_COMMAND);
+  });
+});
+
 describe("parseGroundControlYaml", () => {
   // Most cases build a YAML document from an array of lines and parse it.
   // `parseYamlLines` removes the repeated `[...].join("\n")` + parse scaffold,
@@ -1141,6 +1216,8 @@ describe("parseGroundControlYaml", () => {
       completion_command: null,
       lint_command: null,
       format_command: null,
+      policy_command: "make policy",
+      precommit_command: "pre-commit run --all-files",
       base_branch: null,
       codex_review: { pre_push_cap: null },
       test_quality_review: { pre_push_cap: null },
@@ -1238,6 +1315,64 @@ describe("parseGroundControlYaml", () => {
     const result = parseGroundControlYaml(yaml);
     assert.equal(result.ok, false);
     assert.ok(result.errors.some((e) => e.includes("workflow has unknown key")));
+  });
+
+  it("normalizes an omitted workflow.policy_command to the default policy command", () => {
+    const result = parseGroundControlYaml("schema_version: 1\nproject: x\n");
+    assert.equal(result.ok, true);
+    assert.equal(result.value.workflow.policy_command, DEFAULT_POLICY_COMMAND);
+    assert.equal(DEFAULT_POLICY_COMMAND, "make policy");
+  });
+
+  it("normalizes an omitted workflow.precommit_command to the default", () => {
+    const result = parseGroundControlYaml("schema_version: 1\nproject: x\n");
+    assert.equal(result.ok, true);
+    assert.equal(result.value.workflow.precommit_command, DEFAULT_PRECOMMIT_COMMAND);
+  });
+
+  it("accepts a repo-authored workflow.precommit_command", () => {
+    const yaml = [
+      "schema_version: 1",
+      "project: x",
+      "workflow:",
+      "  precommit_command: lefthook run pre-commit",
+      "",
+    ].join("\n");
+    const result = parseGroundControlYaml(yaml);
+    assert.equal(result.ok, true, JSON.stringify(result.errors));
+    assert.equal(result.value.workflow.precommit_command, "lefthook run pre-commit");
+  });
+
+  it("rejects an empty workflow.precommit_command", () => {
+    expectYamlError(
+      ["schema_version: 1", "project: x", "workflow:", '  precommit_command: ""', ""],
+      "workflow.precommit_command must be a non-empty string when set",
+    );
+  });
+
+  it("accepts a repo-authored workflow.policy_command", () => {
+    const yaml = [
+      "schema_version: 1",
+      "project: x",
+      "workflow:",
+      "  policy_command: python3 scripts/adr_guard/adr_guard.py --all --level ci",
+      "",
+    ].join("\n");
+    const result = parseGroundControlYaml(yaml);
+    assert.equal(result.ok, true, JSON.stringify(result.errors));
+    assert.equal(
+      result.value.workflow.policy_command,
+      "python3 scripts/adr_guard/adr_guard.py --all --level ci",
+    );
+  });
+
+  it("rejects an empty workflow.policy_command rather than silently defaulting", () => {
+    // A misconfigured gate must fail loudly. Falling back to the default here
+    // would let a repo that meant to name its own gate lose it unnoticed.
+    expectYamlError(
+      ["schema_version: 1", "project: x", "workflow:", '  policy_command: "   "', ""],
+      "workflow.policy_command must be a non-empty string when set",
+    );
   });
 
   it("accepts safe workflow.base_branch values", () => {
@@ -8395,9 +8530,13 @@ describe("validatePrBodyInput", () => {
     assert.equal(r.ok, false);
     assert.ok(r.errors.some((e) => /requires a changelogFragment/.test(e)));
   });
-  it("rejects malformed UIDs", () => {
-    const r = validatePrBodyInput(baseInput({ requirementUids: ["not-a-uid"] }));
-    assert.equal(r.ok, false);
+  it("rejects UIDs that are not a single bounded identifier", () => {
+    // The renderer shares the identity corpus (issue #1425), so the refusal is
+    // for values that cannot be one UID, not for an allocator-shaped grammar.
+    for (const bad of ["not a uid", "", `${"A".repeat(49)}-1`, "GC-O007 GC-O008"]) {
+      const r = validatePrBodyInput(baseInput({ requirementUids: [bad] }));
+      assert.equal(r.ok, false, `should reject '${bad}'`);
+    }
   });
   it("rejects unknown change_class values", () => {
     const r = validatePrBodyInput(baseInput({ changeClass: "behavior-preserving" }));
@@ -8491,9 +8630,38 @@ describe("buildPrBody", () => {
 
   it("includes the three exact Ground Control Checks lines (policy: pr-ground-control-checks)", () => {
     const body = buildPrBody(baseInput());
-    assert.ok(body.includes("- [x] `make policy` passes"));
+    assert.ok(body.includes(PR_BODY_POLICY_CHECK_LINE));
     assert.ok(body.includes("- [x] `gc_evaluate_quality_gates` passes or is unchanged by this repo-only change"));
     assert.ok(body.includes("- [x] `gc_run_sweep` reviewed; findings fixed or recorded with rationale"));
+  });
+
+  it("names the policy gate semantically, never a concrete repo command (#1429)", () => {
+    // The rendered body is durable GitHub content shared by every consuming
+    // repo. It states that the *configured* gate passed; it must not assert a
+    // Make target the repo may not have, and must not copy command text
+    // (which can carry repo-internal paths) into the record.
+    const body = buildPrBody(baseInput());
+    assert.equal(PR_BODY_POLICY_CHECK_LINE, "- [x] Configured repository policy command passes");
+    assert.ok(!body.includes("`make policy`"), "PR body must not name a concrete policy command");
+  });
+
+  it("names the completion gate semantically too, for both change classes (#1429)", () => {
+    // Same reason as the policy line: `completion_command` is repo config, so
+    // a rendered `make check` is false in any repo that configures something
+    // else. The issue's own notes call this out alongside `make policy`.
+    for (const changeClass of ["source", "doc-only"]) {
+      const body = buildPrBody(baseInput({
+        changeClass,
+        changelogFragment: changeClass === "doc-only" ? null : "changelog.d/868.changed.md",
+      }));
+      assert.ok(
+        body.includes("- [x] Configured completion command passes"),
+        `${changeClass}: missing semantic completion line`,
+      );
+      for (const target of ["`make check`", "`make test`", "`make integration`"]) {
+        assert.ok(!body.includes(target), `${changeClass}: must not name ${target}`);
+      }
+    }
   });
 
   it("emits 'Closes #N' under Related Issues", () => {
@@ -8513,8 +8681,8 @@ describe("buildPrBody", () => {
     }));
     assert.match(body, /Unit tests \/ integration tests: N\/A — docs-only change/);
     assert.match(body, /Changelog fragment: N\/A — docs-only change/);
-    // Even doc-only must keep `make policy` line for the policy gate.
-    assert.match(body, /- \[x\] `make policy` passes/);
+    // Even doc-only must keep the policy-gate line.
+    assert.ok(body.includes(PR_BODY_POLICY_CHECK_LINE));
   });
 
   it("source+migration adds the MigrationSmokeTest reminder", () => {
@@ -8545,10 +8713,12 @@ describe("buildPrBody", () => {
     assert.match(body, /ADR-036/);
   });
 
-  it("requirement-free run with NO adrRefs fails the policy-shape gate at the runner boundary", async () => {
-    // The renderer itself still emits the body, but checkPrBodyShape would
-    // refuse it because no UID-shaped token is present anywhere. This is
-    // verified at the runner level in the runRenderPrBody suite.
+  it("requirement-free run with NO adrRefs passes the policy-shape gate on the explicit marker", async () => {
+    // Previously this failed only because the whole-body UID scan found no
+    // UID-shaped token anywhere, so a requirement-free doc PR had to cite an
+    // unrelated ADR to satisfy a *requirement* gate. That is the concept
+    // confusion section-scoping exists to remove (issue #1425); ADR impact is
+    // still gated independently by the `pr-adr-impact` / ADR Impact check.
     const body = buildPrBody({
       issueNumber: 999,
       changeClass: "doc-only",
@@ -8558,9 +8728,9 @@ describe("buildPrBody", () => {
       changes: ["fix typo"],
       traceability: { implements: [], tests: [] },
     });
+    assert.match(body, /No ADR required/);
     const shape = checkPrBodyShape(body);
-    assert.equal(shape.ok, false, "empty requirementUids + empty adrRefs must fail the policy-shape gate");
-    assert.ok(shape.errors.some((e) => /requirement UID/.test(e)));
+    assert.equal(shape.ok, true, JSON.stringify(shape.errors));
   });
 });
 
@@ -8794,48 +8964,114 @@ describe("appendStepTelemetry", () => {
   });
 });
 
-describe("PR_REQUIREMENT_RE (matches tools/policy/checks.py predicate)", () => {
-  it("accepts UIDs the Python policy gate accepts", () => {
+describe("free-text UID recognition (isRequirementUidToken)", () => {
+  // Asserted through the live helper rather than the raw PR_REQUIREMENT_RE
+  // constant: the helper is what production calls, and the constant alone no
+  // longer governs any gate (issue #1425).
+  it("recognizes the established explicit UID forms", () => {
     for (const uid of ["GC-O007", "GC-O009", "GC-X001", "OBS-042", "GC-O-007"]) {
-      assert.ok(PR_REQUIREMENT_RE.test(uid), `should accept ${uid}`);
+      assert.ok(isRequirementUidToken(uid), `should recognize ${uid}`);
     }
   });
-  it("rejects UIDs the Python policy gate rejects", () => {
-    // The Python regex requires the suffix to be (-)digits — so a UID whose
-    // suffix is letters-only must be rejected. This is the F2 cycle-1 finding.
-    for (const bad of ["GC-OOPS", "lowercase-001", "GC_O007", "GC-"]) {
-      assert.ok(!PR_REQUIREMENT_RE.test(bad), `should reject ${bad}`);
+  it("recognizes allocator-minted short UIDs (issue #1425)", () => {
+    // RequirementUidAllocator.allocate() returns `${prefix}-${n}` with no
+    // zero-padding, so the first nine UIDs of any prefix carry a single-digit
+    // suffix and must still be found in free-form issue prose.
+    for (const uid of ["APP-2", "APP-9", "A-1", "PLAT-10"]) {
+      assert.ok(isRequirementUidToken(uid), `should recognize ${uid}`);
     }
   });
-  it("PR_REQUIREMENT_RE is a SEARCH predicate (matches substrings, by design)", () => {
-    // The unanchored regex matches anywhere — that's correct for body
-    // scanning (find a UID somewhere in the body). It is NOT a validator
-    // for structured fields (codex cycle-4 F2). The EXACT_REQUIREMENT_UID_RE
-    // sibling is for structured fields.
-    assert.ok(PR_REQUIREMENT_RE.test("not really GC-O007"));
+  it("does not recognize prose words or letters-only suffixes", () => {
+    for (const bad of ["GC-OOPS", "lowercase-001", "GC_O007", "GC-", "prose", "notes"]) {
+      assert.ok(!isRequirementUidToken(bad), `should not recognize ${bad}`);
+    }
+  });
+  it("findRequirementUidTokens survives adjacent punctuation", async () => {
+    // `.` and `_` are legal identity-corpus characters, so scanning for the UID
+    // shape is required; splitting on non-corpus characters would leave
+    // `GC-O007.` glued together and drop the sentence-final form (issue #1425).
+    const { findRequirementUidTokens } = await import("./lib.js");
+    assert.deepEqual(findRequirementUidTokens("Fixes GC-O007."), ["GC-O007"]);
+    assert.deepEqual(findRequirementUidTokens("(APP-2), [GC-S001];"), ["APP-2", "GC-S001"]);
+    assert.deepEqual(findRequirementUidTokens("GC-O007 and GC-O007 again"), ["GC-O007"]);
+    assert.deepEqual(findRequirementUidTokens("no uids in this prose"), []);
+    assert.deepEqual(findRequirementUidTokens(""), []);
+  });
+  it("requires the whole token to be the UID, not merely to contain one", () => {
+    // PR_REQUIREMENT_RE itself is an unanchored search shape; the helper
+    // anchors it so a structured value can never be a fragment of prose.
+    assert.ok(PR_REQUIREMENT_RE.test("not really GC-O007"), "search shape matches inside prose");
+    assert.ok(!isRequirementUidToken("not really GC-O007"));
+    assert.ok(!isRequirementUidToken("GC-O007 cleanup"));
   });
 });
 
-describe("EXACT_REQUIREMENT_UID_RE (anchored validator for structured UID fields — codex cycle-4 F2)", () => {
-  // Re-import the anchored regex; if it's missing the import block would
-  // already have failed.
+describe("EXACT_REQUIREMENT_UID_RE (bounded structured-UID contract — issue #1425)", () => {
+  // A stored requirement UID is project-local identity, not a value derivable
+  // from RequirementUidAllocator's prefix grammar. The backend stores any
+  // string up to 50 characters (`Requirement.uid` is @Column(length = 50))
+  // and resolves it case-insensitively, so this validator enforces a bounded,
+  // transport-safe scalar and leaves existence to the project-scoped lookup.
   let exact;
   before(async () => {
     ({ EXACT_REQUIREMENT_UID_RE: exact } = await import("./lib.js"));
   });
-  it("accepts only entire-string UIDs", () => {
+  it("accepts allocator-minted short UIDs", () => {
+    // The regression that motivated issue #1425: `APP-2` is what
+    // RequirementUidAllocator.allocate() returns for the second requirement
+    // of prefix APP, and every tool rejected it.
+    for (const uid of ["APP-2", "APP-9", "A-1", "PLAT-10"]) {
+      assert.ok(exact.test(uid), `should accept ${uid}`);
+    }
+  });
+  it("accepts the established explicit UID forms", () => {
     for (const uid of ["GC-O007", "GC-O009", "GC-O-007", "OBS-042"]) {
       assert.ok(exact.test(uid), `should accept ${uid}`);
     }
   });
-  it("rejects substrings that contain a UID", () => {
-    for (const bad of ["not really GC-O007", "GC-O007 cleanup", " GC-O007 ", "prefix GC-O007 suffix"]) {
+  it("accepts legacy identifiers the backend can store", () => {
+    // Identity is the backend's call, not a client-side grammar's. A UID that
+    // does not exist must reach Ground Control and come back through the
+    // RequestError / ErrorResponse path, not be refused as malformed input.
+    for (const uid of ["lowercase-001", "GC_O007", "GC-OOPS"]) {
+      assert.ok(exact.test(uid), `should accept ${uid}`);
+    }
+  });
+  it("rejects values that are not a single bounded identifier", () => {
+    for (const bad of [
+      "not really GC-O007",
+      "GC-O007 cleanup",
+      " GC-O007 ",
+      "prefix GC-O007 suffix",
+      "",
+      "GC-O007\nGC-O008",
+      "GC-O007\tGC-O008",
+    ]) {
       assert.ok(!exact.test(bad), `should reject '${bad}'`);
     }
   });
-  it("rejects the same loose patterns the unanchored regex rejects", () => {
-    for (const bad of ["GC-OOPS", "lowercase-001", "GC_O007", "GC-"]) {
-      assert.ok(!exact.test(bad), `should reject ${bad}`);
+  it("rejects values over the backend's 50-character bound", () => {
+    assert.ok(exact.test("A".repeat(50)), "50 characters is the bound");
+    assert.ok(!exact.test("A".repeat(51)), "51 characters exceeds the bound");
+  });
+  it("free-text recognition is a strict subset of the identity corpus", async () => {
+    // The invariant that stops the contract re-splitting (issue #1425): prose
+    // scanning may under-recognize an unusual UID, but it must never accept one
+    // the structured path would reject — including past the 50-character bound.
+    const { isRequirementUidToken } = await import("./lib.js");
+    for (const uid of ["APP-2", "GC-O007", "GC-O-007", "OBS-042", `${"A".repeat(48)}-1`]) {
+      assert.ok(isRequirementUidToken(uid), `should recognize ${uid}`);
+      assert.ok(exact.test(uid), `corpus must also accept ${uid}`);
+    }
+    for (const bad of [`${"A".repeat(49)}-1`, "prose", "notes", "GC-OOPS"]) {
+      assert.ok(!isRequirementUidToken(bad), `should not recognize ${bad}`);
+    }
+  });
+  it("rejects reserved-marker and Markdown-injection shapes", () => {
+    // Broadening UID acceptance must not turn a UID field into a Markdown or
+    // phase-marker injection channel.
+    for (const bad of ["<!-- gc:final-report -->", "<!--gc:plan-->", "`GC-O007`", "[GC-O007](http://x)"]) {
+      assert.ok(!exact.test(bad), `should reject '${bad}'`);
     }
   });
 });
@@ -8857,20 +9093,25 @@ describe("checkPrBodyShape (policy-shape predicate)", () => {
   it("accepts a well-formed renderer output", () => {
     assert.deepEqual(checkPrBodyShape(goodBody()), { ok: true });
   });
+  it("rejects a body whose policy-gate check line was dropped (#1429)", () => {
+    const body = goodBody().replace(PR_BODY_POLICY_CHECK_LINE, "- [x] whatever");
+    const r = checkPrBodyShape(body);
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes(PR_BODY_POLICY_CHECK_LINE)));
+  });
   it("rejects a body missing a required header", () => {
     const body = goodBody().replace("## Traceability", "## Trace");
     const r = checkPrBodyShape(body);
     assert.equal(r.ok, false);
     assert.ok(r.errors.some((e) => /missing required header.*Traceability/.test(e)));
   });
-  it("rejects a body without any requirement UID", () => {
-    // Strip every UID-shaped token. The regex `[A-Z][A-Z0-9]+-...digits...`
-    // also matches things like `ADR-036` (A as the leading uppercase letter,
-    // DR as `[A-Z0-9]+`, then `-036`). So a body without a real GC UID can
-    // still satisfy the check if it carries ADR-NNN references. We strip both.
-    const body = goodBody()
-      .replace(/GC-O007/g, "PLACEHOLDER")
-      .replace(/ADR-036/g, "ARCH-DECISION");
+  it("rejects a body whose Requirement UIDs section names nothing", () => {
+    // The section bullet becomes prose rather than a single identifier. A
+    // one-word placeholder would NOT be rejected: the gate has no Ground
+    // Control lookup, so it cannot tell an unresolvable identifier from a real
+    // one and deliberately does not try (issue #1425). What it does enforce is
+    // that the section actually names something, in the shape of a UID.
+    const body = goodBody().replace("- `GC-O007`", "- (no real UID here)");
     const r = checkPrBodyShape(body);
     assert.equal(r.ok, false);
     assert.ok(r.errors.some((e) => /requirement UID/.test(e)));
@@ -8972,10 +9213,15 @@ describe("runRenderPrBody (policy enforcement at the tool boundary)", () => {
     assert.equal(r.ok, true);
     assert.ok(r.body.includes("deferred to a follow-up PR"));
   });
-  it("refuses with pr_body_input_invalid when a UID is loose-but-not-policy-tight", async () => {
-    // GC-OOPS passed the previous looser validator; the F2 cycle-1 fix
-    // tightens it to match the Python policy predicate exactly.
-    const r = await runRenderPrBody(baseInput({ requirementUids: ["GC-OOPS"] }));
+  it("refuses with pr_body_input_invalid when a UID is not a single bounded identifier", async () => {
+    // `GC-OOPS` is now accepted: it is a storable identifier and the
+    // section-scoped policy gate recognizes it, so refusing it here would mean
+    // a requirement that reconciles and reports could never be rendered into
+    // the mandatory PR body (issue #1425). What stays refused is input that
+    // cannot be one UID at all.
+    const ok = await runRenderPrBody(baseInput({ requirementUids: ["GC-OOPS"] }));
+    assert.equal(ok.ok, true, JSON.stringify(ok.errors ?? ok.error));
+    const r = await runRenderPrBody(baseInput({ requirementUids: ["not a uid"] }));
     assert.equal(r.ok, false);
     assert.equal(r.error, "pr_body_input_invalid");
   });
@@ -14653,10 +14899,22 @@ describe("parseGroundControlYaml workflow.dev_start_gate", () => {
     );
   });
 
-  it("rejects malformed blocker UIDs", () => {
-    const r = normalizeDevStartGateConfig({ enabled: true, blocker_uids: ["not-a-uid"] });
-    assert.equal(r.ok, false);
-    assert.ok(r.errors.some((e) => e.includes("blocker_uids[0]")), JSON.stringify(r.errors));
+  it("rejects blocker UIDs that are not a single bounded identifier", () => {
+    // Config UID lists share the structured identity contract (issue #1425):
+    // a bounded scalar, with existence left to the project-scoped lookup. So
+    // the refusal is for values that cannot be one UID at all, not for values
+    // that merely fail an allocator-shaped grammar.
+    // Surrounding whitespace is not in this list: the config reader trims each
+    // YAML entry before validating, which is correct for a config surface.
+    for (const bad of ["GC-O007 GC-O008", "GC-O007\nGC-O008", "A".repeat(51), ""]) {
+      const r = normalizeDevStartGateConfig({ enabled: true, blocker_uids: [bad] });
+      assert.equal(r.ok, false, `should reject '${bad}'`);
+      assert.ok(r.errors.some((e) => e.includes("blocker_uids[0]")), JSON.stringify(r.errors));
+    }
+  });
+  it("accepts allocator-minted short blocker UIDs", () => {
+    const r = normalizeDevStartGateConfig({ enabled: true, blocker_uids: ["APP-2"] });
+    assert.equal(r.ok, true, JSON.stringify(r.errors));
   });
 });
 

@@ -529,3 +529,19 @@ decision record, and no cycle marker at all. That keeps the thread free of
 partial durable state for a review that did not happen, and leaves the cycle
 cap unspent so the retry is free. The issue thread remains the durable workflow
 record and PR merge remains the only synchronous human touchpoint.
+
+**2026-07-26 (issue #1429, semantic policy attestation).** The PR body's Ground
+Control Checks block names the policy gate semantically -
+`- [x] Configured repository policy command passes` - instead of asserting
+`` `make policy` ``. The command that runs now comes from
+`workflow.policy_command`, so a fixed command string in the durable record would
+be false for any repository that configures a different gate, and copying the
+configured string in would publish repo-internal paths into GitHub content.
+`gc_render_pr_body` therefore takes no policy-command input and emits no command
+text; `checkPrBodyShape` and `tools/policy/checks.py::check_pr_body` require the
+semantic line in lockstep. Separately, `gc_synchronize_implement_branch` and
+`gc_create_synchronized_implement_pr` now refuse a repository context whose
+status is not `ok` before any fetch, merge, gate, or PR write, so an invalid
+`.ground-control.yaml` can no longer fall through to default values on the way
+to a durable attestation. Every other marker family, the issue-thread
+durable-record contract, and the single-human-touchpoint contract are unchanged.

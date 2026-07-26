@@ -143,7 +143,8 @@ be repeated.
 
 If synchronization changes the tree, invalidate the earlier Step 6 evidence.
 Run targeted tests while resolving or correcting the merge. The synchronization
-completion tool then runs the configured completion command and `make policy`
+completion tool then runs the configured completion command and the configured
+policy command (`workflow.policy_command`, default `make policy`, issue #1429)
 once on the final merged tree before creating the merge commit and publishing
 it. It refuses if either broad gate changes the index or checkout and binds the
 verified tree ID to the commit and durable record. Do not run the broad gates
@@ -177,7 +178,7 @@ verification for the merge result.
   `checkPrBodyShape`, the existing `workflow.pr_title` configuration, and the
   canonical GitHub-repository identity derived from origin.
 - **Verification:** proportionate narrow tests, Step 6's exact tree identity,
-  the configured completion command, and `make policy`.
+  the configured completion command, and the configured policy command.
 - **Observability:** existing MCP tool-call telemetry and the durable issue
   record. Do not add SLF4J, a local audit log, or another telemetry schema.
 

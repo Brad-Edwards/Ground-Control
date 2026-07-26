@@ -69,6 +69,39 @@ class PolicyChecksTest(unittest.TestCase):
                 violations = run_adr_guard([path])
                 self.assertTrue(any(item.code == "workflow-guardrail-sync" for item in violations))
 
+    def test_adr_guard_fires_on_measurement_emitter_surfaces(self):
+        # ADR-090 defines one measurement model shared by every process-telemetry
+        # emitter. An emitter that changes its record shape without updating the
+        # model re-creates the divergence the ADR exists to close, so each emitter
+        # surface must require the ADR in the same diff (issue #1304).
+        for path in (
+            "backend/src/main/java/com/keplerops/groundcontrol/domain/workflowtelemetry/WorkflowPhaseEvent.java",
+            "backend/src/main/java/com/keplerops/groundcontrol/api/workflowtelemetry/PhaseEventResponse.java",
+            "backend/src/main/java/com/keplerops/groundcontrol/domain/mcptelemetry/McpToolEvent.java",
+            "backend/src/main/java/com/keplerops/groundcontrol/api/mcptelemetry/McpTelemetryController.java",
+            "mcp/ground-control/gc-workflow-run-ingest.js",
+            "mcp/ground-control/gc-workflow-run.js",
+            "mcp/ground-control/telemetry.js",
+        ):
+            with self.subTest(path=path):
+                violations = run_adr_guard([path])
+                self.assertTrue(
+                    any(item.code == "measurement-model-sync" for item in violations),
+                    f"{path} must require an ADR-090 update in the same diff",
+                )
+
+    def test_adr_guard_measurement_rule_satisfied_when_adr_090_included(self):
+        violations = run_adr_guard(
+            [
+                "mcp/ground-control/telemetry.js",
+                "architecture/adrs/090-production-line-measurement-model.md",
+            ]
+        )
+        self.assertFalse(
+            any(item.code == "measurement-model-sync" for item in violations),
+            "including ADR-090 must satisfy the measurement-model-sync rule",
+        )
+
     def test_implement_execution_contract_is_structurally_complete(self):
         self.assertEqual(run_implement_execution_contract(root=REPO_ROOT), [])
 
@@ -98,6 +131,95 @@ class PolicyChecksTest(unittest.TestCase):
             violations = run_implement_execution_contract(root=root)
             self.assertIn(
                 "implement-direct-pr-create",
+                {item.code for item in violations},
+            )
+
+    def _implement_contract_root(self, tmp_dir):
+        """Copy the surfaces run_implement_execution_contract reads into a temp root."""
+        root = Path(tmp_dir)
+        for rel in (
+            "skills/implement/SKILL.md",
+            "skills/implement/_development-principles.md",
+            "skills/implement/steps",
+            ".cursor/skills/implement/SKILL.md",
+            "mcp/ground-control/lib.js",
+            "mcp/ground-control/index.js",
+        ):
+            source = REPO_ROOT / rel
+            target = root / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if source.is_dir():
+                shutil.copytree(source, target)
+            else:
+                shutil.copy2(source, target)
+        return root
+
+    def test_implement_execution_contract_rejects_dropped_policy_command_token(self):
+        # Negative path for the issue #1429 token requirements. Without this,
+        # deleting the `cfg.workflow.policy_command` anchors from
+        # run_implement_execution_contract would be invisible to the suite, and
+        # the skill prose could silently drift back to a hardcoded command.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = self._implement_contract_root(tmp_dir)
+            step6 = root / "skills/implement/steps/step-06-completion-gate.md"
+            step6.write_text(
+                step6.read_text(encoding="utf-8").replace(
+                    "`cfg.workflow.policy_command`", "`make policy`"
+                ),
+                encoding="utf-8",
+            )
+            violations = run_implement_execution_contract(root=root)
+            self.assertIn(
+                "implement-verification-boundary-drift",
+                {item.code for item in violations},
+            )
+
+    def test_implement_execution_contract_rejects_dropped_sync_policy_command_token(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = self._implement_contract_root(tmp_dir)
+            step8_5 = root / "skills/implement/steps/step-08.5-sync-base.md"
+            step8_5.write_text(
+                step8_5.read_text(encoding="utf-8").replace(
+                    "cfg.workflow.policy_command", "make policy"
+                ),
+                encoding="utf-8",
+            )
+            violations = run_implement_execution_contract(root=root)
+            self.assertIn(
+                "implement-pre-pr-sync-contract",
+                {item.code for item in violations},
+            )
+
+    def test_implement_execution_contract_rejects_dropped_precommit_command_token(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = self._implement_contract_root(tmp_dir)
+            step7 = root / "skills/implement/steps/step-07-stage-precommit.md"
+            step7.write_text(
+                step7.read_text(encoding="utf-8").replace(
+                    "cfg.workflow.precommit_command", "pre-commit run --all-files"
+                ),
+                encoding="utf-8",
+            )
+            violations = run_implement_execution_contract(root=root)
+            self.assertIn(
+                "implement-verification-boundary-drift",
+                {item.code for item in violations},
+            )
+
+    def test_implement_execution_contract_rejects_dropped_review_batching_token(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = self._implement_contract_root(tmp_dir)
+            rules = root / "skills/implement/steps/_review-loop-rules.md"
+            rules.write_text(
+                rules.read_text(encoding="utf-8").replace(
+                    "`cfg.workflow.policy_command` after every small fix",
+                    "the policy gate after every small fix",
+                ),
+                encoding="utf-8",
+            )
+            violations = run_implement_execution_contract(root=root)
+            self.assertIn(
+                "implement-verification-boundary-drift",
                 {item.code for item in violations},
             )
 
@@ -631,12 +753,67 @@ class PolicyChecksTest(unittest.TestCase):
             "## Requirement UIDs\n\n- GC-X001\n"
             "## ADR Impact\n\nADR-026 added.\n"
             "## Ground Control Checks\n\n"
-            "- [x] `make policy` passes\n"
+            "- [x] Configured repository policy command passes\n"
             "- [x] `gc_evaluate_quality_gates` passes or is unchanged by this repo-only change\n"
             "- [x] `gc_run_sweep` reviewed; findings fixed or recorded with rationale\n"
             "## Traceability\n\n- IMPLEMENTS: foo\n- TESTS: bar\n"
         )
         self.assertEqual(check_pr_body(body), [])
+
+    def test_check_pr_body_accepts_allocator_minted_short_uid(self):
+        # RequirementUidAllocator.allocate() returns `${prefix}-${n}` unpadded,
+        # so a project's first nine requirements carry a single-digit suffix.
+        # A PR whose only requirement is APP-2 must satisfy pr-requirement-uid
+        # (issue #1425).
+        body = (
+            "## Summary\n\nFix.\n"
+            "## Requirement UIDs\n\n- APP-2\n"
+            "## ADR Impact\n\nNo ADR required.\n"
+            "## Ground Control Checks\n\n"
+            "- [x] Configured repository policy command passes\n"
+            "- [x] `gc_evaluate_quality_gates` passes or is unchanged by this repo-only change\n"
+            "- [x] `gc_run_sweep` reviewed; findings fixed or recorded with rationale\n"
+            "## Traceability\n\n- IMPLEMENTS: foo\n- TESTS: bar\n"
+        )
+        self.assertEqual(check_pr_body(body), [])
+
+    def _body_with_uid_section(self, section_body):
+        return (
+            "## Summary\n\nFix.\n"
+            f"## Requirement UIDs\n\n{section_body}\n"
+            "## ADR Impact\n\nNo ADR required.\n"
+            "## Ground Control Checks\n\n"
+            "- [x] Configured repository policy command passes\n"
+            "- [x] `gc_evaluate_quality_gates` passes or is unchanged by this repo-only change\n"
+            "- [x] `gc_run_sweep` reviewed; findings fixed or recorded with rationale\n"
+            "## Traceability\n\n- IMPLEMENTS: foo\n- TESTS: bar\n"
+        )
+
+    def test_pr_body_gate_accepts_the_same_corpus_the_renderer_accepts(self):
+        # Parity with mcp/ground-control/lib.js: a UID the renderer accepts must
+        # satisfy this gate, otherwise a requirement that reconciles and reports
+        # could never be rendered into the mandatory PR body (issue #1425).
+        for uid in ["APP-2", "A-1", "GC-O007", "GC-O-007", "OBS-042", "GC-OOPS", "lowercase-001"]:
+            body = self._body_with_uid_section(f"- {uid}")
+            self.assertEqual(check_pr_body(body), [], msg=f"should accept {uid}")
+
+    def test_pr_body_gate_rejects_prose_and_over_bound_values(self):
+        for section in ["- (no real UID here)", "- " + "A" * 49 + "-1", "", "- "]:
+            body = self._body_with_uid_section(section)
+            codes = {item.code for item in check_pr_body(body)}
+            self.assertIn("pr-requirement-uid", codes, msg=f"should reject section {section!r}")
+
+    def test_pr_body_gate_accepts_the_explicit_requirement_free_marker(self):
+        body = self._body_with_uid_section("- (none — requirement-free change)")
+        self.assertEqual(check_pr_body(body), [])
+
+    def test_pr_body_gate_is_scoped_to_the_requirement_uids_section(self):
+        # An ADR reference elsewhere must not satisfy the requirement-UID gate.
+        body = self._body_with_uid_section("- (no real UID here)").replace(
+            "No ADR required.", "ADR-036 updated."
+        )
+        codes = {item.code for item in check_pr_body(body)}
+        self.assertIn("pr-requirement-uid", codes)
 
     def test_ci_strictness_contract_passes_on_repo(self):
         violations = run_ci_strictness_contract(root=REPO_ROOT)

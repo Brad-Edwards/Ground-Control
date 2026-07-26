@@ -23,7 +23,7 @@ import {
   parseGrcScreeningData,
   createWorkflowRun,
   recordWorkflowRunEvent,
-  EXACT_REQUIREMENT_UID_RE,
+  findRequirementUidTokens,
 } from "./lib.js";
 
 // ---------------------------------------------------------------------------
@@ -83,7 +83,7 @@ export function countMalformedMarkers(commentBodies) {
 /**
  * Extract requirement UIDs from the issue body. Scans the `## Requirements`
  * section (if present) first, then falls back to a full-body scan. Returns
- * only strings matching EXACT_REQUIREMENT_UID_RE (one-UID-per-token).
+ * only tokens accepted by findRequirementUidTokens (one UID per token).
  * Deduplicates; order preserved (first-seen wins).
  *
  * This is a structural extraction, not free-form text forwarding: only valid
@@ -115,19 +115,10 @@ export function extractRequirementUids(issueBody) {
   }
   const scanText = sectionLines.length > 0 ? sectionLines.join("\n") : issueBody;
 
-  const seen = new Set();
-  const result = [];
-  // Match UID-shaped tokens (word-boundary anchored via lookahead/behind in
-  // the global scan, then validate with EXACT_REQUIREMENT_UID_RE).
-  const uidRe = /\b[A-Z][A-Z0-9]+-[A-Z0-9]+(?:-\d+|\d+)\b/g;
-  for (const m of scanText.matchAll(uidRe)) {
-    const token = m[0];
-    if (EXACT_REQUIREMENT_UID_RE.test(token) && !seen.has(token)) {
-      seen.add(token);
-      result.push(token);
-    }
-  }
-  return result;
+  // Recognition, not identity validation — these tokens come from free-form
+  // issue prose. The shared scanner in mcp/ground-control/lib.js owns the shape
+  // and the punctuation handling, so it is not restated here (issue #1425).
+  return findRequirementUidTokens(scanText);
 }
 
 /**

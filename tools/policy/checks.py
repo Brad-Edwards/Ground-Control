@@ -72,7 +72,59 @@ CONTROLLER_PATH_RE = re.compile(
     r"^backend/src/main/java/com/keplerops/groundcontrol/api/.+Controller\.java$"
 )
 MIGRATION_PATH_RE = re.compile(r"^backend/src/main/resources/db/migration/V\d+__.+\.sql$")
-PR_REQUIREMENT_RE = re.compile(r"\b[A-Z][A-Z0-9]+-[A-Z0-9]+(?:-\d+|\d+)\b")
+# Requirement-UID identity corpus. Mirrors
+# mcp/ground-control/lib.js::EXACT_REQUIREMENT_UID_RE verbatim — the two must
+# stay in sync so the JavaScript renderer and this Python gate accept the same
+# set. A stored UID is project-local identity within the backend's
+# 50-character bound, not a client-side grammar, so `APP-2` (what
+# RequirementUidAllocator mints for a prefix's second requirement) is as valid
+# as `GC-O007` (issue #1425). Existence is the Ground Control lookup's call.
+EXACT_REQUIREMENT_UID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,49}$")
+
+# The explicit requirement-free marker the PR-body renderer emits in place of a
+# UID list: `- (none — ...)`.
+REQUIREMENT_FREE_MARKER_RE = re.compile(r"-\s*\(none\b", re.IGNORECASE)
+
+
+def extract_requirement_uids_section(body: str) -> str:
+    """Return the lines between `## Requirement UIDs` and the next `## ` header."""
+    marker = "## Requirement UIDs"
+    start = body.find(marker)
+    if start == -1:
+        return ""
+    after = body[start + len(marker) :]
+    next_header = re.search(r"\n## ", after)
+    return after[: next_header.start()] if next_header else after
+
+
+def extract_requirement_uid_tokens(body: str) -> list[str]:
+    """Parse the `## Requirement UIDs` section structurally and return its UIDs.
+
+    Mirrors ``extractRequirementUidTokensFromSection`` in
+    ``mcp/ground-control/lib.js``. The section is machine-rendered one UID per
+    bullet, so position carries the meaning and each token is held to the
+    identity corpus rather than a narrower search grammar. Scoping to the
+    section is what stops an ``ADR-036`` reference elsewhere in the body from
+    satisfying the requirement-UID gate by accident.
+    """
+    tokens: list[str] = []
+    for line in extract_requirement_uids_section(body).splitlines():
+        bullet = re.match(r"^\s*[-*+]\s+(.+?)\s*$", line)
+        if not bullet:
+            continue
+        text = bullet.group(1)
+        if re.match(r"^\(none\b", text, re.IGNORECASE):
+            continue
+        # The WHOLE bullet must be a single token in the corpus. Scanning for
+        # any corpus-shaped word would count ordinary prose -- ``- (no real UID
+        # here)`` contains ``no``, a syntactically valid identifier -- because
+        # the corpus cannot tell a UID from a word without a lookup.
+        candidate = text.strip("`").strip()
+        if not EXACT_REQUIREMENT_UID_RE.match(candidate):
+            continue
+        if candidate not in tokens:
+            tokens.append(candidate)
+    return tokens
 CI_STRICTNESS_BRANCHES = ("main", "dev")
 CI_STRICTNESS_REQUIRED_CONTEXTS = frozenset(
     {
@@ -4141,7 +4193,9 @@ def check_pr_body(body: str) -> list[Violation]:
         )
         return violations
 
-    if not PR_REQUIREMENT_RE.search(body):
+    if not extract_requirement_uid_tokens(body) and not REQUIREMENT_FREE_MARKER_RE.search(
+        extract_requirement_uids_section(body)
+    ):
         violations.append(
             Violation(
                 code="pr-requirement-uid",
@@ -4160,7 +4214,12 @@ def check_pr_body(body: str) -> list[Violation]:
         )
 
     required_checks = [
-        "- [x] `make policy` passes",
+        # The policy gate is named semantically, not by command (issue #1429).
+        # `workflow.policy_command` in `.ground-control.yaml` decides what
+        # actually runs, so the PR body attests that the configured gate
+        # passed rather than asserting a Make target. Mirrors
+        # `PR_BODY_POLICY_CHECK_LINE` in `mcp/ground-control/lib.js`.
+        "- [x] Configured repository policy command passes",
         "- [x] `gc_evaluate_quality_gates` passes or is unchanged by this repo-only change",
         "- [x] `gc_run_sweep` reviewed; findings fixed or recorded with rationale",
     ]
@@ -4888,15 +4947,21 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
     step6 = (root / "skills/implement/steps/step-06-completion-gate.md").read_text(
         encoding="utf-8"
     )
+    step6_flat = " ".join(step6.split())
     step7 = (root / "skills/implement/steps/step-07-stage-precommit.md").read_text(
         encoding="utf-8"
     )
     verification_surface_tokens = (
-        (review_rules_flat, "Do not run `cfg.workflow.completion_command` or `make policy` after every small fix"),
+        (
+            review_rules_flat,
+            "Do not run `cfg.workflow.completion_command` or "
+            "`cfg.workflow.policy_command` after every small fix",
+        ),
         (review_rules_flat, "once before leaving the review band on the final post-fix tree"),
         (step5, "Do not run `pre-commit` here"),
-        (step6, "Run `make policy`"),
+        (step6_flat, "Run `cfg.workflow.policy_command`"),
         (step7, "single mandatory pre-publish"),
+        (step7, "cfg.workflow.precommit_command"),
     )
     missing_surfaces = [
         token for surface, token in verification_surface_tokens if token not in surface
@@ -4936,7 +5001,7 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
         "merged_clean",
         "merged_conflicts_resolved",
         "refs/remotes/origin/",
-        "make policy",
+        "cfg.workflow.policy_command",
     )
     missing_sync = [token for token in sync_tokens if token not in step8_5]
     pr_tokens = (

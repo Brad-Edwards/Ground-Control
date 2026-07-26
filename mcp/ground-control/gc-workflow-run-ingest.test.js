@@ -139,6 +139,35 @@ Nothing here.
     assert.deepEqual(uids, ["GC-O007", "GC-S001"]);
   });
 
+  it("extracts allocator-minted short UIDs (issue #1425)", () => {
+    // `${prefix}-${n}` is unpadded, so a project's first nine requirements have
+    // a single-digit suffix; dropping them here would silently downgrade a
+    // requirement-backed run to requirement-free.
+    const body = "## Requirements\n\n- APP-2: short uid\n- A-1\n- PLAT-10\n";
+    assert.deepEqual(extractRequirementUids(body), ["APP-2", "A-1", "PLAT-10"]);
+  });
+
+  it("recognizes a UID adjacent to sentence punctuation", () => {
+    // `.` is a legal identity-corpus character, so a tokenizer that splits only
+    // on non-corpus characters leaves `GC-O007.` glued together and drops it.
+    // Sentence-final UIDs ("Fixes GC-O007.") are the common case in real issue
+    // prose, and dropping them is the silent requirement-free downgrade this
+    // bridge must never produce.
+    assert.deepEqual(extractRequirementUids("Fixes GC-O007."), ["GC-O007"]);
+    assert.deepEqual(
+      extractRequirementUids("This closes GC-O007, and also fixes GC-S001."),
+      ["GC-O007", "GC-S001"],
+    );
+    assert.deepEqual(extractRequirementUids("Closes APP-2; see (GC-O007)."), ["APP-2", "GC-O007"]);
+  });
+
+  it("does not mistake ordinary prose for a UID", () => {
+    // Prose words are valid bounded identifiers, so recognition keeps a
+    // narrower shape than the structured identity corpus.
+    const body = "## Requirements\n\n- prose and notes are not uids\n";
+    assert.deepEqual(extractRequirementUids(body), []);
+  });
+
   it("falls back to full body when no Requirements section exists", () => {
     const body = "Implement GC-O007 and also GC-S001 while fixing this.";
     const uids = extractRequirementUids(body);

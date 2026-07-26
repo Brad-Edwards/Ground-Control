@@ -140,18 +140,50 @@ jobs:
   trivy:
     runs-on: ubuntu-latest
     needs: [policy]
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3
+      # Every image pull in this job is an ANONYMOUS Docker Hub request: buildx
+      # bootstraps `moby/buildkit:buildx-stable-1` under the default
+      # docker-container driver, and backend/Dockerfile pulls `node` and
+      # `eclipse-temurin`. Anonymous pulls from shared GitHub runner egress are
+      # rate-limited and deprioritized, so a single
+      # `Get "https://registry-1.docker.io/v2/": context deadline exceeded`
+      # turned this REQUIRED merge check red with no security signal behind it.
+      # Retry the registry-dependent steps once instead of failing the gate on a
+      # transient registry hiccup. Authenticated pulls or a registry mirror are
+      # the durable removal of this dependency; both need credentials/infra that
+      # are not decided here.
+      - id: buildx
+        continue-on-error: true
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3
+
+      - name: Retry buildx setup (transient registry failure)
+        if: steps.buildx.outcome == 'failure'
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3
 
       # Build the backend image locally for image-vuln scanning. Reuses
       # backend/Dockerfile per the preflight constraint ("do not invent a
       # scanner-specific Docker build path"). Not pushed; tag only exists
       # inside this job.
-      - name: Build image for scanning
+      - id: build_image
+        name: Build image for scanning
+        continue-on-error: true
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: false
+          load: true
+          tags: gc-trivy:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Retry image build (transient registry failure)
+        if: steps.build_image.outcome == 'failure'
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
@@ -191,6 +223,30 @@ jobs:
           path: |
             trivy-image.sarif
             trivy-deploy-docker.sarif
+
+      # The scans above report (exit-code 0, every severity) so the SARIF stays
+      # complete. THIS step is what makes `trivy` a real merge gate. Without it
+      # the required check could only ever fail on infrastructure, never on a
+      # vulnerability — it blocked merges on registry hiccups while providing no
+      # blocking security signal. That inversion is why a CRITICAL Spring
+      # Security authorization bypass (CVE-2026-22732, CVE-2025-41232) shipped
+      # unnoticed.
+      #
+      # Scoped to CRITICAL/HIGH with a known fix: an unfixed upstream CVE has no
+      # remediation path, so gating on it would block every merge without
+      # offering an action. Misconfig findings stay report-only in the SARIF
+      # above; vulnerabilities and secrets block. Findings are fixed by upgrading
+      # the dependency, never by a .trivyignore suppression.
+      - name: Trivy gate (fail on fixable CRITICAL/HIGH)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: gc-trivy:ci
+          scanners: vuln,secret
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
 
   osv-scanner:
     runs-on: ubuntu-latest
