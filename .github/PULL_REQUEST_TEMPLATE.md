@@ -28,7 +28,7 @@
 
 ## Ground Control Checks
 
-- [ ] `make policy` passes
+- [ ] Configured repository policy command passes
 - [ ] `gc_evaluate_quality_gates` passes or is unchanged by this repo-only change
 - [ ] `gc_run_sweep` reviewed; findings fixed or recorded with rationale
 

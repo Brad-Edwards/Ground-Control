@@ -544,3 +544,16 @@ fields (`diff_mode` and `review_coverage`) on the direct result, the compact
 cycle envelope, and the findings record; neither carries diff content, prompts,
 or child output. Per-step telemetry is unchanged: a sliced review is still one
 routed review step, and slices are not telemetry events.
+
+**2026-07-26 (issue #1429, policy command in the tool surfaces).** No routing
+stage is added, renamed, or retiered, and the step-telemetry contract is
+unchanged. Two deterministic tool surfaces change behavior:
+`gc_implement_mechanical action=verify` and
+`gc_synchronize_implement_branch action=complete` run
+`workflow.policy_command` (normalized default `make policy`) through the
+same repo-authored-command boundary they already use for
+`workflow.completion_command`, rather than a hardcoded `make policy` argv. The
+`verify` envelope adds `policy_command` alongside the existing
+`completion_command` so the caller can see which gate ran. Neither surface takes
+a caller-supplied policy command - it is read from the repository context only -
+and `gc_render_pr_body` gains no input and emits no command text (see ADR-029).

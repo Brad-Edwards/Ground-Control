@@ -163,6 +163,13 @@ For this repository, the human-maintained policy entrypoints are:
 - `make sync-ground-control-policy` to sync ADR metadata and quality-gate definitions into Ground Control
 - `make policy-live` to validate live Ground Control gates and non-regression sweep baselines when a reachable GC instance is available
 
+`make policy` is this repository's `workflow.policy_command` in
+`.ground-control.yaml`. The `/implement` and `/quickfix` gates run whatever that
+field names (it defaults to `make policy`), so a consuming repository whose
+policy gate has a different name configures it there rather than being expected
+to own a `policy` Make target. The gate is never skipped when the command is
+missing - it fails.
+
 ## Phase 3: Implement
 
 ### The Development Loop

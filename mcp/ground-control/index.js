@@ -1383,7 +1383,8 @@ server.tool(
   "Inputs are repo_path, issue_number, branch_name, and action. action=start fetches an explicit " +
   "refs/heads/<base>:refs/remotes/origin/<base> refspec, returns already-current or leaves a real --no-ff --no-commit merge " +
   "ready for verification/conflict resolution. action=complete additionally requires record_id, pre_sync_sha, " +
-  "fetched_base_sha, and outcome; it mechanically runs the configured completion command and make policy, binds the " +
+  "fetched_base_sha, and outcome; it mechanically runs the configured completion command and the configured " +
+  "workflow.policy_command (default `make policy`), binds the " +
   "unchanged verified tree to the merge commit, verifies the merge graph, pushes without force, and idempotently posts " +
   "the trusted versioned issue-thread attestation. It never creates a worktree, rebases, resets, aborts, discards work, " +
   "or chooses a conflict side.",

@@ -101,6 +101,79 @@ class PolicyChecksTest(unittest.TestCase):
                 {item.code for item in violations},
             )
 
+    def _implement_contract_root(self, tmp_dir):
+        """Copy the surfaces run_implement_execution_contract reads into a temp root."""
+        root = Path(tmp_dir)
+        for rel in (
+            "skills/implement/SKILL.md",
+            "skills/implement/_development-principles.md",
+            "skills/implement/steps",
+            ".cursor/skills/implement/SKILL.md",
+            "mcp/ground-control/lib.js",
+            "mcp/ground-control/index.js",
+        ):
+            source = REPO_ROOT / rel
+            target = root / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if source.is_dir():
+                shutil.copytree(source, target)
+            else:
+                shutil.copy2(source, target)
+        return root
+
+    def test_implement_execution_contract_rejects_dropped_policy_command_token(self):
+        # Negative path for the issue #1429 token requirements. Without this,
+        # deleting the `cfg.workflow.policy_command` anchors from
+        # run_implement_execution_contract would be invisible to the suite, and
+        # the skill prose could silently drift back to a hardcoded command.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = self._implement_contract_root(tmp_dir)
+            step6 = root / "skills/implement/steps/step-06-completion-gate.md"
+            step6.write_text(
+                step6.read_text(encoding="utf-8").replace(
+                    "`cfg.workflow.policy_command`", "`make policy`"
+                ),
+                encoding="utf-8",
+            )
+            violations = run_implement_execution_contract(root=root)
+            self.assertIn(
+                "implement-verification-boundary-drift",
+                {item.code for item in violations},
+            )
+
+    def test_implement_execution_contract_rejects_dropped_sync_policy_command_token(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = self._implement_contract_root(tmp_dir)
+            step8_5 = root / "skills/implement/steps/step-08.5-sync-base.md"
+            step8_5.write_text(
+                step8_5.read_text(encoding="utf-8").replace(
+                    "cfg.workflow.policy_command", "make policy"
+                ),
+                encoding="utf-8",
+            )
+            violations = run_implement_execution_contract(root=root)
+            self.assertIn(
+                "implement-pre-pr-sync-contract",
+                {item.code for item in violations},
+            )
+
+    def test_implement_execution_contract_rejects_dropped_review_batching_token(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = self._implement_contract_root(tmp_dir)
+            rules = root / "skills/implement/steps/_review-loop-rules.md"
+            rules.write_text(
+                rules.read_text(encoding="utf-8").replace(
+                    "`cfg.workflow.policy_command` after every small fix",
+                    "the policy gate after every small fix",
+                ),
+                encoding="utf-8",
+            )
+            violations = run_implement_execution_contract(root=root)
+            self.assertIn(
+                "implement-verification-boundary-drift",
+                {item.code for item in violations},
+            )
+
     def test_implement_verification_contract_is_proportionate_and_mandatory(self):
         principles = (
             REPO_ROOT / "skills/implement/_development-principles.md"
@@ -631,7 +704,7 @@ class PolicyChecksTest(unittest.TestCase):
             "## Requirement UIDs\n\n- GC-X001\n"
             "## ADR Impact\n\nADR-026 added.\n"
             "## Ground Control Checks\n\n"
-            "- [x] `make policy` passes\n"
+            "- [x] Configured repository policy command passes\n"
             "- [x] `gc_evaluate_quality_gates` passes or is unchanged by this repo-only change\n"
             "- [x] `gc_run_sweep` reviewed; findings fixed or recorded with rationale\n"
             "## Traceability\n\n- IMPLEMENTS: foo\n- TESTS: bar\n"

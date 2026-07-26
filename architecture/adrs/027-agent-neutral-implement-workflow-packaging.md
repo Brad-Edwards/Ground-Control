@@ -255,3 +255,69 @@ The package adds Step 8.5 plus the repository-bound
 tools. Together they keep base synchronization in the same checkout and make a
 fresh trusted synchronization attestation a mechanical prerequisite for the
 PR side effect.
+
+## 2026-07-26 amendment: repository policy command
+
+Issue #1429 adds optional `workflow.policy_command` to the canonical
+`.ground-control.yaml` parser and context returned by
+`gc_get_repo_ground_control_context`. The normalized default is `make policy`,
+which preserves existing repositories' behavior. A configured value is a
+non-empty repository command and runs from the repository root through the same
+command boundary as `workflow.completion_command`.
+
+The completion and policy commands remain separate mandatory gates.
+`completion_command` (with the existing `test_command` fallback) verifies the
+repository's completion suite; `policy_command` verifies repo-native workflow
+and governance constraints. Neither command substitutes for the other, and an
+absent Make target must fail loudly rather than cause the policy gate to be
+skipped. Both the mechanical verification action and the synchronized
+final-tree boundary must consume the same normalized policy command.
+
+Workflow records and PR checklists describe the configured repository policy
+gate semantically; they do not accept a second caller-supplied command or copy
+the command text into durable GitHub content. Repository command fields are
+trusted, versioned configuration, not a secret-binding surface: credentials or
+tokens must not be embedded in them, returned in failure envelopes, or added to
+process environments by this feature.
+
+### Trust boundary for repository command fields
+
+Every `workflow.*_command` field is **trusted, versioned repository
+configuration**. The trust anchor is base-branch review plus branch protection,
+not the workflow tooling: the value is a file in the repository, changed through
+the same pull-request path as any other file.
+
+This is a deliberate decision, recorded here because the issue #1429 security
+review raised it. A feature branch can point `policy_command` at a successful
+no-op, which would make the mandatory policy gate pass without evaluating
+anything. Three facts bound that exposure:
+
+1. `completion_command` has carried the identical property since it was
+   introduced. It executes through the same `bash -c` boundary, two statements
+   earlier in the same function, and is equally mandatory - so it already offers
+   a strictly stronger primitive than neutralizing the policy gate.
+2. The gate command's *implementation* was never immune either. `make policy`
+   resolves through the repository's own `Makefile`, `bin/policy`, and
+   `tools/policy/checks.py`, all read from the branch under review. Hardcoding
+   the command never made the gate independent of the tree it validates.
+3. `/integrate` runs the same configuration-derived completion command, so any
+   different rule would have to cover that lane too.
+
+Making the policy command configuration-derived therefore changes the effort
+required, not the trust boundary. The alternative - resolving command fields
+from base-branch configuration - was considered and rejected for now: it must
+apply to every command field to be meaningful, and it has no coherent
+first-adoption path, because a repository whose base branch has no
+`policy_command` cannot introduce one when the adopting pull request is already
+gated by the base value it is trying to replace.
+
+What the tooling does provide is visibility: both executable boundaries return
+the policy command they actually ran (`gc_implement_mechanical action=verify`
+and the `gc_synchronize_implement_branch action=complete` envelope), so a
+substituted gate is observable at the boundary rather than hidden behind a
+generic pass. Durable GitHub records continue to carry Git identity
+and semantic gate names, not command text.
+
+A repository that needs a gate its own contributors cannot redefine must
+enforce it outside the branch - in required CI checks on the protected base
+branch - not in a field the branch supplies.

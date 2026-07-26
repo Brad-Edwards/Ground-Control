@@ -33,7 +33,7 @@ function renderedPrBody() {
     "## Changes", "", "- change", "",
     "## Test Plan", "", "- tests", "",
     "## Ground Control Checks", "",
-    "- [x] `make policy` passes",
+    "- [x] Configured repository policy command passes",
     "- [x] `gc_evaluate_quality_gates` passes or is unchanged by this repo-only change",
     "- [x] `gc_run_sweep` reviewed; findings fixed or recorded with rationale",
     "", "## Traceability", "", "- IMPLEMENTS: GC-O007", "- TESTS: test", "",
@@ -55,15 +55,82 @@ async function workspaceAuthorization() {
   };
 }
 
-function context(baseBranch = "dev") {
+function context(baseBranch = "dev", workflowOverrides = {}) {
   return {
     status: "ok",
     workflow: {
       base_branch: baseBranch,
       completion_command: "make check",
+      policy_command: "make policy",
       pr_title: null,
+      ...workflowOverrides,
     },
   };
+}
+
+// Drives `action=complete` down the fresh-merge path (MERGE_HEAD present,
+// dirty tree) so a test can observe exactly which repository commands the
+// final-tree boundary executes.
+function completeRunner({ failCommand = null } = {}) {
+  const calls = [];
+  let committed = false;
+  const runner = async (command, args) => {
+    calls.push([command, args]);
+    if (command === "bash") {
+      if (failCommand != null && args[1] === failCommand) {
+        const error = new Error(`${failCommand} failed`);
+        error.stderr = "gate failed";
+        throw error;
+      }
+      return { stdout: "" };
+    }
+    if (command === "make") return { stdout: "" };
+    if (command === "gh") {
+      return {
+        stdout: JSON.stringify({
+          id: 101,
+          html_url: "https://github.com/autarchy-ai/Ground-Control/issues/1421#issuecomment-101",
+        }),
+      };
+    }
+    const op = gitOperation(args);
+    if (op[0] === "symbolic-ref") return { stdout: `${BRANCH}\n` };
+    if (op[0] === "status") return { stdout: "M  file.txt\n" };
+    if (op[0] === "rev-parse") {
+      const ref = op[op.length - 1];
+      if (ref.endsWith("^{tree}")) return { stdout: `${TREE}\n` };
+      if (ref.startsWith("MERGE_HEAD")) return { stdout: `${BASE}\n` };
+      return { stdout: `${committed ? RESULT : PRE}\n` };
+    }
+    if (op[0] === "write-tree") return { stdout: `${TREE}\n` };
+    if (op[0] === "ls-files") return { stdout: "" };
+    if (op[0] === "commit") {
+      committed = true;
+      return { stdout: "" };
+    }
+    if (op[0] === "push") return { stdout: "" };
+    if (op[0] === "show") return { stdout: `${PRE} ${BASE}\n` };
+    if (op[0] === "ls-remote") return { stdout: `${RESULT}\trefs/heads/${BRANCH}\n` };
+    throw new Error(`unexpected git operation: ${op.join(" ")}`);
+  };
+  return { calls, runner };
+}
+
+function completeInput() {
+  return {
+    repoPath: REPO_ROOT,
+    issueNumber: ISSUE,
+    branchName: BRANCH,
+    action: "complete",
+    recordId: RECORD,
+    preSyncSha: PRE,
+    fetchedBaseSha: BASE,
+    outcome: "merged_clean",
+  };
+}
+
+function shellCommands(calls) {
+  return calls.filter(([command]) => command === "bash").map(([, args]) => args[1]);
 }
 
 function gitOperation(args) {
@@ -345,6 +412,83 @@ describe("pre-PR implement synchronization", () => {
     assert.equal(calls.some(([, args]) => gitOperation(args)[0] === "push"), false);
   });
 
+  it("runs the repository's configured policy command at the final-tree boundary (#1429)", async () => {
+    const { calls, runner } = completeRunner();
+    const result = await runSynchronizeImplementBranch(completeInput(), {
+      workspaceAuthorizationResolver: workspaceAuthorization,
+      commandRunner: runner,
+      contextResolver: async () => context("dev", {
+        policy_command: "python3 scripts/adr_guard/adr_guard.py --all --level ci",
+      }),
+      syncRecordReader: async () => ({ ok: false, error: "implement_pr_sync_record_missing" }),
+    });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    // The envelope names the gate that actually ran, so a substituted policy
+    // command is visible to the caller rather than hidden behind a generic
+    // "policy passed". The durable issue-thread marker is unchanged.
+    assert.equal(result.policyCommand, "python3 scripts/adr_guard/adr_guard.py --all --level ci");
+    assert.deepEqual(shellCommands(calls), [
+      "make check",
+      "python3 scripts/adr_guard/adr_guard.py --all --level ci",
+    ]);
+    assert.equal(
+      calls.some(([command, args]) => command === "make" && args.includes("policy")),
+      false,
+      "the boundary must not fall back to a hardcoded make target",
+    );
+  });
+
+  it("defaults the policy gate to `make policy` when the repo configures none", async () => {
+    const { calls, runner } = completeRunner();
+    const result = await runSynchronizeImplementBranch(completeInput(), {
+      workspaceAuthorizationResolver: workspaceAuthorization,
+      commandRunner: runner,
+      contextResolver: async () => context("dev", { policy_command: null }),
+      syncRecordReader: async () => ({ ok: false, error: "implement_pr_sync_record_missing" }),
+    });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.deepEqual(shellCommands(calls), ["make check", "make policy"]);
+  });
+
+  it("does not commit, push, or attest when the configured policy command fails", async () => {
+    const { calls, runner } = completeRunner({ failCommand: "bin/policy-gate" });
+    const result = await runSynchronizeImplementBranch(completeInput(), {
+      workspaceAuthorizationResolver: workspaceAuthorization,
+      commandRunner: runner,
+      contextResolver: async () => context("dev", { policy_command: "bin/policy-gate" }),
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "implement_base_sync_gate_failed");
+    assert.equal(calls.some(([, args]) => args[0] === "-C" && gitOperation(args)[0] === "commit"), false);
+    assert.equal(calls.some(([, args]) => args[0] === "-C" && gitOperation(args)[0] === "push"), false);
+    assert.equal(calls.some(([command]) => command === "gh"), false);
+  });
+
+  it("refuses an invalid repository context before touching the checkout (#1429)", async () => {
+    const calls = [];
+    const result = await runSynchronizeImplementBranch({
+      repoPath: REPO_ROOT,
+      issueNumber: ISSUE,
+      branchName: BRANCH,
+      action: "start",
+    }, {
+      workspaceAuthorizationResolver: workspaceAuthorization,
+      commandRunner: async (command, args) => {
+        calls.push([command, args]);
+        return { stdout: "" };
+      },
+      contextResolver: async () => ({
+        status: "invalid",
+        errors: ["workflow.policy_command must be a non-empty string when set"],
+      }),
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "implement_base_sync_context_invalid");
+    // A broken config must never fall through to the default base branch or
+    // the default policy command.
+    assert.equal(calls.length, 0);
+  });
+
   it("resumes a valid committed merge and reuses its durable record", async () => {
     const calls = [];
     const runner = async (command, args) => {
@@ -435,6 +579,31 @@ describe("synchronized PR gate", () => {
     assert.equal(validateImplementPrTitle("feat: merge dev before PR").ok, true);
     assert.equal(validateImplementPrTitle("feat: Merge dev before PR").ok, false);
     assert.equal(validateImplementPrTitle("fix/refactor: merge dev").ok, false);
+  });
+
+  it("refuses PR creation on an invalid repository context (#1429)", async () => {
+    const calls = [];
+    const result = await runCreateSynchronizedImplementPr({
+      repoPath: REPO_ROOT,
+      issueNumber: ISSUE,
+      branchName: BRANCH,
+      recordId: RECORD,
+      title: "feat: require synchronized implement PRs",
+      body: renderedPrBody(),
+    }, {
+      workspaceAuthorizationResolver: workspaceAuthorization,
+      commandRunner: async (command, args) => {
+        calls.push([command, args]);
+        return { stdout: "" };
+      },
+      contextResolver: async () => ({
+        status: "invalid",
+        errors: ["workflow.policy_command must be a non-empty string when set"],
+      }),
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "implement_pr_context_invalid");
+    assert.equal(calls.length, 0);
   });
 
   it("refuses PR creation when the integration branch advances after attestation", async () => {

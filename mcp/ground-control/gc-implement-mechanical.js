@@ -26,6 +26,7 @@ import {
   EXACT_REQUIREMENT_UID_RE,
   runImplementGitCommand,
   runImplementPreCommit,
+  resolveWorkflowPolicyCommand,
 } from "./lib.js";
 
 const execFileAsync = promisify(execFileCb);
@@ -102,7 +103,8 @@ export const gcImplementMechanicalZodShape = {
 
 export const GC_IMPLEMENT_MECHANICAL_DESCRIPTION =
   "Run coarse-grained deterministic /implement phases without a model turn per mechanical step. " +
-  "Actions: bootstrap (issue/branch/context/pickup), verify (completion command + policy + quality gates), " +
+  "Actions: bootstrap (issue/branch/context/pickup), verify (configured completion command + configured " +
+  "workflow.policy_command + quality gates), " +
   "publish (stage + pre-commit + commit + push + remote-base synchronization), monitor (CI + Sonar), " +
   "readiness (pre-merge completion assertion), finalize (post-merge assertion + idempotent issue close). " +
   "Always pass action, repo_path, and issue_number. Depending on action, also pass invocation_root, branch_name, " +
@@ -353,8 +355,9 @@ async function runVerify(args, deps) {
   } catch (error) {
     return commandFailure(action, "completion_gate", error);
   }
+  const policyCommand = resolveWorkflowPolicyCommand(context);
   try {
-    await deps.execFile("make", ["policy"], { cwd: repoRoot });
+    await deps.execFile("bash", ["-c", policyCommand], { cwd: repoRoot });
   } catch (error) {
     return commandFailure(action, "policy_gate", error);
   }
@@ -385,6 +388,7 @@ async function runVerify(args, deps) {
     action,
     phase: "verification_complete",
     completion_command: command,
+    policy_command: policyCommand,
     policy: "passed",
     quality,
     next_action: "run_required_agent_reviews_or_publish",

@@ -204,7 +204,70 @@ describe("runImplementMechanical verify", () => {
     assert.equal(result.ok, true);
     assert.equal(result.phase, "verification_complete");
     assert.ok(commands.some(([file, ...argv]) => file === "bash" && argv.includes("make check")));
-    assert.ok(commands.some(([file, ...argv]) => file === "make" && argv.includes("policy")));
+    assert.ok(commands.some(([file, ...argv]) => file === "bash" && argv.includes("make policy")));
+  });
+
+  it("runs the repository's configured policy command rather than a hardcoded target (#1429)", async () => {
+    const commands = [];
+    const result = await runImplementMechanical({
+      action: "verify",
+      repoPath: "/repo",
+      issueNumber: 1429,
+      requirements: [],
+    }, baseDeps({
+      getContext: async () => ({
+        status: "ok",
+        project: "ground-control",
+        workflow: {
+          base_branch: "dev",
+          completion_command: "make check",
+          policy_command: "python3 scripts/adr_guard/adr_guard.py --all --level ci",
+        },
+      }),
+      execFile: async (file, argv) => {
+        commands.push([file, ...argv]);
+        return { stdout: "", stderr: "" };
+      },
+    }));
+
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(result.policy_command, "python3 scripts/adr_guard/adr_guard.py --all --level ci");
+    assert.deepEqual(
+      commands.filter(([file]) => file === "bash").map(([, , command]) => command),
+      ["make check", "python3 scripts/adr_guard/adr_guard.py --all --level ci"],
+    );
+    assert.equal(commands.some(([file]) => file === "make"), false);
+  });
+
+  it("hands off the policy gate by name when the configured policy command fails", async () => {
+    const result = await runImplementMechanical({
+      action: "verify",
+      repoPath: "/repo",
+      issueNumber: 1429,
+    }, baseDeps({
+      getContext: async () => ({
+        status: "ok",
+        project: "ground-control",
+        workflow: {
+          base_branch: "dev",
+          completion_command: "make check",
+          policy_command: "bin/policy-gate",
+        },
+      }),
+      execFile: async (file, argv) => {
+        if (file === "bash" && argv[1] === "bin/policy-gate") {
+          const error = new Error("policy failed");
+          error.stderr = "one policy rule failed";
+          throw error;
+        }
+        return { stdout: "", stderr: "" };
+      },
+    }));
+
+    assert.equal(result.ok, false);
+    assert.equal(result.agent_required, true);
+    assert.equal(result.failed_stage, "policy_gate");
+    assert.equal(result.error, "implement_mechanical_policy_gate_failed");
   });
 
   it("hands off only the actionable failed gate", async () => {

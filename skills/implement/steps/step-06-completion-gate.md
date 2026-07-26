@@ -8,7 +8,8 @@ tier: low
 
 On the normal path call `gc_implement_mechanical` with `action="verify"`,
 `requirements` populated from Step 1, and the issue/repository identifiers.
-The action runs the configured completion command, `make policy`, verifies
+The action runs the configured completion command, the configured policy
+command, verifies
 that those gates did not mutate the checkout, and calls
 `gc_assert_quality_gates`. Continue only on `ok: true`; a failed envelope
 names the exact gate an agent must repair before retrying the same action.
@@ -28,8 +29,11 @@ Implementation is NOT ready for commit until ALL of the following are verified:
    3. **Content check (the path check is not enough - a doc file can carry executable behavior).** For each path that survived check (2), inspect the actual diff content with `git diff <base-ref> -- <path>` (which against the working tree covers both committed and uncommitted changes). If any hunk introduces executable behavior - code fences whose contents are intended to be executed by tooling, embedded YAML that a code path parses and acts on, schema/grammar/policy data consumed by a runtime parser, runnable test fixtures, or any other line of static text whose meaning is "what the program should do at runtime" - the carve-out is invalidated for those clauses, and the mandatory red-green loop applies (write the failing test against the parser/consumer, then make the doc edit pass it).
    4. The carve-out passes Step 6 only when BOTH checks pass: every path is in the documentation set AND no diff hunk introduces executable behavior. If either check fails, revert to the mandatory red-green loop for the failing portion before declaring the gate passed.
 
-4. **Repository policy passes once on the same tree.** Run `make policy`.
-   This also runs Vale on docs touched in the diff. If
+4. **Repository policy passes once on the same tree.** Run
+   `cfg.workflow.policy_command` (default `make policy`). A repo whose gate is
+   named differently sets that field; the gate is never skipped because a
+   target is absent. In this repository it also runs Vale on docs touched in
+   the diff. If
    `.tools/vale/current/vale` is missing, run `bash tools/install-vale.sh` and
    retry - do not skip. Vale enforces the Google Developer Documentation Style
    Guide and Diátaxis structure (see ADR-054 and `docs/DOC_STYLE.md`); fix every
