@@ -5461,17 +5461,26 @@ export async function runPostImplementationPlan({
   };
 }
 
-function buildCommonReviewPreamble({ baseBranch, uncommitted, diffMode = "inline" }) {
-  if (diffMode === "manifest") {
-    if (uncommitted) {
-      return "Review the staged, unstaged, and untracked changes in the working tree of this repository. The diff was too large to inline; a manifest of changed files (with added/deleted line counts) is provided below inside <<<DIFF-MANIFEST…DIFF-MANIFEST>>> delimiters. Use your shell tool to fetch per-file diffs as you need them.";
-    }
-    return `Review the changes on the current branch against \`${baseBranch}\`. The diff was too large to inline; a manifest of changed files (with added/deleted line counts) is provided below inside <<<DIFF-MANIFEST…DIFF-MANIFEST>>> delimiters. Use your shell tool to fetch per-file diffs as you need them.`;
-  }
-  if (uncommitted) {
-    return "Review the staged, unstaged, and untracked changes in the working tree of this repository. The authoritative diff is provided below inside <<<DIFF…DIFF>>> delimiters — do not re-derive it from git yourself.";
-  }
-  return `Review the changes on the current branch against \`${baseBranch}\`. The authoritative diff is provided below inside <<<DIFF…DIFF>>> delimiters — do not re-derive it from git yourself.`;
+function buildCommonReviewPreamble({ baseBranch, uncommitted, diffMode = "inline", slice = null }) {
+  // Says exactly what the diff contains. Untracked files are deliberately not
+  // transmitted (staging is the consent boundary for sending working-tree
+  // content to the model provider), so claiming to review them would be the
+  // same false-coverage claim #1414 exists to remove.
+  const scope = uncommitted
+    ? "the staged and unstaged changes in the working tree of this repository"
+    : `the changes on the current branch against \`${baseBranch}\``;
+  // Issue #1414: a manifest-mode prompt now carries one authoritative slice of
+  // the change rather than a file list the reviewer was expected to expand
+  // itself. The "do not re-derive it from git" contract is therefore identical
+  // in both modes — only the scope sentence differs.
+  const sliced =
+    diffMode === "manifest" && slice && Number.isInteger(slice.total) && slice.total > 1
+      ? ` The complete diff was too large for one prompt, so it is reviewed as ${slice.total} slices within this single review cycle; this prompt carries slice ${slice.index} of ${slice.total}.`
+      : "";
+  return (
+    `Review ${scope}.${sliced} The authoritative diff is provided below inside ` +
+    "<<<DIFF…DIFF>>> delimiters — do not re-derive it from git yourself."
+  );
 }
 
 // Codex returns a verdict-shaped envelope; the MCP server validates it against
@@ -7029,20 +7038,42 @@ export const DEFAULT_CODEX_REVIEW_MAX_DIFF_BYTES = (() => {
   return raw;
 })();
 
-export function buildDiffBlock({ diffText, mode = "inline", manifest = null, baseRefDescriptor = null }) {
-  if (mode === "manifest") {
-    return [
-      "<<<DIFF-MANIFEST",
-      manifest && manifest.trim() !== "" ? manifest : "(empty manifest)",
-      "DIFF-MANIFEST>>>",
-      "",
-      `The full diff was too large to inline. The manifest above lists every changed file with its added/deleted line counts. To inspect any file's actual diff, run \`git diff ${baseRefDescriptor || "<base-ref>"}...HEAD -- <path>\` or \`git show HEAD -- <path>\` from the workspace via your shell tool. Read every file you flag a finding on; do not infer behavior from the filename or numstat alone.`,
-    ];
-  }
-  if (!diffText || diffText.trim() === "") {
-    return ["<<<DIFF", "(empty diff — nothing changed against the base branch)", "DIFF>>>"];
-  }
-  return ["<<<DIFF", diffText, "DIFF>>>"];
+// Render the diff section of a reviewer prompt.
+//
+// Manifest mode used to emit the manifest INSTEAD of a diff, with an
+// instruction to fetch per-file diffs through the reviewer's own shell tool.
+// Nothing verified that fetch, and reviewers were observed returning a `ship`
+// verdict caveated on the manifest alone (issue #1414). The manifest is now
+// context only: the server inlines the authoritative slice it computed, and the
+// reviewer is held to the same "do not re-derive it from git" contract as
+// inline mode.
+export function buildDiffBlock({
+  diffText,
+  mode = "inline",
+  manifest = null,
+  baseRefDescriptor = null,
+  slice = null,
+}) {
+  const diffLines =
+    !diffText || diffText.trim() === ""
+      ? ["<<<DIFF", "(empty diff — nothing changed against the base branch)", "DIFF>>>"]
+      : ["<<<DIFF", diffText, "DIFF>>>"];
+  if (mode !== "manifest") return diffLines;
+
+  const against = baseRefDescriptor ? ` (against \`${baseRefDescriptor}\`)` : "";
+  const sliceOf =
+    slice && Number.isInteger(slice.total) && slice.total > 1
+      ? ` The remaining ${slice.total - 1} slice(s) are reviewed separately inside this same review cycle, so leave files outside this slice to those slices.`
+      : "";
+  return [
+    "<<<DIFF-MANIFEST",
+    manifest && manifest.trim() !== "" ? manifest : "(empty manifest)",
+    "DIFF-MANIFEST>>>",
+    "",
+    `The manifest above lists every file in the complete change${against} with its added/deleted line counts. It is CONTEXT ONLY — never infer content, behavior, or the direction of the change from a filename or a numstat row.${sliceOf}`,
+    "",
+    ...diffLines,
+  ];
 }
 
 // Codex finding field description shared by both core and security reviewers
@@ -7070,9 +7101,10 @@ export function buildCodexReviewCorePrompt({
   diffManifest = null,
   baseRefDescriptor = null,
   vocabulary = null,
+  slice = null,
 }) {
   const lines = [
-    buildCommonReviewPreamble({ baseBranch, uncommitted, diffMode }),
+    buildCommonReviewPreamble({ baseBranch, uncommitted, diffMode, slice }),
     "",
     "Review the code in this PR for production-readiness. The goal is principal-engineer JUDGMENT, not finding accumulation. Return `verdict: ship` when the change is shaped correctly — that is a valid outcome.",
     "",
@@ -7101,7 +7133,7 @@ export function buildCodexReviewCorePrompt({
       findingExampleJson: CODEX_CORE_FINDING_EXAMPLE,
     }),
     "",
-    ...buildDiffBlock({ diffText, mode: diffMode, manifest: diffManifest, baseRefDescriptor }),
+    ...buildDiffBlock({ diffText, mode: diffMode, manifest: diffManifest, baseRefDescriptor, slice }),
   ];
   return lines.join("\n");
 }
@@ -7114,9 +7146,10 @@ export function buildCodexSecurityReviewPrompt({
   diffManifest = null,
   baseRefDescriptor = null,
   vocabulary = null,
+  slice = null,
 }) {
   const lines = [
-    buildCommonReviewPreamble({ baseBranch, uncommitted, diffMode }),
+    buildCommonReviewPreamble({ baseBranch, uncommitted, diffMode, slice }),
     "",
     "You are a senior application-security engineer reviewing this PR. Focus exclusively on concrete, exploitable security issues introduced by the diff. Do not comment on maintainability, style, performance, or architecture except where they directly enable a security flaw.",
     "",
@@ -7148,7 +7181,7 @@ export function buildCodexSecurityReviewPrompt({
       findingExampleJson: CODEX_SECURITY_FINDING_EXAMPLE,
     }),
     "",
-    ...buildDiffBlock({ diffText, mode: diffMode, manifest: diffManifest, baseRefDescriptor }),
+    ...buildDiffBlock({ diffText, mode: diffMode, manifest: diffManifest, baseRefDescriptor, slice }),
   ];
   return lines.join("\n");
 }
@@ -8831,12 +8864,35 @@ export async function enrichCommentsWithThreadIds({ repoRoot, owner, name, prNum
   return result;
 }
 
+// Untracked files are the one review input the developer never selected: they
+// are simply present in the working directory, and the branch under review
+// controls `.gitignore`. Narrowing an ignore rule makes a developer's local
+// `.env`, `.pgpass`, or `.dockercfg` visible to enumeration, and sending those
+// bodies to the model provider is an egress decision a filename or content
+// heuristic cannot authorize — standard credential filenames are unbounded, and
+// an opaque token is indistinguishable from ordinary text (issue #1414 codex
+// cycle 2, security F1).
+//
+// Staging is the repository's existing, explicit consent boundary, so untracked
+// bodies are never transmitted. The paths are enumerated only so the omission is
+// reported rather than silently claimed — the prompt receives a count, and the
+// caller receives the list. `/implement` Step 6.5 stages with `git add -A`
+// before review, so genuinely new work is reviewed as staged content.
+async function collectUnreviewedUntrackedPaths(repoRoot) {
+  const { stdout } = await execFile(
+    "git",
+    ["-C", repoRoot, "ls-files", "--others", "--exclude-standard", "-z"],
+    { maxBuffer: 10 * 1024 * 1024 },
+  );
+  return stdout.split("\0").filter((p) => p !== "");
+}
+
 // Returns { diffText, manifest, baseRefDescriptor }. For an `uncommitted`
-// review, baseRefDescriptor is null because there is no base ref — codex
-// should use `git diff` / `git diff --staged` directly. For a branch review,
-// baseRefDescriptor is the resolved ref (e.g. `origin/dev`) so the prompt can
-// tell codex how to fetch per-file diffs in manifest mode.
-async function computeReviewDiff(repoRoot, baseBranch, uncommitted) {
+// review the diff spans staged, unstaged, and untracked content and
+// baseRefDescriptor is null because there is no base ref. For a branch review,
+// baseRefDescriptor is the resolved ref (e.g. `origin/dev`), which the prompt
+// names when it describes the manifest's scope.
+export async function computeReviewDiff(repoRoot, baseBranch, uncommitted) {
   if (uncommitted) {
     const staged = await execFile("git", ["-C", repoRoot, "diff", "--staged"], { maxBuffer: 50 * 1024 * 1024 });
     const unstaged = await execFile("git", ["-C", repoRoot, "diff"], { maxBuffer: 50 * 1024 * 1024 });
@@ -8850,6 +8906,7 @@ async function computeReviewDiff(repoRoot, baseBranch, uncommitted) {
       ["-C", repoRoot, "diff", "--numstat"],
       { maxBuffer: 10 * 1024 * 1024 },
     );
+    const unreviewedUntrackedPaths = await collectUnreviewedUntrackedPaths(repoRoot);
     return {
       diffText: `${staged.stdout}\n${unstaged.stdout}`.trim(),
       manifest: [
@@ -8858,8 +8915,17 @@ async function computeReviewDiff(repoRoot, baseBranch, uncommitted) {
         "",
         "# unstaged",
         unstagedManifest.stdout.trim() || "(none)",
+        // Count only: the manifest goes into the reviewer prompt, and a path
+        // can itself be revealing. The caller gets the full list off-prompt.
+        ...(unreviewedUntrackedPaths.length > 0
+          ? [
+              "",
+              `# untracked: ${unreviewedUntrackedPaths.length} path(s) present but NOT staged and NOT included in this review`,
+            ]
+          : []),
       ].join("\n"),
       baseRefDescriptor: null,
+      unreviewedUntrackedPaths,
     };
   }
   const candidates = [`origin/${baseBranch}`, baseBranch, "origin/main", "main"];
@@ -8880,6 +8946,7 @@ async function computeReviewDiff(repoRoot, baseBranch, uncommitted) {
         diffText: stdout,
         manifest: manifest.stdout.trim() || "(no files changed)",
         baseRefDescriptor: ref,
+        unreviewedUntrackedPaths: [],
       };
     } catch {
       continue;
@@ -8888,12 +8955,478 @@ async function computeReviewDiff(repoRoot, baseBranch, uncommitted) {
   throw new Error(`Unable to compute review diff: none of ${candidates.join(", ")} exist in ${repoRoot}`);
 }
 
-// Decide whether to inline the full diff or fall back to manifest mode based
-// on the configured byte cap. Exported so the tests can exercise the policy.
+// Decide whether the complete diff fits one prompt (`inline`) or not
+// (`manifest`). This is the TRANSPORT fact only — it says nothing about how the
+// oversized diff was reviewed. Coverage is reported separately (see
+// planReviewSlices / buildReviewCoverage, issue #1414). Exported so the tests
+// can exercise the policy.
 export function selectDiffMode({ diffText, maxBytes = DEFAULT_CODEX_REVIEW_MAX_DIFF_BYTES }) {
   if (!maxBytes || maxBytes <= 0) return "inline";
   if (Buffer.byteLength(diffText || "", "utf8") > maxBytes) return "manifest";
   return "inline";
+}
+
+// Header shapes used to slice a unified diff. Both anchor at column 0: a diff
+// line that merely *contains* a header (an added line reads `+diff --git ...`,
+// a context line reads ` @@ ...`) never starts one, so content can't forge a
+// slice boundary.
+const DIFF_FILE_HEADER_RE = /^diff --git /;
+const DIFF_HUNK_HEADER_RE = /^@@ /;
+const DIFF_FILE_HEADER_LINE_RE = /^diff --git .*$/gm;
+
+// Split `text` into blocks that each begin at a header line. Text before the
+// first header (if any) becomes its own leading block. Concatenating the result
+// reproduces the input byte-for-byte — that invariant is what makes slice
+// coverage a structural property rather than a claim.
+function splitDiffBlocks(text, headerRe) {
+  const blocks = [];
+  let current = "";
+  let index = 0;
+  while (index < text.length) {
+    let end = text.indexOf("\n", index);
+    end = end === -1 ? text.length : end + 1;
+    const line = text.slice(index, end);
+    if (headerRe.test(line) && current !== "") {
+      blocks.push(current);
+      current = "";
+    }
+    current += line;
+    index = end;
+  }
+  if (current !== "") blocks.push(current);
+  return blocks;
+}
+
+// Pack whole lines of `text` into slices that fit `budget` once `prefix` is
+// prepended to each. This is the last safe boundary below a hunk: a line is
+// the smallest unit that can be split without corrupting the diff, so a single
+// line larger than the budget is emitted alone rather than truncated. Dropping
+// diff bytes would reintroduce exactly the unreviewed-content failure this
+// slicing exists to remove.
+function splitKeepingNewlines(text) {
+  const lines = [];
+  let index = 0;
+  while (index < text.length) {
+    let end = text.indexOf("\n", index);
+    end = end === -1 ? text.length : end + 1;
+    lines.push(text.slice(index, end));
+    index = end;
+  }
+  return lines;
+}
+
+function sliceTextByLines(text, budget, prefix) {
+  const prefixBytes = Buffer.byteLength(prefix, "utf8");
+  const slices = [];
+  let current = "";
+  let currentBytes = 0;
+  for (const line of splitKeepingNewlines(text)) {
+    const lineBytes = Buffer.byteLength(line, "utf8");
+    if (current !== "" && prefixBytes + currentBytes + lineBytes > budget) {
+      slices.push(prefix + current);
+      current = "";
+      currentBytes = 0;
+    }
+    current += line;
+    currentBytes += lineBytes;
+  }
+  if (current !== "") slices.push(prefix + current);
+  return slices.length > 0 ? slices : [prefix + text];
+}
+
+// `@@ -oldStart[,oldCount] +newStart[,newCount] @@[ trailing]`. Git omits the
+// count when it is 1, so both shapes have to parse.
+const HUNK_RANGE_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/;
+
+// Split one oversized hunk into fragments that are each a VALID standalone
+// hunk. Repeating the original `@@` header on every fragment would be actively
+// harmful: each slice goes to an independent reviewer process, so a fragment
+// whose header still claims the original start line makes every `line` in a
+// finding point at the wrong code (issue #1414 codex cycle 2, F1). Recompute
+// the old/new starts and counts per fragment instead, walking the body the way
+// git does: a context line advances both sides, `-` only the old side, `+` only
+// the new side, and a `\ No newline` marker neither.
+function sliceHunkWithRecomputedHeaders(fileHeader, hunk, budget) {
+  const newlineAt = hunk.indexOf("\n");
+  const headerLine = newlineAt === -1 ? hunk : hunk.slice(0, newlineAt);
+  const body = newlineAt === -1 ? "" : hunk.slice(newlineAt + 1);
+  const match = headerLine.match(HUNK_RANGE_RE);
+  // An unparseable header cannot be recomputed; fall back to repeating it
+  // verbatim rather than inventing coordinates.
+  if (!match) return sliceTextByLines(body, budget, `${fileHeader}${headerLine}\n`);
+
+  const trailing = match[5] ?? "";
+  let oldStart = Number.parseInt(match[1], 10);
+  let newStart = Number.parseInt(match[3], 10);
+
+  const emit = (lines) => {
+    let oldCount = 0;
+    let newCount = 0;
+    for (const line of lines) {
+      const marker = line[0];
+      if (marker === "+") newCount += 1;
+      else if (marker === "-") oldCount += 1;
+      else if (marker !== "\\") {
+        oldCount += 1;
+        newCount += 1;
+      }
+    }
+    const header = `@@ -${oldStart},${oldCount} +${newStart},${newCount} @@${trailing}\n`;
+    oldStart += oldCount;
+    newStart += newCount;
+    return `${fileHeader}${header}${lines.join("")}`;
+  };
+
+  const fileHeaderBytes = Buffer.byteLength(fileHeader, "utf8");
+  // Reserve worst-case room for a recomputed header so a fragment cannot
+  // overflow the budget by the bytes the header itself adds.
+  const headerBudget = Buffer.byteLength(`${headerLine}\n`, "utf8") + 40;
+  const slices = [];
+  let group = [];
+  let groupBytes = 0;
+  for (const line of splitKeepingNewlines(body)) {
+    const lineBytes = Buffer.byteLength(line, "utf8");
+    if (group.length > 0 && fileHeaderBytes + headerBudget + groupBytes + lineBytes > budget) {
+      slices.push(emit(group));
+      group = [];
+      groupBytes = 0;
+    }
+    group.push(line);
+    groupBytes += lineBytes;
+  }
+  if (group.length > 0) slices.push(emit(group));
+  return slices.length > 0 ? slices : [`${fileHeader}${headerLine}\n`];
+}
+
+// Split one over-budget file block, repeating the file header on every slice so
+// each slice is a self-describing diff. Boundaries are tried in descending
+// order of fidelity: hunk, then line. A block with no hunk boundary at all
+// (binary, rename-only, mode-change-only) still gets line-sliced rather than
+// being emitted whole — an unbounded slice defeats the point of a byte budget
+// precisely on the oversized changes this feature exists to handle
+// (issue #1414 codex cycle 1, F1).
+function sliceFileBlockByHunks(block, budget) {
+  const parts = splitDiffBlocks(block, DIFF_HUNK_HEADER_RE);
+  const hasHunks = parts.length > 1 || DIFF_HUNK_HEADER_RE.test(parts[0] ?? "");
+  if (!hasHunks) {
+    // Metadata-only block (binary, rename, mode change). Repeat its
+    // `diff --git` line on every fragment so a later fragment still says which
+    // file it belongs to (issue #1414 codex cycle 2, F1).
+    const newlineAt = block.indexOf("\n");
+    if (newlineAt === -1) return [block];
+    const attribution = block.slice(0, newlineAt + 1);
+    return sliceTextByLines(block.slice(newlineAt + 1), budget, attribution);
+  }
+
+  const header = DIFF_HUNK_HEADER_RE.test(parts[0]) ? "" : parts[0];
+  const hunks = header === "" ? parts : parts.slice(1);
+  const headerBytes = Buffer.byteLength(header, "utf8");
+  const slices = [];
+  let current = "";
+  let currentBytes = 0;
+  const flush = () => {
+    if (current !== "") {
+      slices.push(header + current);
+      current = "";
+      currentBytes = 0;
+    }
+  };
+  for (const hunk of hunks) {
+    const hunkBytes = Buffer.byteLength(hunk, "utf8");
+    // A hunk that cannot fit even alongside just the file header is split at
+    // line boundaries, carrying the file header plus its own `@@` header into
+    // every piece so each remains attributable.
+    if (headerBytes + hunkBytes > budget) {
+      flush();
+      slices.push(...sliceHunkWithRecomputedHeaders(header, hunk, budget));
+      continue;
+    }
+    if (current !== "" && headerBytes + currentBytes + hunkBytes > budget) flush();
+    current += hunk;
+    currentBytes += hunkBytes;
+  }
+  flush();
+  return slices.length > 0 ? slices : [block];
+}
+
+function countDiffFiles(text) {
+  DIFF_FILE_HEADER_LINE_RE.lastIndex = 0;
+  const headers = new Set(text.match(DIFF_FILE_HEADER_LINE_RE) ?? []);
+  return headers.size;
+}
+
+// Plan how the authoritative diff is supplied to the reviewers (issue #1414).
+//
+// Before this, an over-budget diff was replaced by a numstat manifest plus a
+// prompt asking codex to fetch per-file diffs through its own shell tool.
+// Nothing proved the fetch happened, so a manifest-only `ship` was recorded as
+// a clean cycle — indistinguishable at the envelope level from a real review.
+// The server now splits the diff itself and supplies every slice, so
+// completeness is a property of this plan rather than of reviewer compliance.
+//
+// Returns { slices, strategy, files_total, files_covered }. `strategy` is
+// `whole-diff` when the diff fit one prompt (or the cap is disabled),
+// `file-slices` when it was split on file boundaries, and `hunk-slices` when at
+// least one file also needed hunk-level splitting.
+export function planReviewSlices({ diffText, maxBytes = DEFAULT_CODEX_REVIEW_MAX_DIFF_BYTES }) {
+  const text = typeof diffText === "string" ? diffText : "";
+  const filesTotal = countDiffFiles(text);
+  // Same guard shape as selectDiffMode, so the two never disagree about
+  // whether a diff is over budget.
+  const budget = Number.isFinite(maxBytes) ? maxBytes : 0;
+  if (text === "" || budget <= 0 || Buffer.byteLength(text, "utf8") <= budget) {
+    return {
+      slices: [text],
+      strategy: "whole-diff",
+      files_total: filesTotal,
+      files_covered: filesTotal,
+      oversized_slices: 0,
+    };
+  }
+
+  const slices = [];
+  let current = "";
+  // Tracked incrementally rather than re-measuring `current + block` each
+  // iteration, which would be quadratic over a diff with many small files.
+  let currentBytes = 0;
+  let subFileSplit = false;
+  const flush = () => {
+    if (current !== "") {
+      slices.push(current);
+      current = "";
+      currentBytes = 0;
+    }
+  };
+  for (const block of splitDiffBlocks(text, DIFF_FILE_HEADER_RE)) {
+    const blockBytes = Buffer.byteLength(block, "utf8");
+    if (blockBytes > budget) {
+      flush();
+      const inner = sliceFileBlockByHunks(block, budget);
+      if (inner.length > 1) subFileSplit = true;
+      slices.push(...inner);
+      continue;
+    }
+    if (current !== "" && currentBytes + blockBytes > budget) flush();
+    current += block;
+    currentBytes += blockBytes;
+  }
+  flush();
+
+  // A slice can still exceed the budget only when a single line does, which is
+  // the smallest unit that survives splitting intact. Report the count so an
+  // over-budget prompt is a visible fact rather than a silent one; never
+  // truncate, because dropped bytes read as reviewed content that nobody saw.
+  const oversized = slices.filter((s) => Buffer.byteLength(s, "utf8") > budget).length;
+
+  return {
+    slices,
+    strategy: subFileSplit ? "hunk-slices" : "file-slices",
+    files_total: filesTotal,
+    files_covered: countDiffFiles(slices.join("")),
+    oversized_slices: oversized,
+  };
+}
+
+// Fold one reviewer's per-slice results into the single envelope the rest of
+// the pipeline already understands (issue #1414). Deliberately reuses the
+// existing finding dedup and verdict/blocking consistency rules rather than
+// defining a second review schema: the aggregate must satisfy exactly the
+// invariants validateReviewEnvelope enforces on a single-slice review.
+//
+// Verdict is derived, never taken from a slice: an empty union is the only way
+// to reach `ship`, so one slice's clean read can never mask another slice's
+// blocking finding. `don't-ship` survives only when a structural blocker
+// survives dedup, matching checkVerdictBlockingConsistency.
+export function aggregateReviewSlices(sliceResults) {
+  const results = Array.isArray(sliceResults) ? sliceResults : [];
+  const total = results.length;
+  const bodies = [];
+  const reads = [];
+  const blocking = [];
+  const notes = [];
+  let completed = 0;
+  let sawDontShip = false;
+
+  results.forEach((result, idx) => {
+    const body = typeof result?.body === "string" ? result.body : "";
+    if (body.trim() !== "") {
+      bodies.push(total > 1 ? `### Slice ${idx + 1}/${total}\n\n${body.trim()}` : body);
+    }
+    const env = result?.envelope;
+    if (!env || typeof env !== "object") return;
+    completed += 1;
+    const read = typeof env.architectural_read === "string" ? env.architectural_read.trim() : "";
+    if (read !== "") reads.push(total > 1 ? `**Slice ${idx + 1}/${total}:** ${read}` : read);
+    if (Array.isArray(env.blocking)) blocking.push(...env.blocking);
+    if (Array.isArray(env.notes)) notes.push(...env.notes);
+    if (env.verdict === "don't-ship") sawDontShip = true;
+  });
+
+  const body = bodies.join("\n\n");
+  if (completed === 0) {
+    return { envelope: null, findings: [], body, slices_total: total, slices_completed: 0 };
+  }
+
+  const merged = dedupFindings(blocking);
+  const hasStructural = merged.some(
+    (f) => f?.classification === "class" || f?.structural_blocker === true,
+  );
+  let verdict = "ship-with-fixes";
+  if (merged.length === 0) verdict = "ship";
+  else if (sawDontShip && hasStructural) verdict = "don't-ship";
+
+  return {
+    envelope: {
+      verdict,
+      architectural_read: reads.join("\n\n"),
+      blocking: merged,
+      notes: notes.slice(0, REVIEW_NOTES_MAX),
+    },
+    findings: merged,
+    body,
+    slices_total: total,
+    slices_completed: completed,
+  };
+}
+
+// Per-slice parse: a malformed tail from one slice must not throw away the
+// slices that did parse, but it MUST be visible — an unparsed slice means part
+// of the diff produced no reviewer judgment, which the coverage check turns
+// into a boundary failure rather than a clean signal (issue #1414).
+function parseSliceTailSafely(stdout, repoRoot, reviewer, slice, parseErrors) {
+  try {
+    return parseCodexReviewFindingsTail(stdout, repoRoot);
+  } catch (error) {
+    parseErrors.push({
+      reviewer,
+      ...(slice ? { slice: `${slice.index}/${slice.total}` } : {}),
+      error: error.message,
+    });
+    return { findings: [], body: stdout, envelope: null };
+  }
+}
+
+// Run one reviewer across every slice of the plan as a single logical review
+// cycle (issue #1414). Slices run sequentially within a reviewer: the two
+// reviewers may already run concurrently via DEFAULT_CODEX_REVIEW_PARALLEL, and
+// fanning slices out as well would multiply concurrent codex processes by the
+// slice count. `slice` is null for a single-slice plan so inline-mode prompts
+// stay byte-identical to the pre-#1414 contract.
+async function runReviewerOverSlices({
+  repoRoot,
+  reviewerLabel,
+  buildPrompt,
+  promptArgs,
+  slicePlan,
+  parseErrors,
+  signal,
+}) {
+  const total = slicePlan.slices.length;
+  const sliceResults = [];
+  for (let index = 0; index < total; index += 1) {
+    const slice = total > 1 ? { index: index + 1, total } : null;
+    const prompt = buildPrompt({ ...promptArgs, diffText: slicePlan.slices[index], slice });
+    let stdout;
+    try {
+      stdout = await runSingleCodexReview({ repoRoot, prompt, signal });
+    } catch (error) {
+      // A slice engine failure is a coverage failure, not an exception: it must
+      // reach the caller as the same structured no-write, no-cycle-consumed
+      // envelope an unparseable reviewer tail produces. Throwing here escaped
+      // that contract entirely (issue #1414 codex cycle 1, F2). Stop launching
+      // further slices for this reviewer — coverage is already incomplete, so
+      // the remaining codex runs would only burn time.
+      parseErrors.push({
+        reviewer: reviewerLabel,
+        ...(slice ? { slice: `${slice.index}/${slice.total}` } : {}),
+        error: `codex execution failed: ${formatCommandFailure("codex", error)}`,
+      });
+      break;
+    }
+    sliceResults.push(parseSliceTailSafely(stdout, repoRoot, reviewerLabel, slice, parseErrors));
+  }
+  // Slices never reached (an early break) stay absent, so slices_completed
+  // reports fewer than chunks_total and the coverage gate fails closed.
+  return aggregateReviewSlices(sliceResults);
+}
+
+// Bounded, server-derived coverage summary (issue #1414). `diff_mode` says
+// whether the complete diff fit one prompt; this says how much of it was
+// actually reviewed. It carries counts only — never diff content, prompts, or
+// child-process output.
+export function buildReviewCoverage({ slicePlan, reviewerResults, unreviewedUntrackedPaths = [] }) {
+  const chunksTotal = slicePlan.slices.length;
+  const perReviewer = (Array.isArray(reviewerResults) ? reviewerResults : []).map((r) =>
+    Number.isInteger(r?.slices_completed) ? r.slices_completed : 0,
+  );
+  // The weakest reviewer bounds coverage: a slice only counts as reviewed when
+  // BOTH reviewers returned a valid envelope for it.
+  const chunksCompleted = perReviewer.length > 0 ? Math.min(...perReviewer) : 0;
+  return {
+    strategy: slicePlan.strategy,
+    chunks_total: chunksTotal,
+    chunks_completed: chunksCompleted,
+    files_total: slicePlan.files_total,
+    files_covered: slicePlan.files_covered,
+    oversized_slices: Number.isInteger(slicePlan.oversized_slices) ? slicePlan.oversized_slices : 0,
+    // Untracked paths are never transmitted to the reviewer, so the caller is
+    // told exactly what the review did NOT cover rather than the omission
+    // being silent. Paths only, never content.
+    unreviewed_untracked_paths: Array.isArray(unreviewedUntrackedPaths) ? unreviewedUntrackedPaths : [],
+    complete:
+      chunksTotal > 0 &&
+      chunksCompleted === chunksTotal &&
+      slicePlan.files_covered === slicePlan.files_total,
+  };
+}
+
+// Coverage failed: part of the diff produced no valid reviewer judgment. Return
+// before any GitHub write so no findings record, decision record, or cycle
+// marker exists for a review that did not happen — the attempt must not spend
+// the issue's cycle cap, and a retry must be free (issue #1414).
+function buildReviewCoverageIncompleteEnvelope({
+  repoRoot,
+  baseBranch,
+  uncommitted,
+  effectivePr,
+  prePushOwnership,
+  diffMode,
+  reviewCoverage,
+  parseErrors,
+  core,
+  security,
+}) {
+  return {
+    repo_path: repoRoot,
+    base_branch: baseBranch,
+    uncommitted,
+    pr_number: effectivePr,
+    issue_number: prePushOwnership ? prePushOwnership.issueNumber : null,
+    branch: prePushOwnership ? prePushOwnership.branchName : null,
+    ok: false,
+    error: "review_coverage_incomplete",
+    status: "post_failed",
+    message:
+      `gc_codex_review did not establish complete diff coverage: ` +
+      `${reviewCoverage.chunks_completed} of ${reviewCoverage.chunks_total} review slice(s) ` +
+      `returned a valid reviewer envelope (strategy '${reviewCoverage.strategy}', ` +
+      `${reviewCoverage.files_covered} of ${reviewCoverage.files_total} file(s) planned). ` +
+      `No findings record, decision record, or cycle marker has been written and no cycle was ` +
+      `consumed, so a retry is free. A verdict over a partially reviewed diff is not a review.`,
+    next_action: "retry_review_after_resolving_coverage_failure",
+    diff_mode: diffMode,
+    review_coverage: reviewCoverage,
+    cycle: null,
+    cap: null,
+    finding_count: 0,
+    comments: [],
+    post_failures: [],
+    parse_errors: parseErrors,
+    reviewers: [
+      { name: "core", finding_count: core?.findings?.length ?? 0 },
+      { name: "security", finding_count: security?.findings?.length ?? 0 },
+    ],
+  };
 }
 
 async function runSingleCodexReview({ repoRoot, prompt, signal = undefined }) {
@@ -10031,7 +10564,16 @@ export function buildCodexReviewToolDescription({ postPushCap, prepushCap }) {
     "cycle (cycle cap+1 or later) unless override_cap=true with a non-empty " +
     "override_reason quoting the user's authorization; an already-authorized " +
     "override cycle does NOT carry forward — every subsequent over-cap cycle " +
-    "requires its own user authorization."
+    "requires its own user authorization. The result reports `diff_mode` " +
+    "('inline' when the complete diff fit one prompt, 'manifest' when it did not) " +
+    "and a bounded `review_coverage` {strategy, chunks_total, chunks_completed, " +
+    "files_total, files_covered, complete}. An over-cap diff is split server-side " +
+    "into bounded inline slices that both reviewers read as ONE logical cycle — " +
+    "the reviewer is never asked to fetch per-file diffs itself (issue #1414). " +
+    "When any slice fails to produce a valid reviewer envelope the tool returns " +
+    "ok=false with error='review_coverage_incomplete' BEFORE writing any findings " +
+    "record, decision record, or cycle marker, so the failed attempt does not " +
+    "consume a cycle and a retry is free."
   );
 }
 
@@ -10322,7 +10864,7 @@ export async function runCodexReview({
   }
 
   // Compute the diff once and reuse it across both reviewers.
-  const { diffText, manifest, baseRefDescriptor } = await computeReviewDiff(
+  const { diffText, manifest, baseRefDescriptor, unreviewedUntrackedPaths } = await computeReviewDiff(
     repoRoot,
     baseBranch,
     uncommitted,
@@ -10335,33 +10877,19 @@ export async function runCodexReview({
   // Best-effort: null vocabulary falls through to workflow-level defaults.
   const vocabulary = await readVocabularyForReview(repoRoot, baseBranch);
 
+  // Plan how the authoritative diff reaches the reviewers. Inline mode yields
+  // exactly one slice and the prompts are byte-identical to before; manifest
+  // mode yields the bounded slices the server supplies itself instead of asking
+  // the reviewer to fetch per-file diffs (issue #1414).
+  const slicePlan = planReviewSlices({ diffText });
   const promptArgs = {
     baseBranch,
     uncommitted,
-    diffText,
     diffMode,
     diffManifest: manifest,
     baseRefDescriptor,
     vocabulary,
   };
-  const corePrompt = buildCodexReviewCorePrompt(promptArgs);
-  const securityPrompt = buildCodexSecurityReviewPrompt(promptArgs);
-
-  let coreOutput;
-  let securityOutput;
-  try {
-    if (DEFAULT_CODEX_REVIEW_PARALLEL === 2) {
-      [coreOutput, securityOutput] = await Promise.all([
-        runSingleCodexReview({ repoRoot, prompt: corePrompt, signal }),
-        runSingleCodexReview({ repoRoot, prompt: securityPrompt, signal }),
-      ]);
-    } else {
-      coreOutput = await runSingleCodexReview({ repoRoot, prompt: corePrompt, signal });
-      securityOutput = await runSingleCodexReview({ repoRoot, prompt: securityPrompt, signal });
-    }
-  } catch (error) {
-    throw new Error(`Codex review failed: ${formatCommandFailure("codex", error)}`);
-  }
 
   // Parse each reviewer's tail independently. A malformed payload from one
   // reviewer must not lose the other reviewer's findings (per #793 the
@@ -10369,8 +10897,57 @@ export async function runCodexReview({
   // exactly the failure mode this ADR fix is closing). Per-reviewer parse
   // errors surface in the response under `parse_errors`.
   const parseErrors = [];
-  const core = parseReviewerTailSafely(coreOutput, repoRoot, "core", parseErrors);
-  const security = parseReviewerTailSafely(securityOutput, repoRoot, "security", parseErrors);
+  const runReviewer = (reviewerLabel, buildPrompt) =>
+    runReviewerOverSlices({
+      repoRoot,
+      reviewerLabel,
+      buildPrompt,
+      promptArgs,
+      slicePlan,
+      parseErrors,
+      signal,
+    });
+
+  // runReviewerOverSlices converts a slice engine failure into an incomplete
+  // reviewer result rather than throwing, so a dead codex child lands on the
+  // structured coverage-failure path below instead of escaping as an untyped
+  // exception (issue #1414 codex cycle 1, F2).
+  let core;
+  let security;
+  if (DEFAULT_CODEX_REVIEW_PARALLEL === 2) {
+    [core, security] = await Promise.all([
+      runReviewer("core", buildCodexReviewCorePrompt),
+      runReviewer("security", buildCodexSecurityReviewPrompt),
+    ]);
+  } else {
+    core = await runReviewer("core", buildCodexReviewCorePrompt);
+    security = await runReviewer("security", buildCodexSecurityReviewPrompt);
+  }
+
+  // Coverage is a server-side fact derived from the slice plan, never a
+  // reviewer claim. Both reviewers must have returned a valid envelope for
+  // every slice before any finding, decision record, or cycle marker is
+  // written — otherwise part of the diff went unreviewed and a clean signal
+  // would be the exact #1414 failure this fix removes.
+  const reviewCoverage = buildReviewCoverage({
+    slicePlan,
+    reviewerResults: [core, security],
+    unreviewedUntrackedPaths,
+  });
+  if (!reviewCoverage.complete) {
+    return buildReviewCoverageIncompleteEnvelope({
+      repoRoot,
+      baseBranch,
+      uncommitted,
+      effectivePr,
+      prePushOwnership,
+      diffMode,
+      reviewCoverage,
+      parseErrors,
+      core,
+      security,
+    });
+  }
 
   // Resolve owner/name once if any posting could happen. The pre-push and
   // gate paths above also resolved owner/name; cycleOwnership/prePushOwnership
@@ -10484,6 +11061,8 @@ export async function runCodexReview({
         coreReviewText: renderReviewerEnvelope(core),
         securityReviewText: renderReviewerEnvelope(security),
         postedComments: comments,
+        diffMode,
+        reviewCoverage,
       });
       // #804 review-cycle-1 finding 2: route the rendered body through the
       // same sensitive-content filter the inline poster uses, so reviewer-
@@ -10617,6 +11196,8 @@ export async function runCodexReview({
         cycle_record_error: markerError.message,
         attempted_cycle: prePushOwnership.cycleNumber,
         cap: prePushOwnership.cap,
+        diff_mode: diffMode,
+        review_coverage: reviewCoverage,
         finding_count: comments.length,
         comments,
         post_failures: postFailures,
@@ -10661,6 +11242,11 @@ export async function runCodexReview({
     branch: prePushOwnership ? prePushOwnership.branchName : null,
     ok: !partialFailure,
     error: partialFailure ? "review_partial_failure" : undefined,
+    // Transport (did the complete diff fit one prompt?) and coverage (how much
+    // of it was actually reviewed) are reported separately — a manifest is
+    // routing metadata, never review evidence (issue #1414).
+    diff_mode: diffMode,
+    review_coverage: reviewCoverage,
     finding_count: comments.length,
     comments,
     // architectural_read merges both reviewers' reads for the decision record
@@ -10896,6 +11482,20 @@ export function mergeReviewerArchitecturalReads(core, security) {
   return parts.length > 0 ? parts.join("\n\n") : undefined;
 }
 
+// One bounded line describing how the diff reached the reviewers. Counts only
+// — no paths, no diff content (issue #1414).
+export function formatReviewCoverageLine(diffMode, reviewCoverage) {
+  if (diffMode !== "manifest" || reviewCoverage == null) {
+    return "inline — the complete diff was supplied in one prompt";
+  }
+  const { strategy, chunks_completed: done, chunks_total: total, files_covered: covered, files_total: files } =
+    reviewCoverage;
+  return (
+    `manifest — the complete diff exceeded one prompt and was reviewed as ` +
+    `${done}/${total} inline slice(s) (${strategy}) covering ${covered}/${files} file(s)`
+  );
+}
+
 export function buildCodexReviewFindingsComments({
   cycleNumber,
   cap,
@@ -10906,9 +11506,17 @@ export function buildCodexReviewFindingsComments({
   coreReviewText,
   securityReviewText,
   postedComments = [],
+  diffMode = null,
+  reviewCoverage = null,
 }) {
   const modeLabel = mode === "pre-push" ? "pre-push" : "post-push";
-  const headerLine = buildHeaderLine({ modeLabel, cycleNumber, cap, issueNumber, prNumber, branch });
+  const headerLine = [
+    buildHeaderLine({ modeLabel, cycleNumber, cap, issueNumber, prNumber, branch }),
+    // The durable record states how the diff reached the reviewers, so a
+    // reader can tell a fully inlined review from a sliced one without
+    // re-deriving it (issue #1414).
+    ...(diffMode ? [`**Diff mode:** ${formatReviewCoverageLine(diffMode, reviewCoverage)}`] : []),
+  ].join("\n");
 
   const safeCore = disarmMarkerSequences(coreReviewText && coreReviewText.trim() !== "" ? coreReviewText : "_(empty)_");
   const safeSecurity = disarmMarkerSequences(securityReviewText && securityReviewText.trim() !== "" ? securityReviewText : "_(empty)_");
@@ -11000,20 +11608,6 @@ export function buildCodexReviewFindingsComments({
 // buildCodexReviewFindingsComments directly so continuations land too.
 export function buildCodexReviewFindingsComment(args) {
   return buildCodexReviewFindingsComments(args)[0];
-}
-
-// Per-reviewer parse: when codex's tail is malformed, we don't want to throw
-// (which would lose the OTHER reviewer's findings). Instead, capture the
-// error in `parseErrors` and treat the failed reviewer as having emitted
-// zero findings. The caller surfaces parse_errors in the response so the
-// agent sees the failure without losing any successful findings.
-function parseReviewerTailSafely(stdout, repoRoot, reviewer, parseErrors) {
-  try {
-    return parseCodexReviewFindingsTail(stdout, repoRoot);
-  } catch (error) {
-    parseErrors.push({ reviewer, error: error.message });
-    return { findings: [], body: stdout };
-  }
 }
 
 // Flatten per-reviewer post results into a single array of failure envelopes
@@ -17092,9 +17686,12 @@ async function _runReviewCycleShared({
   issueNumber,
 }) {
   // Non-ok review results pass straight through; the cycle tool does
-  // not paper over reviewer boundary errors with a decision record.
+  // not paper over reviewer boundary errors with a decision record. The
+  // compact envelope is the orchestrator's contract, so a boundary error
+  // still carries a `status` it can branch on (issue #1414).
   if (!reviewResult || reviewResult.ok !== true) {
-    return reviewResult;
+    if (!reviewResult) return reviewResult;
+    return { ...reviewResult, reviewer, status: reviewResult.status ?? "post_failed" };
   }
 
   const cycle =
@@ -17106,6 +17703,15 @@ async function _runReviewCycleShared({
   const status = _statusForReviewerAction(nextAction, findings.length > 0);
 
   const summary = summarizeReviewFindings(findings);
+  // Diff transport + coverage travel with every cycle envelope so the
+  // orchestrator can weight a review by how the diff reached the reviewer,
+  // instead of seeing a clean cycle with no signal at all (issue #1414).
+  const diffFields = {
+    ...(typeof reviewResult.diff_mode === "string" ? { diff_mode: reviewResult.diff_mode } : {}),
+    ...(reviewResult.review_coverage != null
+      ? { review_coverage: reviewResult.review_coverage }
+      : {}),
+  };
   const findingsRecordUrl =
     typeof reviewResult.findings_comment_url === "string"
       ? reviewResult.findings_comment_url
@@ -17127,6 +17733,7 @@ async function _runReviewCycleShared({
       findings_summary: summary,
       findings_record_url: findingsRecordUrl,
       decision_record_url: null,
+      ...diffFields,
     };
   }
 
@@ -17163,6 +17770,7 @@ async function _runReviewCycleShared({
       findings_summary: summary,
       findings_record_url: findingsRecordUrl,
       decision_record_url: null,
+      ...diffFields,
     };
   }
   if (!drResult || drResult.ok !== true) {
@@ -17177,6 +17785,7 @@ async function _runReviewCycleShared({
       findings_summary: summary,
       findings_record_url: findingsRecordUrl,
       decision_record_url: null,
+      ...diffFields,
     };
   }
 
@@ -17190,6 +17799,7 @@ async function _runReviewCycleShared({
     findings_summary: summary,
     findings_record_url: findingsRecordUrl,
     decision_record_url: drResult.comment_url ?? null,
+    ...diffFields,
   };
 }
 
@@ -17549,6 +18159,13 @@ export function scoreDisposition(signalsSnapshot, config) {
   if (hasHighRiskSurface) riskScore += 0.4;
   riskScore += Math.min(0.25, (linesAdded + linesDeleted) / 1000);
   riskScore += Math.min(0.2, classCount * 0.1);
+  // Diff transport (issue #1414). A change whose diff did not fit one prompt
+  // was reviewed as slices, so each reviewer judged it with less cross-file
+  // context than a fully inlined review — and an unknown mode is not evidence
+  // of full coverage either. Both carry a small, bounded penalty; an absent
+  // field stays neutral so snapshots built before this signal existed score
+  // exactly as they did.
+  if (typeof s.diff_mode === "string" && s.diff_mode !== "inline") riskScore += 0.15;
   riskScore = Math.min(1, Math.round(riskScore * 1000) / 1000);
 
   const mk = (disposition, decidedBy, rationale) => ({
@@ -17600,6 +18217,7 @@ export function collectDispositionSignals({
   changedPaths,
   priorAutoOverrides,
   repoRoot,
+  diffMode,
 }) {
   const diff = parseNumstatManifest(diffManifest);
   let surfaces = [];
@@ -17612,6 +18230,11 @@ export function collectDispositionSignals({
     prior_auto_overrides: Number.isInteger(priorAutoOverrides) ? priorAutoOverrides : 0,
     diff,
     surfaces,
+    // Derived server-side by the caller from the same selector the reviewer
+    // used — never a caller assertion. Absent collapses to "unknown" rather
+    // than "inline" so missing coverage is never scored as full coverage
+    // (issue #1414).
+    diff_mode: typeof diffMode === "string" ? diffMode : "unknown",
     findings: summarizeFindingsForDisposition(findingsSummary),
   };
 }
@@ -17916,6 +18539,9 @@ export async function runReviewCapDisposition({
     changedPaths,
     priorAutoOverrides,
     repoRoot,
+    // Re-derived here with the same selector the review used, against the
+    // post-fix tree. The caller cannot assert it (issue #1414).
+    diffMode: selectDiffMode({ diffText: diff.diffText }),
   });
 
   let scored = scoreDisposition(signalsSnapshot, config);

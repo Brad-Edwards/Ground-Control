@@ -544,3 +544,14 @@ ADR-021, ADR-029, ADR-031, ADR-036, the implement/quickfix skills, and workflow
 documentation. The documentation-coverage classifier, `outcome_required`
 mapping, Vale rules, installer, and `.vale.ini` are unchanged; no new style
 rule is established.
+
+**2026-07-26 (issue #1414 review-coverage fields).** `mcp/ground-control/lib.js`
+and `mcp/ground-control/index.js` change the `gc_codex_review` /
+`gc_codex_review_cycle` result shape (`diff_mode`, `review_coverage`) and the
+diff-acquisition behavior behind it. The public inputs and the new output fields
+are documented in `mcp/ground-control/README.md`, and the workflow behavior is
+synchronized across ADR-021, ADR-029, ADR-031, ADR-036, the implement and
+quickfix skills, and the workflow documents. The documentation-coverage
+classifier, its `outcome_required` mapping, the Vale rules, the installer, and
+`.vale.ini` are unchanged; no new documentation classification or style rule is
+established.

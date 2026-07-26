@@ -49,6 +49,11 @@ import {
   buildCodexReviewExecArgs,
   buildDiffBlock,
   selectDiffMode,
+  planReviewSlices,
+  aggregateReviewSlices,
+  buildReviewCoverage,
+  computeReviewDiff,
+  REVIEW_NOTES_MAX,
   execFileWithInput,
   parseCodexReviewFindingsTail,
   validateFindingPath,
@@ -2827,7 +2832,11 @@ describe("buildCodexReviewCorePrompt", () => {
       prNumber: 520,
       diffText: diff,
     });
-    assert.ok(prompt.includes("staged, unstaged, and untracked changes"));
+    // #1414: the preamble states exactly what the diff carries. Untracked
+    // bodies are never transmitted (staging is the consent boundary), so
+    // claiming to review them would be a false coverage claim.
+    assert.ok(prompt.includes("staged and unstaged changes"));
+    assert.ok(!prompt.includes("untracked"));
     assert.ok(!prompt.includes("against `dev`"));
   });
 
@@ -2841,20 +2850,25 @@ describe("buildCodexReviewCorePrompt", () => {
     assert.ok(prompt.includes("empty diff"));
   });
 
-  it("switches to manifest preamble and block when diffMode='manifest'", () => {
+  it("reviews an authoritative slice, not a manifest, when diffMode='manifest' (#1414)", () => {
     const prompt = buildCodexReviewCorePrompt({
       baseBranch: "dev",
       uncommitted: false,
       prNumber: 520,
-      diffText: "irrelevant",
+      diffText: "diff --git a/Foo.java b/Foo.java\n+slice body",
       diffMode: "manifest",
       diffManifest: "10\t2\tFoo.java",
       baseRefDescriptor: "origin/dev",
+      slice: { index: 2, total: 3 },
     });
-    assert.ok(prompt.includes("manifest of changed files"));
+    // The slice is announced so the reviewer knows it is judging part of a
+    // larger change reviewed within the same cycle.
+    assert.ok(prompt.includes("slice 2 of 3"));
     assert.ok(prompt.includes("<<<DIFF-MANIFEST"));
-    assert.ok(prompt.includes("git diff origin/dev...HEAD -- <path>"));
-    assert.ok(!prompt.includes("do not re-derive it from git"));
+    // The authoritative-diff contract is the SAME as inline mode now.
+    assert.ok(prompt.includes("do not re-derive it from git yourself"));
+    assert.ok(prompt.includes("+slice body"));
+    assert.ok(!prompt.includes("your shell tool"));
   });
 });
 
@@ -3034,29 +3048,57 @@ describe("buildDiffBlock", () => {
     assert.ok(lines.join("\n").includes("empty diff"));
   });
 
-  it("switches to a manifest block with fetch instructions in manifest mode", () => {
+  it("inlines the slice alongside a context-only manifest in manifest mode (#1414)", () => {
     const lines = buildDiffBlock({
-      diffText: "ignored when manifest mode is active",
+      diffText: "diff --git a/Foo.java b/Foo.java\n+authoritative slice content",
       mode: "manifest",
       manifest: "10\t2\tFoo.java\n5\t0\tBar.java",
       baseRefDescriptor: "origin/dev",
+      slice: { index: 2, total: 4 },
     });
     const text = lines.join("\n");
+    // The manifest is still supplied — as whole-change context.
     assert.ok(text.includes("<<<DIFF-MANIFEST"));
     assert.ok(text.includes("DIFF-MANIFEST>>>"));
-    assert.ok(text.includes("Foo.java"));
-    assert.ok(text.includes("git diff origin/dev...HEAD -- <path>"));
-    assert.ok(!text.includes("<<<DIFF\n"));
+    assert.ok(text.includes("Bar.java"));
+    // The slice's real diff is inlined by the server.
+    assert.ok(text.includes("<<<DIFF"));
+    assert.ok(text.includes("DIFF>>>"));
+    assert.ok(text.includes("+authoritative slice content"));
+    // The reviewer is never asked to fetch diffs itself — that delegation is
+    // the #1414 defect: nothing proved the fetch happened.
+    assert.ok(!text.includes("your shell tool"));
+    assert.ok(!/git diff .*\.\.\.HEAD -- <path>/.test(text));
+    assert.ok(!text.includes("git show HEAD -- <path>"));
   });
 
-  it("falls back to <base-ref> when manifest mode is invoked without a baseRefDescriptor", () => {
-    const lines = buildDiffBlock({
-      diffText: "",
+  it("names the base ref in the manifest context line when one is known", () => {
+    const withRef = buildDiffBlock({
+      diffText: "x",
+      mode: "manifest",
+      manifest: "1\t1\tFoo.java",
+      baseRefDescriptor: "origin/dev",
+      slice: { index: 1, total: 2 },
+    }).join("\n");
+    assert.ok(withRef.includes("origin/dev"));
+
+    const withoutRef = buildDiffBlock({
+      diffText: "x",
       mode: "manifest",
       manifest: "1\t1\tFoo.java",
       baseRefDescriptor: null,
-    });
-    assert.ok(lines.join("\n").includes("git diff <base-ref>...HEAD"));
+      slice: { index: 1, total: 2 },
+    }).join("\n");
+    assert.ok(withoutRef.includes("<<<DIFF-MANIFEST"));
+    assert.ok(!withoutRef.includes("<base-ref>"));
+  });
+
+  it("keeps inline-mode output byte-identical when no slice is supplied", () => {
+    const diffText = "diff --git a/Foo.java b/Foo.java\n+x";
+    assert.deepEqual(
+      buildDiffBlock({ diffText, mode: "inline" }),
+      buildDiffBlock({ diffText, mode: "inline", slice: null }),
+    );
   });
 });
 
@@ -3078,6 +3120,566 @@ describe("selectDiffMode", () => {
     const fourByteChar = "𝟘"; // U+1D7D8 MATHEMATICAL DOUBLE-STRUCK DIGIT ZERO
     const diffText = fourByteChar.repeat(300); // 1200 bytes, 300 chars
     assert.equal(selectDiffMode({ diffText, maxBytes: 1024 }), "manifest");
+  });
+
+  it("returns 'inline' exactly at the cap boundary", () => {
+    assert.equal(selectDiffMode({ diffText: "x".repeat(1024), maxBytes: 1024 }), "inline");
+    assert.equal(selectDiffMode({ diffText: "x".repeat(1025), maxBytes: 1024 }), "manifest");
+  });
+});
+
+// Issue #1414: above the byte cap the server slices the authoritative diff and
+// reviews every slice, instead of handing the reviewer a manifest and trusting
+// it to fetch per-file diffs itself.
+describe("planReviewSlices", () => {
+  function fileDiff(path, lines, { prefix = "+" } = {}) {
+    return [
+      `diff --git a/${path} b/${path}`,
+      "index 1111111..2222222 100644",
+      `--- a/${path}`,
+      `+++ b/${path}`,
+      `@@ -1,${lines.length} +1,${lines.length} @@`,
+      ...lines.map((l) => `${prefix}${l}`),
+      "",
+    ].join("\n");
+  }
+
+  it("returns a single slice when the diff fits the budget", () => {
+    const diffText = fileDiff("Foo.java", ["a", "b"]);
+    const plan = planReviewSlices({ diffText, maxBytes: 64 * 1024 });
+    assert.equal(plan.slices.length, 1);
+    assert.equal(plan.slices[0], diffText);
+    assert.equal(plan.strategy, "whole-diff");
+    assert.equal(plan.files_total, 1);
+    assert.equal(plan.files_covered, 1);
+  });
+
+  it("returns a single slice when the byte cap is disabled", () => {
+    const diffText = fileDiff("Big.java", Array.from({ length: 500 }, (_, i) => `line ${i}`));
+    const plan = planReviewSlices({ diffText, maxBytes: 0 });
+    assert.equal(plan.slices.length, 1);
+    assert.equal(plan.strategy, "whole-diff");
+  });
+
+  it("packs whole files into slices bounded by the byte budget", () => {
+    const a = fileDiff("A.java", Array.from({ length: 20 }, (_, i) => `a${i}`));
+    const b = fileDiff("B.java", Array.from({ length: 20 }, (_, i) => `b${i}`));
+    const c = fileDiff("C.java", Array.from({ length: 20 }, (_, i) => `c${i}`));
+    const diffText = a + b + c;
+    // Budget fits two of the three file blocks per slice.
+    const maxBytes = Buffer.byteLength(a + b, "utf8");
+    const plan = planReviewSlices({ diffText, maxBytes });
+    assert.equal(plan.strategy, "file-slices");
+    assert.equal(plan.slices.length, 2);
+    assert.equal(plan.files_total, 3);
+    assert.equal(plan.files_covered, 3);
+    for (const slice of plan.slices) {
+      assert.ok(Buffer.byteLength(slice, "utf8") <= maxBytes);
+    }
+    // Reassembling the slices reproduces the authoritative diff byte-for-byte:
+    // nothing is dropped, duplicated, or reordered.
+    assert.equal(plan.slices.join(""), diffText);
+  });
+
+  it("splits a single file larger than the budget on hunk boundaries and repeats its header", () => {
+    const header = [
+      "diff --git a/Huge.java b/Huge.java",
+      "index 1111111..2222222 100644",
+      "--- a/Huge.java",
+      "+++ b/Huge.java",
+      "",
+    ].join("\n");
+    const hunk = (n) => [`@@ -${n},2 +${n},2 @@`, `-old ${n}`, `+new ${n}`, ""].join("\n");
+    const diffText = header + hunk(1) + hunk(20) + hunk(40);
+    const maxBytes = Buffer.byteLength(header + hunk(1), "utf8");
+    const plan = planReviewSlices({ diffText, maxBytes });
+    assert.equal(plan.strategy, "hunk-slices");
+    assert.ok(plan.slices.length >= 2);
+    assert.equal(plan.files_total, 1);
+    assert.equal(plan.files_covered, 1);
+    for (const slice of plan.slices) {
+      // Every hunk slice carries the file header so it is a self-describing,
+      // reviewable diff rather than an orphan hunk.
+      assert.ok(slice.startsWith("diff --git a/Huge.java b/Huge.java"));
+      assert.ok(slice.includes("+++ b/Huge.java"));
+    }
+    // Every hunk of the original file is present in exactly one slice.
+    for (const marker of ["-old 1", "-old 20", "-old 40"]) {
+      const hits = plan.slices.filter((s) => s.includes(marker)).length;
+      assert.equal(hits, 1, `expected ${marker} in exactly one slice, saw ${hits}`);
+    }
+  });
+
+  it("splits a hunk larger than the budget at line boundaries rather than emitting it whole", () => {
+    // An unbounded slice defeats the byte budget precisely on the oversized
+    // changes slicing exists to handle, so a hunk too big for the budget falls
+    // through to the next safe boundary: whole lines.
+    const lines = Array.from({ length: 200 }, (_, i) => `line ${i}`);
+    const plan = planReviewSlices({ diffText: fileDiff("Wide.java", lines), maxBytes: 512 });
+
+    assert.ok(plan.slices.length > 1, "expected the oversized hunk to be split");
+    assert.equal(plan.strategy, "hunk-slices");
+    assert.equal(plan.oversized_slices, 0);
+    for (const slice of plan.slices) {
+      assert.ok(Buffer.byteLength(slice, "utf8") <= 512);
+      // Each piece stays attributable: file header plus a hunk header whose
+      // coordinates describe THIS fragment (not the original hunk's).
+      assert.ok(slice.startsWith("diff --git a/Wide.java b/Wide.java"));
+      assert.match(slice, /^@@ -\d+,\d+ \+\d+,\d+ @@/m);
+    }
+    // Every content line survives in exactly one slice: nothing truncated,
+    // nothing duplicated.
+    for (const marker of ["+line 0", "+line 117", "+line 199"]) {
+      const hits = plan.slices.filter((s) => s.includes(`${marker}\n`)).length;
+      assert.equal(hits, 1, `expected ${marker} in exactly one slice, saw ${hits}`);
+    }
+  });
+
+  it("recomputes hunk coordinates so a later fragment anchors to its real right-side line", () => {
+    // Each slice is reviewed by an independent process, so a fragment that
+    // repeated the ORIGINAL @@ header would make every reported line number
+    // wrong. Reconstruct the file from the fragments' own coordinates and
+    // check that a known line lands where the header claims it does.
+    const body = Array.from({ length: 60 }, (_, i) => `+new line ${i}`);
+    const diffText = [
+      "diff --git a/Big.java b/Big.java",
+      "index 1111111..2222222 100644",
+      "--- a/Big.java",
+      "+++ b/Big.java",
+      "@@ -10,0 +10,60 @@ class Big {",
+      ...body,
+      "",
+    ].join("\n");
+
+    const plan = planReviewSlices({ diffText, maxBytes: 400 });
+    assert.ok(plan.slices.length > 1, "expected the hunk to be split");
+
+    // Walk every fragment: its header's new-side start must equal the real
+    // line number of its first added line in the reconstructed file.
+    let expectedNewStart = 10;
+    for (const slice of plan.slices) {
+      assert.ok(slice.startsWith("diff --git a/Big.java b/Big.java"));
+      const header = slice.match(/^@@ -(\d+),(\d+) \+(\d+),(\d+) @@(.*)$/m);
+      assert.ok(header, `fragment has no recomputed hunk header:\n${slice}`);
+      assert.equal(Number(header[3]), expectedNewStart);
+      const added = slice.split("\n").filter((l) => l.startsWith("+new line "));
+      assert.equal(Number(header[4]), added.length, "new-side count must match the fragment");
+      // The section heading from the original header is preserved.
+      assert.equal(header[5], " class Big {");
+      // The first added line of this fragment is the one at expectedNewStart.
+      assert.equal(added[0], `+new line ${expectedNewStart - 10}`);
+      expectedNewStart += added.length;
+    }
+    // Every added line is accounted for exactly once across the fragments.
+    assert.equal(expectedNewStart, 70);
+  });
+
+  it("keeps file attribution on every fragment of a split metadata-only block", () => {
+    const noHunks = [
+      "diff --git a/blob.bin b/blob.bin",
+      ...Array.from({ length: 40 }, (_, i) => `GIT binary patch fragment ${i}`),
+      "",
+    ].join("\n");
+    const plan = planReviewSlices({ diffText: noHunks, maxBytes: 256 });
+    assert.ok(plan.slices.length > 1);
+    for (const slice of plan.slices) {
+      assert.ok(
+        slice.startsWith("diff --git a/blob.bin b/blob.bin"),
+        "a fragment without its diff --git line has no file attribution",
+      );
+    }
+  });
+
+  it("emits an indivisible over-budget line whole and reports it as oversized", () => {
+    // A single line is the smallest unit that can be split without corrupting
+    // the diff. Emitting it beats truncating it, but the caller must be able to
+    // see that a slice exceeded the budget.
+    const plan = planReviewSlices({
+      diffText: fileDiff("Minified.js", ["x".repeat(4000), "short"]),
+      maxBytes: 512,
+    });
+    assert.ok(plan.slices.some((s) => Buffer.byteLength(s, "utf8") > 512));
+    assert.equal(plan.oversized_slices, 1);
+    assert.ok(plan.slices.join("").includes("x".repeat(4000)));
+  });
+
+  it("line-slices an over-budget block that has no hunk boundary at all", () => {
+    // Binary / rename-only / mode-change blocks carry no `@@`, so the hunk
+    // boundary is unavailable and the line boundary is the fallback.
+    const noHunks = [
+      "diff --git a/blob.bin b/blob.bin",
+      ...Array.from({ length: 40 }, (_, i) => `GIT binary patch fragment ${i}`),
+      "",
+    ].join("\n");
+    const plan = planReviewSlices({ diffText: noHunks, maxBytes: 256 });
+    assert.ok(plan.slices.length > 1);
+    for (const slice of plan.slices) {
+      assert.ok(Buffer.byteLength(slice, "utf8") <= 256);
+    }
+    // Sub-file slicing repeats the attribution line by design, so the exact
+    // concatenation invariant that holds for file-level slicing does not apply
+    // here. What must hold is that no content line is lost or duplicated.
+    for (let i = 0; i < 40; i += 1) {
+      const hits = plan.slices.filter((s) => s.includes(`GIT binary patch fragment ${i}\n`)).length;
+      assert.equal(hits, 1, `fragment ${i} appeared in ${hits} slices`);
+    }
+  });
+
+  it("preserves deletion direction in deletion-only slices", () => {
+    const del = [
+      "diff --git a/Gone.java b/Gone.java",
+      "deleted file mode 100644",
+      "index 1111111..0000000",
+      "--- a/Gone.java",
+      "+++ /dev/null",
+      "@@ -1,2 +0,0 @@",
+      "-public class Gone {}",
+      "-// end",
+      "",
+    ].join("\n");
+    const add = fileDiff("New.java", ["x"]);
+    const plan = planReviewSlices({ diffText: del + add, maxBytes: Buffer.byteLength(del, "utf8") });
+    assert.equal(plan.files_total, 2);
+    const joined = plan.slices.join("");
+    assert.ok(joined.includes("deleted file mode 100644"));
+    assert.ok(joined.includes("-public class Gone {}"));
+    assert.ok(joined.includes("+++ /dev/null"));
+  });
+
+  it("keeps binary and rename-only blocks whole and counts them as files", () => {
+    const binary = [
+      "diff --git a/logo.png b/logo.png",
+      "index 1111111..2222222 100644",
+      "Binary files a/logo.png and b/logo.png differ",
+      "",
+    ].join("\n");
+    const rename = [
+      "diff --git a/Old.java b/New.java",
+      "similarity index 100%",
+      "rename from Old.java",
+      "rename to New.java",
+      "",
+    ].join("\n");
+    const plan = planReviewSlices({
+      diffText: binary + rename,
+      maxBytes: Buffer.byteLength(binary, "utf8"),
+    });
+    assert.equal(plan.files_total, 2);
+    assert.equal(plan.files_covered, 2);
+    assert.ok(plan.slices.some((s) => s.includes("Binary files a/logo.png")));
+    assert.ok(plan.slices.some((s) => s.includes("rename to New.java")));
+  });
+
+  it("counts files with spaces and non-ASCII names", () => {
+    const odd = fileDiff("docs/my report ünïcode.md", ["x", "y"]);
+    const plain = fileDiff("Plain.java", ["z"]);
+    const plan = planReviewSlices({
+      diffText: odd + plain,
+      maxBytes: Buffer.byteLength(odd, "utf8"),
+    });
+    assert.equal(plan.files_total, 2);
+    assert.equal(plan.files_covered, 2);
+  });
+
+  it("does not treat an added line that looks like a diff header as a file boundary", () => {
+    const tricky = [
+      "diff --git a/README.md b/README.md",
+      "index 1111111..2222222 100644",
+      "--- a/README.md",
+      "+++ b/README.md",
+      "@@ -1,1 +1,2 @@",
+      " intro",
+      "+diff --git a/Fake.java b/Fake.java",
+      "",
+    ].join("\n");
+    const plan = planReviewSlices({ diffText: tricky, maxBytes: 32 });
+    assert.equal(plan.files_total, 1);
+  });
+
+  it("returns one empty slice for an empty diff", () => {
+    const plan = planReviewSlices({ diffText: "", maxBytes: 1024 });
+    assert.deepEqual(plan.slices, [""]);
+    assert.equal(plan.files_total, 0);
+    assert.equal(plan.files_covered, 0);
+  });
+});
+
+describe("computeReviewDiff uncommitted tree coverage (#1414)", () => {
+  function makeRepo() {
+    const repoDir = mkdtempSync(join(tmpdir(), "gc-reviewdiff-"));
+    execFileSync("git", ["-C", repoDir, "init", "-q", "--initial-branch", "dev"]);
+    execFileSync("git", ["-C", repoDir, "config", "user.email", "t@example.com"]);
+    execFileSync("git", ["-C", repoDir, "config", "user.name", "t"]);
+    writeFileSync(join(repoDir, "tracked.txt"), "base\n");
+    writeFileSync(join(repoDir, "doomed.txt"), "delete me\n");
+    writeFileSync(join(repoDir, ".gitignore"), "ignored.txt\n");
+    execFileSync("git", ["-C", repoDir, "add", "-A"]);
+    execFileSync("git", ["-C", repoDir, "commit", "-q", "-m", "init"]);
+    return repoDir;
+  }
+
+  it("covers staged, unstaged, and deleted files in the diff and the manifest", async () => {
+    const repoDir = makeRepo();
+    try {
+      writeFileSync(join(repoDir, "staged.txt"), "staged content\n");
+      execFileSync("git", ["-C", repoDir, "add", "staged.txt"]);
+      writeFileSync(join(repoDir, "tracked.txt"), "base\nunstaged content\n");
+      execFileSync("git", ["-C", repoDir, "rm", "-q", "doomed.txt"]);
+
+      const result = await computeReviewDiff(repoDir, "dev", true);
+
+      assert.ok(result.diffText.includes("+staged content"), "staged content missing");
+      assert.ok(result.diffText.includes("+unstaged content"), "unstaged content missing");
+      // Deletion direction is preserved, not re-rendered as an addition.
+      assert.ok(result.diffText.includes("-delete me"));
+      assert.equal(result.baseRefDescriptor, null);
+      assert.deepEqual(result.unreviewedUntrackedPaths, []);
+    } finally {
+      rmSync(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  it("never transmits untracked file bodies, and reports the omission by count", async () => {
+    // Staging is the repository's explicit consent boundary for sending
+    // working-tree content to the model provider. A filename or content
+    // heuristic cannot authorize that egress: standard credential filenames
+    // are unbounded (.pgpass, .dockercfg, ...) and an opaque token is
+    // indistinguishable from ordinary text.
+    const repoDir = makeRepo();
+    try {
+      writeFileSync(join(repoDir, ".pgpass"), "localhost:5432:app:admin:hunter2\n");
+      writeFileSync(join(repoDir, "scratch.txt"), "ordinary untracked note\n");
+
+      const result = await computeReviewDiff(repoDir, "dev", true);
+
+      // No untracked body reaches the diff, whatever it is named.
+      assert.ok(!result.diffText.includes("hunter2"));
+      assert.ok(!result.diffText.includes("ordinary untracked note"));
+      // The omission is reported, not silent: a count in the reviewer-visible
+      // manifest, and the full list off-prompt for the caller.
+      assert.match(result.manifest, /# untracked: 2 path\(s\) present but NOT staged/);
+      assert.deepEqual(result.unreviewedUntrackedPaths.sort(), [".pgpass", "scratch.txt"]);
+      // A path can itself be revealing, so the prompt-visible manifest carries
+      // no filenames.
+      assert.ok(!result.manifest.includes(".pgpass"));
+    } finally {
+      rmSync(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  it("reviews formerly untracked work once it is staged", async () => {
+    // The /implement lane stages with `git add -A` before review, so genuinely
+    // new files are reviewed as staged content rather than being skipped.
+    const repoDir = makeRepo();
+    try {
+      writeFileSync(join(repoDir, "brand-new.txt"), "new module body\n");
+      execFileSync("git", ["-C", repoDir, "add", "-A"]);
+
+      const result = await computeReviewDiff(repoDir, "dev", true);
+
+      assert.ok(result.diffText.includes("+new module body"));
+      assert.ok(result.diffText.includes("diff --git a/brand-new.txt b/brand-new.txt"));
+      assert.deepEqual(result.unreviewedUntrackedPaths, []);
+    } finally {
+      rmSync(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  it("respects gitignore so ignored files are not even counted as unreviewed", async () => {
+    const repoDir = makeRepo();
+    try {
+      writeFileSync(join(repoDir, "ignored.txt"), "secret-ish\n");
+
+      const result = await computeReviewDiff(repoDir, "dev", true);
+
+      assert.ok(!result.diffText.includes("secret-ish"));
+      assert.deepEqual(result.unreviewedUntrackedPaths, []);
+      assert.ok(!result.manifest.includes("# untracked:"));
+    } finally {
+      rmSync(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a clean tree empty rather than inventing untracked content", async () => {
+    const repoDir = makeRepo();
+    try {
+      const result = await computeReviewDiff(repoDir, "dev", true);
+      assert.equal(result.diffText, "");
+      assert.deepEqual(result.unreviewedUntrackedPaths, []);
+      assert.ok(!result.manifest.includes("# untracked:"));
+    } finally {
+      rmSync(repoDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// The full set of keys `review_coverage` publishes. Asserting the exact shape
+// at every public surface is the structural gate for a whole class of bug: a
+// field computed deep in the pipeline but never wired through to the caller
+// (issue #1414 test-quality cycle 1). A new field added without propagation
+// fails here rather than silently reading as absent.
+const REVIEW_COVERAGE_KEYS = [
+  "chunks_completed",
+  "chunks_total",
+  "complete",
+  "files_covered",
+  "files_total",
+  "oversized_slices",
+  "strategy",
+  "unreviewed_untracked_paths",
+];
+
+describe("buildReviewCoverage", () => {
+  const plan = {
+    slices: ["a", "b"],
+    strategy: "file-slices",
+    files_total: 4,
+    files_covered: 4,
+    oversized_slices: 2,
+  };
+
+  it("publishes every coverage field from the plan and the reviewers", () => {
+    const coverage = buildReviewCoverage({
+      slicePlan: plan,
+      reviewerResults: [{ slices_completed: 2 }, { slices_completed: 2 }],
+      unreviewedUntrackedPaths: [".pgpass"],
+    });
+    assert.deepEqual(Object.keys(coverage).sort(), REVIEW_COVERAGE_KEYS);
+    assert.equal(coverage.strategy, "file-slices");
+    assert.equal(coverage.chunks_total, 2);
+    assert.equal(coverage.chunks_completed, 2);
+    assert.equal(coverage.files_total, 4);
+    assert.equal(coverage.files_covered, 4);
+    assert.equal(coverage.oversized_slices, 2);
+    assert.deepEqual(coverage.unreviewed_untracked_paths, [".pgpass"]);
+    assert.equal(coverage.complete, true);
+  });
+
+  it("is bounded by the weakest reviewer, so one reviewer's gap fails coverage", () => {
+    const coverage = buildReviewCoverage({
+      slicePlan: plan,
+      reviewerResults: [{ slices_completed: 2 }, { slices_completed: 1 }],
+    });
+    assert.equal(coverage.chunks_completed, 1);
+    assert.equal(coverage.complete, false);
+  });
+
+  it("defaults the untracked list rather than dropping the field", () => {
+    const coverage = buildReviewCoverage({ slicePlan: plan, reviewerResults: [] });
+    assert.deepEqual(coverage.unreviewed_untracked_paths, []);
+    assert.equal(coverage.complete, false);
+  });
+
+  it("fails coverage when the plan did not cover every file", () => {
+    const coverage = buildReviewCoverage({
+      slicePlan: { ...plan, files_covered: 3 },
+      reviewerResults: [{ slices_completed: 2 }, { slices_completed: 2 }],
+    });
+    assert.equal(coverage.complete, false);
+  });
+});
+
+describe("aggregateReviewSlices", () => {
+  const finding = (path, line, title, extra = {}) => ({
+    path,
+    line,
+    title,
+    body: `body for ${title}`,
+    classification: "one-off",
+    sweep_evidence: "swept",
+    ...extra,
+  });
+  const slice = (envelope, body = "") => ({ envelope, body, findings: envelope?.blocking ?? [] });
+
+  it("passes a single slice through unchanged", () => {
+    const env = { verdict: "ship", architectural_read: "Looks fine.", blocking: [], notes: [] };
+    const agg = aggregateReviewSlices([slice(env, "prose")]);
+    assert.equal(agg.slices_completed, 1);
+    assert.equal(agg.envelope.verdict, "ship");
+    assert.equal(agg.envelope.architectural_read, "Looks fine.");
+    assert.equal(agg.body, "prose");
+  });
+
+  it("labels each slice's architectural read when there is more than one slice", () => {
+    const agg = aggregateReviewSlices([
+      slice({ verdict: "ship", architectural_read: "First half is fine.", blocking: [], notes: [] }),
+      slice({ verdict: "ship", architectural_read: "Second half is fine.", blocking: [], notes: [] }),
+    ]);
+    assert.equal(agg.slices_completed, 2);
+    assert.match(agg.envelope.architectural_read, /Slice 1\/2/);
+    assert.match(agg.envelope.architectural_read, /Slice 2\/2/);
+    assert.match(agg.envelope.architectural_read, /Second half is fine\./);
+  });
+
+  it("unions blocking findings across slices and dedups identical sites", () => {
+    const dup = finding("Foo.java", 10, "Bypasses the canonical envelope");
+    const agg = aggregateReviewSlices([
+      slice({ verdict: "ship-with-fixes", architectural_read: "a", blocking: [dup], notes: [] }),
+      slice({
+        verdict: "ship-with-fixes",
+        architectural_read: "b",
+        blocking: [dup, finding("Bar.java", 3, "Second problem")],
+        notes: [],
+      }),
+    ]);
+    assert.equal(agg.envelope.blocking.length, 2);
+    assert.equal(agg.envelope.verdict, "ship-with-fixes");
+  });
+
+  it("never reports ship when any slice produced a blocking finding", () => {
+    const agg = aggregateReviewSlices([
+      slice({ verdict: "ship", architectural_read: "clean here", blocking: [], notes: [] }),
+      slice({
+        verdict: "ship-with-fixes",
+        architectural_read: "problem here",
+        blocking: [finding("Foo.java", 1, "Real problem")],
+        notes: [],
+      }),
+    ]);
+    assert.equal(agg.envelope.verdict, "ship-with-fixes");
+    assert.equal(agg.envelope.blocking.length, 1);
+  });
+
+  it("preserves don't-ship when a slice raised a structural blocker", () => {
+    const agg = aggregateReviewSlices([
+      slice({ verdict: "ship", architectural_read: "clean", blocking: [], notes: [] }),
+      slice({
+        verdict: "don't-ship",
+        architectural_read: "structural",
+        blocking: [finding("Foo.java", 1, "Missing boundary", { structural_blocker: true })],
+        notes: [],
+      }),
+    ]);
+    assert.equal(agg.envelope.verdict, "don't-ship");
+  });
+
+  it("downgrades don't-ship to ship-with-fixes when no structural blocker survives dedup", () => {
+    const agg = aggregateReviewSlices([
+      slice({
+        verdict: "don't-ship",
+        architectural_read: "claimed structural",
+        blocking: [finding("Foo.java", 1, "Ordinary problem")],
+        notes: [],
+      }),
+    ]);
+    assert.equal(agg.envelope.verdict, "ship-with-fixes");
+  });
+
+  it("re-caps the union of notes at the workflow notes cap", () => {
+    const agg = aggregateReviewSlices([
+      slice({ verdict: "ship", architectural_read: "a", blocking: [], notes: [{ text: "n1" }, { text: "n2" }] }),
+      slice({ verdict: "ship", architectural_read: "b", blocking: [], notes: [{ text: "n3" }] }),
+    ]);
+    assert.equal(agg.envelope.notes.length, REVIEW_NOTES_MAX);
+  });
+
+  it("reports fewer completed slices when a slice failed to parse", () => {
+    const agg = aggregateReviewSlices([
+      slice({ verdict: "ship", architectural_read: "a", blocking: [], notes: [] }),
+      { envelope: null, body: "unparseable", findings: [] },
+    ]);
+    assert.equal(agg.slices_completed, 1);
+    assert.equal(agg.slices_total, 2);
   });
 });
 
@@ -3919,6 +4521,53 @@ describe("buildCodexReviewFindingsComment", () => {
     assert.match(body, /Security reviewer found nothing exploitable/);
     // No inline-comment block when there are no posted comments.
     assert.ok(!/Inline comments/.test(body));
+    // No diff-mode line when the caller supplied none (back-compat).
+    assert.ok(!/Diff mode/.test(body));
+  });
+
+  it("records how the diff reached the reviewers in the durable record (#1414)", () => {
+    const sliced = buildCodexReviewFindingsComment({
+      cycleNumber: 1,
+      cap: 1,
+      mode: "pre-push",
+      issueNumber: 1414,
+      branch: "1414-slices",
+      coreReviewText: "core",
+      securityReviewText: "security",
+      diffMode: "manifest",
+      reviewCoverage: {
+        strategy: "file-slices",
+        chunks_total: 4,
+        chunks_completed: 4,
+        files_total: 201,
+        files_covered: 201,
+        complete: true,
+      },
+    });
+    assert.match(sliced, /\*\*Diff mode:\*\* manifest/);
+    assert.match(sliced, /4\/4 inline slice\(s\)/);
+    assert.match(sliced, /201\/201 file\(s\)/);
+    assert.match(sliced, /file-slices/);
+
+    const inline = buildCodexReviewFindingsComment({
+      cycleNumber: 1,
+      cap: 1,
+      mode: "pre-push",
+      issueNumber: 1414,
+      branch: "1414-slices",
+      coreReviewText: "core",
+      securityReviewText: "security",
+      diffMode: "inline",
+      reviewCoverage: {
+        strategy: "whole-diff",
+        chunks_total: 1,
+        chunks_completed: 1,
+        files_total: 3,
+        files_covered: 3,
+        complete: true,
+      },
+    });
+    assert.match(inline, /\*\*Diff mode:\*\* inline — the complete diff was supplied in one prompt/);
   });
 
   it("composes a post-push body with the inline-comment URL list when posts succeeded", () => {
@@ -6030,9 +6679,14 @@ process.stdin.on("end", () => {
           uncommitted: false,
           prNumber: 520,
         });
-        // Confirm partial failure was detected and signalled.
+        // Confirm the boundary failure was detected and signalled. Since
+        // #1414 an unparseable reviewer envelope means a review slice
+        // produced no judgment, so the run reports incomplete coverage
+        // rather than a completed-but-partially-published review.
         assert.equal(result.ok, false);
-        assert.equal(result.error, "review_partial_failure");
+        assert.equal(result.error, "review_coverage_incomplete");
+        assert.equal(result.review_coverage.chunks_completed, 0);
+        assert.equal(result.review_coverage.complete, false);
         // The cycle marker must NOT have been posted on partial failure.
         // The post route would have returned the sentinel id; check that
         // the response carries no evidence of a marker post (the cycle
@@ -6088,8 +6742,11 @@ process.stdin.on("end", () => {
           prNumber: 520,
         });
         assert.equal(result.ok, false);
-        assert.equal(result.error, "review_partial_failure");
-        assert.equal(result.next_action, "address_parse_or_post_failures");
+        // #1414: a malformed reviewer envelope is a coverage failure — the
+        // slice produced no judgment, so no durable record is written and the
+        // caller is told to retry rather than to publish partial results.
+        assert.equal(result.error, "review_coverage_incomplete");
+        assert.equal(result.next_action, "retry_review_after_resolving_coverage_failure");
         assert.equal(result.parse_errors.length, 2);
       });
     } finally {
@@ -6264,6 +6921,414 @@ process.stdin.on("end", () => {
         assert.equal(result.finding_count, 0);
         assert.deepEqual(result.comments, []);
         assert.match(result.cycle_record_error, /HTTP 500|simulated/);
+      });
+    } finally {
+      shim.cleanup();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sliced review of an over-cap diff (issue #1414)
+// ---------------------------------------------------------------------------
+//
+// These exercise the real byte cap end to end: the fixture repo's uncommitted
+// diff genuinely exceeds DEFAULT_CODEX_REVIEW_MAX_DIFF_BYTES, so the runner
+// takes the manifest path without any seam being poked. The codex shim records
+// every prompt it is given, which is what lets these assert the property the
+// issue is about — that the server supplied the diff rather than trusting the
+// reviewer to fetch it.
+
+describe("runCodexReview slices an over-cap diff (#1414, hermetic codex+gh shims)", () => {
+  // Three files, each comfortably under the 256 KiB cap on its own but
+  // pairwise over it, so the plan is deterministically one file per slice.
+  const FILE_BYTES = 200_000;
+
+  function makeOverCapRepo({ codexTails, ghPostFails = false, codexExitCode = 0 }) {
+    const repoDir = mkdtempSync(join(tmpdir(), "gc-slice-repo-"));
+    execFileSync("git", ["-C", repoDir, "init", "-q", "--initial-branch", "1414-slices"]);
+    execFileSync("git", ["-C", repoDir, "config", "user.email", "t@example.com"]);
+    execFileSync("git", ["-C", repoDir, "config", "user.name", "t"]);
+    writeFileSync(join(repoDir, "README"), "x\n");
+    execFileSync("git", ["-C", repoDir, "add", "README"]);
+    execFileSync("git", ["-C", repoDir, "commit", "-q", "-m", "init"]);
+
+    for (const name of ["alpha.txt", "beta.txt", "gamma.txt"]) {
+      const marker = name.replace(".txt", "");
+      const line = `${marker}-payload-`;
+      const body = `${line.repeat(Math.ceil(FILE_BYTES / line.length))}\n`.slice(0, FILE_BYTES);
+      writeFileSync(join(repoDir, name), `${marker}-sentinel\n${body}\n`);
+    }
+    execFileSync("git", ["-C", repoDir, "add", "-A"]);
+    // Deliberately left untracked: the review must report it as NOT covered
+    // rather than transmitting it or silently ignoring it.
+    writeFileSync(join(repoDir, "local-scratch.txt"), "unstaged local note\n");
+
+    const binDir = mkdtempSync(join(tmpdir(), "gc-slice-bin-"));
+    const promptDir = mkdtempSync(join(tmpdir(), "gc-slice-prompts-"));
+    const ghStatePath = join(binDir, "gh-state.json");
+    writeFileSync(ghStatePath, JSON.stringify({ posts: [] }));
+
+    const ghShim = `#!/usr/bin/env node
+const fs = require("node:fs");
+const statePath = ${JSON.stringify(ghStatePath)};
+const argv = process.argv.slice(2);
+const match = (p) => p.every((x, i) => argv[i] === x);
+if (match(["repo", "view", "--json", "nameWithOwner"])) {
+  process.stdout.write(JSON.stringify({ nameWithOwner: "fake/repo" }));
+  process.exit(0);
+}
+if (match(["api", "--method", "GET", "--paginate", "--slurp"])) {
+  process.stdout.write(JSON.stringify([[]]));
+  process.exit(0);
+}
+if (match(["api", "--method", "POST"])) {
+  const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  state.posts.push(argv.slice(0, 6).join(" "));
+  fs.writeFileSync(statePath, JSON.stringify(state));
+  if (${ghPostFails ? "true" : "false"}) {
+    process.stderr.write("HTTP 500\\n");
+    process.exit(1);
+  }
+  process.stdout.write(JSON.stringify({ id: 999, html_url: "https://example.test/c/999" }));
+  process.exit(0);
+}
+process.stderr.write("gh shim: unhandled argv: " + JSON.stringify(argv) + "\\n");
+process.exit(2);
+`;
+    writeFileSync(join(binDir, "gh"), ghShim, { mode: 0o755 });
+
+    // The codex shim records the prompt it received and returns the next
+    // canned tail. Recording the prompts is the point: it is how these tests
+    // prove the reviewer was handed real diff content.
+    const codexCfgPath = join(binDir, "codex-config.json");
+    writeFileSync(codexCfgPath, JSON.stringify({ tails: codexTails, promptDir, exitCode: codexExitCode }));
+    const codexShim = `#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const cfg = JSON.parse(fs.readFileSync(${JSON.stringify(codexCfgPath)}, "utf8"));
+const args = process.argv.slice(2);
+let outputPath = null;
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === "--output-last-message") outputPath = args[i + 1];
+}
+let stdinBuf = "";
+process.stdin.on("data", (c) => { stdinBuf += c.toString(); });
+process.stdin.on("end", () => {
+  const n = fs.readdirSync(cfg.promptDir).length;
+  fs.writeFileSync(path.join(cfg.promptDir, "prompt-" + String(n).padStart(3, "0") + ".txt"), stdinBuf);
+  const tail = cfg.tails[Math.min(n, cfg.tails.length - 1)];
+  if (cfg.exitCode !== 0) {
+    process.stderr.write("codex shim: simulated engine failure\\n");
+    process.exit(cfg.exitCode);
+  }
+  if (outputPath) fs.writeFileSync(outputPath, tail);
+  process.stdout.write(tail);
+  process.exit(0);
+});
+`;
+    writeFileSync(join(binDir, "codex"), codexShim, { mode: 0o755 });
+
+    return {
+      repoDir,
+      binDir,
+      promptDir,
+      prompts: () =>
+        readdirSync(promptDir)
+          .sort()
+          .map((f) => readFileSync(join(promptDir, f), "utf8")),
+      posts: () => JSON.parse(readFileSync(ghStatePath, "utf8")).posts,
+      cleanup() {
+        rmSync(repoDir, { recursive: true, force: true });
+        rmSync(binDir, { recursive: true, force: true });
+        rmSync(promptDir, { recursive: true, force: true });
+      },
+    };
+  }
+
+  async function withShimPath(binDir, fn) {
+    const oldPath = process.env.PATH;
+    process.env.PATH = `${binDir}:${oldPath}`;
+    try {
+      return await fn();
+    } finally {
+      process.env.PATH = oldPath;
+    }
+  }
+
+  const cleanTail = (read) =>
+    "===REVIEW===\n" +
+    JSON.stringify({ verdict: "ship", architectural_read: read, blocking: [] }) +
+    "\n===END===\n";
+
+  const findingTail = (read, path, line, title) =>
+    "===REVIEW===\n" +
+    JSON.stringify({
+      verdict: "ship-with-fixes",
+      architectural_read: read,
+      blocking: [
+        {
+          path,
+          line,
+          title,
+          body: "detail",
+          classification: "one-off",
+          sweep_evidence: "swept the slice",
+        },
+      ],
+    }) +
+    "\n===END===\n";
+
+  it("supplies every slice to both reviewers instead of asking them to fetch diffs", async () => {
+    const shim = makeOverCapRepo({ codexTails: [cleanTail("Reviewed this slice.")] });
+    try {
+      await withShimPath(shim.binDir, async () => {
+        const result = await runCodexReview({
+          repoPath: shim.repoDir,
+          uncommitted: true,
+          issueNumber: 1414,
+        });
+
+        assert.equal(result.ok, true);
+        assert.equal(result.diff_mode, "manifest");
+        assert.equal(result.review_coverage.complete, true);
+        assert.equal(result.review_coverage.chunks_total, 3);
+        assert.equal(result.review_coverage.chunks_completed, 3);
+        assert.equal(result.review_coverage.files_total, 3);
+        assert.equal(result.review_coverage.files_covered, 3);
+        assert.equal(result.review_coverage.strategy, "file-slices");
+        assert.equal(result.review_coverage.oversized_slices, 0);
+        // The whole published shape is pinned at the caller-facing surface, so
+        // a field that stops being wired through fails here (issue #1414
+        // test-quality cycle 1).
+        assert.deepEqual(Object.keys(result.review_coverage).sort(), REVIEW_COVERAGE_KEYS);
+        // The untracked working-tree file is reported to the caller as
+        // unreviewed, and its body never reaches a reviewer prompt.
+        assert.deepEqual(result.review_coverage.unreviewed_untracked_paths, ["local-scratch.txt"]);
+        assert.equal(result.next_action, "proceed_clean");
+        assert.deepEqual(result.parse_errors, []);
+
+        // One codex run per slice per reviewer — 3 slices x (core + security).
+        const prompts = shim.prompts();
+        assert.equal(prompts.length, 6);
+
+        for (const prompt of prompts) {
+          // Every prompt carries real diff content, and none delegates
+          // retrieval back to the reviewer — that delegation is the defect.
+          assert.ok(prompt.includes("<<<DIFF\n"), "slice prompt has no inline diff");
+          assert.ok(prompt.includes("diff --git a/"), "slice prompt has no diff header");
+          assert.ok(prompt.includes("do not re-derive it from git yourself"));
+          assert.ok(!prompt.includes("your shell tool"));
+          assert.ok(!prompt.includes("git show HEAD -- <path>"));
+        }
+        // Union of the slices covers every changed file exactly once per
+        // reviewer: no file is dropped and none is reviewed twice.
+        for (const sentinel of ["alpha-sentinel", "beta-sentinel", "gamma-sentinel"]) {
+          const hits = prompts.filter((p) => p.includes(`+${sentinel}`)).length;
+          assert.equal(hits, 2, `${sentinel} reached ${hits} prompts, expected 2`);
+        }
+      });
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  it("unions findings across slices and records coverage in the durable findings comment", async () => {
+    const shim = makeOverCapRepo({
+      codexTails: [
+        findingTail("Slice one read.", "alpha.txt", 1, "Alpha problem"),
+        cleanTail("Slice two read."),
+        findingTail("Slice three read.", "gamma.txt", 1, "Gamma problem"),
+        cleanTail("Security slice one read."),
+        cleanTail("Security slice two read."),
+        cleanTail("Security slice three read."),
+      ],
+    });
+    try {
+      await withShimPath(shim.binDir, async () => {
+        const result = await runCodexReview({
+          repoPath: shim.repoDir,
+          uncommitted: true,
+          issueNumber: 1414,
+        });
+
+        assert.equal(result.ok, true);
+        // A clean slice never masks a finding-bearing one.
+        assert.equal(result.finding_count, 2);
+        const titles = result.comments.map((c) => c.title).sort();
+        assert.deepEqual(titles, ["[core] Alpha problem", "[core] Gamma problem"]);
+        assert.notEqual(result.next_action, "proceed_clean");
+        // Each slice's read is attributed, so the decision record shows all
+        // three rather than only whichever slice happened to run last.
+        assert.match(result.architectural_read, /Slice 1\/3/);
+        assert.match(result.architectural_read, /Slice 3\/3/);
+        assert.match(result.architectural_read, /Slice one read\./);
+        assert.match(result.architectural_read, /Security slice two read\./);
+        assert.ok(result.findings_comment_url);
+        assert.equal(result.review_coverage.complete, true);
+      });
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  it("fails closed without writing any durable record when a slice produces no valid envelope", async () => {
+    const shim = makeOverCapRepo({
+      codexTails: [
+        cleanTail("Slice one read."),
+        "no structured tail here at all\n",
+        cleanTail("Slice three read."),
+      ],
+    });
+    try {
+      await withShimPath(shim.binDir, async () => {
+        const result = await runCodexReview({
+          repoPath: shim.repoDir,
+          uncommitted: true,
+          issueNumber: 1414,
+        });
+
+        assert.equal(result.ok, false);
+        assert.equal(result.error, "review_coverage_incomplete");
+        assert.equal(result.next_action, "retry_review_after_resolving_coverage_failure");
+        assert.equal(result.diff_mode, "manifest");
+        assert.equal(result.review_coverage.complete, false);
+        assert.ok(result.review_coverage.chunks_completed < result.review_coverage.chunks_total);
+        assert.ok(result.parse_errors.length > 0);
+        assert.ok(result.parse_errors.some((e) => typeof e.slice === "string"));
+        // The cycle is NOT consumed and nothing durable was published, so a
+        // retry is free — the failure cannot be laundered into a clean pass.
+        assert.equal(result.cycle, null);
+        assert.deepEqual(shim.posts(), []);
+      });
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  it("propagates diff mode and coverage through the compact cycle envelope", async () => {
+    // The compact envelope is the orchestrator's contract — surfacing the
+    // signal only on the direct result would leave /implement blind, which is
+    // the observability half of #1414.
+    const shim = makeOverCapRepo({ codexTails: [cleanTail("Reviewed this slice.")] });
+    try {
+      await withShimPath(shim.binDir, async () => {
+        const result = await runCodexReviewCycle({
+          repoPath: shim.repoDir,
+          issueNumber: 1414,
+          uncommitted: true,
+        });
+        assert.equal(result.ok, true);
+        assert.equal(result.status, "clean");
+        assert.equal(result.diff_mode, "manifest");
+        assert.equal(result.review_coverage.chunks_total, 3);
+        assert.equal(result.review_coverage.chunks_completed, 3);
+        assert.equal(result.review_coverage.complete, true);
+        // Same shape gate on the compact envelope: the orchestrator contract
+        // must not quietly lose a coverage field either.
+        assert.deepEqual(Object.keys(result.review_coverage).sort(), REVIEW_COVERAGE_KEYS);
+        assert.deepEqual(result.review_coverage.unreviewed_untracked_paths, ["local-scratch.txt"]);
+        assert.equal(result.review_coverage.oversized_slices, 0);
+      });
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  it("reports a coverage failure through the cycle envelope as post_failed", async () => {
+    const shim = makeOverCapRepo({
+      codexTails: [cleanTail("Slice one read."), "no structured tail\n"],
+    });
+    try {
+      await withShimPath(shim.binDir, async () => {
+        const result = await runCodexReviewCycle({
+          repoPath: shim.repoDir,
+          issueNumber: 1414,
+          uncommitted: true,
+        });
+        assert.equal(result.ok, false);
+        assert.equal(result.status, "post_failed");
+        assert.equal(result.error, "review_coverage_incomplete");
+        assert.equal(result.diff_mode, "manifest");
+        // No decision record either — the cycle wrapper must not paper over a
+        // review that never covered the diff.
+        assert.deepEqual(shim.posts(), []);
+      });
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  it("turns a slice engine failure into the structured coverage envelope, not an exception", async () => {
+    // A dead codex child is a review boundary failure. It must reach the caller
+    // as the same no-write, no-cycle-consumed envelope an unparseable tail
+    // produces, rather than escaping as an untyped throw the cycle wrapper
+    // never sees.
+    const shim = makeOverCapRepo({ codexTails: [cleanTail("Slice one read.")], codexExitCode: 1 });
+    try {
+      await withShimPath(shim.binDir, async () => {
+        const result = await runCodexReview({
+          repoPath: shim.repoDir,
+          uncommitted: true,
+          issueNumber: 1414,
+        });
+        assert.equal(result.ok, false);
+        assert.equal(result.error, "review_coverage_incomplete");
+        assert.equal(result.next_action, "retry_review_after_resolving_coverage_failure");
+        assert.equal(result.review_coverage.complete, false);
+        assert.ok(result.parse_errors.some((e) => /codex execution failed/.test(e.error)));
+        assert.equal(result.cycle, null);
+        assert.deepEqual(shim.posts(), []);
+        // The failing reviewer stops launching further slices instead of
+        // burning the remaining codex runs on a review already known to be
+        // incomplete: 1 failed core slice + 3 security slices.
+        assert.ok(shim.prompts().length < 6, `expected an early stop, saw ${shim.prompts().length}`);
+      });
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  it("surfaces an oversized slice at the caller-facing result, not only in the planner", async () => {
+    // One indivisible line bigger than the whole budget: the slice cannot be
+    // bounded, and "no silent caps" means the caller has to be able to see it.
+    const shim = makeOverCapRepo({ codexTails: [cleanTail("Reviewed.")] });
+    try {
+      writeFileSync(join(shim.repoDir, "minified.js"), `${"z".repeat(300_000)}\n`);
+      execFileSync("git", ["-C", shim.repoDir, "add", "minified.js"]);
+
+      await withShimPath(shim.binDir, async () => {
+        const result = await runCodexReview({
+          repoPath: shim.repoDir,
+          uncommitted: true,
+          issueNumber: 1414,
+        });
+        assert.equal(result.ok, true);
+        assert.equal(result.diff_mode, "manifest");
+        assert.ok(
+          result.review_coverage.oversized_slices >= 1,
+          `expected an oversized slice, saw ${result.review_coverage.oversized_slices}`,
+        );
+        assert.equal(result.review_coverage.complete, true);
+      });
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  it("keeps the review a single logical cycle regardless of slice count", async () => {
+    const shim = makeOverCapRepo({ codexTails: [cleanTail("Reviewed this slice.")] });
+    try {
+      await withShimPath(shim.binDir, async () => {
+        const result = await runCodexReview({
+          repoPath: shim.repoDir,
+          uncommitted: true,
+          issueNumber: 1414,
+        });
+        assert.equal(result.cycle, 1);
+        assert.equal(result.review_coverage.chunks_total, 3);
+        // One findings record + one cycle marker — never one per slice.
+        assert.equal(shim.posts().length, 2);
       });
     } finally {
       shim.cleanup();
@@ -14662,8 +15727,79 @@ describe("scoreDisposition", () => {
   });
 });
 
+describe("scoreDisposition diff-mode signal (#1414)", () => {
+  const cfg = { enabled: true, mode: "authoritative", max_auto_overrides: 1, judge: { enabled: false, model: null } };
+  const base = {
+    reviewer: "test-quality",
+    prior_auto_overrides: 0,
+    diff: { files_changed: 8, lines_added: 300, lines_deleted: 40 },
+    surfaces: [],
+    findings: { one_off_count: 1, class_count: 0, has_security_finding: false, known: true },
+  };
+
+  it("scores a sliced (manifest) diff as riskier than a fully inlined one", () => {
+    const inline = scoreDisposition({ ...base, diff_mode: "inline" }, cfg);
+    const manifest = scoreDisposition({ ...base, diff_mode: "manifest" }, cfg);
+    assert.ok(
+      manifest.risk_score > inline.risk_score,
+      `manifest ${manifest.risk_score} should exceed inline ${inline.risk_score}`,
+    );
+  });
+
+  it("treats unknown coverage the same as manifest, never as fully-covered inline", () => {
+    const inline = scoreDisposition({ ...base, diff_mode: "inline" }, cfg);
+    const unknown = scoreDisposition({ ...base, diff_mode: "unknown" }, cfg);
+    assert.ok(unknown.risk_score > inline.risk_score);
+  });
+
+  it("leaves the score unchanged for callers that supply no diff mode", () => {
+    const absent = scoreDisposition(base, cfg);
+    const inline = scoreDisposition({ ...base, diff_mode: "inline" }, cfg);
+    assert.equal(absent.risk_score, inline.risk_score);
+  });
+
+  it("keeps the risk score clamped at 1", () => {
+    const saturated = scoreDisposition(
+      {
+        ...base,
+        diff_mode: "manifest",
+        surfaces: ["mcp_tool"],
+        diff: { files_changed: 50, lines_added: 5000, lines_deleted: 5000 },
+        findings: { one_off_count: 9, class_count: 9, has_security_finding: true, known: true },
+      },
+      cfg,
+    );
+    assert.equal(saturated.risk_score, 1);
+  });
+});
+
 describe("collectDispositionSignals", () => {
   const REPO = "/fake/repo";
+
+  it("carries a server-derived diff mode, defaulting to unknown rather than inline (#1414)", () => {
+    const derived = collectDispositionSignals({
+      reviewer: "codex",
+      findingsSummary: {},
+      diffManifest: "1\t0\tsrc/a.js",
+      changedPaths: [],
+      priorAutoOverrides: 0,
+      repoRoot: REPO,
+      diffMode: "manifest",
+    });
+    assert.equal(derived.diff_mode, "manifest");
+
+    // A caller that supplies no mode must not be scored as a fully covered
+    // inline review — that would silently launder unknown coverage.
+    const absent = collectDispositionSignals({
+      reviewer: "codex",
+      findingsSummary: {},
+      diffManifest: "1\t0\tsrc/a.js",
+      changedPaths: [],
+      priorAutoOverrides: 0,
+      repoRoot: REPO,
+    });
+    assert.equal(absent.diff_mode, "unknown");
+  });
 
   it("parses numstat including binary '-' rows", () => {
     const manifest = [
