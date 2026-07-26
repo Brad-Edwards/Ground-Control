@@ -579,3 +579,19 @@ quickfix skills, and the workflow documents. The documentation-coverage
 classifier, its `outcome_required` mapping, the Vale rules, the installer, and
 `.vale.ini` are unchanged; no new documentation classification or style rule is
 established.
+
+**2026-07-26 (issue #1434 requirement identity for repository gates).**
+`mcp/ground-control/lib.js` and `mcp/ground-control/index.js` add the shared
+`implementGateEnvironment` helper and an additive optional
+`requested_requirement_uid` input on `gc_synchronize_implement_branch`, so the
+requirement under test reaches every repo-authored gate as the
+`ACES_REQUIREMENT_UID` environment variable. The field is documented in the
+`gc_synchronize_implement_branch` and `gc_implement_mechanical` description
+strings and in `mcp/ground-control/README.md`; the execution-boundary contract
+is documented in `docs/DEVELOPMENT_WORKFLOW.md` and an ADR-027 amendment, and
+`docs/DOC_STYLE.md` records why a new environment variable that repository
+commands depend on needs a durable record even though the field itself is only
+a contract surface. The documentation-coverage classifier
+(`classifyChangedSurface`), its `outcome_required` mapping, the Vale rules,
+`tools/install-vale.sh`, and `.vale.ini` are unchanged; no new documentation
+classification or style rule is established.

@@ -3990,6 +3990,132 @@ function implementNetworkGitEnvironment() {
   return env;
 }
 
+// Requirement identity for repo-authored gates (issue #1434). A repository's
+// governance gate normally derives the requirement under test from the branch
+// name, but /implement can legitimately target a requirement whose issue branch
+// carries no UID, so the requested UID reaches every repo-authored gate through
+// the child environment instead. It travels in `env` rather than the command
+// text: that keeps it out of argv, where a process listing would expose it, and
+// leaves no interpolation point for shell injection.
+export const REQUIREMENT_UID_GATE_ENV_VAR = "ACES_REQUIREMENT_UID";
+
+export function implementGateEnvironment(
+  requestedRequirementUid,
+  baseEnv = process.env,
+) {
+  if (requestedRequirementUid == null || requestedRequirementUid === "") {
+    return baseEnv;
+  }
+  if (!EXACT_REQUIREMENT_UID_RE.test(requestedRequirementUid)) {
+    const error = new Error(
+      "The requested requirement UID is not a bounded requirement identifier",
+    );
+    error.code = "implement_requested_requirement_uid_invalid";
+    throw error;
+  }
+  return { ...baseEnv, [REQUIREMENT_UID_GATE_ENV_VAR]: requestedRequirementUid };
+}
+
+export function extractInScopeRequirementUids(issueBody) {
+  if (typeof issueBody !== "string" || issueBody === "") return [];
+
+  const sectionLines = [];
+  let sectionLevel = null;
+  for (const line of issueBody.split(/\r?\n/)) {
+    const heading = line.match(/^(#{1,6})\s+(.+?)\s*$/);
+    if (heading) {
+      const level = heading[1].length;
+      const title = heading[2].trim().toLowerCase();
+      if (sectionLevel == null) {
+        if (level >= 2 && level <= 4 && title === "requirements") {
+          sectionLevel = level;
+        }
+        continue;
+      }
+      if (level <= sectionLevel) break;
+      sectionLines.push(line);
+      continue;
+    }
+    if (sectionLevel != null) sectionLines.push(line);
+  }
+
+  const seen = new Set();
+  const result = [];
+  for (const line of sectionLines) {
+    const bullet = line.match(/^\s*[-*+]\s+(.+?)\s*$/);
+    if (!bullet) continue;
+    for (const token of bullet[1].split(/[\s,;]+/)) {
+      const candidate = token.replace(/^[`[(]+|[`)\].:]+$/g, "");
+      // Recognition, not identity validation: these tokens come from free-form
+      // issue prose, so the bounded-identifier contract would accept ordinary
+      // words. The anchored recognizer still finds allocator-minted short UIDs
+      // like APP-2, so a requirement-backed run is not silently reduced to a
+      // requirement-free one (issue #1425).
+      if (!isRequirementUidToken(candidate)) break;
+      if (!seen.has(candidate)) {
+        seen.add(candidate);
+        result.push(candidate);
+      }
+    }
+  }
+  return result;
+}
+
+// Requirement identity is caller-supplied, so a well-formed UID is not
+// authority. Every action that can reach a repository gate binds the requested
+// UID to the target issue's canonical Requirements section before it becomes
+// ACES_REQUIREMENT_UID: bootstrap, verify, publish, and synchronization are
+// each independently callable, so bootstrap's membership check protects only
+// its own entry point (issue #1434). Without this binding a caller could name a
+// requirement from another issue or project and have the repository's
+// governance gate evaluated, and attested, against it.
+export function requestedRequirementUidAuthorization(issueBody, requestedRequirementUid) {
+  if (requestedRequirementUid == null || requestedRequirementUid === "") {
+    return { ok: true, requirementUid: null };
+  }
+  if (!EXACT_REQUIREMENT_UID_RE.test(requestedRequirementUid)) {
+    return {
+      ok: false,
+      error: "implement_requested_requirement_uid_invalid",
+      message: "The requested requirement UID is not a bounded requirement identifier",
+      next_action: "supply_a_valid_requirement_uid_and_retry",
+    };
+  }
+  if (!extractInScopeRequirementUids(issueBody).includes(requestedRequirementUid)) {
+    return {
+      ok: false,
+      // The value stays out of the message: these envelopes propagate to tool
+      // results, and the environment is the only place the requested UID is
+      // allowed to exist. The caller supplied the value, so naming the failed
+      // condition is enough to act on.
+      error: "implement_requested_requirement_uid_out_of_scope",
+      message: "The requested requirement UID is absent from the issue's Requirements section",
+      next_action: "add_the_requested_requirement_to_the_authoritative_issue_section_and_retry",
+    };
+  }
+  return { ok: true, requirementUid: requestedRequirementUid };
+}
+
+export async function authorizeRequestedRequirementUid(
+  { repoPath, issueNumber, requestedRequirementUid },
+  { issueThreadReader = runGetIssueThread } = {},
+) {
+  if (requestedRequirementUid == null || requestedRequirementUid === "") {
+    return { ok: true, requirementUid: null };
+  }
+  const thread = await issueThreadReader({ repoPath, issueNumber });
+  if (!thread?.ok) {
+    return {
+      ok: false,
+      error: thread?.error ?? "implement_requested_requirement_uid_unverifiable",
+      message: thread?.message
+        ?? "The target issue could not be read to authorize the requested requirement UID",
+      next_action: "repair_issue_access_and_retry",
+    };
+  }
+  return requestedRequirementUidAuthorization(thread.body, requestedRequirementUid);
+}
+
 async function runImplementGit(repoRoot, args, commandRunner = execFile) {
   return commandRunner(
     "git",
@@ -4032,11 +4158,22 @@ export async function runImplementGitCommand(repoRoot, args, commandRunner = exe
   return runImplementGit(repoRoot, args, commandRunner);
 }
 
-export async function runImplementPreCommit(repoRoot, commandRunner = execFile, context = null) {
+export async function runImplementPreCommit(
+  repoRoot,
+  commandRunner = execFile,
+  context = null,
+  requestedRequirementUid = null,
+) {
   return commandRunner(
     "bash",
     ["-c", resolveWorkflowPrecommitCommand(context)],
-    { cwd: repoRoot, env: implementNetworkGitEnvironment() },
+    {
+      cwd: repoRoot,
+      env: implementGateEnvironment(
+        requestedRequirementUid,
+        implementNetworkGitEnvironment(),
+      ),
+    },
   );
 }
 
@@ -4173,6 +4310,7 @@ async function runImplementFinalTreeGates(
   repoRoot,
   context,
   commandRunner = execFile,
+  requestedRequirementUid = null,
 ) {
   const completionCommand =
     context?.workflow?.completion_command ?? context?.workflow?.test_command;
@@ -4205,17 +4343,18 @@ async function runImplementFinalTreeGates(
     throw error;
   }
   const beforeTree = await readImplementIndexTreeOid(repoRoot, commandRunner);
+  const gateEnv = implementGateEnvironment(requestedRequirementUid);
   await commandRunner(
     "bash",
     ["-c", completionCommand],
-    { cwd: repoRoot },
+    { cwd: repoRoot, env: gateEnv },
   );
   // Completion and policy are separate mandatory gates; neither substitutes
   // for the other. Both run through the same repo-authored-command boundary.
   await commandRunner(
     "bash",
     ["-c", resolveWorkflowPolicyCommand(context)],
-    { cwd: repoRoot },
+    { cwd: repoRoot, env: gateEnv },
   );
   const { stdout: afterStatus } = await runImplementGit(
     repoRoot,
@@ -4353,6 +4492,7 @@ export async function runSynchronizeImplementBranch(input, {
   commandRunner = execFile,
   contextResolver = getRepoGroundControlContext,
   syncRecordReader = readTrustedImplementSyncRecord,
+  issueThreadReader = runGetIssueThread,
 } = {}) {
   if (
     input == null
@@ -4398,6 +4538,20 @@ export async function runSynchronizeImplementBranch(input, {
     workspaceAuthorizationResolver,
   );
   if (!repoAuthorization.ok) return repoAuthorization;
+  // This tool is directly callable, so it cannot rely on bootstrap having bound
+  // the requested identity to the issue. The binding runs only after workspace
+  // authorization and canonical repo-root resolution, and reads the issue
+  // through the authorized identity: an earlier lookup would let a caller who
+  // is not authorized for this workspace make the server read an arbitrary
+  // repository's issue thread, and the distinct authorized/out-of-scope
+  // outcomes would then reveal whether a guessed UID appears in a private
+  // issue (issue #1434).
+  const authorizedRequirement = await authorizeRequestedRequirementUid({
+    repoPath: repoRoot,
+    issueNumber: input.issueNumber,
+    requestedRequirementUid: input.requestedRequirementUid,
+  }, { issueThreadReader });
+  if (!authorizedRequirement.ok) return authorizedRequirement;
   const baseBranch = context?.workflow?.base_branch ?? "dev";
   if (!isSafeGitRefName(baseBranch)) {
     return {
@@ -4571,6 +4725,7 @@ export async function runSynchronizeImplementBranch(input, {
           repoRoot,
           context,
           commandRunner,
+          authorizedRequirement.requirementUid,
         );
       } catch (error) {
         return {
@@ -4631,6 +4786,7 @@ export async function runSynchronizeImplementBranch(input, {
           repoRoot,
           context,
           commandRunner,
+          authorizedRequirement.requirementUid,
         );
       } catch (error) {
         return {
