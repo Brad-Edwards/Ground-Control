@@ -2089,7 +2089,7 @@ function validateStringList(raw, fieldName, { uid = false } = {}) {
       return;
     }
     if (uid && !EXACT_REQUIREMENT_UID_RE.test(trimmed)) {
-      errors.push(`${fieldName}[${i}] must be a Ground Control UID matching ${EXACT_REQUIREMENT_UID_RE.source}`);
+      errors.push(`${fieldName}[${i}] must be ${REQUIREMENT_UID_CONTRACT_DESCRIPTION}`);
       return;
     }
     if (seen.has(trimmed)) {
@@ -14125,9 +14125,10 @@ export function validateFinalReportInput(input) {
         errors.push(`requirements[${i}] must be an object`);
         return;
       }
-      // Anchored UID match for structured field (codex cycle-4 F2).
+      // Anchored bounded-identifier check for a structured field; identity is
+      // resolved by the project-scoped backend lookup (issue #1425).
       if (typeof r.uid !== "string" || !EXACT_REQUIREMENT_UID_RE.test(r.uid)) {
-        errors.push(`requirements[${i}].uid must be a Ground Control UID matching ${EXACT_REQUIREMENT_UID_RE.source}`);
+        errors.push(`requirements[${i}].uid must be ${REQUIREMENT_UID_CONTRACT_DESCRIPTION}`);
       }
       if (typeof r.title !== "string" || r.title.trim() === "") errors.push(`requirements[${i}].title must be a non-empty string`);
       if (typeof r.status !== "string" || r.status.trim() === "") errors.push(`requirements[${i}].status must be a non-empty string`);
@@ -15416,7 +15417,8 @@ async function closeIssueIdempotently({ repoRoot, owner, name, issueNumber, pr }
 //   - Headers: ## Summary, ## Requirement UIDs, ## Related Issues, ## ADR
 //     Impact, ## Changes, ## Test Plan, ## Ground Control Checks, ##
 //     Traceability, ## Checklist.
-//   - At least one requirement-UID-shaped token (PR_REQUIREMENT_RE).
+//   - A `## Requirement UIDs` section naming at least one UID, one per
+//     bullet, or carrying the explicit `- (none — ...)` marker.
 //   - ADR impact line either references `ADR-` or contains the literal
 //     "No ADR required".
 //   - Three Ground Control Checks lines exactly: `- [x] \`make policy\`
@@ -15432,23 +15434,95 @@ async function closeIssueIdempotently({ repoRoot, owner, name, issueNumber, pr }
 
 export const PR_BODY_CHANGE_CLASSES = Object.freeze(["doc-only", "source", "source+migration"]);
 
-// Mirrors tools/policy/checks.py::PR_REQUIREMENT_RE verbatim. The Python regex
-// is `\b[A-Z][A-Z0-9]+-[A-Z0-9]+(?:-\d+|\d+)\b` — the trailing branch
-// enforces that the suffix must be (a) hyphen + digits or (b) digits. So
-// `GC-O007` and `GC-O-007` are valid; `GC-OOPS` is NOT. Centralized here so
-// the policy gate and the JS body-scan use the same predicate. Use this for
-// SEARCH inside body text (finds a UID anywhere); use EXACT_REQUIREMENT_UID_RE
-// for STRUCTURED FIELDS (validating that one input string IS a UID).
-export const PR_REQUIREMENT_RE = /\b[A-Z][A-Z0-9]+-[A-Z0-9]+(?:-\d+|\d+)\b/;
+// Shape heuristic for spotting a requirement UID inside FREE-FORM PROSE — the
+// sole remaining use of a UID-shaped pattern, and the single definition of that
+// shape (isRequirementUidToken anchors it rather than restating it).
+//
+// Structured fields, rendering, and the section-scoped PR-body gate all use the
+// identity corpus (EXACT_REQUIREMENT_UID_RE) directly, because each of those
+// positions is machine-delimited: the value either is a whole field or a whole
+// bullet. Free-form prose is the one undecidable case, since `prose` and `notes`
+// are themselves valid bounded identifiers and no lookup is available there to
+// settle it. The trailing `[A-Z0-9]*[0-9]` requires a final digit, so `GC-O007`,
+// `GC-O-007`, and the allocator's short `APP-2` are recognized (issue #1425).
+//
+// The invariant that keeps this from re-splitting the contract: prose
+// recognition is a strict SUBSET of the identity corpus, enforced in
+// isRequirementUidToken and asserted in the tests. It may under-recognize an
+// unusual UID, but it can never accept one the structured path would reject,
+// and it never gates rendering or reporting.
+export const PR_REQUIREMENT_RE = /\b[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-[A-Z0-9]*[0-9]\b/;
 
-// Anchored UID validator — the same shape as PR_REQUIREMENT_RE but bounded so
-// the entire input must BE a UID, not merely contain one. Codex cycle-4 F2
-// flagged that `PR_REQUIREMENT_RE.test("not really GC-O007")` returns true
-// because the regex is a search predicate; a structured `requirement_uid`
-// field should accept exactly one UID, not arbitrary text containing one. Use
-// this in every structured UID field at the tool boundary
-// (gc_render_pr_body.requirement_uids, gc_post_final_report.requirements[].uid).
-export const EXACT_REQUIREMENT_UID_RE = /^[A-Z][A-Z0-9]+-[A-Z0-9]+(?:-\d+|\d+)$/;
+// Maximum UID length, matching the backend field this validator guards:
+// `Requirement.uid` is @Column(length = 50) and `RequirementRequest.uid` is
+// @Size(max = 50). Keeping the client bound equal to the server bound is the
+// point — a tighter client bound would reject identifiers the server stores.
+export const REQUIREMENT_UID_MAX_LENGTH = 50;
+
+// Anchored structured-UID contract. This is a BOUNDED IDENTIFIER check, not a
+// UID grammar. A stored UID is project-local identity: the backend accepts any
+// string within the length bound and resolves it case-insensitively through
+// RequirementRepository.findByProjectIdAndUidIgnoreCase, so whether `APP-2`
+// names a requirement is the project-scoped lookup's decision, not a
+// client-side regex's. Issue #1425: the previous shape required two or more
+// characters after the final hyphen, which rejected every UID
+// RequirementUidAllocator mints for the first nine requirements of a prefix
+// (`allocate()` returns `${prefix}-${n}` with no zero-padding).
+//
+// What it still enforces: a single, non-empty, transport-safe scalar within
+// the backend bound — no whitespace, no newlines, and no Markdown or
+// reserved-marker metacharacters, so a UID field cannot become an injection
+// channel. An unknown UID is expected to reach Ground Control and return
+// through the RequestError / ErrorResponse path rather than be refused here as
+// malformed input. Use this in every structured UID field at the tool boundary.
+export const EXACT_REQUIREMENT_UID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,49}$/;
+
+/**
+ * True when `token` looks like a requirement UID inside free-form prose AND is
+ * within the identity corpus. Both conditions are required so free-text
+ * recognition can never admit a value the structured contract would refuse.
+ *
+ * The shape comes from PR_REQUIREMENT_RE, anchored here by requiring the match
+ * to span the whole token — one shape definition, not a second copy that could
+ * drift from it. This is the only supported entry point for prose recognition;
+ * callers should not re-derive the pattern.
+ */
+export function isRequirementUidToken(token) {
+  if (typeof token !== "string" || !EXACT_REQUIREMENT_UID_RE.test(token)) return false;
+  const match = token.match(PR_REQUIREMENT_RE);
+  return match != null && match[0] === token;
+}
+
+/**
+ * Find every requirement UID mentioned in free-form prose, in first-seen order.
+ *
+ * Scans for the UID shape rather than splitting the text into tokens: `.`, `_`,
+ * and `-` are all legal identity-corpus characters, so a split-based tokenizer
+ * leaves sentence punctuation glued to the word and silently drops the very
+ * common `Fixes GC-O007.` form — the requirement-free downgrade issue #1425
+ * exists to prevent. The `\b`-delimited search finds the UID inside the
+ * surrounding punctuation, and each match is confirmed through
+ * isRequirementUidToken so prose recognition stays a subset of the corpus.
+ */
+export function findRequirementUidTokens(text) {
+  if (typeof text !== "string" || text === "") return [];
+  // Derived from PR_REQUIREMENT_RE so the shape has exactly one definition; the
+  // `g` flag is needed for matchAll and the source is a module-local literal.
+  // eslint-disable-next-line security/detect-non-literal-regexp
+  const scan = new RegExp(PR_REQUIREMENT_RE.source, "g");
+  const found = [];
+  for (const match of text.matchAll(scan)) {
+    const token = match[0];
+    if (isRequirementUidToken(token) && !found.includes(token)) found.push(token);
+  }
+  return found;
+}
+
+// Human-readable form of the contract above, for validator error messages. The
+// raw regex source is accurate but opaque in a refusal envelope.
+export const REQUIREMENT_UID_CONTRACT_DESCRIPTION =
+  `a single requirement UID: 1-${REQUIREMENT_UID_MAX_LENGTH} characters, starting with a letter or digit, `
+  + "containing only letters, digits, '.', '_', or '-'";
 
 const PR_BODY_GC_CHECK_LINES = Object.freeze([
   "- [x] `make policy` passes",
@@ -15507,6 +15581,36 @@ function extractRequirementUidsSection(body) {
   return nextHeader === -1 ? after : after.slice(0, nextHeader);
 }
 
+/**
+ * Parse the `## Requirement UIDs` section structurally and return the UID
+ * tokens it names. The section is machine-rendered one UID per bullet, so
+ * position carries the meaning and each token is validated against the identity
+ * corpus rather than a narrower search grammar — that is what keeps this gate's
+ * accepted set equal to gc_render_pr_body's (issue #1425).
+ *
+ * The explicit `- (none — ...)` requirement-free marker is not a UID; callers
+ * detect it separately, so bullets that open with it are skipped here.
+ */
+export function extractRequirementUidTokensFromSection(body) {
+  if (typeof body !== "string") return [];
+  const tokens = [];
+  for (const line of extractRequirementUidsSection(body).split(/\r?\n/)) {
+    const bullet = line.match(/^\s*[-*+]\s+(.+?)\s*$/);
+    if (!bullet) continue;
+    if (/^\(none\b/i.test(bullet[1])) continue;
+    // The WHOLE bullet must be a single token in the corpus. Scanning a bullet
+    // for any corpus-shaped word would count ordinary prose — `- (no real UID
+    // here)` contains `no`, a syntactically valid identifier — because the
+    // corpus cannot distinguish a UID from a word without a lookup. Requiring
+    // the bullet to be exactly one token keeps the gate decidable while still
+    // accepting every UID the structured path accepts.
+    const candidate = bullet[1].replace(/^[`]+|[`]+$/g, "").trim();
+    if (!EXACT_REQUIREMENT_UID_RE.test(candidate)) continue;
+    if (!tokens.includes(candidate)) tokens.push(candidate);
+  }
+  return tokens;
+}
+
 // Structural check on the rendered body — mirrors check_pr_body's predicates so
 // the renderer's contract holds at the runner boundary, not in agent prose.
 // Stricter than the Python check_pr_body in one dimension: the UID predicate
@@ -15524,24 +15628,21 @@ export function checkPrBodyShape(body) {
     if (!body.includes(h)) errors.push(`missing required header: ${h}`);
   }
   // Section-scoped UID check — see extractRequirementUidsSection for rationale.
+  // The section is machine-rendered one UID per bullet, so it is parsed
+  // structurally and each token is held to the identity corpus. That keeps the
+  // gate's accepted set exactly equal to what gc_render_pr_body accepts, so a
+  // UID that reconciles and reports can always be rendered (issue #1425).
   const uidSection = extractRequirementUidsSection(body);
-  const sectionHasUid = PR_REQUIREMENT_RE.test(uidSection);
+  const sectionHasUid = extractRequirementUidTokensFromSection(body).length > 0;
   const sectionHasNoneMarker = /-\s*\(none\b/i.test(uidSection);
   if (!sectionHasUid && !sectionHasNoneMarker) {
     errors.push(
       "## Requirement UIDs section must contain at least one Ground Control UID " +
-      "(pattern: " + PR_REQUIREMENT_RE.source + ") OR the explicit '- (none — ...)' " +
+      "(" + REQUIREMENT_UID_CONTRACT_DESCRIPTION + ") OR the explicit '- (none — ...)' " +
       "marker for requirement-free runs. ADR references in other sections do NOT " +
       "satisfy the requirement-UID gate — that is concept confusion between ADR " +
       "impact and requirement traceability.",
     );
-  }
-  // Whole-body UID check is preserved so the Python policy gate also passes.
-  // For requirement-free runs (uidSection has '(none)') the whole-body check
-  // is satisfied by ADR references — that's fine at the policy level; the
-  // section-scoped check above is what enforces honest section semantics.
-  if (!PR_REQUIREMENT_RE.test(body)) {
-    errors.push("body must contain at least one UID-shaped token matching the requirement UID pattern: " + PR_REQUIREMENT_RE.source);
   }
   if (!body.includes("ADR-") && !body.includes("No ADR required")) {
     errors.push("ADR Impact must reference an ADR ('ADR-...') or contain 'No ADR required'");
@@ -15583,11 +15684,12 @@ export function validatePrBodyInput(input) {
     errors.push("requirementUids must be an array (may be empty for requirement-free runs)");
   } else {
     requirementUids.forEach((u, i) => {
-      // Anchored UID validator — the entire input must BE a UID, not merely
-      // contain one (codex cycle-4 F2). The unanchored `PR_REQUIREMENT_RE` is
-      // a body-scan predicate; structured fields use EXACT_REQUIREMENT_UID_RE.
+      // The renderer takes the same identity corpus as every other structured
+      // field. The section-scoped policy gate accepts exactly this corpus, so a
+      // UID that reconciles and reports can always be rendered too (issue
+      // #1425). The entire input must BE one UID, not merely contain one.
       if (typeof u !== "string" || !EXACT_REQUIREMENT_UID_RE.test(u)) {
-        errors.push(`requirementUids[${i}] must be a Ground Control UID matching ${EXACT_REQUIREMENT_UID_RE.source}`);
+        errors.push(`requirementUids[${i}] must be ${REQUIREMENT_UID_CONTRACT_DESCRIPTION}`);
       }
     });
   }
@@ -15699,11 +15801,10 @@ export function buildPrBody(input) {
     // flagged the previous placeholder injection as fabricated traceability —
     // a placeholder `GC-O007` would have tied an unrelated bug-fix PR to the
     // workflow requirement in the durable record. The PR-body policy gate
-    // (PR_REQUIREMENT_RE) still requires SOME UID-shaped token anywhere in
-    // the body, but ADR references (`ADR-NNN`) and traceability bullets
-    // satisfy that predicate; callers without either should pass at least
-    // one of `requirementUids` or `adrRefs`, or `checkPrBodyShape` will
-    // surface a clear refusal at the runner boundary.
+    // reads this section structurally, so the marker satisfies it on its own
+    // (issue #1425) — a requirement-free change no longer needs an incidental
+    // `ADR-NNN` token elsewhere in the body to pass a requirement check. ADR
+    // impact remains gated separately by the ADR Impact predicate.
     lines.push("- (none — bug/refactor/maintenance run; see Traceability section below)");
   } else {
     for (const u of requirementUids) lines.push(`- \`${u}\``);

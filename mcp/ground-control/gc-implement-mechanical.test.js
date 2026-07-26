@@ -124,6 +124,16 @@ describe("extractInScopeRequirementUids", () => {
     );
   });
 
+  it("extracts allocator-minted short UIDs (issue #1425)", () => {
+    // The failure this guards is the one the issue describes: dropping APP-2
+    // here turns a requirement-backed run into a requirement-free one, which
+    // then trips the orphaned-link audit on a correct link.
+    assert.deepEqual(
+      extractInScopeRequirementUids("## Requirements\n- APP-2\n- `A-1`\n- PLAT-10"),
+      ["APP-2", "A-1", "PLAT-10"],
+    );
+  });
+
   it("returns an empty set when the authoritative section is absent or empty", () => {
     assert.deepEqual(extractInScopeRequirementUids("Fix noted in GC-O007."), []);
     assert.deepEqual(extractInScopeRequirementUids("## Requirements\n\n## Notes\n- GC-O007"), []);

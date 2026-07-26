@@ -298,6 +298,28 @@ field. `run_workflow_routing_contract` now rejects those retired fields and
 pins the advisory `base_sync` stage instead. Documentation coverage
 classification remains unchanged.
 
+**2026-07-26 (issue #1425 requirement-UID validation).** `mcp/ground-control/lib.js`
+splits requirement-UID handling into three named contracts, and
+`mcp/ground-control/index.js` points each tool schema at the right one.
+`EXACT_REQUIREMENT_UID_RE` becomes a bounded identifier check (1-50 characters,
+matching the `Requirement.uid` column bound) rather than an allocator-shaped
+grammar, because the previous pattern required two or more characters after the
+final hyphen and so rejected every UID `RequirementUidAllocator` mints for the
+first nine requirements of a prefix, such as `APP-2`. Identity stays the
+project-scoped backend lookup's decision, and every surface accepts a subset of
+that one corpus. `tools/policy/checks.py` changes the `pr-requirement-uid` gate
+from a whole-body scan for a UID-shaped token to a structural parse of the
+`## Requirement UIDs` section (one UID per bullet, or the explicit
+`- (none — ...)` marker), mirroring `checkPrBodyShape`. That gives the gate and
+`gc_render_pr_body` the same accepted set, so a UID that reconciles and reports
+can always be rendered. It also decouples two unrelated gates: a requirement-free
+change no longer has to carry an incidental `ADR-NNN` token somewhere in the body
+to pass a requirement check, and ADR impact remains gated on its own by
+`pr-adr-impact`. `PR_REQUIREMENT_RE` survives only for free-form prose scanning,
+strictly narrower than the corpus. The surface classifier
+(`run_documentation_coverage_check`), the `outcome_required` mapping, the Vale
+rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged.
+
 **2026-05-26 (issue #989 SDK schema hotfix).** Re-registered `gc_integration_manager` via `server.tool(name, desc, zodShape, handler)` so the SDK's `safeParseAsync` path resolves; the prior `server.registerTool({inputSchema: <raw JSON Schema>})` form crashed every invocation with `v3Schema.safeParseAsync is not a function`. The fix touches `mcp/ground-control/index.js` only; no change to the Vale rule set, the `.vale.ini` configuration, the doc-coverage classifier, or any documentation target surface.
 
 **2026-05-28 (issue #720 FAIR risk scenario refactor).** The `gc_risk_scenario` MCP tool field renames (`threat_source`→`threat`, `threat_event`→`method`, `affected_object`→`asset`, `consequence`→`effect`) required updating the `TO_CAMEL` mapping in `mcp/ground-control/lib.js` to remove obsolete snake_case bindings and add the new derived field `fair_sentence` mapping. Additionally, `tools/policy/checks.py` was updated to recognize `mcp/ground-control/gc-risk-scenario.js` as a valid MCP-adapter file (alongside `gc-risk-governance.js`) for the `controller-parity` policy check. These are config-parser and policy surfaces; no change to the Vale rule set, the `.vale.ini` configuration, or `docs/DOC_STYLE.md` itself.
