@@ -58,25 +58,26 @@ repos:
       - id: gitleaks
 
   # =============================================================================
-  # STAGE 3: Full verification (CI-equivalent)
+  # STAGE 3: Push-time checks
   # =============================================================================
+  #
+  # Broad verification (`./gradlew check`, `bin/policy`, Vale, OpenJML ESC) is
+  # deliberately absent here. Each of those already runs twice per change: once
+  # at the /implement completion + policy gates (Step 6, then again on the
+  # post-base-sync tree at Step 8.5) and once in the CI `policy` / `test` /
+  # `openjml` jobs. Re-running them at commit time made every commit pay for
+  # verification the workflow had just performed on the same tree, and the
+  # commit-time copy is the weakest of the three: it is skippable with
+  # `--no-verify`, it is path-filtered so it silently degrades on diffs outside
+  # `^backend/`, and it leaves no record any gate can attest to. Commit time
+  # keeps only what nothing else does: file hygiene, secret scanning, and
+  # auto-formatting.
+  #
+  # `make check` / `make policy` remain the local way to run the broad gates on
+  # demand; nothing about their coverage changed.
 
   - repo: local
     hooks:
-      - id: repo-policy
-        name: repo policy guardrails
-        entry: bash -c 'BASE_REF="${BASE_REF:-origin/dev}"; python3 bin/policy --base "$BASE_REF" --skip-pr-body'
-        language: system
-        files: ^(AGENTS\.md|\.claude/|\.github/|architecture/|backend/|docs/|mcp/|specs/|tools/)
-        pass_filenames: false
-
-      - id: vale-prose-lint
-        name: Vale prose lint (ADR-054)
-        entry: tools/vale-lint-hook.sh
-        language: system
-        types_or: [markdown]
-        exclude: ^(CHANGELOG\.md|node_modules/|\.tools/|\.vale/)
-
       - id: pr-body-policy
         name: pr body template (only on push, when a PR exists)
         entry: scripts/check-pr-body.sh
@@ -84,17 +85,3 @@ repos:
         stages: [pre-push]
         pass_filenames: false
         always_run: true
-
-      - id: gradle-check
-        name: gradle check (build + test + static analysis + coverage)
-        entry: bash -c 'cd backend && ./gradlew check -q'
-        language: system
-        files: ^backend/
-        pass_filenames: false
-
-      - id: openjml-esc
-        name: openjml ESC (formal verification of JML contracts)
-        entry: bash -c 'cd backend && ./gradlew openjmlEsc -q'
-        language: system
-        files: ^backend/src/main/java/com/keplerops/groundcontrol/domain/(requirements|adrs)/state/
-        pass_filenames: false
