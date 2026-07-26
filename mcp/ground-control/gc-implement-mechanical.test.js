@@ -5,6 +5,10 @@ import {
   extractInScopeRequirementUids,
   runImplementMechanical,
 } from "./gc-implement-mechanical.js";
+import {
+  REQUIREMENT_UID_GATE_ENV_VAR,
+  requestedRequirementUidAuthorization,
+} from "./lib.js";
 
 const SHA_A = "a".repeat(40);
 const SHA_B = "b".repeat(40);
@@ -64,6 +68,12 @@ function baseDeps(overrides = {}) {
     execFile: async () => ({ stdout: "", stderr: "" }),
   };
   Object.assign(deps, overrides);
+  // Mirrors the production wiring: the authorizer binds the requested UID to
+  // the same issue thread the rest of the run reads.
+  deps.authorizeRequirementUid ??= async ({ requestedRequirementUid }) => {
+    const thread = await deps.getIssueThread({});
+    return requestedRequirementUidAuthorization(thread.body, requestedRequirementUid);
+  };
   deps.runGit ??= async (repoRoot, argv, commandRunner) =>
     commandRunner("git", ["-C", repoRoot, ...argv], { cwd: repoRoot });
   deps.preCommit ??= async (repoRoot, commandRunner, context) =>
@@ -198,6 +208,34 @@ describe("runImplementMechanical bootstrap", () => {
     assert.equal(result.pickup.reused, true);
     assert.equal(pickupCalls, 0);
   });
+
+  for (const [label, uid, expected] of [
+    ["an invalid", "DSL-437; rm -rf /", "implement_requested_requirement_uid_invalid"],
+    ["an out-of-scope", "OTHER-999", "implement_requested_requirement_uid_out_of_scope"],
+  ]) {
+    it(`refuses ${label} requirement UID before recording pickup (#1434)`, async () => {
+      let pickupCalls = 0;
+      const result = await runImplementMechanical({
+        action: "bootstrap",
+        repoPath: "/repo",
+        invocationRoot: "/repo",
+        issueNumber: 1434,
+        branchName: "1426-script-phases",
+        driver: "claude",
+        requestedRequirementUid: uid,
+      }, baseDeps({
+        markPickedUp: async () => {
+          pickupCalls += 1;
+          return { ok: true };
+        },
+      }));
+
+      assert.equal(result.ok, false);
+      assert.equal(result.agent_required, true);
+      assert.equal(result.error, expected);
+      assert.equal(pickupCalls, 0);
+    });
+  }
 });
 
 describe("runImplementMechanical verify", () => {
@@ -282,6 +320,100 @@ describe("runImplementMechanical verify", () => {
     assert.equal(result.agent_required, true);
     assert.equal(result.failed_stage, "policy_gate");
     assert.equal(result.error, "implement_mechanical_policy_gate_failed");
+  });
+
+  it("carries the requested requirement UID to the completion and policy gates (#1434)", async () => {
+    const commands = [];
+    const result = await runImplementMechanical({
+      action: "verify",
+      repoPath: "/repo",
+      issueNumber: 1434,
+      requestedRequirementUid: "GC-O007",
+      requirements: [],
+    }, baseDeps({
+      execFile: async (file, argv, options) => {
+        commands.push([file, argv, options]);
+        return { stdout: "", stderr: "" };
+      },
+    }));
+
+    assert.equal(result.ok, true, JSON.stringify(result));
+    const gateEnvs = commands
+      .filter(([file]) => file === "bash")
+      .map(([, , options]) => options?.env?.[REQUIREMENT_UID_GATE_ENV_VAR]);
+    assert.deepEqual(gateEnvs, ["GC-O007", "GC-O007"]);
+    assert.equal(
+      commands.some(([, argv]) => argv.some((arg) => String(arg).includes("GC-O007"))),
+      false,
+      "the UID must reach the gate through the environment, never through argv",
+    );
+  });
+
+  it("injects no requirement UID override when none is requested (#1434)", async () => {
+    // The issue branch already carries its UID here, so the repository gate
+    // keeps deriving requirement context the way it always has.
+    const commands = [];
+    await runImplementMechanical({
+      action: "verify",
+      repoPath: "/repo",
+      issueNumber: 1434,
+      requirements: [],
+    }, baseDeps({
+      execFile: async (file, argv, options) => {
+        commands.push([file, argv, options]);
+        return { stdout: "", stderr: "" };
+      },
+    }));
+
+    const gates = commands.filter(([file]) => file === "bash");
+    assert.equal(gates.length, 2);
+    for (const [, , options] of gates) {
+      assert.equal(REQUIREMENT_UID_GATE_ENV_VAR in (options?.env ?? {}), false);
+    }
+  });
+
+  it("refuses an invalid requested requirement UID before running any gate (#1434)", async () => {
+    const commands = [];
+    const result = await runImplementMechanical({
+      action: "verify",
+      repoPath: "/repo",
+      issueNumber: 1434,
+      requestedRequirementUid: "DSL-437; rm -rf /",
+      requirements: [],
+    }, baseDeps({
+      execFile: async (file, argv, options) => {
+        commands.push([file, argv, options]);
+        return { stdout: "", stderr: "" };
+      },
+    }));
+
+    assert.equal(result.ok, false);
+    assert.equal(result.agent_required, true);
+    assert.equal(result.error, "implement_requested_requirement_uid_invalid");
+    assert.equal(commands.some(([file]) => file === "bash"), false);
+  });
+
+  it("refuses a requirement UID the target issue does not list, before any gate (#1434)", async () => {
+    // verify is independently callable, so bootstrap's membership check is not
+    // an enforcement seam for it. Syntax alone must not become gate authority.
+    const commands = [];
+    const result = await runImplementMechanical({
+      action: "verify",
+      repoPath: "/repo",
+      issueNumber: 1434,
+      requestedRequirementUid: "OTHER-999",
+      requirements: [],
+    }, baseDeps({
+      execFile: async (file, argv, options) => {
+        commands.push([file, argv, options]);
+        return { stdout: "", stderr: "" };
+      },
+    }));
+
+    assert.equal(result.ok, false);
+    assert.equal(result.agent_required, true);
+    assert.equal(result.error, "implement_requested_requirement_uid_out_of_scope");
+    assert.equal(commands.some(([file]) => file === "bash"), false);
   });
 
   it("hands off only the actionable failed gate", async () => {
@@ -395,6 +527,72 @@ describe("runImplementMechanical publish", () => {
 
     assert.deepEqual(preCommitArgs, [["/repo", "lefthook run pre-commit"]]);
   });
+
+  it("carries the requested requirement UID to the pre-commit and synchronization gates (#1434)", async () => {
+    const git = publishExec();
+    const preCommitUids = [];
+    const syncUids = [];
+    const result = await runImplementMechanical({
+      action: "publish",
+      repoPath: "/repo",
+      issueNumber: 1434,
+      branchName: "1426-script-phases",
+      requestedRequirementUid: "GC-O007",
+      commitMessage: "fix: carry requirement identity into repository gates",
+    }, baseDeps({
+      execFile: git.execFile,
+      preCommit: async (repoRoot, commandRunner, context, requestedRequirementUid) => {
+        preCommitUids.push(requestedRequirementUid);
+        return { stdout: "" };
+      },
+      synchronize: async (input) => {
+        syncUids.push(input.requestedRequirementUid);
+        return { ok: true, status: "complete", recordId: RECORD_ID };
+      },
+    }));
+
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.deepEqual(preCommitUids, ["GC-O007"]);
+    // Publish reaches synchronization through `start`, whose completion runs the
+    // final-tree gates that need the same requirement identity.
+    assert.deepEqual(syncUids, ["GC-O007"]);
+  });
+
+  for (const [label, uid, expected] of [
+    ["an invalid", "DSL-437; rm -rf /", "implement_requested_requirement_uid_invalid"],
+    ["an out-of-scope", "OTHER-999", "implement_requested_requirement_uid_out_of_scope"],
+  ]) {
+    it(`refuses ${label} requirement UID before staging, hooks, or synchronization (#1434)`, async () => {
+      const git = publishExec();
+      let preCommitCalls = 0;
+      let syncCalls = 0;
+      const result = await runImplementMechanical({
+        action: "publish",
+        repoPath: "/repo",
+        issueNumber: 1434,
+        branchName: "1426-script-phases",
+        requestedRequirementUid: uid,
+        commitMessage: "fix: carry requirement identity into repository gates",
+      }, baseDeps({
+        execFile: git.execFile,
+        preCommit: async () => {
+          preCommitCalls += 1;
+          return { stdout: "" };
+        },
+        synchronize: async () => {
+          syncCalls += 1;
+          return { ok: true, status: "complete", recordId: RECORD_ID };
+        },
+      }));
+
+      assert.equal(result.ok, false);
+      assert.equal(result.agent_required, true);
+      assert.equal(result.error, expected);
+      assert.equal(git.calls.length, 0, "no Git command may run before the UID is authorized");
+      assert.equal(preCommitCalls, 0);
+      assert.equal(syncCalls, 0);
+    });
+  }
 
   it("stages, checks, commits, pushes, and completes a clean synchronization", async () => {
     const git = publishExec();

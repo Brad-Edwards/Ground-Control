@@ -331,27 +331,74 @@ class PolicyChecksTest(unittest.TestCase):
             f"buildPrBody (doc-only) output rejected by check_pr_body: {codes}",
         )
 
-    def test_workflow_guardrail_sync_requires_adr_036(self):
-        # ADR-036 amends ADR-021. workflow-guardrail-sync must keep ADR-036 in
-        # the requireAll list so that future SKILL changes have to update both
-        # ADR-021 (the original) AND ADR-036 (the routing/tools/telemetry
-        # amendment). Pinned here so a future edit to the policy that drops
-        # ADR-036 breaks this test.
+    def _workflow_guardrail_rule(self):
         policy_path = REPO_ROOT / "architecture/policies/adr-policy.json"
         policy = json.loads(policy_path.read_text(encoding="utf-8"))
-        rule = None
         for pol in policy.get("policies", []):
             for r in pol.get("rules", []):
                 if r.get("id") == "workflow-guardrail-sync":
-                    rule = r
-                    break
-            if rule is not None:
-                break
+                    return r
+        return None
+
+    def test_workflow_guardrail_sync_keeps_adr_036_reachable(self):
+        # ADR-036 amends ADR-021, so it must stay one of the gate-model records
+        # the rule accepts. Pinned here so a future policy edit that drops
+        # ADR-036 from the rule entirely breaks this test.
+        rule = self._workflow_guardrail_rule()
         self.assertIsNotNone(rule, "workflow-guardrail-sync rule must exist")
         self.assertIn(
             "architecture/adrs/036-per-step-routing-tool-surfaces-telemetry.md",
-            rule.get("requireAll", []),
-            "ADR-036 must be in workflow-guardrail-sync.requireAll",
+            rule.get("requireAll", []) + rule.get("requireAny", []),
+            "ADR-036 must remain a workflow-guardrail-sync required or accepted record",
+        )
+
+    def test_workflow_guardrail_sync_does_not_force_every_gate_model_adr(self):
+        # The rule's job is to stop guardrail prose drifting away from the gate
+        # record, not to make one topic's change edit every gate ADR. Requiring
+        # all four at once produced contentless amendments in ADRs the diff did
+        # not touch — for example a change to requirement identity in the
+        # mechanical tool had to write into ADR-031, the codex review stopping
+        # model (issue #1434).
+        rule = self._workflow_guardrail_rule()
+        gate_model_adrs = [
+            "architecture/adrs/021-gated-agentic-development-loop.md",
+            "architecture/adrs/029-issue-thread-gate-model.md",
+            "architecture/adrs/031-codex-review-stopping-model.md",
+            "architecture/adrs/036-per-step-routing-tool-surfaces-telemetry.md",
+        ]
+        forced = [adr for adr in gate_model_adrs if adr in rule.get("requireAll", [])]
+        self.assertEqual(
+            forced,
+            [],
+            "no single gate-model ADR may be unconditionally required; "
+            f"still forced: {forced}",
+        )
+
+    def test_workflow_guardrail_sync_satisfied_by_one_relevant_gate_record(self):
+        violations = run_adr_guard([
+            "skills/implement/steps/step-06-completion-gate.md",
+            "docs/DEVELOPMENT_WORKFLOW.md",
+            "docs/WORKFLOW.md",
+            "architecture/adrs/021-gated-agentic-development-loop.md",
+        ])
+        codes = [v.code for v in violations]
+        self.assertNotIn(
+            "workflow-guardrail-sync",
+            codes,
+            "updating the workflow docs plus one gate-model record must satisfy the rule",
+        )
+
+    def test_workflow_guardrail_sync_still_fires_without_any_gate_record(self):
+        # Loosening requireAll must not turn the rule into a no-op: guardrail
+        # prose that records the change nowhere in the gate model still fails.
+        violations = run_adr_guard([
+            "skills/implement/steps/step-06-completion-gate.md",
+            "docs/DEVELOPMENT_WORKFLOW.md",
+            "docs/WORKFLOW.md",
+        ])
+        self.assertTrue(
+            any(item.code == "workflow-guardrail-sync" for item in violations),
+            "a guardrail change with no gate-model record must still fail",
         )
 
 

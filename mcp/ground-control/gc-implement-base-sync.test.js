@@ -8,6 +8,7 @@ import {
   buildImplementBaseSyncMarker,
   isDefaultImplementHooksPath,
   parseImplementBaseSyncMarkers,
+  REQUIREMENT_UID_GATE_ENV_VAR,
   resolveWorkflowRouteFromConfig,
   runCreateSynchronizedImplementPr,
   runSynchronizeImplementBranch,
@@ -74,8 +75,8 @@ function context(baseBranch = "dev", workflowOverrides = {}) {
 function completeRunner({ failCommand = null } = {}) {
   const calls = [];
   let committed = false;
-  const runner = async (command, args) => {
-    calls.push([command, args]);
+  const runner = async (command, args, options) => {
+    calls.push([command, args, options]);
     if (command === "bash") {
       if (failCommand != null && args[1] === failCommand) {
         const error = new Error(`${failCommand} failed`);
@@ -114,6 +115,12 @@ function completeRunner({ failCommand = null } = {}) {
     throw new Error(`unexpected git operation: ${op.join(" ")}`);
   };
   return { calls, runner };
+}
+
+// The issue Requirements section is the server-side binding for a requested
+// requirement identity (issue #1434).
+function requirementsThreadReader(body = "## Requirements\n- DSL-437\n") {
+  return async () => ({ ok: true, body });
 }
 
 function completeInput() {
@@ -450,6 +457,112 @@ describe("pre-PR implement synchronization", () => {
     assert.deepEqual(shellCommands(calls), ["make check", "make policy"]);
   });
 
+  it("carries the requested requirement UID to both final-tree gates (#1434)", async () => {
+    const { calls, runner } = completeRunner();
+    const result = await runSynchronizeImplementBranch({
+      ...completeInput(),
+      requestedRequirementUid: "DSL-437",
+    }, {
+      workspaceAuthorizationResolver: workspaceAuthorization,
+      commandRunner: runner,
+      contextResolver: async () => context(),
+      issueThreadReader: requirementsThreadReader(),
+      syncRecordReader: async () => ({ ok: false, error: "implement_pr_sync_record_missing" }),
+    });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    const gateEnvs = calls
+      .filter(([command]) => command === "bash")
+      .map(([, , options]) => options?.env?.[REQUIREMENT_UID_GATE_ENV_VAR]);
+    assert.deepEqual(gateEnvs, ["DSL-437", "DSL-437"]);
+    assert.equal(
+      calls.some(([, args]) => args.some((arg) => String(arg).includes("DSL-437"))),
+      false,
+      "the UID must reach the gate through the environment, never through argv",
+    );
+  });
+
+  it("injects no requirement UID override when none is requested (#1434)", async () => {
+    // The branch already carries its UID in this case, so the repository gate
+    // must keep deriving requirement context exactly as it did before.
+    const { calls, runner } = completeRunner();
+    const result = await runSynchronizeImplementBranch(completeInput(), {
+      workspaceAuthorizationResolver: workspaceAuthorization,
+      commandRunner: runner,
+      contextResolver: async () => context(),
+      syncRecordReader: async () => ({ ok: false, error: "implement_pr_sync_record_missing" }),
+    });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    for (const [command, , options] of calls.filter(([command]) => command === "bash")) {
+      assert.equal(
+        REQUIREMENT_UID_GATE_ENV_VAR in (options?.env ?? {}),
+        false,
+        `${command} gate must not receive an unrequested requirement override`,
+      );
+    }
+  });
+
+  it("refuses an invalid requested requirement UID before running any gate (#1434)", async () => {
+    const { calls, runner } = completeRunner();
+    const result = await runSynchronizeImplementBranch({
+      ...completeInput(),
+      requestedRequirementUid: "DSL-437; rm -rf /",
+    }, {
+      workspaceAuthorizationResolver: workspaceAuthorization,
+      commandRunner: runner,
+      contextResolver: async () => context(),
+      issueThreadReader: requirementsThreadReader(),
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "implement_requested_requirement_uid_invalid");
+    assert.equal(calls.length, 0);
+  });
+
+  it("authorizes the workspace before reading the issue thread (#1434)", async () => {
+    // Reading the thread first would let a caller who is not authorized for
+    // this workspace make the server query an arbitrary repository's issue,
+    // and the authorized/out-of-scope split would then leak whether a guessed
+    // UID appears in a private issue.
+    let threadReads = 0;
+    const { calls, runner } = completeRunner();
+    const result = await runSynchronizeImplementBranch({
+      ...completeInput(),
+      requestedRequirementUid: "DSL-437",
+    }, {
+      workspaceAuthorizationResolver: async () => {
+        throw new Error("workspace not authorized");
+      },
+      commandRunner: runner,
+      contextResolver: async () => context(),
+      issueThreadReader: async () => {
+        threadReads += 1;
+        return { ok: true, body: "## Requirements\n- DSL-437\n" };
+      },
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(threadReads, 0, "no issue read may precede workspace authorization");
+    assert.equal(calls.some(([command]) => command === "bash"), false);
+  });
+
+  it("refuses a requirement UID the target issue does not list (#1434)", async () => {
+    // This tool is directly callable, so it cannot rely on bootstrap having
+    // bound the UID to the issue. A valid-looking UID from another issue or
+    // project must not become the gate's requirement identity.
+    const { calls, runner } = completeRunner();
+    const result = await runSynchronizeImplementBranch({
+      ...completeInput(),
+      requestedRequirementUid: "OTHER-999",
+    }, {
+      workspaceAuthorizationResolver: workspaceAuthorization,
+      commandRunner: runner,
+      contextResolver: async () => context(),
+      issueThreadReader: requirementsThreadReader(),
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "implement_requested_requirement_uid_out_of_scope");
+    assert.equal(calls.length, 0);
+  });
+
   it("does not commit, push, or attest when the configured policy command fails", async () => {
     const { calls, runner } = completeRunner({ failCommand: "bin/policy-gate" });
     const result = await runSynchronizeImplementBranch(completeInput(), {
@@ -588,6 +701,64 @@ describe("pre-PR implement synchronization", () => {
     assert.equal(calls.some(([, args]) => gitOperation(args)[0] === "commit"), false);
     assert.equal(calls.some(([command]) => command === "gh"), false);
   });
+
+  it("carries the requested requirement UID through the committed-retry gates (#1434)", async () => {
+    const calls = [];
+    const runner = async (command, args, options) => {
+      calls.push([command, args, options]);
+      if (command === "bash" || command === "make") return { stdout: "" };
+      const op = gitOperation(args);
+      if (op[0] === "symbolic-ref") return { stdout: `${BRANCH}\n` };
+      if (op[0] === "status") return { stdout: "" };
+      if (op[0] === "rev-parse") {
+        const ref = op[op.length - 1];
+        if (ref.startsWith("MERGE_HEAD")) {
+          const error = new Error("missing MERGE_HEAD");
+          error.code = 128;
+          throw error;
+        }
+        if (ref.endsWith("^{tree}")) return { stdout: `${TREE}\n` };
+        return { stdout: `${RESULT}\n` };
+      }
+      if (op[0] === "write-tree") return { stdout: `${TREE}\n` };
+      if (op[0] === "show") return { stdout: `${PRE} ${BASE}\n` };
+      if (op[0] === "push") return { stdout: "" };
+      if (op[0] === "ls-remote") return { stdout: `${RESULT}\trefs/heads/${BRANCH}\n` };
+      throw new Error(`unexpected operation: ${command} ${args.join(" ")}`);
+    };
+    const result = await runSynchronizeImplementBranch({
+      ...completeInput(),
+      requestedRequirementUid: "DSL-437",
+    }, {
+      workspaceAuthorizationResolver: workspaceAuthorization,
+      commandRunner: runner,
+      contextResolver: async () => context(),
+      issueThreadReader: requirementsThreadReader(),
+      syncRecordReader: async () => ({
+        ok: true,
+        record: {
+          valid: true,
+          recordId: RECORD,
+          issueNumber: ISSUE,
+          branchName: BRANCH,
+          baseBranch: "dev",
+          remoteRef: "refs/remotes/origin/dev",
+          preSyncSha: PRE,
+          fetchedBaseSha: BASE,
+          outcome: "merged_clean",
+          resultingFeatureSha: RESULT,
+          verifiedTreeSha: TREE,
+        },
+        commentId: 100,
+        commentUrl: "https://github.com/autarchy-ai/Ground-Control/issues/1421#issuecomment-100",
+      }),
+    });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    const gateEnvs = calls
+      .filter(([command]) => command === "bash")
+      .map(([, , options]) => options?.env?.[REQUIREMENT_UID_GATE_ENV_VAR]);
+    assert.deepEqual(gateEnvs, ["DSL-437", "DSL-437"]);
+  });
 });
 
 describe("synchronized PR gate", () => {
@@ -675,6 +846,7 @@ describe("synchronized PR gate", () => {
       workspaceAuthorizationResolver: workspaceAuthorization,
       commandRunner: runner,
       contextResolver: async () => context(),
+      issueThreadReader: requirementsThreadReader(),
       syncRecordReader: async () => ({
         ok: true,
         record: {
@@ -732,6 +904,7 @@ describe("synchronized PR gate", () => {
       workspaceAuthorizationResolver: workspaceAuthorization,
       commandRunner: runner,
       contextResolver: async () => context(),
+      issueThreadReader: requirementsThreadReader(),
       syncRecordReader: async () => ({
         ok: true,
         record: {
@@ -803,6 +976,7 @@ describe("synchronized PR gate", () => {
       workspaceAuthorizationResolver: workspaceAuthorization,
       commandRunner: runner,
       contextResolver: async () => context(),
+      issueThreadReader: requirementsThreadReader(),
       syncRecordReader: async () => ({
         ok: true,
         record: {

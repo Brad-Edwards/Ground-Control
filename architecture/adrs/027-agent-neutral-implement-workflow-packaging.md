@@ -327,3 +327,55 @@ and semantic gate names, not command text.
 A repository that needs a gate its own contributors cannot redefine must
 enforce it outside the branch - in required CI checks on the protected base
 branch - not in a field the branch supplies.
+
+## 2026-07-26 amendment: requirement identity for repository gates
+
+Issue #1434 adds an optional requirement identity to the gate execution
+boundary. A repository whose completion, policy, or pre-commit command runs a
+requirement-governance check normally derives the requirement under test from
+the branch name. `/implement` can legitimately target a requirement whose issue
+branch carries no UID, and that run has no way to tell the gate which
+requirement it is validating.
+
+The requested requirement UID therefore travels to every repo-authored gate as
+the `ACES_REQUIREMENT_UID` environment variable: the `verify` completion and
+policy commands, the `publish` pre-commit command, and both final-tree gates in
+`gc_synchronize_implement_branch action=complete`, including the
+committed-retry path. Fixing only the verification action would leave a
+repository passing Step 6 and then failing the identical gate at Step 8.5.
+
+Four constraints bound the addition:
+
+1. **The value travels in the child environment, never in command text.** It
+   is not interpolated into the command string, so it never reaches argv, where
+   a process listing would expose it, and it offers no shell-injection point.
+   The UID is re-validated against the same bounded-identifier grammar the tool
+   schemas already use.
+2. **Syntax is not authority.** Every action that can reach a gate resolves the
+   requested UID server-side against the target issue's canonical Requirements
+   section and refuses an unlisted one before any gate runs. `bootstrap`,
+   `verify`, `publish`, and the synchronization tool are each independently
+   callable, so `bootstrap`'s membership check is not an enforcement seam for
+   the paths that actually invoke the gates. Without this binding, a caller able
+   to influence the tool input could name a requirement belonging to another
+   issue or project whose governance state satisfies the repository gate, and
+   the resulting completion, policy, pre-commit, and final-tree evaluations -
+   plus the synchronization attestation built on them - would carry an identity
+   the issue never authorized. The binding lives in one shared authorizer so a
+   future gate-reaching entry point cannot silently opt out of it.
+3. **Omission changes nothing.** With no requested UID, no variable is
+   injected and branch-derived governance behaves exactly as before. Ground
+   Control does not parse UIDs out of branch names; that inference stays in the
+   repository's own gate.
+4. **The environment is the only place the value exists.** It is never added
+   to result envelopes, telemetry, synchronization markers, or GitHub comments.
+
+This narrows the earlier statement that this feature adds nothing to gate
+process environments. The gate environment carries exactly one bounded,
+non-secret requirement identifier, supplied per invocation by the caller and
+injected only when explicitly requested. Credentials and tokens remain excluded
+from repository command fields, failure envelopes, and gate environments, and
+this amendment does not broaden inherited-secret handling.
+
+`/integrate` runs its completion command under a separate contract with no
+issue-scoped requirement input and is unchanged.

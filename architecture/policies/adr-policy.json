@@ -24,14 +24,16 @@
           ],
           "requireAll": [
             "docs/DEVELOPMENT_WORKFLOW.md",
-            "docs/WORKFLOW.md",
+            "docs/WORKFLOW.md"
+          ],
+          "requireAny": [
             "architecture/adrs/021-gated-agentic-development-loop.md",
             "architecture/adrs/029-issue-thread-gate-model.md",
             "architecture/adrs/031-codex-review-stopping-model.md",
             "architecture/adrs/036-per-step-routing-tool-surfaces-telemetry.md",
             "skills/quickfix/SKILL.md"
           ],
-          "message": "Workflow guardrails changed without syncing ADR-021 / ADR-029 / ADR-031 / ADR-036, workflow docs, and the /quickfix sibling lane."
+          "message": "Workflow guardrails changed without syncing the workflow documents and at least one gate-model record (ADR-021 / ADR-029 / ADR-031 / ADR-036, or the /quickfix sibling lane)."
         }
       ]
     },

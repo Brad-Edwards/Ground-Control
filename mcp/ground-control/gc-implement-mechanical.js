@@ -24,12 +24,17 @@ import {
   runCloseIssueAfterMerge,
   detectSensitiveBodyContent,
   EXACT_REQUIREMENT_UID_RE,
-  isRequirementUidToken,
+  extractInScopeRequirementUids,
+  requestedRequirementUidAuthorization,
+  authorizeRequestedRequirementUid,
   runImplementGitCommand,
   runImplementPreCommit,
   resolveWorkflowPolicyCommand,
+  implementGateEnvironment,
 } from "./lib.js";
 import { createWorkflowRunLifecycleEmitter } from "./workflow-run-lifecycle.js";
+
+export { extractInScopeRequirementUids };
 
 const execFileAsync = promisify(execFileCb);
 
@@ -111,6 +116,10 @@ export const GC_IMPLEMENT_MECHANICAL_DESCRIPTION =
   "readiness (pre-merge completion assertion), finalize (post-merge assertion + idempotent issue close). " +
   "Always pass action, repo_path, and issue_number. Depending on action, also pass invocation_root, branch_name, " +
   "base_branch, driver, requested_requirement_uid, requirements, commit_message, synchronization, pr_number, or completion. " +
+  "requested_requirement_uid names the requirement under test. Every action that can reach a repository gate resolves it " +
+  "server-side against the target issue's Requirements section and refuses an unlisted UID; verify and publish then export " +
+  "the bound value to every repo-authored gate as ACES_REQUIREMENT_UID, so a governance gate still receives requirement " +
+  "identity on an issue branch that carries no UID. " +
   "A phase either completes or returns agent_required=true with a bounded repair reason; it never invokes an agent.";
 
 function bounded(value, max = 1200) {
@@ -157,51 +166,6 @@ function commandFailure(action, stage, error) {
   );
 }
 
-export function extractInScopeRequirementUids(issueBody) {
-  if (typeof issueBody !== "string" || issueBody === "") return [];
-
-  const sectionLines = [];
-  let sectionLevel = null;
-  for (const line of issueBody.split(/\r?\n/)) {
-    const heading = line.match(/^(#{1,6})\s+(.+?)\s*$/);
-    if (heading) {
-      const level = heading[1].length;
-      const title = heading[2].trim().toLowerCase();
-      if (sectionLevel == null) {
-        if (level >= 2 && level <= 4 && title === "requirements") {
-          sectionLevel = level;
-        }
-        continue;
-      }
-      if (level <= sectionLevel) break;
-      sectionLines.push(line);
-      continue;
-    }
-    if (sectionLevel != null) sectionLines.push(line);
-  }
-
-  const seen = new Set();
-  const result = [];
-  for (const line of sectionLines) {
-    const bullet = line.match(/^\s*[-*+]\s+(.+?)\s*$/);
-    if (!bullet) continue;
-    for (const token of bullet[1].split(/[\s,;]+/)) {
-      const candidate = token.replace(/^[`[(]+|[`)\].:]+$/g, "");
-      // Recognition, not identity validation: these tokens come from free-form
-      // issue prose, so the bounded-identifier contract would accept ordinary
-      // words. The anchored recognizer still finds allocator-minted short UIDs
-      // like APP-2, so a requirement-backed run is not silently reduced to a
-      // requirement-free one (issue #1425).
-      if (!isRequirementUidToken(candidate)) break;
-      if (!seen.has(candidate)) {
-        seen.add(candidate);
-        result.push(candidate);
-      }
-    }
-  }
-  return result;
-}
-
 async function readStatus(repoRoot, runGit, commandRunner) {
   const { stdout } = await runGit(
     repoRoot,
@@ -245,16 +209,14 @@ async function runBootstrap(args, deps) {
     return failure(action, thread.error, thread.message, "repair_issue_access_and_retry");
   }
   const requirementUids = extractInScopeRequirementUids(thread.body);
-  if (
-    args.requestedRequirementUid != null
-    && !requirementUids.includes(args.requestedRequirementUid)
-  ) {
-    return failure(
-      action,
-      "implement_mechanical_requested_requirement_out_of_scope",
-      `The issue Requirements section does not include '${args.requestedRequirementUid}'`,
-      "add_the_requested_requirement_to_the_authoritative_issue_section_and_retry",
-    );
+  // Bootstrap already holds the authoritative thread, so it binds against that
+  // body directly rather than re-reading it.
+  const authorized = requestedRequirementUidAuthorization(
+    thread.body,
+    args.requestedRequirementUid,
+  );
+  if (!authorized.ok) {
+    return failure(action, authorized.error, authorized.message, authorized.next_action);
   }
   let requirements;
   let issueTraceabilityLinks;
@@ -356,15 +318,29 @@ async function runVerify(args, deps) {
       "configure_a_completion_command_and_retry",
     );
   }
+  // The repository's gates may need the requirement under test, which they
+  // normally read from the branch name. A run that targets a requirement whose
+  // branch carries no UID supplies it here instead (issue #1434). Building the
+  // environment before the first gate keeps an invalid value from surfacing as
+  // a misleading gate failure.
+  const authorized = await deps.authorizeRequirementUid({
+    repoPath: args.repoPath,
+    issueNumber: args.issueNumber,
+    requestedRequirementUid: args.requestedRequirementUid,
+  });
+  if (!authorized.ok) {
+    return failure(action, authorized.error, authorized.message, authorized.next_action);
+  }
+  const gateEnv = implementGateEnvironment(authorized.requirementUid);
   const before = await readStatus(repoRoot, deps.runGit, deps.execFile);
   try {
-    await deps.execFile("bash", ["-c", command], { cwd: repoRoot });
+    await deps.execFile("bash", ["-c", command], { cwd: repoRoot, env: gateEnv });
   } catch (error) {
     return commandFailure(action, "completion_gate", error);
   }
   const policyCommand = resolveWorkflowPolicyCommand(context);
   try {
-    await deps.execFile("bash", ["-c", policyCommand], { cwd: repoRoot });
+    await deps.execFile("bash", ["-c", policyCommand], { cwd: repoRoot, env: gateEnv });
   } catch (error) {
     return commandFailure(action, "policy_gate", error);
   }
@@ -467,6 +443,14 @@ async function runPublish(args, deps) {
       "repair_ground_control_context_and_retry",
     );
   }
+  const authorized = await deps.authorizeRequirementUid({
+    repoPath: args.repoPath,
+    issueNumber: args.issueNumber,
+    requestedRequirementUid: args.requestedRequirementUid,
+  });
+  if (!authorized.ok) {
+    return failure(action, authorized.error, authorized.message, authorized.next_action);
+  }
   const { stdout: activeBranch } = await deps.runGit(
     repoRoot,
     ["branch", "--show-current"],
@@ -507,6 +491,7 @@ async function runPublish(args, deps) {
       preSyncSha: args.synchronization.pre_sync_sha,
       fetchedBaseSha: args.synchronization.fetched_base_sha,
       outcome: args.synchronization.outcome,
+      requestedRequirementUid: authorized.requirementUid,
     });
     if (!completed.ok) {
       return failure(
@@ -552,7 +537,12 @@ async function runPublish(args, deps) {
       );
     }
     try {
-      await deps.preCommit(repoRoot, deps.execFile, context);
+      await deps.preCommit(
+        repoRoot,
+        deps.execFile,
+        context,
+        authorized.requirementUid,
+      );
     } catch (error) {
       return commandFailure(action, "precommit", error);
     }
@@ -576,6 +566,7 @@ async function runPublish(args, deps) {
     issueNumber: args.issueNumber,
     branchName: args.branchName,
     action: "start",
+    requestedRequirementUid: authorized.requirementUid,
   });
   if (!started.ok) {
     return failure(
@@ -630,6 +621,7 @@ async function runPublish(args, deps) {
     preSyncSha: started.preSyncSha,
     fetchedBaseSha: started.fetchedBaseSha,
     outcome: started.outcome,
+    requestedRequirementUid: authorized.requirementUid,
   });
   if (!completed.ok) {
     return failure(
@@ -960,6 +952,7 @@ const defaultDeps = {
   watchCi: runWatchCiRun,
   watchSonar: runWatchSonarAnalysis,
   assertCompletion: runAssertCompletion,
+  authorizeRequirementUid: authorizeRequestedRequirementUid,
   closeIssue: runCloseIssueAfterMerge,
 };
 

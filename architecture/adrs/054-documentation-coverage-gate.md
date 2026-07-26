@@ -146,13 +146,14 @@ third value permits a rationale string (1-2000 characters); the other two
 reject it (strict). When `outcome_required` is true and the field is absent,
 the renderer rejects the input rather than posting an incomplete record.
 
-**Layer 3: Vale prose linter wired into `make policy`, CI, and pre-commit.**
+**Layer 3: Vale prose linter wired into `make policy` and CI.**
 Vale with the `errata-ai/Google` package enforces the Google Developer
 Documentation Style Guide on docs modified in the current diff. The binary is
 pinned to a specific version, verified by SHA-256 checksum, and installed by
-`tools/install-vale.sh` to `.tools/vale/` (gitignored). The pre-commit hook
-installs Vale automatically on first need rather than skipping; agents and
-contributors do not bypass the gate by virtue of a fresh clone.
+`tools/install-vale.sh` to `.tools/vale/` (gitignored). Both `make policy` and
+the CI policy job install Vale automatically on first need rather than
+skipping; agents and contributors do not bypass the gate by virtue of a fresh
+clone.
 
 **House-style overrides (`GoogleProject/` namespace).** The `.vale/styles/GoogleProject/`
 directory is the registry for project-specific rules that augment the upstream
@@ -227,8 +228,8 @@ current with the actual classifier surface.
   deliberate cost.
 - **Graceful skip when Vale is not installed locally**: rejected. Lets agents
   and contributors commit unlinted prose on fresh clones, which is the
-  failure mode the gate exists to prevent. The pre-commit hook installs Vale
-  via `tools/install-vale.sh` on first need.
+  failure mode the gate exists to prevent. `make policy` and the CI policy job
+  install Vale via `tools/install-vale.sh` on first need.
 
 ## References
 
@@ -581,3 +582,37 @@ quickfix skills, and the workflow documents. The documentation-coverage
 classifier, its `outcome_required` mapping, the Vale rules, the installer, and
 `.vale.ini` are unchanged; no new documentation classification or style rule is
 established.
+
+**2026-07-26 (issue #1434 requirement identity for repository gates).**
+`mcp/ground-control/lib.js` and `mcp/ground-control/index.js` add the shared
+`implementGateEnvironment` helper and an additive optional
+`requested_requirement_uid` input on `gc_synchronize_implement_branch`, so the
+requirement under test reaches every repo-authored gate as the
+`ACES_REQUIREMENT_UID` environment variable. The field is documented in the
+`gc_synchronize_implement_branch` and `gc_implement_mechanical` description
+strings and in `mcp/ground-control/README.md`; the execution-boundary contract
+is documented in `docs/DEVELOPMENT_WORKFLOW.md` and an ADR-027 amendment, and
+`docs/DOC_STYLE.md` records why a new environment variable that repository
+commands depend on needs a durable record even though the field itself is only
+a contract surface. The documentation-coverage classifier
+(`classifyChangedSurface`), its `outcome_required` mapping, the Vale rules,
+`tools/install-vale.sh`, and `.vale.ini` are unchanged; no new documentation
+classification or style rule is established.
+
+**2026-07-27 (commit-time broad-gate de-duplication).** Removed the
+`vale-prose-lint`, `repo-policy`, `gradle-check`, and `openjml-esc` hooks from
+`.pre-commit-config.yaml`. Each re-ran work the `/implement` completion and
+policy gates already perform at Step 6 and again on the post-base-sync tree at
+Step 8.5, and that the CI `policy`, `test`, and `openjml` jobs perform on every
+pull request. The commit-time copy was the weakest of the three: skippable with
+`--no-verify`, path-filtered so it degraded silently on diffs outside its
+`files:` patterns, and producing no result any gate or workflow record could
+attest to. Vale enforcement is unchanged in substance - `make policy` and the
+CI policy job remain the authoritative surfaces, and both still install Vale on
+first need. Layer 3 prose and the rejected "graceful skip" alternative are
+updated to name those two surfaces instead of the hook. The eight hygiene and
+secret-scan hooks pinned by `run_ci_strictness_contract` are untouched, as is
+the ADR-025 backup-policy assertion. The documentation-coverage classifier
+(`classifyChangedSurface`), its `outcome_required` mapping, the Vale rules,
+`tools/install-vale.sh`, and `.vale.ini` are unchanged; no new documentation
+classification or style rule is established.
