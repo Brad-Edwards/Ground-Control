@@ -98,6 +98,29 @@
           "message": "Documentation coverage gate surfaces changed without syncing ADR-054 and DOC_STYLE.md."
         }
       ]
+    },
+    {
+      "id": "ADR-090",
+      "title": "Production-Line Measurement Model",
+      "adrPath": "architecture/adrs/090-production-line-measurement-model.md",
+      "rules": [
+        {
+          "id": "measurement-model-sync",
+          "whenAny": [
+            "backend/src/main/java/com/keplerops/groundcontrol/domain/workflowtelemetry/**",
+            "backend/src/main/java/com/keplerops/groundcontrol/api/workflowtelemetry/**",
+            "backend/src/main/java/com/keplerops/groundcontrol/domain/mcptelemetry/**",
+            "backend/src/main/java/com/keplerops/groundcontrol/api/mcptelemetry/**",
+            "mcp/ground-control/gc-workflow-run.js",
+            "mcp/ground-control/gc-workflow-run-ingest.js",
+            "mcp/ground-control/telemetry.js"
+          ],
+          "requireAll": [
+            "architecture/adrs/090-production-line-measurement-model.md"
+          ],
+          "message": "Process-measurement emitter surfaces changed without syncing ADR-090. Every emitter maps to one measurement model; a record-shape change that skips the ADR re-creates the divergence it closes."
+        }
+      ]
     }
   ]
 }
