@@ -6,6 +6,14 @@ tier: low
 
 # Step 7: Stage & Pre-commit Loop
 
+On the normal path, Steps 7, 8, and 8.5 are one
+`gc_implement_mechanical action="publish"` call. It screens changed paths
+before staging, runs pre-commit, commits, pushes, starts base synchronization,
+and completes a clean merge automatically. If synchronization reports
+conflicts, resolve them and retry `publish` with the returned `retry_input` as
+`synchronization`; the existing synchronization boundary verifies, commits,
+pushes, and attests the preserved merge.
+
 1. `git add` all relevant changed files. Do NOT stage .env files, credentials, secrets, or large binaries.
 2. Run the workflow's single mandatory pre-publish
    `pre-commit run --all-files` invocation. Do not duplicate this successful

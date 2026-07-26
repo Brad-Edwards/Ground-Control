@@ -1,5 +1,14 @@
 # Documentation style
 
+> **Sync note for issue #1421 (2026-07-26):** The `/implement` workflow gains
+> repository-bound MCP tools for remote integration-branch synchronization and
+> synchronized PR creation. The routing parser retires execution-control fields
+> that forced subagent dispatch, and the workflow policy checks now enforce
+> advisory routing plus the new Step 8.5 boundary. The current contract is
+> documented in the implement and quickfix skills, workflow docs, tool
+> descriptions, and ADR amendments. The documentation-coverage classifier,
+> Vale rules, and this file's style rules are unchanged.
+
 > **Sync note for issue #1308 (2026-07-15, graph enum contract):** Added
 > `GraphEntityType` to the existing ADR-034 enum-contract policy inventory and
 > generated `GRAPH_ENTITY_TYPES` for frontend graph colors and tooltip coverage.
@@ -459,3 +468,9 @@ documentation style rule.
 The issue #1416 risk-proportionate verification correction is likewise a
 workflow-contract clarification documented in those workflow ADRs and docs;
 it changes no documentation classification or style rule.
+
+The issue #1426 `gc_implement_mechanical` registration follows the same
+tool-surface convention: the public inputs are documented in the MCP README
+and description-parity test, while the execution contract is synchronized in
+ADR-021, ADR-029, ADR-031, ADR-036, ADR-054, and the workflow documents. It
+changes no documentation classification, Vale rule, or style rule.

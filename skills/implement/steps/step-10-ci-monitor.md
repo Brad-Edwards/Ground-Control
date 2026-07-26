@@ -6,6 +6,12 @@ tier: low
 
 # Step 10: CI Monitor
 
+On the normal path, Steps 10 and 11 are one
+`gc_implement_mechanical action="monitor"` call. The script waits for CI and
+then SonarCloud, advancing without another model turn when both pass. It stops
+before Sonar when CI fails and returns `agent_required: true` with the failed
+stage and bounded diagnostics.
+
 Replaces the previous "poll `gh run view` every 15 seconds for up to 45 minutes" inline loop with a single MCP call. The agent makes one tool call; the MCP server holds the connection while polling server-side; the agent's context is not burned by per-poll turns. (Issue #934 item 4.)
 
 1. Call the `gc_watch_ci_run` MCP tool with:

@@ -292,6 +292,12 @@ current with the actual classifier surface.
 
 **2026-06-15 (issue #1168).** `tools/policy/checks.py` gained `run_workflow_routing_contract` and its `parse_routing_agents` helper - a guardrail that asserts the async-poll `/implement` routing stages in `.ground-control.yaml` resolve to `agent: parent`. The change is unrelated to documentation coverage: the surface classifier (`run_documentation_coverage_check`), the Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged. `docs/DOC_STYLE.md` is updated only to list `tools/policy/checks.py` among the gate-surface trigger paths it previously omitted.
 
+**2026-07-26 (issue #1421).** The #1168 executor-routing guard above is
+retired because `/implement` no longer carries an `agent` execution-control
+field. `run_workflow_routing_contract` now rejects those retired fields and
+pins the advisory `base_sync` stage instead. Documentation coverage
+classification remains unchanged.
+
 **2026-05-26 (issue #989 SDK schema hotfix).** Re-registered `gc_integration_manager` via `server.tool(name, desc, zodShape, handler)` so the SDK's `safeParseAsync` path resolves; the prior `server.registerTool({inputSchema: <raw JSON Schema>})` form crashed every invocation with `v3Schema.safeParseAsync is not a function`. The fix touches `mcp/ground-control/index.js` only; no change to the Vale rule set, the `.vale.ini` configuration, the doc-coverage classifier, or any documentation target surface.
 
 **2026-05-28 (issue #720 FAIR risk scenario refactor).** The `gc_risk_scenario` MCP tool field renames (`threat_source`→`threat`, `threat_event`→`method`, `affected_object`→`asset`, `consequence`→`effect`) required updating the `TO_CAMEL` mapping in `mcp/ground-control/lib.js` to remove obsolete snake_case bindings and add the new derived field `fair_sentence` mapping. Additionally, `tools/policy/checks.py` was updated to recognize `mcp/ground-control/gc-risk-scenario.js` as a valid MCP-adapter file (alongside `gc-risk-governance.js`) for the `controller-parity` policy check. These are config-parser and policy surfaces; no change to the Vale rule set, the `.vale.ini` configuration, or `docs/DOC_STYLE.md` itself.
@@ -528,3 +534,13 @@ risk-proportionate local-test principle, reconciles the review and completion
 step text, and extends the structural policy test. It changes workflow
 scheduling documentation, not documentation classification, Vale rules, or
 style policy.
+
+**2026-07-26 (issue #1426 deterministic phase tool).**
+`mcp/ground-control/index.js` registers `gc_implement_mechanical`, whose six
+actions compose existing `/implement` primitives. Its public inputs are listed
+in `mcp/ground-control/README.md` and enforced by the live
+tool-description-parity test. The workflow behavior is synchronized across
+ADR-021, ADR-029, ADR-031, ADR-036, the implement/quickfix skills, and workflow
+documentation. The documentation-coverage classifier, `outcome_required`
+mapping, Vale rules, installer, and `.vale.ini` are unchanged; no new style
+rule is established.

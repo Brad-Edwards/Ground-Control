@@ -302,3 +302,20 @@ The completion command and repository policy suite run once on the final
 post-fix tree before leaving the review band when that tree changed, not after
 each small fix. This affects local scheduling only; review caps and every
 mandatory pre-commit, review, CI, SonarCloud, and completion gate remain intact.
+
+**2026-07-26 (issue #1421, primary-session review control).** The workflow
+driver invokes the Codex and test-quality MCP review tools directly. Ground
+Control routing selects provider, model, and tier but does not require or
+manufacture a subagent execution context. The MCP server may continue to run
+long review processes as background jobs; that implementation detail does not
+delegate routine development work or change this ADR's stopping model, caps,
+finding obligations, or durable decision records.
+
+**2026-07-26 (issue #1426, deterministic non-review bands).** The new
+`gc_implement_mechanical` tool removes model turns from successful-path
+bootstrap, completion/policy verification, publish/base synchronization,
+CI/Sonar monitoring, readiness, and finalization. It does not alter the Codex
+or test-quality review tools, their findings, cap counters, disposition
+records, or escalation rules. Review agents still run only inside the existing
+bounded review-cycle tools; the primary handles returned findings and cap
+decisions under this ADR.

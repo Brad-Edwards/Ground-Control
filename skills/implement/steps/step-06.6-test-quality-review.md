@@ -4,61 +4,38 @@ step: "Step 6.6"
 tier: medium
 ---
 
-# Step 6.6: Pre-push Test-Quality Review (single subagent invocation)
+# Step 6.6: Pre-push Test-Quality Review
 
-This step is driven by **one subagent invocation** that owns the entire test-quality review loop end-to-end. The parent never sees verbatim review prose or per-finding bodies - only a short envelope from the subagent.
-
-Per issue #934 item 2, the parent dispatches a single subagent for this step. The subagent runs the loop in [_review-loop-rules.md](_review-loop-rules.md) against the cycle tool (`gc_test_quality_review_cycle`, issue #934 item 3) until clean or cap-reached, then returns the envelope below.
+The primary invocation session owns this loop end-to-end. Ground Control does
+not spawn or require a subagent for routine review work. The primary runs
+[_review-loop-rules.md](_review-loop-rules.md) against
+`gc_test_quality_review_cycle` until clean or cap-reached. The reviewer remains
+a server-side background job; that process boundary is not agent delegation.
 
 This step moved from post-PR (former Step 13) to pre-push by issue #906 so the PR opens with **both** AI-assisted reviewers clean. Without the move, a reviewer scanning the PR sees a stale picture (codex clean, test-quality pending), and any test-quality fix costs an extra commit + push + CI run + SonarCloud re-analyze cycle. Pre-push, it's just re-stage + re-run.
 
-## Subagent prompt template
+## Primary-session procedure
 
-The orchestrator spawns the subagent with this prompt (substituting
-`{issue_number}`, `{repo_path}`, `{development_principles_verbatim}`, and
-`{execution_contract_json}`):
+1. Stage everything with `git add -A`.
+2. Call `gc_test_quality_review_cycle` with `repo_path`, `issue_number`, and
+   `async=true`.
+3. Poll `gc_codex_job` until the background reviewer returns its terminal
+   envelope. Restart a missing/expired job; cancel only a genuinely stuck job.
+4. Dispatch on `next_action` exactly as specified by
+   [_review-loop-rules.md](_review-loop-rules.md). Fix real findings in this
+   session, run proportionate targeted tests while iterating, and do not echo
+   findings instead of fixing them.
+5. Advance only after the durable decision-record post succeeds.
 
-> Binding development principles (verbatim):
-> {development_principles_verbatim}
->
-> Immutable execution contract: {execution_contract_json}
->
-> Drive the **test-quality pre-push review** for issue {issue_number} to completion. Apply the canonical review loop rules at `skills/implement/steps/_review-loop-rules.md`. Every real finding remains a current execution obligation until fixed and verified; a cap pauses an open obligation and never converts it to deferred work.
->
-> Loop:
-> 1. Stage everything with `git add -A`.
-> 2. Call the `gc_test_quality_review_cycle` MCP tool with `repo_path={repo_path}`, `issue_number={issue_number}`, `async=true`. It returns immediately with `{ok:true, status:"running", job_id}` - the test-quality reviewer runs in a background job so the multi-minute review never trips the MCP client tool-call timeout (issue #937).
-> 3. Poll the job: call `gc_codex_job` with `action="poll"`, `job_id=<the job_id from step 2>`. While it returns `status:"running"`, sleep ~60s and poll again. When it returns `status:"done"`, the cycle envelope is in the response's `result` field. If a poll returns `error:"job_not_found"` (job expired or MCP server restarted), restart from step 2. To abandon a stuck job, call `gc_codex_job` with `action="cancel"`.
-> 4. Read the cycle envelope from the poll response's `result` (`{ok, reviewer, cycle, cap, status, next_action, findings_summary, findings_record_url, decision_record_url}`). Do NOT echo verbatim review prose. Dispatch on `next_action`:
->    - `post_clean_decision_record_and_advance_to_phase_c` → return `status: "clean"`. The decision record was auto-posted.
->    - `fix_findings_and_reinvoke` → classify findings (one-off vs class) - test-quality findings often arrive without a classification, so classify yourself first. Batch and fix them per the loop rules in the same turn (do NOT stop and echo findings to the user as a status report - that is the #884 regression in a different shape). Run the narrowest relevant tests, expanding only when risk warrants, `git add -A`, then re-invoke. Do not run repository-wide completion/policy suites per small fix.
->    - `fix_findings_then_summarize_and_escalate` (last-in-cap) → fix and run proportionate verification, then run `cfg.workflow.completion_command` and `make policy` once on the final post-fix tree; do NOT re-invoke; return `status: "escalated"`.
->    - `post_summary_and_escalate_to_user` (cap-refused) → no fixes; return `status: "capped"`.
-> 5. The cycle wrapper auto-posts `decision: "fix"` per finding. Advance ONLY after the cycle envelope's `decision_record_url` is non-null on a clean cycle - the durable record per ADR-029 / issue #884 must be in place before the workflow proceeds.
->
-> Return ONLY this envelope:
->
-> ```json
-> {
->   "status": "clean" | "escalated" | "capped",
->   "cycles_run": <int>,
->   "summary": "<one-line summary of what was found and fixed>",
->   "commit_shas": [],
->   "decision_record_urls": [ "<URL per cycle>" ],
->   "escalation_reason": null
-> }
-> ```
-
-## Parent-side handling of the envelope
-
-When the subagent returns:
+When the cycle finishes:
 - `status: "clean"` → advance to Phase C (Step 7).
 - `status: "escalated"` → if `workflow.review_disposition.enabled` is true, run the automated cap disposition (`gc_review_cap_disposition` with `reviewer="test-quality"`) per [_review-loop-rules.md](_review-loop-rules.md) § "Automated cap disposition" before escalating: `proceed` advances to Phase C, `one_more_cycle` re-invokes this step with `override_cap=true` + `auto_grant=true`, `escalate_to_human` (or `shadow` mode) summarizes to the user and waits. With the knob off, summarize to the user and wait. Do NOT push commits while waiting.
 - `status: "capped"` → summarize to the user. They may authorize an over-cap cycle; otherwise treat as terminal.
 
-## Return contract (from this step file's perspective)
+## Return contract
 
-This step file IS the subagent's instruction set. The orchestrator receives the envelope above directly from the subagent.
+Return the compact `{status, cycles_run, summary, commit_shas,
+decision_record_urls, escalation_reason}` envelope to the next workflow step.
 
 ## Underlying contract (issue #884 / #906)
 
@@ -68,7 +45,7 @@ The cycle wrapper (`gc_test_quality_review_cycle`) wraps the underlying `gc_test
 - After every cycle the cycle wrapper auto-posts the canonical durable-record marker via `gc_post_decision_record` with `reviewer: "test-quality"` (the enum literal that disjoint marker families anchor on).
 - On a clean cycle the wrapper posts `gc_post_decision_record` with `findings: []` - a clean cycle MUST still post a decision record (issue #884: silent advance is the regression target). The `decision_record_url` in the wrapper's return envelope MUST be non-null before the workflow proceeds.
 - **Success precondition.** Advance to Phase C ONLY after the cycle wrapper's envelope reports the decision-record post returned `ok: true`. On `ok: false` (sensitive-content rejection, body-size cap, `gh` posting failure, network), fix the underlying tooling issue and retry the post - do not advance with the durable marker missing.
-- **Fix findings in the same turn.** When the cycle envelope returns `fix_findings_and_reinvoke` (the subagent reads this as a directive, not as prose to echo), the agent MUST fix the findings in the same agent turn - do not stop, do not echo the findings back as a status report. The whole point of the review is to fix the tests; agents MUST NOT echo findings to the user without fixing them - that is the issue #884 regression in a different shape.
+- **Fix findings in the same turn.** When the cycle envelope returns `fix_findings_and_reinvoke`, the primary reads it as a directive, fixes the findings in the same turn, and does not stop to echo them back as a status report.
 
 ## Notes
 

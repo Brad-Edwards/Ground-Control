@@ -12,7 +12,6 @@ from tools.policy.checks import (
     ENUM_CONTRACT_INVENTORY,
     FRONTEND_API_TYPES_PATH,
     MCP_LIB_PATH,
-    POLL_LOOP_ROUTING_STAGES,
     REPO_ROOT,
     _is_release_pr,
     _jsonpath_keys,
@@ -24,7 +23,6 @@ from tools.policy.checks import (
     parse_args,
     parse_const_string_array,
     parse_java_enum_constants,
-    parse_routing_agents,
     parse_ts_union_literals,
     read_changed_files,
     run_adr_guard,
@@ -73,6 +71,35 @@ class PolicyChecksTest(unittest.TestCase):
 
     def test_implement_execution_contract_is_structurally_complete(self):
         self.assertEqual(run_implement_execution_contract(root=REPO_ROOT), [])
+
+    def test_implement_execution_contract_rejects_direct_pr_creation(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            for rel in (
+                "skills/implement/SKILL.md",
+                "skills/implement/_development-principles.md",
+                "skills/implement/steps",
+                ".cursor/skills/implement/SKILL.md",
+                "mcp/ground-control/lib.js",
+                "mcp/ground-control/index.js",
+            ):
+                source = REPO_ROOT / rel
+                target = root / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if source.is_dir():
+                    shutil.copytree(source, target)
+                else:
+                    shutil.copy2(source, target)
+            step9 = root / "skills/implement/steps/step-09-pr-body.md"
+            step9.write_text(
+                step9.read_text(encoding="utf-8") + "\n`gh pr create`\n",
+                encoding="utf-8",
+            )
+            violations = run_implement_execution_contract(root=root)
+            self.assertIn(
+                "implement-direct-pr-create",
+                {item.code for item in violations},
+            )
 
     def test_implement_verification_contract_is_proportionate_and_mandatory(self):
         principles = (
@@ -656,66 +683,29 @@ class PolicyChecksTest(unittest.TestCase):
 
 
 
-    def test_poll_loop_routing_stages_are_the_async_poll_steps(self):
-        self.assertEqual(
-            POLL_LOOP_ROUTING_STAGES,
-            frozenset(
-                {"architecture_preflight", "review_cycle_1_consume", "test_quality_review"}
-            ),
-        )
-
-    def test_parse_routing_agents_defaults_absent_agent_to_subagent(self):
-        text = (
-            "routing:\n"
-            "  enabled: true\n"
-            "  stages:\n"
-            "    architecture_preflight:\n"
-            "      tier: low\n"
-            "      model: claude-haiku-4-5\n"
-            "      agent: parent\n"
-            "    codebase_assessment:\n"
-            "      tier: medium\n"
-            "      model: claude-sonnet-4-6\n"
-        )
-        agents = parse_routing_agents(text)
-        self.assertEqual(agents["architecture_preflight"], "parent")
-        self.assertEqual(agents["codebase_assessment"], "subagent")
-
     def test_workflow_routing_contract_passes_on_repo(self):
         violations = run_workflow_routing_contract(root=REPO_ROOT)
         self.assertEqual(
             violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}"
         )
 
-    def test_workflow_routing_contract_flags_poll_stage_routed_to_subagent(self):
+    def test_workflow_routing_contract_rejects_retired_executor_fields(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
-            # test_quality_review (a poll-loop stage) has no agent: key, so it
-            # defaults to subagent — which the contract must reject.
             (root / ".ground-control.yaml").write_text(
                 "routing:\n"
                 "  enabled: true\n"
                 "  stages:\n"
-                "    architecture_preflight:\n"
+                "    base_sync:\n"
                 "      tier: low\n"
-                "      agent: parent\n"
-                "    review_cycle_1_consume:\n"
-                "      tier: high\n"
-                "      agent: parent\n"
-                "    test_quality_review:\n"
-                "      tier: medium\n"
-                "      model: claude-sonnet-4-6\n",
+                "      agent: subagent\n",
                 encoding="utf-8",
             )
             violations = run_workflow_routing_contract(root=root)
             codes = {item.code for item in violations}
-            self.assertIn("workflow-routing-poll-loop-subagent", codes)
-            self.assertTrue(
-                any("test_quality_review" in v.message for v in violations),
-                msg=f"expected test_quality_review flagged: {[v.render() for v in violations]}",
-            )
+            self.assertIn("workflow-routing-execution-control-retired", codes)
 
-    def test_workflow_routing_contract_flags_missing_poll_stage(self):
+    def test_workflow_routing_contract_flags_missing_base_sync_stage(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             (root / ".ground-control.yaml").write_text(
@@ -728,7 +718,7 @@ class PolicyChecksTest(unittest.TestCase):
             )
             violations = run_workflow_routing_contract(root=root)
             codes = {item.code for item in violations}
-            self.assertIn("workflow-routing-stage-missing", codes)
+            self.assertIn("workflow-routing-base-sync-stage-missing", codes)
 
     def test_workflow_routing_contract_reports_missing_config(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

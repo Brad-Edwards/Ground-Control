@@ -74,6 +74,18 @@ const REQUIRED_FIELD_REGISTRY = {
     "repo_path", "invocation_root", "issue_number", "branch_name",
     "base_branch", "checkout_mode",
   ],
+  gc_implement_mechanical: [
+    "action", "repo_path", "issue_number", "invocation_root", "branch_name",
+    "base_branch", "driver", "requested_requirement_uid", "requirements", "commit_message",
+    "synchronization", "pr_number", "completion",
+  ],
+  gc_synchronize_implement_branch: [
+    "repo_path", "issue_number", "branch_name", "action", "record_id",
+    "pre_sync_sha", "fetched_base_sha", "outcome",
+  ],
+  gc_create_synchronized_implement_pr: [
+    "repo_path", "issue_number", "branch_name", "record_id", "title", "body",
+  ],
   gc_record_execution_obligation: [
     "obligation_id", "event", "category", "observed_state", "evidence",
     "impact", "obligation", "pause_class", "decision_request", "disposition",

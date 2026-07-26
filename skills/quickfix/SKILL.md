@@ -11,6 +11,16 @@ Canonical, agent-neutral implementation of the Ground Control `/quickfix` workfl
 
 **Sibling to `skills/implement/SKILL.md`.** This skill cross-references the canonical full workflow at every step rather than duplicating prose - the contract surfaces (branch shape, in-progress signal, PR-title rules, `gc_render_pr_body`, CI/SonarCloud, no-deferral, user-owns-merge) are identical. The only differences are the dropped ceremony.
 
+The shared successful-path mechanics introduced by issue #1426 also apply
+here where the lane contracts match: Q1 uses
+`gc_implement_mechanical action="bootstrap"` after issue-only input
+validation; Q6 uses `action="verify"` after quickfix acceptance mapping; Q7
+through Q8.5 use `action="publish"`; and Q10 through Q11 use
+`action="monitor"`. Quickfix does not use `readiness` or `finalize`, because
+its lightweight close record and requirement-free lifecycle intentionally
+differ from `/implement`. A mechanical failure hands control to the primary
+only for the named repair, after which the same action is retried.
+
 ## When to pick `/quickfix` vs `/implement`
 
 Judgment call, gating heuristic:
@@ -22,7 +32,7 @@ The user picks the lane explicitly at invocation time. The issue is the durable 
 
 ## Per-step model routing (ADR-036)
 
-Routes through the same `gc_resolve_workflow_route` resolver as `/implement` (see ADR-036 + `skills/implement/SKILL.md` § "Per-step model routing"). Stages reused: `issue_branch_resolution`, `codebase_assessment`, `implementation`, `precommit`, `completion_gate`, `review_cycle_1_consume` (only when `--review`), `review_fix_application`, `git_publish`, `pr_body`, `ci_monitor`, `sonarcloud`, `test_quality_review` (only when `--review`), `close_issue`. Stages NOT used (because the skill drops them): `architecture_preflight`, `planning`, `clause_mapping`, `transition_reconcile`, `final_report`. Routing and telemetry are opt-in per repo via `.ground-control.yaml` (same `cfg.routing.enabled` and `cfg.telemetry.enabled` knobs).
+Routes through the same `gc_resolve_workflow_route` resolver as `/implement` (see ADR-036 + `skills/implement/SKILL.md` § "Per-step model routing"). Stages reused: `issue_branch_resolution`, `codebase_assessment`, `implementation`, `precommit`, `completion_gate`, `review_cycle_1_consume` (only when `--review`), `review_fix_application`, `git_publish`, `base_sync`, `pr_body`, `ci_monitor`, `sonarcloud`, `test_quality_review` (only when `--review`), `close_issue`. Stages NOT used (because the skill drops them): `architecture_preflight`, `planning`, `clause_mapping`, `transition_reconcile`, `final_report`. Routing and telemetry are opt-in per repo via `.ground-control.yaml` (same `cfg.routing.enabled` and `cfg.telemetry.enabled` knobs). A route is advisory capability selection only; it does not require the driver to delegate a stage or create another execution context.
 
 ## Invocation
 
@@ -106,7 +116,7 @@ When `--review` is absent, both steps skip. The skill still posts no decision re
 
 ---
 
-## Phase C: Stage, Commit, Push
+## Phase C: Stage, Commit, Push, Synchronize
 
 ### Step Q7: Stage & Pre-commit Loop
 
@@ -116,13 +126,33 @@ When `--review` is absent, both steps skip. The skill still posts no decision re
 
 **Identical to `skills/implement/SKILL.md` Step 8.** Imperative-mood commit message, no agent attribution, `git push -u origin <branch>`.
 
+### Step Q8.5: Synchronize the Remote Integration Branch
+
+**Identical to `skills/implement/SKILL.md` Step 8.5.** Call
+`gc_synchronize_implement_branch` from the invocation checkout after the
+initial feature push and immediately before Step Q9. The tool fetches the
+configured integration branch from `origin` with an explicit remote-tracking
+refspec, performs a real merge when needed, verifies the merge graph, pushes
+normally, and records the durable synchronization attestation. Run
+proportionate targeted checks while resolving integration conflicts; the tool's
+completion action mechanically runs the configured completion command and
+`make policy` once on the exact tree it binds to the merge commit. Do not
+substitute a local base branch, worktree, rebase, force-push, or discarded
+feature state.
+
 ---
 
 ## Phase D: Ship
 
 ### Step Q9: Create PR
 
-**Identical to `skills/implement/SKILL.md` Step 9** - same `gc_render_pr_body` call (with `requirement_uids: []` since `/quickfix` runs are requirement-free), same PR-title validation rules (single conventional-commit type + lowercase subject + per-repo override via `workflow.pr_title`), same `Closes #<issue-number>` wiring through the renderer.
+**Identical to `skills/implement/SKILL.md` Step 9** - same
+`gc_render_pr_body` call (with `requirement_uids: []` since `/quickfix` runs
+are requirement-free), same PR-title validation rules (single conventional-
+commit type + lowercase subject + per-repo override via `workflow.pr_title`),
+same synchronized-record validation through
+`gc_create_synchronized_implement_pr`, and the same `Closes #<issue-number>`
+wiring through the renderer.
 
 The renderer's `change_class` is typically `source` for `/quickfix` runs; `doc-only` for pure documentation fixes; `source+migration` is unusual for `/quickfix` and is a signal that the run probably wanted `/implement` instead.
 
@@ -248,3 +278,10 @@ execution-obligation marker family are added to `/implement`. `/quickfix`
 remains a distinct lower-ceremony lane and does not silently import the
 `/implement` orchestration contract; its existing upgrade path to `/implement`
 is unchanged.
+
+**2026-07-26 (issue #1421).** The shared routing resolver no longer emits
+execution-control fields that force routine work into subagents. Quickfix
+drivers execute stages in their primary session unless the user or runtime
+explicitly justifies delegation. The lane also adopts the shared mandatory
+remote integration-branch synchronization and synchronized PR-creation
+boundary between its initial push and PR creation.

@@ -6,6 +6,15 @@ tier: low
 
 # Step 1: Resolve the Issue and Branch
 
+On the normal path, complete input classification and compliant branch-name
+derivation, then call `gc_implement_mechanical` with `action="bootstrap"`.
+That single operation gets repository context, prepares the branch, reads and
+parses the authoritative issue section, resolves every in-scope requirement,
+reads issue traceability, and records pickup. Use the individual primitives
+below only to resolve a requirement-UID input to its authoritative issue before
+`bootstrap`, or to repair the bounded stage named by a failed bootstrap
+envelope.
+
 The immutable `execution_contract` and
 `development_principles_verbatim` were loaded before this step. Refuse to run
 if they are absent, if their digest no longer matches, or if

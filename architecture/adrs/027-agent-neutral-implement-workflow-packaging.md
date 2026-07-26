@@ -243,3 +243,15 @@ package: every driver batches related edits, uses targeted tests inside
 implementation/review-fix loops, widens for shared or security-sensitive risk,
 and runs repository-wide completion/policy plus pre-commit at their canonical
 boundaries without duplicating them per small edit.
+
+## 2026-07-26 amendment: primary-session execution and synchronized PR write
+
+Issue #1421 removes `agent` and fallback execution-control fields from the
+agent-neutral routing contract. Every driver executes routine `/implement`
+steps in the invocation session; tier/provider/model remain advisory metadata,
+and Ground Control no longer manufactures subagents for context containment.
+The package adds Step 8.5 plus the repository-bound
+`gc_synchronize_implement_branch` and `gc_create_synchronized_implement_pr`
+tools. Together they keep base synchronization in the same checkout and make a
+fresh trusted synchronization attestation a mechanical prerequisite for the
+PR side effect.
