@@ -344,7 +344,7 @@ The guard is a pre-execution *lexical* policy control, not an OS sandbox. It pro
   `allowed_edges`. The backend surface is enforced against the same registry by
   `RegistryBoundaryArchitectureTest` (ArchUnit, in the `test` job). See
   `architecture/registry/README.md` for the schema (GC-CLD-2 / ADR-087 §3).
-- `make policy` is the common path for Claude, Codex, pre-commit, and CI
+- `make policy` is the common path for Claude, Codex, and CI
 - `make sync-ground-control-policy` and `make policy-live` keep Ground Control quality gates and ADR metadata aligned when a live GC instance is available
 
 Commit-time pre-commit activation is a separate per-clone contract from the
@@ -357,6 +357,19 @@ once per fresh clone: it writes managed `pre-commit`/`pre-push` hooks into the
 clone-local hook path the dispatcher delegates to, proves Git actually dispatches
 to them, then runs `pre-commit run --all-files`. `.git/hooks/` is not versioned, so
 this step does not survive a fresh clone by design; re-run it after cloning.
+
+Commit time carries only the checks nothing else performs: file hygiene, secret
+scanning with gitleaks, `bash -n` on operator scripts, Spotless auto-formatting,
+and the GC-P021 backup-policy assertion required by ADR-025. Broad verification
+runs at three points that each see a tree the commit hook cannot: the
+`/implement` completion and policy gates at Step 6, the same two gates on the
+post-base-sync tree at Step 8.5, and the CI `policy`, `test`, and `openjml`
+jobs. A fourth copy at commit time re-verified a tree the Step 6 gates had just
+certified, and it was the weakest copy of the four - skippable with
+`--no-verify`, path-filtered so it degraded silently on diffs outside its
+`files:` patterns, and leaving no result any gate or workflow record could
+attest to. Run `make check` or `make policy` directly to exercise the broad
+gates locally on demand.
 
 ### Contract Surface and MCP Write-Contract Gates (ADR-034, ADR-082)
 

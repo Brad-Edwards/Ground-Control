@@ -186,9 +186,11 @@ prose-lint gate. See `.vale/styles/GoogleProject/EmDashDensity.yml`.
 ## Enforcement
 
 Vale with the `errata-ai/Google` package runs on docs touched in the current
-diff via `make policy`, the CI `policy` job, and the pre-commit `vale-prose-lint`
-hook. The hook installs Vale via `tools/install-vale.sh` on first need; no
-manual `make vale-install` step is required.
+diff via `make policy` and the CI `policy` job. Both install Vale via
+`tools/install-vale.sh` on first need; no manual `make vale-install` step is
+required. Vale does not run at commit time: `make policy` already runs it at
+the `/implement` policy gate and again on the post-base-sync tree, and CI runs
+it on every pull request.
 
 Changes to any doc-coverage gate surface - `mcp/ground-control/index.js`,
 `mcp/ground-control/lib.js`, `tools/policy/checks.py`, `tools/install-vale.sh`,
