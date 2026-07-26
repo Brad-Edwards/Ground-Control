@@ -180,3 +180,13 @@ composite invokes no model and cannot waive or replace a constituent gate. It
 returns control to the primary only for a bounded actionable failure or
 semantic work. Phase ordering, review caps, zero-deferral behavior, the
 single-human merge touchpoint, and post-merge reconciliation are unchanged.
+
+**2026-07-26 (issue #1414, pre-push review reads the whole diff).** Phase C's
+pre-push Codex review gate is unchanged in position, cap, and stopping
+behavior, but its evidence contract is tightened: an over-cap diff is now split
+server-side into bounded inline slices that both reviewers read as one logical
+cycle, instead of being replaced by a file manifest the reviewer was asked to
+expand itself. A cycle that does not achieve complete coverage fails closed
+without writing durable state and without consuming a cycle. The gate sequence,
+the single human touchpoint at PR merge, the zero-deferral rule, and post-merge
+reconciliation are unchanged.

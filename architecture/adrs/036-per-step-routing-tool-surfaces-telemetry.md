@@ -531,3 +531,16 @@ one per mechanical sub-step. The tool uses the existing guarded primitives and
 durable evidence, invokes no LLM, and returns `agent_required: true` only with
 a bounded repair reason. Existing routing stages and telemetry's
 operational-only status remain unchanged.
+
+**2026-07-26 (issue #1414, sliced review inside one async job).** An over-cap
+diff is reviewed as several bounded inline slices, which multiplies the number
+of `codex exec` children a single `gc_codex_review` / `gc_codex_review_cycle`
+call spawns. This stays entirely inside the existing async job model: one
+`startReviewJob` job, one `job_id`, one `gc_codex_job` poll loop, and one
+abort signal that still kills every child. Slices run sequentially within a
+reviewer so the existing `GC_CODEX_REVIEW_PARALLEL` setting remains the only
+concurrency knob. The deterministic record renderers gain two bounded output
+fields (`diff_mode` and `review_coverage`) on the direct result, the compact
+cycle envelope, and the findings record; neither carries diff content, prompts,
+or child output. Per-step telemetry is unchanged: a sliced review is still one
+routed review step, and slices are not telemetry events.

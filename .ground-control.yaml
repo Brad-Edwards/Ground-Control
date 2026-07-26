@@ -6,12 +6,19 @@ workflow:
   completion_command: make check
   lint_command: cd backend && ./gradlew spotlessCheck
   format_command: cd backend && ./gradlew spotlessApply
+  codex_review:
+    pre_push_cap: 1
+  test_quality_review:
+    pre_push_cap: 1
+  # Exactly one codex cycle and one test-quality cycle per issue. The
+  # auto-disposition gate is off, so nothing can grant an over-cap cycle on its
+  # own; only an explicit human override_cap does.
   review_disposition:
-    enabled: true
-    mode: authoritative
-    max_auto_overrides: 1
+    enabled: false
+    mode: shadow
+    max_auto_overrides: 0
     judge:
-      enabled: true
+      enabled: false
 sonarcloud:
   project_key: autarchy-ai_Ground-Control
   organization: autarchy-ai

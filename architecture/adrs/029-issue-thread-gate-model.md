@@ -514,3 +514,18 @@ turn; actionable failures return preserved evidence, including exact
 synchronization retry input for a conflict. The issue thread remains the
 durable workflow record, and user-owned PR merge remains the only synchronous
 human touchpoint.
+
+**2026-07-26 (issue #1414, review coverage in the durable record).** The
+per-cycle findings record posted to the issue thread now states how the diff
+reached the reviewers: a bounded `**Diff mode:**` line naming `inline` or
+`manifest` and, for a sliced review, how many slices and files were covered.
+The record's ordering guarantees are unchanged. It is still posted before the
+cycle marker, still routed through reserved-marker disarming,
+`detectSensitiveBodyContent`, and the GitHub body-size caps, and still carries
+no raw diff content, prompts, or child-process output. The one new ordering
+rule: coverage is validated *before* the first GitHub write, so a review whose
+slices did not all produce a valid envelope writes no findings record, no
+decision record, and no cycle marker at all. That keeps the thread free of
+partial durable state for a review that did not happen, and leaves the cycle
+cap unspent so the retry is free. The issue thread remains the durable workflow
+record and PR merge remains the only synchronous human touchpoint.
