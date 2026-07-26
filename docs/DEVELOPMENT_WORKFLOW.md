@@ -458,6 +458,15 @@ the mechanics below.
   the individual Conventional Commit subjects from `dev` remain discoverable
   on `main`, where Release Please parses history. A promotion that squashed or
   rewrote those subjects would give Release Please nothing to classify.
+- **The promotion PR is opened by a workflow, so its title is not a matter of memory.**
+  Run `.github/workflows/promote-dev-to-main.yml` (`workflow_dispatch`) to open the
+  `dev` to `main` PR as `chore(main): promote dev`. A promotion PR opened by hand
+  inherits GitHub's default title from the head branch name - literally `Dev` - which
+  fails the title gate on both rules and, because the check is not in `main`'s required
+  set, merges with a red X. The workflow controls only the naming: promotion timing stays
+  a human decision, and the gate is neither exempted nor made non-blocking. `chore` is the
+  correct type because it neither bumps the version nor adds a changelog entry; the release
+  content comes from the `feat:` / `fix:` subjects preserved from `dev`.
 - **The release PR does the mechanical work.** On every push to `main`,
   `.github/workflows/release-please.yml` (googleapis/release-please-action)
   maintains a `chore(main): release X.Y.Z` PR that regenerates `CHANGELOG.md`
