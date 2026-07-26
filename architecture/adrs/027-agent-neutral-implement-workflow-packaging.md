@@ -265,6 +265,12 @@ which preserves existing repositories' behavior. A configured value is a
 non-empty repository command and runs from the repository root through the same
 command boundary as `workflow.completion_command`.
 
+`workflow.precommit_command` follows the same rule for the single mandatory
+pre-publish hook boundary, normalized to `pre-commit run --all-files`. The
+boundary is mandatory; the tool that satisfies it is repo-native, so a
+repository on lefthook, husky, or a bespoke script configures the field instead
+of being required to adopt the pre-commit framework.
+
 The completion and policy commands remain separate mandatory gates.
 `completion_command` (with the existing `test_command` fallback) verifies the
 repository's completion suite; `policy_command` verifies repo-native workflow

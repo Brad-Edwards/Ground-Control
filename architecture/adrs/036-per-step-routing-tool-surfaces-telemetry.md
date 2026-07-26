@@ -557,3 +557,8 @@ same repo-authored-command boundary they already use for
 `completion_command` so the caller can see which gate ran. Neither surface takes
 a caller-supplied policy command - it is read from the repository context only -
 and `gc_render_pr_body` gains no input and emits no command text (see ADR-029).
+`gc_implement_mechanical action=publish` likewise runs
+`workflow.precommit_command` (normalized default `pre-commit run --all-files`)
+and now resolves and validates the repository context before the hook boundary,
+so an invalid `.ground-control.yaml` cannot fall through to a default hook
+command.

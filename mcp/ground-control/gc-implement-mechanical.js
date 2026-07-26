@@ -448,6 +448,18 @@ async function runPublish(args, deps) {
     );
   }
   const repoRoot = authorization.repoRoot;
+  // The pre-publish hook command is repository configuration, so a broken
+  // .ground-control.yaml must refuse here rather than silently fall back to
+  // the default boundary command.
+  const context = await deps.getContext(args.repoPath);
+  if (context?.status !== "ok") {
+    return failure(
+      action,
+      "implement_mechanical_context_invalid",
+      context?.errors?.join("; ") ?? "Ground Control repository context is unavailable",
+      "repair_ground_control_context_and_retry",
+    );
+  }
   const { stdout: activeBranch } = await deps.runGit(
     repoRoot,
     ["branch", "--show-current"],
@@ -533,7 +545,7 @@ async function runPublish(args, deps) {
       );
     }
     try {
-      await deps.preCommit(repoRoot, deps.execFile);
+      await deps.preCommit(repoRoot, deps.execFile, context);
     } catch (error) {
       return commandFailure(action, "precommit", error);
     }

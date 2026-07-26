@@ -4907,6 +4907,7 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
         (step5, "Do not run `pre-commit` here"),
         (step6_flat, "Run `cfg.workflow.policy_command`"),
         (step7, "single mandatory pre-publish"),
+        (step7, "cfg.workflow.precommit_command"),
     )
     missing_surfaces = [
         token for surface, token in verification_surface_tokens if token not in surface

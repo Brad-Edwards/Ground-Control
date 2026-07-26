@@ -66,8 +66,12 @@ function baseDeps(overrides = {}) {
   Object.assign(deps, overrides);
   deps.runGit ??= async (repoRoot, argv, commandRunner) =>
     commandRunner("git", ["-C", repoRoot, ...argv], { cwd: repoRoot });
-  deps.preCommit ??= async (repoRoot, commandRunner) =>
-    commandRunner("pre-commit", ["run", "--all-files"], { cwd: repoRoot });
+  deps.preCommit ??= async (repoRoot, commandRunner, context) =>
+    commandRunner(
+      "bash",
+      ["-c", context?.workflow?.precommit_command ?? "pre-commit run --all-files"],
+      { cwd: repoRoot },
+    );
   return deps;
 }
 
@@ -319,6 +323,69 @@ describe("runImplementMechanical publish", () => {
     assert.equal(commandCalls, 0);
   });
 
+  it("refuses an invalid repository context before staging or hooking (#1429)", async () => {
+    // The pre-publish hook command comes from .ground-control.yaml, so a
+    // broken config must refuse rather than fall through to the default
+    // boundary command and publish anyway.
+    let commandCalls = 0;
+    let preCommitCalls = 0;
+    const result = await runImplementMechanical({
+      action: "publish",
+      repoPath: "/repo",
+      issueNumber: 1429,
+      branchName: "1426-script-phases",
+      commitMessage: "fix: derive the implement policy gate from repository configuration",
+    }, baseDeps({
+      getContext: async () => ({
+        status: "invalid_ground_control_yaml",
+        errors: ["workflow.precommit_command must be a non-empty string when set"],
+      }),
+      execFile: async () => {
+        commandCalls += 1;
+        return { stdout: "", stderr: "" };
+      },
+      preCommit: async () => {
+        preCommitCalls += 1;
+        return { stdout: "" };
+      },
+    }));
+
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "implement_mechanical_context_invalid");
+    assert.equal(commandCalls, 0);
+    assert.equal(preCommitCalls, 0);
+  });
+
+  it("passes the repository context to the pre-commit boundary so its command is configurable (#1429)", async () => {
+    const git = publishExec();
+    const preCommitArgs = [];
+    await runImplementMechanical({
+      action: "publish",
+      repoPath: "/repo",
+      issueNumber: 1429,
+      branchName: "1426-script-phases",
+      commitMessage: "fix: derive the implement policy gate from repository configuration",
+    }, baseDeps({
+      execFile: git.execFile,
+      getContext: async () => ({
+        status: "ok",
+        project: "ground-control",
+        workflow: {
+          base_branch: "dev",
+          completion_command: "make check",
+          precommit_command: "lefthook run pre-commit",
+        },
+      }),
+      preCommit: async (repoRoot, commandRunner, context) => {
+        preCommitArgs.push([repoRoot, context?.workflow?.precommit_command]);
+        return { stdout: "" };
+      },
+      synchronize: async () => ({ ok: true, status: "complete", recordId: RECORD_ID }),
+    }));
+
+    assert.deepEqual(preCommitArgs, [["/repo", "lefthook run pre-commit"]]);
+  });
+
   it("stages, checks, commits, pushes, and completes a clean synchronization", async () => {
     const git = publishExec();
     const syncCalls = [];
@@ -349,7 +416,7 @@ describe("runImplementMechanical publish", () => {
     assert.equal(result.ok, true);
     assert.equal(result.phase, "publish_complete");
     assert.deepEqual(syncCalls.map(({ action }) => action), ["start", "complete"]);
-    assert.ok(git.calls.some(([file, ...argv]) => file === "pre-commit" && argv.includes("--all-files")));
+    assert.ok(git.calls.some(([file, ...argv]) => file === "bash" && argv.includes("pre-commit run --all-files")));
     assert.ok(git.calls.some(([file, ...argv]) => file === "git" && argv.includes("commit")));
     assert.ok(git.calls.some(([file, ...argv]) => file === "git" && argv.includes("push")));
   });

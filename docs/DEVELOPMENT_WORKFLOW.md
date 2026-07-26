@@ -58,6 +58,9 @@ workflow:
   # Repo-native policy/governance gate. Defaults to `make policy`; set it when
   # your gate is named differently. It is never skipped when absent.
   policy_command: make policy
+  # Pre-publish hook boundary. Defaults to `pre-commit run --all-files`; set it
+  # for lefthook, husky, or a bespoke script.
+  precommit_command: pre-commit run --all-files
   base_branch: dev
 
 sonarcloud:

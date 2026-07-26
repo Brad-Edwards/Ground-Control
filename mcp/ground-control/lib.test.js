@@ -40,6 +40,9 @@ import {
   getRepoGroundControlContext,
   DEFAULT_POLICY_COMMAND,
   resolveWorkflowPolicyCommand,
+  DEFAULT_PRECOMMIT_COMMAND,
+  resolveWorkflowPrecommitCommand,
+  runImplementPreCommit,
   PR_BODY_POLICY_CHECK_LINE,
   resolveWorkflowRouteFromConfig,
   runResolveWorkflowRoute,
@@ -1141,6 +1144,50 @@ describe("resolveWorkflowPolicyCommand", () => {
   });
 });
 
+describe("resolveWorkflowPrecommitCommand / runImplementPreCommit", () => {
+  function recordingRunner() {
+    const calls = [];
+    return {
+      calls,
+      runner: async (...args) => {
+        calls.push(args);
+        return { stdout: "", stderr: "" };
+      },
+    };
+  }
+
+  it("runs the repository's configured pre-commit command", async () => {
+    const { calls, runner } = recordingRunner();
+    await runImplementPreCommit("/repo", runner, {
+      workflow: { precommit_command: "lefthook run pre-commit" },
+    });
+    assert.equal(calls[0][0], "bash");
+    assert.deepEqual(calls[0][1], ["-c", "lefthook run pre-commit"]);
+    assert.equal(calls[0][2].cwd, "/repo");
+  });
+
+  it("defaults to the pre-commit framework invocation", async () => {
+    const { calls, runner } = recordingRunner();
+    await runImplementPreCommit("/repo", runner, { workflow: {} });
+    assert.equal(DEFAULT_PRECOMMIT_COMMAND, "pre-commit run --all-files");
+    assert.deepEqual(calls[0][1], ["-c", DEFAULT_PRECOMMIT_COMMAND]);
+  });
+
+  it("keeps the hardened Git environment the boundary already used", async () => {
+    const { calls, runner } = recordingRunner();
+    await runImplementPreCommit("/repo", runner, { workflow: {} });
+    assert.ok(calls[0][2].env, "pre-commit must keep its sanitized environment");
+  });
+
+  it("never resolves to an empty command", () => {
+    assert.equal(
+      resolveWorkflowPrecommitCommand({ workflow: { precommit_command: "  " } }),
+      DEFAULT_PRECOMMIT_COMMAND,
+    );
+    assert.equal(resolveWorkflowPrecommitCommand(null), DEFAULT_PRECOMMIT_COMMAND);
+  });
+});
+
 describe("parseGroundControlYaml", () => {
   // Most cases build a YAML document from an array of lines and parse it.
   // `parseYamlLines` removes the repeated `[...].join("\n")` + parse scaffold,
@@ -1169,6 +1216,7 @@ describe("parseGroundControlYaml", () => {
       lint_command: null,
       format_command: null,
       policy_command: "make policy",
+      precommit_command: "pre-commit run --all-files",
       base_branch: null,
       codex_review: { pre_push_cap: null },
       test_quality_review: { pre_push_cap: null },
@@ -1273,6 +1321,32 @@ describe("parseGroundControlYaml", () => {
     assert.equal(result.ok, true);
     assert.equal(result.value.workflow.policy_command, DEFAULT_POLICY_COMMAND);
     assert.equal(DEFAULT_POLICY_COMMAND, "make policy");
+  });
+
+  it("normalizes an omitted workflow.precommit_command to the default", () => {
+    const result = parseGroundControlYaml("schema_version: 1\nproject: x\n");
+    assert.equal(result.ok, true);
+    assert.equal(result.value.workflow.precommit_command, DEFAULT_PRECOMMIT_COMMAND);
+  });
+
+  it("accepts a repo-authored workflow.precommit_command", () => {
+    const yaml = [
+      "schema_version: 1",
+      "project: x",
+      "workflow:",
+      "  precommit_command: lefthook run pre-commit",
+      "",
+    ].join("\n");
+    const result = parseGroundControlYaml(yaml);
+    assert.equal(result.ok, true, JSON.stringify(result.errors));
+    assert.equal(result.value.workflow.precommit_command, "lefthook run pre-commit");
+  });
+
+  it("rejects an empty workflow.precommit_command", () => {
+    expectYamlError(
+      ["schema_version: 1", "project: x", "workflow:", '  precommit_command: ""', ""],
+      "workflow.precommit_command must be a non-empty string when set",
+    );
   });
 
   it("accepts a repo-authored workflow.policy_command", () => {

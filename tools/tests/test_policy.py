@@ -157,6 +157,22 @@ class PolicyChecksTest(unittest.TestCase):
                 {item.code for item in violations},
             )
 
+    def test_implement_execution_contract_rejects_dropped_precommit_command_token(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = self._implement_contract_root(tmp_dir)
+            step7 = root / "skills/implement/steps/step-07-stage-precommit.md"
+            step7.write_text(
+                step7.read_text(encoding="utf-8").replace(
+                    "cfg.workflow.precommit_command", "pre-commit run --all-files"
+                ),
+                encoding="utf-8",
+            )
+            violations = run_implement_execution_contract(root=root)
+            self.assertIn(
+                "implement-verification-boundary-drift",
+                {item.code for item in violations},
+            )
+
     def test_implement_execution_contract_rejects_dropped_review_batching_token(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = self._implement_contract_root(tmp_dir)

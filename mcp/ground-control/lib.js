@@ -56,6 +56,9 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     "#   # Repo-native policy/governance gate. Defaults to `make policy`; set it",
     "#   # when your gate is named differently. It is never skipped.",
     "#   policy_command: make policy",
+    "#   # Pre-publish hook boundary. Defaults to `pre-commit run --all-files`;",
+    "#   # set it for lefthook, husky, or a bespoke script.",
+    "#   precommit_command: pre-commit run --all-files",
     "#   # Per-reviewer pre-push caps (issue #906). Omit to use MCP-tool defaults.",
     "#   codex_review:",
     "#     pre_push_cap: 1",
@@ -2024,6 +2027,18 @@ export function resolveWorkflowPolicyCommand(context) {
   return DEFAULT_POLICY_COMMAND;
 }
 
+// Pre-publish hook boundary (issue #1429). Same reasoning as the policy gate:
+// the *boundary* is mandatory, the *tool* is repo-native. A repository using
+// lefthook, husky, or a bespoke script was previously blocked at Step 7 by the
+// hardcoded pre-commit framework invocation.
+export const DEFAULT_PRECOMMIT_COMMAND = "pre-commit run --all-files";
+
+export function resolveWorkflowPrecommitCommand(context) {
+  const configured = context?.workflow?.precommit_command;
+  if (typeof configured === "string" && configured.trim() !== "") return configured;
+  return DEFAULT_PRECOMMIT_COMMAND;
+}
+
 function emptyWorkflowConfig() {
   return {
     test_command: null,
@@ -2031,6 +2046,7 @@ function emptyWorkflowConfig() {
     lint_command: null,
     format_command: null,
     policy_command: DEFAULT_POLICY_COMMAND,
+    precommit_command: DEFAULT_PRECOMMIT_COMMAND,
     base_branch: null,
     // Per-reviewer pre-push cap defaults. `null` means "use the MCP tool
     // default" (issue #906 lowered the tool default from 3 to 1; repos that
@@ -2496,7 +2512,7 @@ function normalizeWorkflowConfig(raw) {
   }
   // Scalar string-typed keys handled inline; nested-mapping keys delegated to
   // their own normalizers below.
-  const allowedScalar = ["test_command", "completion_command", "lint_command", "format_command", "policy_command", "base_branch"];
+  const allowedScalar = ["test_command", "completion_command", "lint_command", "format_command", "policy_command", "precommit_command", "base_branch"];
   const allowedNested = ["codex_review", "test_quality_review", "pr_title", "integration_manager", "dev_start_gate", "review_disposition"];
   const allowed = [...allowedScalar, ...allowedNested];
   const value = emptyWorkflowConfig();
@@ -4016,10 +4032,10 @@ export async function runImplementGitCommand(repoRoot, args, commandRunner = exe
   return runImplementGit(repoRoot, args, commandRunner);
 }
 
-export async function runImplementPreCommit(repoRoot, commandRunner = execFile) {
+export async function runImplementPreCommit(repoRoot, commandRunner = execFile, context = null) {
   return commandRunner(
-    "pre-commit",
-    ["run", "--all-files"],
+    "bash",
+    ["-c", resolveWorkflowPrecommitCommand(context)],
     { cwd: repoRoot, env: implementNetworkGitEnvironment() },
   );
 }

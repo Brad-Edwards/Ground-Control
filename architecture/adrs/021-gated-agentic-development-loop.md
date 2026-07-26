@@ -201,5 +201,8 @@ the boundary at all. Completion and policy remain two separate mandatory gates;
 neither substitutes for the other, and an absent target fails loudly rather than
 causing the gate to be skipped. Phase structure A-E, the single human touchpoint
 at PR merge, the zero-deferral rule, cycle caps, and post-merge reconciliation
-are unchanged. See ADR-027 (2026-07-26 amendment) for the configuration
-contract.
+are unchanged. Phase C's single mandatory pre-publish hook boundary (Step 7)
+gains the same treatment through `workflow.precommit_command`, normalized to
+`pre-commit run --all-files`: the boundary stays mandatory and non-skippable,
+while the tool that satisfies it becomes repo-native. See ADR-027
+(2026-07-26 amendment) for the configuration contract.

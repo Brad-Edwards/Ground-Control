@@ -15,17 +15,19 @@ conflicts, resolve them and retry `publish` with the returned `retry_input` as
 pushes, and attests the preserved merge.
 
 1. `git add` all relevant changed files. Do NOT stage .env files, credentials, secrets, or large binaries.
-2. Run the workflow's single mandatory pre-publish
-   `pre-commit run --all-files` invocation. Do not duplicate this successful
-   boundary elsewhere.
-3. If pre-commit fails:
+2. Run the workflow's single mandatory pre-publish hook invocation -
+   `cfg.workflow.precommit_command`, default `pre-commit run --all-files`. The
+   boundary is mandatory; the tool is repo-native, so a repo on lefthook,
+   husky, or a bespoke script configures that field. Do not duplicate this
+   successful boundary elsewhere.
+3. If the hook boundary fails:
    - Read the failure output.
    - Fix the issues.
    - Re-stage any modified files with `git add`.
-   - Re-run `pre-commit run --all-files`. A failure retry is repair of this
+   - Re-run `cfg.workflow.precommit_command`. A failure retry is repair of this
      same mandatory boundary, not a redundant second gate.
    - Repeat up to 5 times. If still failing after 5 attempts, escalate to the user with the failure details (post as an issue comment).
-4. When pre-commit passes, proceed.
+4. When the hook boundary passes, proceed.
 
 ## Return contract
 

@@ -91,7 +91,7 @@ The full TDD discipline from `skills/implement/SKILL.md` Step 4.4 (write failing
 
 ### Step Q5: Pre-commit
 
-**Identical to `skills/implement/SKILL.md` Step 5.** Run `pre-commit run --all-files` until clean (up to 5 retries; escalate to user on the sixth failure).
+**Identical to `skills/implement/SKILL.md` Step 5.** Run the configured pre-publish hook command (`workflow.precommit_command`, default `pre-commit run --all-files`) until clean (up to 5 retries; escalate to user on the sixth failure).
 
 ### Step Q6: Completion Gate
 
