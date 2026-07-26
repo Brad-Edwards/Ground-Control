@@ -123,16 +123,6 @@ class RefUnreadableError(RuntimeError):
         self.detail = detail
 
 GROUND_CONTROL_YAML_PATH = Path(".ground-control.yaml")
-# /implement routing stages whose step drives a gc_codex_job async poll loop
-# (gc_codex_architecture_preflight / gc_codex_review_cycle /
-# gc_test_quality_review_cycle, all called with async=true then polled). A
-# dispatched subagent cannot drive that loop — a `Bash run_in_background sleep`
-# poll-wait notification lands in the parent's stream, not the subagent's, so
-# the subagent ends its turn and returns a degenerate envelope (issue #1168).
-# These stages MUST resolve to agent: parent.
-POLL_LOOP_ROUTING_STAGES = frozenset(
-    {"architecture_preflight", "review_cycle_1_consume", "test_quality_review"}
-)
 
 # ---------------------------------------------------------------------------
 # Deferral-disposition classifier (issue #830, ADR-029).
@@ -4744,61 +4734,8 @@ def render_and_exit(violations: list[Violation]) -> int:
     return 1
 
 
-def parse_routing_agents(text: str) -> dict[str, str]:
-    """Map each ``routing.stages.<stage>`` to its resolved ``agent`` value.
-
-    A stage with no explicit ``agent:`` key resolves to ``"subagent"`` — the
-    ``gc_resolve_workflow_route`` default. Indentation-based parse (no YAML
-    dependency) to match the stdlib-only policy framework; the routing block is
-    machine-maintained and regularly two-space-indented. Returns an empty dict
-    when there is no ``routing.stages`` block.
-    """
-    agents: dict[str, str] = {}
-    in_routing = False
-    in_stages = False
-    current_stage: str | None = None
-    for raw in text.splitlines():
-        stripped = raw.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        indent = len(raw) - len(raw.lstrip(" "))
-        if indent == 0:
-            in_routing = stripped.startswith("routing:")
-            in_stages = False
-            current_stage = None
-            continue
-        if not in_routing:
-            continue
-        if indent == 2:
-            in_stages = stripped.startswith("stages:")
-            current_stage = None
-            continue
-        if not in_stages:
-            continue
-        if indent == 4 and stripped.endswith(":"):
-            current_stage = stripped[:-1].strip()
-            agents.setdefault(current_stage, "subagent")
-            continue
-        if indent == 6 and current_stage is not None and stripped.startswith("agent:"):
-            value = stripped.split(":", 1)[1].strip()
-            if " #" in value:  # strip any inline comment
-                value = value.split(" #", 1)[0].strip()
-            if value:
-                agents[current_stage] = value
-    return agents
-
-
 def run_workflow_routing_contract(root: Path = REPO_ROOT) -> list[Violation]:
-    """Assert async-poll /implement routing stages resolve to ``agent: parent``.
-
-    A static post-condition (independent of ``changed_files``) so any edit that
-    routes a ``gc_codex_job`` poll-loop stage back to a subagent fails
-    ``make policy`` (issue #1168). Emits:
-      ``workflow-routing-config-missing``    — ``.ground-control.yaml`` is absent.
-      ``workflow-routing-stage-missing``     — a poll-loop stage is not declared.
-      ``workflow-routing-poll-loop-subagent`` — a poll-loop stage resolves to a
-                                                subagent instead of the parent.
-    """
+    """Keep /implement routing advisory and free of executor controls."""
     violations: list[Violation] = []
     config_path = root / GROUND_CONTROL_YAML_PATH
     if not config_path.exists():
@@ -4811,34 +4748,28 @@ def run_workflow_routing_contract(root: Path = REPO_ROOT) -> list[Violation]:
         )
         return violations
 
-    agents = parse_routing_agents(config_path.read_text(encoding="utf-8"))
-    if not agents:
-        # No routing.stages block (routing not configured); nothing to enforce.
-        return violations
-
-    for stage in sorted(POLL_LOOP_ROUTING_STAGES):
-        if stage not in agents:
-            violations.append(
-                Violation(
-                    code="workflow-routing-stage-missing",
-                    message=f"Routing stage '{stage}' is missing from .ground-control.yaml routing.stages.",
-                    details=[
-                        "poll-loop stages must be declared and routed to agent: parent (issue #1168)",
-                    ],
-                )
+    config = config_path.read_text(encoding="utf-8")
+    retired = [
+        token
+        for token in ("default_fallback:", "agent:", "fallback:")
+        if re.search(rf"(?m)^\s+{re.escape(token)}", config)
+    ]
+    if retired:
+        violations.append(
+            Violation(
+                code="workflow-routing-execution-control-retired",
+                message="Routing metadata must not select an executor or fallback path.",
+                details=[f"retired field present: {token}" for token in retired],
             )
-            continue
-        if agents[stage] != "parent":
-            violations.append(
-                Violation(
-                    code="workflow-routing-poll-loop-subagent",
-                    message=f"Routing stage '{stage}' drives a gc_codex_job poll loop and must use agent: parent.",
-                    details=[
-                        f"resolved agent: {agents[stage]}",
-                        "a dispatched subagent cannot resume on the background-sleep poll notification (issue #1168)",
-                    ],
-                )
+        )
+    if not re.search(r"(?m)^\s{4}base_sync:\s*$", config):
+        violations.append(
+            Violation(
+                code="workflow-routing-base-sync-stage-missing",
+                message="The advisory routing table must declare the Step 8.5 base_sync stage.",
+                details=["expected routing.stages.base_sync in .ground-control.yaml"],
             )
+        )
     return violations
 
 
@@ -4849,8 +4780,12 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
         "skill": root / "skills/implement/SKILL.md",
         "principles": root / "skills/implement/_development-principles.md",
         "step1": root / "skills/implement/steps/step-01-issue-branch-resolution.md",
+        "step8_5": root / "skills/implement/steps/step-08.5-sync-base.md",
+        "step9": root / "skills/implement/steps/step-09-pr-body.md",
         "completion": root / "skills/implement/steps/step-17-completion.md",
         "cursor": root / ".cursor/skills/implement/SKILL.md",
+        "mcp_lib": root / "mcp/ground-control/lib.js",
+        "mcp_index": root / "mcp/ground-control/index.js",
     }
     missing = [str(path.relative_to(root)) for path in paths.values() if not path.is_file()]
     if missing:
@@ -4865,8 +4800,12 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
     skill = paths["skill"].read_text(encoding="utf-8")
     principles = paths["principles"].read_text(encoding="utf-8")
     step1 = paths["step1"].read_text(encoding="utf-8")
+    step8_5 = paths["step8_5"].read_text(encoding="utf-8")
+    step9 = paths["step9"].read_text(encoding="utf-8")
     completion = paths["completion"].read_text(encoding="utf-8")
     cursor = paths["cursor"].read_text(encoding="utf-8")
+    mcp_lib = paths["mcp_lib"].read_text(encoding="utf-8")
+    mcp_index = paths["mcp_index"].read_text(encoding="utf-8")
     principles_flat = " ".join(principles.split())
     cursor_flat = " ".join(cursor.split()).lower()
 
@@ -4886,14 +4825,14 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
         "execution_contract_mutation_attempt",
         "invocation_root",
         '"checkout_mode": "same_checkout"',
-        "Preparation, acknowledgment, and partial progress are not terminal success",
+        "Ground Control does not manufacture subagents",
     )
     missing_tokens = [token for token in required_skill_tokens if token not in skill]
     if missing_tokens:
         violations.append(
             Violation(
                 code="implement-contract-propagation",
-                message="Parent/delegated execution-contract propagation is incomplete.",
+                message="Primary-session execution-contract propagation is incomplete.",
                 details=[f"missing token: {token}" for token in missing_tokens],
             )
         )
@@ -4985,6 +4924,76 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
                 code="implement-pickup-side-effect-boundary",
                 message="Step 1 must route pickup label/comment mutations through MCP.",
                 details=["require gc_mark_implement_issue_picked_up in Step 1"],
+            )
+        )
+
+    sync_tokens = (
+        "gc_synchronize_implement_branch",
+        "record_id",
+        "pre_sync_sha",
+        "fetched_base_sha",
+        "already_current",
+        "merged_clean",
+        "merged_conflicts_resolved",
+        "refs/remotes/origin/",
+        "make policy",
+    )
+    missing_sync = [token for token in sync_tokens if token not in step8_5]
+    pr_tokens = (
+        "gc_render_pr_body",
+        "gc_create_synchronized_implement_pr",
+        "synchronization_record_id",
+        "back to Step",
+    )
+    missing_pr = [token for token in pr_tokens if token not in step9]
+    mcp_tokens = (
+        "gc.implement.remote-base-sync/v1",
+        "+refs/heads/",
+        "refs/remotes/origin/",
+        "runSynchronizeImplementBranch",
+        "runCreateSynchronizedImplementPr",
+        "implement_pr_sync_stale",
+    )
+    missing_mcp = [token for token in mcp_tokens if token not in mcp_lib]
+    registration_tokens = (
+        "gc_synchronize_implement_branch",
+        "gc_create_synchronized_implement_pr",
+    )
+    missing_registration = [
+        token for token in registration_tokens if token not in mcp_index
+    ]
+    if missing_sync or missing_pr or missing_mcp or missing_registration:
+        violations.append(
+            Violation(
+                code="implement-pre-pr-sync-contract",
+                message="/implement pre-PR synchronization enforcement is incomplete.",
+                details=[
+                    *[f"Step 8.5 missing: {token}" for token in missing_sync],
+                    *[f"Step 9 missing: {token}" for token in missing_pr],
+                    *[f"MCP library missing: {token}" for token in missing_mcp],
+                    *[f"MCP registration missing: {token}" for token in missing_registration],
+                ],
+            )
+        )
+    if re.search(r"\bgh\s+pr\s+create\b", step9):
+        violations.append(
+            Violation(
+                code="implement-direct-pr-create",
+                message="Step 9 must route PR creation through the synchronized MCP boundary.",
+                details=["remove direct gh pr create from Step 9"],
+            )
+        )
+    step_order = [
+        skill.find("steps/step-08-commit-push.md"),
+        skill.find("steps/step-08.5-sync-base.md"),
+        skill.find("steps/step-09-pr-body.md"),
+    ]
+    if min(step_order) < 0 or step_order != sorted(step_order):
+        violations.append(
+            Violation(
+                code="implement-pre-pr-sync-order",
+                message="The canonical step list must order Step 8, Step 8.5, then Step 9.",
+                details=[f"positions: {step_order}"],
             )
         )
     implement_sources = [

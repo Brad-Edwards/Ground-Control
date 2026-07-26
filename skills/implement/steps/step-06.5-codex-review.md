@@ -4,64 +4,42 @@ step: "Step 6.5"
 tier: high
 ---
 
-# Step 6.5: Pre-push Codex Review (single subagent invocation)
+# Step 6.5: Pre-push Codex Review
 
-This step is driven by **one subagent invocation** that owns the entire codex review loop end-to-end. The parent never sees verbatim review prose or per-finding bodies - only a short envelope from the subagent.
-
-Per issue #934 item 2, the parent dispatches a single subagent for this step. The subagent runs the loop in [_review-loop-rules.md](_review-loop-rules.md) against the cycle tool (`gc_codex_review_cycle`, issue #934 item 3) until clean or cap-reached, then returns the envelope below.
+The primary invocation session owns this review loop end-to-end. Ground Control
+does not spawn or require a subagent for routine review work. The primary runs
+the loop in [_review-loop-rules.md](_review-loop-rules.md) against
+`gc_codex_review_cycle` until clean or cap-reached. The review remains a
+server-side background job; that process boundary is not agent delegation.
 
 The codex review is THE review pass for the PR - there is no second post-push codex review (see issue #804). Merge-commit drift relative to the target branch is the responsibility of CI (compile/tests/integration) and SonarCloud (quality), not a separate codex pass.
 
-## Subagent prompt template
+## Primary-session procedure
 
-The orchestrator spawns the subagent with this prompt (substituting
-`{issue_number}`, `{repo_path}`, `{development_principles_verbatim}`, and
-`{execution_contract_json}`):
+1. Stage everything with `git add -A`.
+2. Call `gc_codex_review_cycle` with `repo_path`, `issue_number`,
+   `uncommitted=true`, and `async=true`.
+3. Poll `gc_codex_job` until the background review returns its terminal
+   envelope. Restart a missing/expired job; cancel only a genuinely stuck job.
+4. Dispatch on `next_action` exactly as specified by
+   [_review-loop-rules.md](_review-loop-rules.md). Fix real findings in this
+   session, run proportionate targeted tests while iterating, and do not echo
+   findings instead of fixing them.
+5. Keep verbatim findings in the server-posted durable record. Cache only the
+   compact status, cycle count, summary, and decision-record URLs.
 
-> Binding development principles (verbatim):
-> {development_principles_verbatim}
->
-> Immutable execution contract: {execution_contract_json}
->
-> Drive the **codex pre-push review** for issue {issue_number} to completion. Apply the canonical review loop rules at `skills/implement/steps/_review-loop-rules.md`. Every real finding remains a current execution obligation until fixed and verified; a cap pauses an open obligation and never converts it to deferred work.
->
-> Loop:
-> 1. Stage everything with `git add -A`.
-> 2. Call the `gc_codex_review_cycle` MCP tool with `repo_path={repo_path}`, `issue_number={issue_number}`, `uncommitted=true`, `async=true`. It returns immediately with `{ok:true, status:"running", job_id}` - the dual reviewers (core + security) run in a background job so the multi-minute review never trips the MCP client tool-call timeout (issue #937).
-> 3. Poll the job: call `gc_codex_job` with `action="poll"`, `job_id=<the job_id from step 2>`. While it returns `status:"running"`, sleep ~60s and poll again (a codex review legitimately runs several minutes). When it returns `status:"done"`, the cycle envelope is in the response's `result` field. If a poll returns `error:"job_not_found"` (job expired or MCP server restarted), restart from step 2. To abandon a stuck job, call `gc_codex_job` with `action="cancel"`.
-> 4. Read the cycle envelope from the poll response's `result` (`{ok, reviewer, cycle, cap, status, next_action, findings_summary, findings_record_url, decision_record_url}`). Do NOT echo verbatim review prose - that stays server-side in the underlying review's findings record. Dispatch on `next_action`:
->    - `post_clean_decision_record_and_advance_to_phase_c` → return `status: "clean"`. The decision record was auto-posted.
->    - `fix_findings_and_reinvoke` → classify findings (one-off vs class), batch and fix them per the loop rules, run the narrowest relevant tests (expanding only when risk warrants), `git add -A`, then re-invoke the cycle tool. Do not run repository-wide completion/policy suites per small fix.
->    - `fix_findings_then_summarize_and_escalate` (last-in-cap) → fix and run proportionate verification, then run `cfg.workflow.completion_command` and `make policy` once on the final post-fix tree; do NOT re-invoke; return `status: "escalated"`.
->    - `post_summary_and_escalate_to_user` (cap-refused) → no fixes; return `status: "capped"`.
-> 5. `wontfix` / `not-applicable` overrides: the cycle wrapper auto-posts `decision: "fix"`. If user authorization for a wontfix is obtained mid-loop, call `gc_post_decision_record` directly with the override AFTER the cycle, not through the wrapper.
->
-> Return ONLY this envelope (no verbatim findings, no command output):
->
-> ```json
-> {
->   "status": "clean" | "escalated" | "capped",
->   "cycles_run": <int>,
->   "summary": "<one-line summary of what was found and fixed>",
->   "commit_shas": [],
->   "decision_record_urls": [ "<URL per cycle>" ],
->   "escalation_reason": null
-> }
-> ```
-
-## Parent-side handling of the envelope
-
-When the subagent returns:
+When the cycle finishes:
 - `status: "clean"` → advance to Step 6.6.
 - `status: "escalated"` → if `workflow.review_disposition.enabled` is true, run the automated cap disposition (`gc_review_cap_disposition`) per [_review-loop-rules.md](_review-loop-rules.md) § "Automated cap disposition" before escalating: `proceed` advances to Step 6.6, `one_more_cycle` re-invokes this step with `override_cap=true` + `auto_grant=true`, `escalate_to_human` (or `shadow` mode) summarizes to the user and waits. With the knob off, summarize to the user and wait. Do NOT push commits while waiting.
 - `status: "capped"` → summarize to the user. They may authorize an over-cap cycle (rerun this step with `override_cap=true` + `override_reason`); otherwise treat as terminal.
 
-## Return contract (from this step file's perspective)
+## Return contract
 
-This step file IS the subagent's instruction set. The orchestrator receives the envelope above directly from the subagent's return value. There is no separate "wrap the envelope" step.
+Return the compact `{status, cycles_run, summary, commit_shas,
+decision_record_urls, escalation_reason}` envelope to the next workflow step.
 
 ## Notes
 
-- **Cap source**: the cycle tool reads `workflow.codex_review.pre_push_cap` from `.ground-control.yaml`; default 1 per issue #906. The cap is enforced at the MCP layer (issue #794 / #796), NOT in subagent prose.
-- **Findings record**: every successful cycle posts a verbatim findings comment to the resolved issue thread (per ADR-029). The comment carries the cycle/cap/mode header and both reviewers' verbatim text. The cycle wrapper's envelope includes `findings_record_url` so the subagent can hand it back if needed - but the parent does not need to read it.
+- **Cap source**: the cycle tool reads `workflow.codex_review.pre_push_cap` from `.ground-control.yaml`; default 1 per issue #906. The cap is enforced at the MCP layer (issue #794 / #796), not in agent prose.
+- **Findings record**: every successful cycle posts a verbatim findings comment to the resolved issue thread (per ADR-029). The comment carries the cycle/cap/mode header and both reviewers' verbatim text. The primary session needs only the compact cycle envelope.
 - **Skip predicate**: skip this step only if the diff is so trivial (one-liner typo fix) that codex would have nothing to find. When in doubt, run it.

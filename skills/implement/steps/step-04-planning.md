@@ -8,7 +8,9 @@ tier: high
 
 Per ADR-029, the plan is **published to the GitHub issue as a comment** and the workflow proceeds directly to TDD. There is no synchronous user-approval gate.
 
-This step runs in the **parent** agent (`agent: parent` in the routing config). Architectural reasoning lives at the parent level; subagents implement.
+The primary invocation session performs this step. Routing metadata may suggest
+a capability tier/model, but Ground Control does not select another executor or
+force delegation.
 
 1. **If the work is NOT yet complete**: produce a written plan and post it as an issue comment. Identify which files need to be created or modified, what tests to write, and what approach to take. Update length follows the canonical succinctness rule in `skills/implement/steps/_review-loop-rules.md`.
    - When `in_scope_requirements[]` is non-empty, the plan must cover every clause of every in-scope requirement. When it is empty, the plan must fully address every acceptance criterion in the issue body and any user clarifications in comments.

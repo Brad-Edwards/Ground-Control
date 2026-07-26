@@ -1,5 +1,14 @@
 # Documentation style
 
+> **Sync note for issue #1421 (2026-07-26):** The `/implement` workflow gains
+> repository-bound MCP tools for remote integration-branch synchronization and
+> synchronized PR creation. The routing parser retires execution-control fields
+> that forced subagent dispatch, and the workflow policy checks now enforce
+> advisory routing plus the new Step 8.5 boundary. The current contract is
+> documented in the implement and quickfix skills, workflow docs, tool
+> descriptions, and ADR amendments. The documentation-coverage classifier,
+> Vale rules, and this file's style rules are unchanged.
+
 > **Sync note for issue #1308 (2026-07-15, graph enum contract):** Added
 > `GraphEntityType` to the existing ADR-034 enum-contract policy inventory and
 > generated `GRAPH_ENTITY_TYPES` for frontend graph colors and tooltip coverage.
