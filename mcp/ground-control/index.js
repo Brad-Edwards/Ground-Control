@@ -665,7 +665,7 @@ server.tool(
 
 server.tool(
   "gc_assert_traceability_reconciled",
-  "Assert that traceability reconciliation has landed for the issue and post a 'traceability_reconciled' phase marker. Re-fetches each in-scope requirement (status_intent: ACTIVE or DRAFT) and its links from the Ground Control REST API and refuses unless every ACTIVE requirement has an IMPLEMENTS link AND, when the IMPLEMENTS link points at an executable surface (backend/src/main/**, frontend/src/**, mcp/**, tools/policy/**), at least one TESTS link. DRAFT requirements are TESTS-exempt. Empty requirements[] runs the orphaned-link audit instead. Downstream: gc_post_final_report refuses unless this marker exists for the issue. override=true + override_reason allows the user to authorize a skip with a quoted rationale.",
+  "Assert that traceability reconciliation has landed for the issue and post a 'traceability_reconciled' phase marker. Re-fetches each in-scope requirement (status_intent: ACTIVE or DRAFT) and its links from the Ground Control REST API and refuses unless every ACTIVE requirement has an IMPLEMENTS link AND, when the IMPLEMENTS link points at an executable surface (backend/src/main/**, frontend/src/**, mcp/**, tools/policy/**), at least one TESTS link. DRAFT requirements are TESTS-exempt. Empty requirements[] runs the orphaned-link audit instead. When `project` is omitted, it is inferred from `repo_path`'s `.ground-control.yaml`; an explicit `project` overrides the config. Downstream: gc_post_final_report refuses unless this marker exists for the issue. override=true + override_reason allows the user to authorize a skip with a quoted rationale.",
   {
     repo_path: z.string(),
     issue_number: z.number().int().positive(),
@@ -942,6 +942,7 @@ server.tool(
   "phase='post_merge' (default) is the Phase E completion: it is MERGE-GATED — it refuses with error='completion_pr_not_merged' unless the linked PR is merged (merged_at non-null AND state='MERGED'), so the ACTIVE transition, IMPLEMENTS/TESTS links, and the durable final report never land ahead of shipped code (issue #963, mirrors gc_close_issue_after_merge). " +
   "phase='pre_merge' is the Phase D terminal readiness record: it skips the traceability assertion and the merge gate, posts a 'Ready for review' comment carrying a `ready_for_review` phase marker (no `gc:final-report` marker), and returns {ok, phase:'pre_merge', readiness_report}; all input gates (CI green, Sonar pass/skip, codex review present, scrubs) still run. " +
   "Composes gc_assert_traceability_reconciled and gc_post_final_report. " +
+  "When `project` is omitted, traceability reconciliation infers it from `repo_path`'s `.ground-control.yaml`; an explicit `project` overrides the config. " +
   "Fail-fast: validates the final-report input before any side effects. " +
   "Returns assertions[] (one entry per assertion: {name, ok, comment_url, comment_id}) plus final_report {comment_url, comment_id}. " +
   "Gates inherited from the composed runners: traceability reconciliation (ACTIVE requirements must have IMPLEMENTS links + TESTS links on executable surfaces), " +

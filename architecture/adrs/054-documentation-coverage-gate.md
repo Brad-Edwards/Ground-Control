@@ -8,6 +8,20 @@ accepted
 
 2026-05-23
 
+> **Sync note for issue #1462 (2026-07-28, completion project inference):** Added
+> `resolveAssertProject` and structured `project_required` propagation in
+> `mcp/ground-control/lib.js` so `gc_assert_traceability_reconciled` and
+> `gc_assert_completion` infer `project` from `repo_path`'s
+> `.ground-control.yaml` when the parameter is omitted, preserve backend
+> `project_required` detail through the composite completion envelope, and
+> updated the Step 17 contract in `skills/implement/steps/step-17-completion.md`
+> plus tool descriptions in `mcp/ground-control/index.js`. This is MCP workflow
+> error-propagation and repo-context reuse under ADR-027: the documentation-coverage
+> classifier (`classifyChangedSurface`), the `outcome_required` mapping, the Vale
+> rule set, `tools/install-vale.sh`, `.vale.ini`, and the `docs/DOC_STYLE.md`
+> style rules are all unchanged, and no new documentation-coverage surface class
+> is introduced.
+
 > **Sync note for issue #1282 (2026-07-27, identity administration):**
 > Registered the non-secret `gc_identity_admin` MCP tool and its identity API
 > client helpers. Extended the authorization path-matrix policy check so it
