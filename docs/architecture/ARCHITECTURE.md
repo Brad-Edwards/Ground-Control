@@ -316,6 +316,25 @@ The report contract is derived evidence: each finding carries the DRAFT requirem
   process-local, matching ADR-030's single-backend topology; the identifier-only notification is
   the seam a multi-instance deployment replaces with a broker or outbox.
 
+- Production-line measurement contract (issue #1438, ADR-090, ADR-082, GC-O014). The
+  ADR-090 measurement model is published as versioned contract artifacts rather than ADR
+  prose: `contracts/schemas/measurement/measurement-record.v1.schema.json` is the record
+  shape every emitter maps onto, and
+  `contracts/schemas/measurement/station-catalogue.v1.schema.json` plus the data at
+  `contracts/measurement/gc-station-catalogue-v1.json` publish station identity. A
+  `station_id` is authoritative; ADR-061 `phase` strings, ADR-036 routing stages,
+  issue-thread `gc:phase` values, MCP action names, and SKILL step numbers are aliases
+  declared by kind, and display labels are declared explicitly non-identity so a UI rename
+  is never a breaking contract change. Stations (which inspect something and can yield a
+  station result) and lifecycle markers (which record a transition and inspect nothing)
+  are disjoint sets, so `ready_for_review` or `traceability_reconciled` can never be
+  counted as a gate attempt. The three ADR-090 outcome axes are separate properties over
+  separate closed enums that share no value, so a tool succeeding cannot be read as a gate
+  passing. `run_measurement_catalogue_check` is what makes the catalogue authoritative: it
+  reads the emitter sources directly and fails when an emitted station id, a `gc:phase`
+  marker, or a routing stage resolves to nothing declared. This surface is data and gates
+  only, with no aggregate, endpoint, MCP tool, dashboard, or retention job.
+
 ## Knowledge Ingest Engine (repo-local, out of the product model)
 
 Each repository that uses Ground Control can declare an agent-maintained knowledge base under `docs/knowledge/` via the `knowledge` section of its `.ground-control.yaml`. The `gc_remember` MCP tool captures observations into that repo's inbox; a detached ingest subprocess reads the inbox item, decides update-vs-create via codex, writes the wiki page, and commits the change under a per-repo interprocess lock. The engine lives at `mcp/ground-control/knowledge_ingest.js` with a thin CLI entry at `mcp/ground-control/knowledge_ingest_cli.js`.
