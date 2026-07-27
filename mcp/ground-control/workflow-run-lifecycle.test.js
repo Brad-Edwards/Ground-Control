@@ -86,6 +86,33 @@ describe("workflow-run lifecycle emitter", () => {
     assert.equal(runs[0].started_at, undefined);
   });
 
+  it("carries the PR number on every write once the tool layer knows it", async () => {
+    // A run's PR only becomes knowable at the monitor boundary. Dropping it leaves the read-model
+    // with no join from a live-emitted run to the pull request that carried it, while the
+    // issue-thread backfill records one — the two writers would disagree about the same row.
+    const { runs, deps } = recorder();
+    const emitter = createWorkflowRunLifecycleEmitter({ ...IDENTITY, prNumber: 1452, deps });
+
+    emitter.ensureRun();
+    emitter.markState("READY_FOR_REVIEW");
+    emitter.closeRun({ finalState: "MERGED", outcome: "MERGED" });
+    await emitter.flush();
+
+    assert.deepEqual(runs.map((run) => run.pr_number), [1452, 1452, 1452]);
+  });
+
+  it("omits the PR number before one is known, so an earlier link is never cleared", async () => {
+    // The early boundaries upsert the same row the later ones do. Sending an absent PR as an
+    // explicit null would let a bootstrap retry erase a PR number a later boundary had recorded.
+    const { runs, deps } = recorder();
+    const emitter = createWorkflowRunLifecycleEmitter({ ...IDENTITY, deps });
+
+    emitter.openRun();
+    await emitter.flush();
+
+    assert.equal("pr_number" in runs[0], false);
+  });
+
   it("brackets a station with STARTED then COMPLETED carrying the measured duration", async () => {
     const { events, deps } = recorder();
     let clock = 1000;
@@ -350,6 +377,7 @@ describe("workflow-run lifecycle emitter — wire contract", () => {
       const emitter = createWorkflowRunLifecycleEmitter({
         ...IDENTITY,
         requirementUids: ["GC-O007"],
+        prNumber: 1452,
         deps: {
           createRun: createWorkflowRun,
           recordEvent: recordWorkflowRunEvent,
@@ -369,6 +397,7 @@ describe("workflow-run lifecycle emitter — wire contract", () => {
     const keys = new Set(sent.flatMap((body) => Object.keys(body)));
     for (const expected of [
       "issueNumber",
+      "prNumber",
       "workflowType",
       "runtimeDriver",
       "requirementUids",

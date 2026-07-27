@@ -270,6 +270,10 @@ model without a second run, station, or outcome schema:
 - work item: exact `(project, repo, issue_number)`;
 - run: the `workflow_run.id` resolved by the existing
   `(project, repo, issue_number, branch)` upsert key;
+- pull request: a related, late-bound `pr_number` supplied only after the tool
+  layer authoritatively resolves the PR; it refines the existing run, is omitted
+  while unknown rather than synthesized or sent as `null`, and is never part of
+  work-item identity, run identity, or workflow authority;
 - station: the stable ADR-061 `phase` id, never the SKILL step number,
   user-facing phase label, MCP tool name, or `next_action`;
 - station attempt: the authoritative `cycle_index` when one exists, otherwise

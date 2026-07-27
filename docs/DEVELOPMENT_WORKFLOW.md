@@ -271,7 +271,10 @@ in-flight run is queryable rather than reconstructable only after it ends:
   duration and the stable error code;
 - the run reaches `READY_FOR_REVIEW` (still open, no end time) after readiness, `MERGED` after the
   post-merge phase, `CLOSED`/`CLOSED_WITHOUT_MERGE` when the linked PR is observed closed unmerged,
-  and `SUPERSEDED` when a later attempt opens on a different branch for the same issue.
+  and `SUPERSEDED` when a later attempt opens on a different branch for the same issue;
+- `pr_number` is attached from the `monitor` boundary onward, once the tool layer authoritatively
+  holds it. It refines the run rather than identifying it, and is omitted while unknown so an
+  earlier boundary can never clear a PR a later one recorded.
 
 Three properties are load-bearing. Recording is **fail-open and off the control path**: each
 transition is timestamped the moment it happens and its write is queued, so the workflow never waits
