@@ -17,8 +17,8 @@ thread as the durable workflow record (ADR-029) and the ADR-061 workflow-run
 telemetry model as the queryable projection over it.
 
 It is not an implementation plan for new routes, controllers, or migrations.
-ADR-085 and any future workflow-control contract decide those executable
-surfaces; none exists today.
+ADR-085 decides the identity-administration surface. No workflow-control
+contract exists today.
 
 ## Binding Inputs
 
@@ -32,7 +32,7 @@ surfaces; none exists today.
   execution, retries, signals, or gate completion, and the console must not
   turn it into a control plane by rendering it as one.
 - ADR-085: identity administration is a domain model for users, groups, roles,
-  project access, and gate authority; it is not SaaS tenancy.
+  permissions, and project access; it is not SaaS tenancy.
 - `architecture/notes/console-ia-design-system-preflight.md`: guardrails for
   this design issue.
 - Existing frontend surfaces under `frontend/src/routes.tsx`,
@@ -42,7 +42,7 @@ surfaces; none exists today.
 ## Design Goals
 
 1. Give the console a stable information architecture that handles the current
-   project workspaces plus workflow operations and identity administration.
+   project workspaces plus workflow reporting and identity administration.
 2. Define a design-system foundation that future pages compose from instead of
    creating page-local UI patterns.
 3. Specify authenticated-session UX inside the product shell while preserving
@@ -50,7 +50,7 @@ surfaces; none exists today.
 4. Define run-observation and durable-record reading patterns for GC-Q016
    against the telemetry read-model that exists, without inventing a workflow
    control surface that does not.
-5. Keep project scoping, identity administration, workflow operations, and
+5. Keep project scoping, identity administration, workflow reporting, and
    future tenancy as separate concepts.
 
 ## Information Architecture
@@ -83,18 +83,19 @@ the grouping is stable.
 | Traceability and Verification | Traceability Matrix, Test Runs, Test Runner | Project |
 | Graph and Analysis | Graph, Analysis | Project |
 | Assurance | Portfolio, Controls, Evidence, Threat Modeling, Risk Scenarios | Project |
-| Workflow | Workflow Runs, future Workflow Operations | Project and global/operator |
+| Workflow | Workflow Runs, future Workflow Reporting | Project and global/operator |
 | Administration | Current Project Admin, future Identity Administration | Project and global/operator |
 
-`Workflow Runs` remains the ADR-061 telemetry/economics surface until the
-product workflow-control contracts exist. `Workflow Operations` is a future
-operations surface over those contracts and may include cross-project queues,
-live run details, pending gates, and run controls.
+`Workflow Runs` remains the ADR-061 telemetry/economics surface.
+`Workflow Reporting` is a future cross-project observation surface over that
+same read-model. It does not imply live execution, pending gate actions, or
+run controls.
 
 `Project Admin` stays project-local tooling. `Identity Administration` is a
-global/operator surface for users, groups, roles, project-access grants, API
-token ownership, and gate-authority grants. Do not merge those simply because
-both are "admin."
+global/operator surface for users, groups, roles, permissions, and
+project-access grants. Credential ownership is a later GC-P024 surface after
+the authoritative credential-store cutover. Do not merge these surfaces
+simply because both are "admin."
 
 ### Page Placement
 
@@ -115,7 +116,7 @@ both are "admin."
 | Threat Modeling | Project Assurance. |
 | Risk Scenarios | Project Assurance. |
 | Workflow Runs | Project Workflow telemetry and historical reporting. |
-| Workflow Operations | Global/operator and project Cross-project run observation over the same telemetry read-model. |
+| Workflow Reporting | Global/operator and project cross-project run observation over the same telemetry read-model. |
 | Current Admin | Project Administration. |
 | Identity Administration | Global/operator Administration. |
 
@@ -128,7 +129,7 @@ both are "admin."
 - Global/operator pages should expose a project filter or project group where
   useful, but they should not rely on a hidden "active project" for
   authorization or data scoping.
-- Cross-project workflow operations must be scoped to projects the current
+- Cross-project workflow reporting must be scoped to projects the current
   user can access, based on GC-P024 project-access grants once implemented.
 - Breadcrumbs should show global scope, project scope, and entity detail
   hierarchy without duplicating the primary navigation.
@@ -169,7 +170,7 @@ Notifications should support at least:
 
 - session expiry and sign-in required notices;
 - operation success/failure;
-- workflow gate/action outcome;
+- workflow observation refresh or final reported outcome;
 - background refresh or stale-data warnings.
 
 The notification surface is UX only. Authorization remains enforced by the API.
@@ -309,7 +310,7 @@ Do not store bearer tokens, passwords, CSRF values, session ids, or generated
 API tokens in local storage, session storage, URLs, logs, issue-thread records,
 or examples.
 
-## Workflow Operations UX
+## Workflow Reporting UX
 
 Workflow operations are **observation and reporting**. They are built on the
 ADR-061 telemetry read-model and the ADR-029 issue thread, which are the only
@@ -373,21 +374,20 @@ decision.
 
 ## Identity Administration UX
 
-Identity Administration is global/operator scope. It should include, once
-GC-P024 lands:
+Identity Administration is global/operator scope. The #1412 console slice
+should include:
 
 - users and lifecycle state;
 - groups and memberships;
-- roles and role grants;
+- closed-catalog permissions, roles, and role grants;
 - project-access grants;
-- API token credentials as owned by identity users or service users;
-- gate-authority grants;
 - audit history for access-affecting changes.
 
 The current `ROLE_USER` / `ROLE_ADMIN` projection can appear during migration,
-but new UX should be shaped around ADR-085's domain concepts. Tenant
-organizations, invitations, and subscriptions stay future work unless their own
-ADR lands.
+but new UX should be shaped around ADR-085's domain concepts. Password and API
+token credential administration waits for the authoritative credential-store
+cutover and must use a non-transcript secret path. Tenant organizations,
+invitations, and subscriptions stay future work unless their own ADR lands.
 
 ## Migration Guidance
 

@@ -32,7 +32,7 @@
 //     gc_requirement, gc_relation, gc_adr, gc_document, gc_section,
 //     gc_asset, gc_observation, gc_risk_scenario, gc_threat_model,
 //     gc_control, gc_risk_governance, gc_risk_control_mapping, gc_analyze, gc_graph, gc_baseline,
-//     gc_quality_gate, gc_admin, gc_pack
+//     gc_quality_gate, gc_admin, gc_pack, gc_user_admin, gc_identity_admin
 //
 // Pure GETs (history, timeline, exports, list-by-X) are NOT registered as
 // named tools — they're reachable via `gc_query` with the right /api/v1/*
@@ -299,6 +299,11 @@ import {
   GC_ASSET_DESCRIPTION,
 } from "./gc-asset.js";
 import {
+  gcIdentityAdminSchema,
+  gcIdentityAdminToolHandler,
+  GC_IDENTITY_ADMIN_DESCRIPTION,
+} from "./gc-identity-admin.js";
+import {
   gcObservationZodShape,
   gcObservationToolHandler,
   GC_OBSERVATION_DESCRIPTION,
@@ -371,10 +376,10 @@ function err(e) {
 // (gc-query.js, gc-threat-model.js, link-create.js) share the same helpers
 // without coupling to this module (which boots the MCP server at import).
 
-// Admin gating: gc_admin and gc_pack expose ROLE_ADMIN-only write/mutating
-// operations. They register only when GC_MCP_ADMIN is set, so a default MCP
-// session does not surface admin operations even if the launching env happens
-// to have an admin bearer token configured.
+// Admin gating: gc_admin, gc_pack, gc_user_admin, and gc_identity_admin expose
+// privileged operations. They register only when GC_MCP_ADMIN is set, so a
+// default MCP session does not surface admin operations even if the launching
+// environment happens to have an admin bearer token configured.
 const ADMIN_TOOLS_ENABLED =
   process.env.GC_MCP_ADMIN === "1" ||
   process.env.GC_MCP_ADMIN === "true" ||
@@ -3825,6 +3830,21 @@ if (ADMIN_TOOLS_ENABLED) {
       }
     },
   );
+
+  server.registerTool(
+    "gc_identity_admin",
+    {
+      description: GC_IDENTITY_ADMIN_DESCRIPTION,
+      inputSchema: gcIdentityAdminSchema,
+    },
+    async (args) => {
+      try {
+        return ok(JSON.stringify(await gcIdentityAdminToolHandler(args), null, 2));
+      } catch (e) {
+        return err(e);
+      }
+    },
+  );
 }
 
 const PACK_SUBSYSTEMS = ["plugin", "registry", "trust_policy", "install"];
@@ -4007,10 +4027,10 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   const adminNote = ADMIN_TOOLS_ENABLED
-    ? "gc_admin + gc_pack enabled (GC_MCP_ADMIN=1)"
-    : "gc_admin + gc_pack NOT registered (set GC_MCP_ADMIN=1 to enable)";
+    ? "gc_admin + gc_pack + gc_user_admin + gc_identity_admin enabled (GC_MCP_ADMIN=1)"
+    : "admin tools NOT registered (set GC_MCP_ADMIN=1 to enable)";
   console.error(
-    `[ground-control] consolidated MCP surface (ADR-035): ~25-27 tools (was 215). ${adminNote}. Read-only ad-hoc queries via gc_query.`,
+    `[ground-control] consolidated MCP surface (ADR-035): ~30 tools (was 215). ${adminNote}. Read-only ad-hoc queries via gc_query.`,
   );
 }
 

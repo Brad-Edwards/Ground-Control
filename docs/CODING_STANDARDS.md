@@ -176,6 +176,11 @@ ESC runs on **pure logic classes** with no String constructor parameters and no 
 - Future pure domain logic classes that follow the same pattern
 
 Other `state/` packages contain simple value enums (L0) that are **not** ESC-verified:
+- `domain/identity/state/`: identity lifecycle values and the versioned
+  `PermissionKey` catalog. These enums contain no transition tables. Audited
+  aggregates own lifecycle changes, and the authorization service, delegation
+  adapter, and last-effective-administrator guard are L1 security boundaries
+  covered by unit and PostgreSQL integration tests.
 - `domain/assets/state/`: `AssetType`, `AssetLinkTargetType`, `AssetLinkType`, `AssetRelationType`, `ObservationCategory`, plus the GC-M012 trio `AssetCriticality` / `AssetEnvironment` / `AssetScope`, plus the GC-M011 `AssetSubtypeSchemaStatus` (`ACTIVE → DEPRECATED`; pure value enum; the one-ACTIVE-per-`(project, assetType, subtype)` invariant lives in `AssetService.registerSubtypeSchema` rather than the enum, so the enum itself stays L0), plus the GC-M018 `KnowledgeState` (`CONFIRMED` / `PROVISIONAL` / `UNKNOWN`; pure value enum with an explicit-strength `atLeast` comparator - strength is declared as a numeric field rather than read from `Enum.ordinal()` because errorprone's `EnumOrdinal` flags ordinal-based comparison; no transitions, no invariants)
 - `domain/controls/state/`: `ControlFunction`, `ControlStatus`, `ControlLinkTargetType`, `ControlLinkType`, `ControlTestMethodology`, `ControlTestConclusion` (ADR-039: pure value enums for GC-I012 - no transitions, no invariants)
 - `domain/riskscenarios/state/` - risk scenario link and status enums (pure value enums, no transitions or invariants; L0)
@@ -403,6 +408,11 @@ classification depends on which kind:
 - **Tag enums.** Enums that are pure classifiers with no transition surface,
   for example `AssetLinkTargetType` and `ObservationCategory`. These are
   L0 data; the placement under `state/` follows convention only.
+
+Identity lifecycle values and `PermissionKey` follow the tag-enum rule. The
+identity aggregates and services own state changes and security invariants;
+putting the vocabulary under `domain/identity/state/` does not make the enums
+state machines.
 
 When adding a new file under `state/`, classify it explicitly in the file
 header or the introducing PR's plan. The policy rule that requires this

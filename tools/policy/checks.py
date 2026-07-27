@@ -4351,19 +4351,30 @@ def _parse_authz_contract_rows(text: str) -> list[dict[str, str]]:
     return rows
 
 
-def _java_admin_matrix_paths(java_text: str) -> set[str]:
+def _java_matrix_paths_by_access(java_text: str) -> dict[str, set[str]]:
     constants = {
         name: value
         for name, value in re.findall(r'private\s+static\s+final\s+String\s+(\w+)\s*=\s*"([^"]+)"', java_text)
     }
-    paths: set[str] = set()
-    for match in re.finditer(r"\.requestMatchers\((.*?)\)\s*\.hasRole\(ROLE_ADMIN\)", java_text, re.DOTALL):
+    access_methods = {
+        "hasRole(ROLE_ADMIN)": "ROLE_ADMIN",
+        "access(identityAuthorizationManager)": "PERMISSION_IDENTITY_ADMIN",
+    }
+    paths_by_access = {access: set() for access in access_methods.values()}
+    matcher = r"\.requestMatchers\((.*?)\)\s*\.(hasRole\(ROLE_ADMIN\)|access\(identityAuthorizationManager\))"
+    for match in re.finditer(matcher, java_text, re.DOTALL):
         block = match.group(1)
+        access = access_methods[match.group(2)]
+        paths = paths_by_access[access]
         paths.update(value for value in re.findall(r'"(/api/v1/[^"]+)"', block))
         for token in re.findall(r"\b[A-Z][A-Z0-9_]+\b", block):
             if token in constants and constants[token].startswith("/api/v1/"):
                 paths.add(constants[token])
-    return paths
+    return paths_by_access
+
+
+def _java_admin_matrix_paths(java_text: str) -> set[str]:
+    return _java_matrix_paths_by_access(java_text)["ROLE_ADMIN"]
 
 
 def run_authz_matrix_sync_check(root: Path = REPO_ROOT) -> list[Violation]:
@@ -4378,19 +4389,32 @@ def run_authz_matrix_sync_check(root: Path = REPO_ROOT) -> list[Violation]:
         ]
 
     rows = _parse_authz_contract_rows(matrix_path.read_text(encoding="utf-8"))
-    contract_admin_paths = {row.get("path", "") for row in rows if row.get("access") == "ROLE_ADMIN"}
-    contract_admin_paths.discard("")
-    java_admin_paths = _java_admin_matrix_paths(java_path.read_text(encoding="utf-8"))
+    contract_paths_by_access = {
+        access: {row.get("path", "") for row in rows if row.get("access") == access}
+        for access in ("ROLE_ADMIN", "PERMISSION_IDENTITY_ADMIN")
+    }
+    for paths in contract_paths_by_access.values():
+        paths.discard("")
+    java_paths_by_access = _java_matrix_paths_by_access(java_path.read_text(encoding="utf-8"))
 
     violations: list[Violation] = []
-    missing_from_contract = sorted(java_admin_paths - contract_admin_paths)
-    missing_from_java = sorted(contract_admin_paths - java_admin_paths)
-    if missing_from_contract or missing_from_java:
-        details: list[str] = []
+    details: list[str] = []
+    for access in ("ROLE_ADMIN", "PERMISSION_IDENTITY_ADMIN"):
+        contract_paths = contract_paths_by_access[access]
+        java_paths = java_paths_by_access[access]
+        missing_from_contract = sorted(java_paths - contract_paths)
+        missing_from_java = sorted(contract_paths - java_paths)
         if missing_from_contract:
-            details.append(f"admin paths in ApiPathMatrix.java but not contracts/authz/path-matrix.yaml: {missing_from_contract}")
+            details.append(
+                f"{access} paths in ApiPathMatrix.java but not contracts/authz/path-matrix.yaml: "
+                f"{missing_from_contract}"
+            )
         if missing_from_java:
-            details.append(f"admin paths in contracts/authz/path-matrix.yaml but not ApiPathMatrix.java: {missing_from_java}")
+            details.append(
+                f"{access} paths in contracts/authz/path-matrix.yaml but not ApiPathMatrix.java: "
+                f"{missing_from_java}"
+            )
+    if details:
         violations.append(
             Violation(
                 code="authz-matrix-drift",

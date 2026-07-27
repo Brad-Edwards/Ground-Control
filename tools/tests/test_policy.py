@@ -1138,6 +1138,45 @@ class PolicyChecksTest(unittest.TestCase):
             violations = run_authz_matrix_sync_check(root=root)
         self.assertTrue(any(v.code == "authz-matrix-drift" for v in violations))
 
+    def test_authz_matrix_sync_detects_missing_permission_backed_contract_row(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            matrix = root / "contracts" / "authz" / "path-matrix.yaml"
+            matrix.parent.mkdir(parents=True)
+            matrix.write_text(
+                "rules:\n"
+                '  - id: admin\n'
+                '    method: "*"\n'
+                '    path: "/api/v1/admin/**"\n'
+                '    access: "ROLE_ADMIN"\n',
+                encoding="utf-8",
+            )
+            java = (
+                root
+                / "backend"
+                / "src"
+                / "main"
+                / "java"
+                / "com"
+                / "keplerops"
+                / "groundcontrol"
+                / "shared"
+                / "security"
+                / "ApiPathMatrix.java"
+            )
+            java.parent.mkdir(parents=True)
+            java.write_text(
+                'final class ApiPathMatrix { private static final String ROLE_ADMIN = "ADMIN"; '
+                'void apply(Object auth) { '
+                'auth.requestMatchers("/api/v1/admin/identity/**").access(identityAuthorizationManager)'
+                '.requestMatchers("/api/v1/admin/**").hasRole(ROLE_ADMIN); }}',
+                encoding="utf-8",
+            )
+            violations = run_authz_matrix_sync_check(root=root)
+        rendered = "\n".join(v.render() for v in violations)
+        self.assertIn("PERMISSION_IDENTITY_ADMIN", rendered)
+        self.assertIn("/api/v1/admin/identity/**", rendered)
+
     def test_deploy_compose_credential_passthrough_passes_on_committed_file(self):
         # The committed deploy/docker/docker-compose.prod.yml must enumerate the
         # ADR-026 credential and IP-allowlist env vars on the backend service so
