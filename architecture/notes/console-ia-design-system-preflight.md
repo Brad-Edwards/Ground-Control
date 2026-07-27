@@ -48,7 +48,7 @@ new ones:
 - GRC portfolio/workspaces: Portfolio, Controls, Evidence, Threat Modeling,
   Risk Scenarios.
 - Operations/admin: Workflow Runs, current project Admin tools.
-- New surfaces: Workflow Operations and Identity Administration.
+- New surfaces: Workflow Reporting and Identity Administration.
 
 ## Cross-Cutting Concerns To Reuse
 
@@ -71,7 +71,7 @@ new ones:
   for display, but it must not define a second server-error envelope.
 - Actor provenance stays `SecurityContext` -> `ActorFilter` -> `ActorHolder` /
   MDC / Envers. No request body, route param, or frontend state may supply an
-  actor for identity administration or workflow operations.
+  actor for identity administration or workflow reporting.
 
 ## Security Layers In Scope
 
@@ -81,8 +81,8 @@ new ones:
 - `LoginPageController`: `GET /login` streams the standalone login bundle. Do
   not fold login into the main SPA bundle or forward to `/index.html`.
 - `ApiSecurityConfig` and `ApiPathMatrix`: bearer and browser callers share the
-  same `/api/v1/**` path matrix. New identity, workflow-control, or
-  cross-project operator routes need explicit entries when they are privileged.
+  same `/api/v1/**` path matrix. New identity or cross-project operator routes
+  need explicit entries when they are privileged.
 - CSRF: every session-authenticated browser mutation must echo `XSRF-TOKEN` as
   `X-XSRF-TOKEN`. Reuse the existing fetch wrappers and sign-out path.
 - Session expiry: API-shaped 401 responses are JSON envelopes that the SPA
@@ -91,7 +91,7 @@ new ones:
 - User administration: current V059/ADR-037 user lifecycle goes through
   `UserAdminService`, `UserCredentialPolicy`, the last-admin guard, session
   revocation, and bounded logs. ADR-085 is the extension point for users,
-  groups, roles, project-access grants, and gate-authority grants.
+  groups, roles, closed-catalog permissions, and project-access grants.
 - OS/process exposure: no design or tooling should require tokens, passwords,
   CSRF values, session ids, or provider credentials in argv, logs, URLs, local
   storage, or issue-thread records.
@@ -122,13 +122,14 @@ new ones:
   issue thread is the record of authority for workflow decisions, not an
   authorization surface.
 - Do not add route-hiding as authorization. Frontend permission hints are UX;
-  `ApiPathMatrix` and service-level project/gate checks are enforcement.
+  `ApiPathMatrix` and service-level identity/project authorization checks are
+  enforcement.
 - Do not model PR merge as a console signal or reintroduce plan approval. ADR-029
   keeps PR merge as the single synchronous human gate.
 - Do not use raw prompts, completions, reviewer bodies, tokens, or provider
   keys in live-run status, telemetry, audit rows, logs, or design examples.
 - Do not bury low-frequency global administration in each project workspace.
-  Identity administration, cross-project workflow operations, and project-local
+  Identity administration, cross-project workflow reporting, and project-local
   import/sync tools have different scope and authorization semantics.
 
 ## Non-Goals For The Design Issue

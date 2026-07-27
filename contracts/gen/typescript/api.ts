@@ -977,6 +977,163 @@ export interface GraphVisualizationResponse {
   "totalNodes": any;
 }
 
+export interface IdentityAssignPermissionRequest {
+  [key: string]: any;
+  "permission": any;
+  "roleId": any;
+}
+
+export interface IdentityCreateGroupRequest {
+  [key: string]: any;
+  "displayName": any;
+  "name": any;
+}
+
+export interface IdentityCreateMembershipRequest {
+  [key: string]: any;
+  "effectiveFrom"?: any;
+  "effectiveUntil"?: any;
+  "groupId": any;
+  "userId": any;
+}
+
+export interface IdentityCreateProjectAccessGrantRequest {
+  [key: string]: any;
+  "effectiveFrom"?: any;
+  "effectiveUntil"?: any;
+  "groupId"?: any;
+  "userId"?: any;
+}
+
+export interface IdentityCreateRoleGrantRequest {
+  [key: string]: any;
+  "effectiveFrom"?: any;
+  "effectiveUntil"?: any;
+  "groupId"?: any;
+  "roleId": any;
+  "userId"?: any;
+}
+
+export interface IdentityCreateRoleRequest {
+  [key: string]: any;
+  "description"?: any;
+  "displayName": any;
+  "key": any;
+}
+
+export interface IdentityCreateUserRequest {
+  [key: string]: any;
+  "displayName": any;
+  "kind": any;
+  "loginName": any;
+}
+
+export interface IdentityGroupResponse {
+  [key: string]: any;
+  "createdAt": any;
+  "displayName": any;
+  "id": any;
+  "name": any;
+  "state": any;
+  "updatedAt": any;
+}
+
+export interface IdentityMembershipResponse {
+  [key: string]: any;
+  "effectiveFrom": any;
+  "effectiveUntil": any;
+  "groupId": any;
+  "id": any;
+  "state": any;
+  "userId": any;
+}
+
+export interface IdentityPermissionCatalogResponse {
+  [key: string]: any;
+  "catalogVersion": any;
+  "permissions": IdentityPermissionResponse[];
+}
+
+export interface IdentityPermissionResponse {
+  [key: string]: any;
+  "description": any;
+  "key": any;
+  "projectCapable": any;
+}
+
+export interface IdentityProjectAccessGrantResponse {
+  [key: string]: any;
+  "effectiveFrom": any;
+  "effectiveUntil": any;
+  "groupId": any;
+  "id": any;
+  "projectId": any;
+  "state": any;
+  "userId": any;
+}
+
+export interface IdentityRoleGrantResponse {
+  [key: string]: any;
+  "effectiveFrom": any;
+  "effectiveUntil": any;
+  "groupId": any;
+  "id": any;
+  "projectId": any;
+  "roleId": any;
+  "state": any;
+  "userId": any;
+}
+
+export interface IdentityRolePermissionResponse {
+  [key: string]: any;
+  "id": any;
+  "permission": any;
+  "roleId": any;
+  "state": any;
+}
+
+export interface IdentityRoleResponse {
+  [key: string]: any;
+  "builtIn": any;
+  "createdAt": any;
+  "description": any;
+  "displayName": any;
+  "id": any;
+  "key": any;
+  "state": any;
+  "updatedAt": any;
+}
+
+export interface IdentityUpdateGroupRequest {
+  [key: string]: any;
+  "displayName"?: any;
+  "state"?: any;
+}
+
+export interface IdentityUpdateRoleRequest {
+  [key: string]: any;
+  "description"?: any;
+  "displayName"?: any;
+  "state"?: any;
+}
+
+export interface IdentityUpdateUserRequest {
+  [key: string]: any;
+  "displayName"?: any;
+  "state"?: any;
+}
+
+export interface IdentityUserResponse {
+  [key: string]: any;
+  "createdAt": any;
+  "displayName": any;
+  "id": any;
+  "kind": any;
+  "loginName": any;
+  "state": any;
+  "updatedAt": any;
+}
+
 export type ImportError = string;
 
 export interface ImportResultResponse {
@@ -1226,6 +1383,111 @@ export interface PackRegistryImportRequest {
   "signatureInfo"?: Record<string, any>;
   "sourceUrl"?: any;
   "version"?: any;
+}
+
+export interface PageIdentityGroupResponse {
+  [key: string]: any;
+  "content": IdentityGroupResponse[];
+  "empty": any;
+  "first": any;
+  "last": any;
+  "number": any;
+  "numberOfElements": any;
+  "pageable": PageableObject;
+  "size": any;
+  "sort": SortObject;
+  "totalElements": any;
+  "totalPages": any;
+}
+
+export interface PageIdentityMembershipResponse {
+  [key: string]: any;
+  "content": IdentityMembershipResponse[];
+  "empty": any;
+  "first": any;
+  "last": any;
+  "number": any;
+  "numberOfElements": any;
+  "pageable": PageableObject;
+  "size": any;
+  "sort": SortObject;
+  "totalElements": any;
+  "totalPages": any;
+}
+
+export interface PageIdentityProjectAccessGrantResponse {
+  [key: string]: any;
+  "content": IdentityProjectAccessGrantResponse[];
+  "empty": any;
+  "first": any;
+  "last": any;
+  "number": any;
+  "numberOfElements": any;
+  "pageable": PageableObject;
+  "size": any;
+  "sort": SortObject;
+  "totalElements": any;
+  "totalPages": any;
+}
+
+export interface PageIdentityRoleGrantResponse {
+  [key: string]: any;
+  "content": IdentityRoleGrantResponse[];
+  "empty": any;
+  "first": any;
+  "last": any;
+  "number": any;
+  "numberOfElements": any;
+  "pageable": PageableObject;
+  "size": any;
+  "sort": SortObject;
+  "totalElements": any;
+  "totalPages": any;
+}
+
+export interface PageIdentityRolePermissionResponse {
+  [key: string]: any;
+  "content": IdentityRolePermissionResponse[];
+  "empty": any;
+  "first": any;
+  "last": any;
+  "number": any;
+  "numberOfElements": any;
+  "pageable": PageableObject;
+  "size": any;
+  "sort": SortObject;
+  "totalElements": any;
+  "totalPages": any;
+}
+
+export interface PageIdentityRoleResponse {
+  [key: string]: any;
+  "content": IdentityRoleResponse[];
+  "empty": any;
+  "first": any;
+  "last": any;
+  "number": any;
+  "numberOfElements": any;
+  "pageable": PageableObject;
+  "size": any;
+  "sort": SortObject;
+  "totalElements": any;
+  "totalPages": any;
+}
+
+export interface PageIdentityUserResponse {
+  [key: string]: any;
+  "content": IdentityUserResponse[];
+  "empty": any;
+  "first": any;
+  "last": any;
+  "number": any;
+  "numberOfElements": any;
+  "pageable": PageableObject;
+  "size": any;
+  "sort": SortObject;
+  "totalElements": any;
+  "totalPages": any;
 }
 
 export interface PageRequirementResponse {

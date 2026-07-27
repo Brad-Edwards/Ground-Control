@@ -1,12 +1,14 @@
 package com.keplerops.groundcontrol.unit.api.security;
 
 import static org.mockito.Mockito.mock;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.keplerops.groundcontrol.api.admin.identity.IdentityPermissionController;
 import com.keplerops.groundcontrol.shared.security.ApiSecurityConfig;
 import com.keplerops.groundcontrol.shared.security.BrowserSecurityConfig;
 import javax.sql.DataSource;
@@ -132,7 +134,7 @@ class ApiSecurityConfigTest {
     }
 
     @Nested
-    @WebMvcTest(controllers = StubController.class)
+    @WebMvcTest(controllers = {StubController.class, IdentityPermissionController.class})
     @Import({ApiSecurityConfig.class, BrowserSecurityConfig.class, StubController.class, StubJdbcBeans.class})
     @TestPropertySource(
             properties = {
@@ -176,6 +178,36 @@ class ApiSecurityConfigTest {
             mockMvc.perform(get("/api/v1/admin/echo").header("Authorization", "Bearer admin-token-bbb"))
                     .andExpect(status().isOk())
                     .andExpect(content().string("admin-ok"));
+        }
+
+        @Test
+        void legacyUserTokenOnIdentityAdminPath_returns403() throws Exception {
+            mockMvc.perform(get("/api/v1/admin/identity/permissions").header("Authorization", "Bearer user-token-aaa"))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.error.code").value("access_denied"));
+        }
+
+        @Test
+        void legacyAdminTokenOnIdentityAdminPath_returns200() throws Exception {
+            mockMvc.perform(get("/api/v1/admin/identity/permissions").header("Authorization", "Bearer admin-token-bbb"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.catalogVersion").value(1));
+        }
+
+        @Test
+        void legacyAdminBrowserSessionOnIdentityAdminPath_returns200() throws Exception {
+            mockMvc.perform(get("/api/v1/admin/identity/permissions")
+                            .with(user("admin-bob").roles("ADMIN")))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.catalogVersion").value(1));
+        }
+
+        @Test
+        void legacyUserBrowserSessionOnIdentityAdminPath_returns403() throws Exception {
+            mockMvc.perform(get("/api/v1/admin/identity/permissions")
+                            .with(user("alice").roles("USER")))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.error.code").value("access_denied"));
         }
 
         @ParameterizedTest(name = "[{index}] USER on {0} returns 403")
@@ -312,7 +344,7 @@ class ApiSecurityConfigTest {
     }
 
     @Nested
-    @WebMvcTest(controllers = StubController.class)
+    @WebMvcTest(controllers = {StubController.class, IdentityPermissionController.class})
     @Import({ApiSecurityConfig.class, BrowserSecurityConfig.class, StubController.class, StubJdbcBeans.class})
     @TestPropertySource(properties = {"groundcontrol.security.enabled=false"})
     class WithSecurityDisabled {
@@ -336,7 +368,7 @@ class ApiSecurityConfigTest {
     }
 
     @Nested
-    @WebMvcTest(controllers = StubController.class)
+    @WebMvcTest(controllers = {StubController.class, IdentityPermissionController.class})
     @Import({ApiSecurityConfig.class, BrowserSecurityConfig.class, StubController.class, StubJdbcBeans.class})
     @TestPropertySource(
             properties = {

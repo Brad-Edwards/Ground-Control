@@ -53,12 +53,11 @@ class AuditRetentionJobIntegrationTest extends BaseIntegrationTest {
 
         Set<String> discovered = new HashSet<>(job.discoverAuditTables());
 
-        // document_audit is the newest audit table (#1309, Document joining the spine) — pin it
-        // explicitly so a regression that only broke the newest table doesn't slip past the
-        // set-equality check for the wrong reason.
+        // Pin one of the newest identity audit tables (#1282) explicitly so a regression that only
+        // broke the latest migration does not slip past the set-equality check for the wrong reason.
         assertThat(discovered)
                 .containsExactlyInAnyOrderElementsOf(likeNamedTables)
-                .contains("document_audit");
+                .contains("project_access_grant_audit");
     }
 
     @Test

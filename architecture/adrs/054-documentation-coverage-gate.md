@@ -8,6 +8,18 @@ accepted
 
 2026-05-23
 
+> **Sync note for issue #1282 (2026-07-27, identity administration):**
+> Registered the non-secret `gc_identity_admin` MCP tool and its identity API
+> client helpers. Extended the authorization path-matrix policy check so it
+> verifies both legacy `ROLE_ADMIN` matchers and the new
+> `PERMISSION_IDENTITY_ADMIN` matcher against
+> `contracts/authz/path-matrix.yaml`. The REST and MCP contracts are documented
+> in `docs/API.md`, `docs/architecture/ARCHITECTURE.md`,
+> `mcp/ground-control/README.md`, ADR-035, and amended ADR-085. The
+> documentation-coverage classifier, `outcome_required` mapping, Vale rules,
+> installer, and `.vale.ini` are unchanged; no new documentation classification
+> or style rule is established.
+
 > **Sync note for issue #1309 (2026-07-17, ADR-084 §5 Envers as-of spine):**
 > Removed the dead `threats-insufficient-effectiveness` action (and its
 > `as_of` / `min_effectiveness` / `freshness_window_days` parameters) from the

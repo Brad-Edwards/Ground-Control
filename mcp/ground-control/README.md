@@ -61,13 +61,14 @@ and available on `PATH`.
 
 ## Admin-tool opt-in (`GC_MCP_ADMIN`)
 
-The `gc_admin` and `gc_pack` consolidated tools wrap `/api/v1/admin/**`,
+The `gc_admin`, `gc_pack`, `gc_user_admin`, and `gc_identity_admin`
+consolidated tools wrap `/api/v1/admin/**`,
 `/api/v1/embeddings/**`, `/api/v1/analysis/sweep/**`, and
 `/api/v1/pack-registry/**` operations that require `ROLE_ADMIN` at the
 backend (per ADR-026). To avoid surfacing those write/mutating actions to
 a default MCP session that happens to have an admin bearer token in its
-environment, both tools are registered **only when `GC_MCP_ADMIN=1`** (or
-`true` / `yes`). Without the flag, neither tool appears in the catalog. A
+environment, these tools are registered **only when `GC_MCP_ADMIN=1`** (or
+`true` / `yes`). Without the flag, they do not appear in the catalog. A
 session that needs admin operations sets the env var explicitly:
 
 ```jsonc
@@ -87,6 +88,12 @@ session that needs admin operations sets the env var explicitly:
 
 Backend `ROLE_ADMIN` still enforces authorization; this flag controls only
 which named MCP tools are advertised to the LLM.
+
+`gc_user_admin` remains the V059 compatibility lifecycle tool.
+`gc_identity_admin` is the separate ADR-085 users/groups/roles/grants tool.
+Its strict schema exposes only non-secret lifecycle and authorization data; it
+does not accept or return passwords, raw tokens, credential payloads, or
+caller-supplied actor fields.
 
 ## Tool surface (ADR-035)
 

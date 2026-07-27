@@ -117,6 +117,12 @@ call these by name in their SKILL.md prose):**
   (`list_*`, `get_*`, `list_pack_versions`) that previously had their own
   named tools - `gc_query` cannot reach `/api/v1/pack-registry/**` (the path
   is denylisted), so pack reads stay on the named tool.
+- `gc_user_admin` - V059 compatibility-user lifecycle; deliberately retained
+  unchanged until the credential-store cutover.
+- `gc_identity_admin` - ADR-085 identity users, groups, memberships, roles,
+  closed-catalog permission assignments, role grants, and project-access
+  grants. Its strict input contract excludes passwords, raw tokens,
+  credentials, and caller-supplied actor fields.
 
 The admin gate (a single `GC_MCP_ADMIN` env-var check) is the only piece of
 catalog-style filtering that survives the consolidation. Previously the
