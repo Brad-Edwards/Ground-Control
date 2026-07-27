@@ -16,4 +16,5 @@ public record RecordPhaseEventRequest(
         @NotNull Instant occurredAt,
         @PositiveOrZero Long durationMs,
         @Size(max = 100) String outcome,
-        @NotNull TelemetryProvenance provenance) {}
+        @NotNull TelemetryProvenance provenance,
+        @Size(max = 200) String sourceId) {}

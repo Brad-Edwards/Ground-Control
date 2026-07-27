@@ -88,8 +88,25 @@ public class WorkflowRunController {
                 request.occurredAt(),
                 request.durationMs(),
                 request.outcome(),
-                request.provenance());
+                request.provenance(),
+                request.sourceId());
         return PhaseEventResponse.from(telemetryService.recordPhaseEvent(command));
+    }
+
+    /**
+     * Phase events for one run, oldest first. This is what makes an in-flight run inspectable at
+     * event level (issue #1435): the aggregate only reports per-phase hot spots across a window, so
+     * before this endpoint there was no way to see which gate a still-open run is sitting in.
+     */
+    @GetMapping("/{runId}/events")
+    public List<PhaseEventResponse> listEvents(
+            @PathVariable UUID runId,
+            @RequestParam(required = false) String project,
+            @RequestParam(required = false, defaultValue = "200") int limit) {
+        var projectIdentifier = projectService.requireProjectIdentifier(project);
+        return telemetryService.listPhaseEvents(runId, projectIdentifier, limit).stream()
+                .map(PhaseEventResponse::from)
+                .toList();
     }
 
     @PostMapping("/{runId}/cost")

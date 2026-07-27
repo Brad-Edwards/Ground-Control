@@ -60,6 +60,16 @@ public class WorkflowPhaseEvent {
     @Column(nullable = false, length = 40)
     private TelemetryProvenance provenance;
 
+    /**
+     * Deterministic identity of the logical fact this row records, unique within the run (issue
+     * #1435). Live emission and issue-thread backfill describe the same attempt from two different
+     * vantage points; without a shared key the append-only table would hold two copies of it and
+     * every per-phase count would be inflated. Timestamp, provenance, and event type are all
+     * unstable across those vantage points, so they cannot serve as the key.
+     */
+    @Column(nullable = false, length = 200)
+    private String sourceId;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -95,9 +105,28 @@ public class WorkflowPhaseEvent {
         this.outcome = outcome;
     }
 
+    public void setSourceId(String sourceId) {
+        this.sourceId = sourceId;
+    }
+
+    /**
+     * Deterministic identity of a logical phase fact: the station, what happened to it, and which
+     * attempt. Shared with the service so the value a caller is deduplicated against is the same one
+     * that would be persisted.
+     */
+    public static String deriveSourceId(String phase, PhaseEventType eventType, Integer cycleIndex) {
+        return phase + ":" + eventType.name() + ":" + (cycleIndex == null ? 0 : cycleIndex);
+    }
+
     @PrePersist
     void onCreate() {
         this.createdAt = Instant.now();
+        // The identity is an invariant of the row, not a courtesy of one write path. Deriving it
+        // here means any writer produces a deduplicable event instead of tripping the NOT NULL
+        // constraint at commit.
+        if (this.sourceId == null || this.sourceId.isBlank()) {
+            this.sourceId = deriveSourceId(this.phase, this.eventType, this.cycleIndex);
+        }
     }
 
     public UUID getId() {
@@ -138,6 +167,10 @@ public class WorkflowPhaseEvent {
 
     public TelemetryProvenance getProvenance() {
         return provenance;
+    }
+
+    public String getSourceId() {
+        return sourceId;
     }
 
     public Instant getCreatedAt() {

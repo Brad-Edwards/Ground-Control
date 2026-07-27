@@ -277,7 +277,10 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "202",
                         // V203 (#1311, ADR-061 amendment): workflow reporting entities join the
                         // audited graph time spine.
-                        "203");
+                        "203",
+                        // V204 (#1435): workflow_phase_event.source_id — deterministic identity so
+                        // live emission and issue-thread backfill converge on one row per attempt.
+                        "204");
     }
 
     @Test
@@ -1414,7 +1417,7 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                 .doesNotThrowAnyException();
         org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
                         .createNativeQuery("SELECT run_id, project, phase, event_type, cycle_index, occurred_at,"
-                                + " duration_ms, outcome, provenance, created_at"
+                                + " duration_ms, outcome, provenance, source_id, created_at"
                                 + " FROM workflow_phase_event_audit LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
@@ -1446,10 +1449,25 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                 .doesNotThrowAnyException();
         org.assertj.core.api.Assertions.assertThatCode(() -> entityManager
                         .createNativeQuery("SELECT run_id, project, phase, event_type, cycle_index, occurred_at,"
-                                + " duration_ms, outcome, provenance, created_at"
+                                + " duration_ms, outcome, provenance, source_id, created_at"
                                 + " FROM workflow_phase_event LIMIT 1")
                         .getResultList())
                 .doesNotThrowAnyException();
+        // V204 (#1435): the phase-event dedup key. ddl-auto:validate sees neither index definitions
+        // nor audit shadows, so if this index were dropped or weakened to non-unique, live emission
+        // and issue-thread backfill would both insert the same attempt and every per-phase count,
+        // first-pass-yield denominator, and rework figure would silently inflate. Probe it directly,
+        // exactly as idx_workflow_run_upsert_key is probed above.
+        var phaseEventSourceIndexDef = entityManager
+                .createNativeQuery("SELECT indexdef FROM pg_indexes"
+                        + " WHERE tablename = 'workflow_phase_event'"
+                        + " AND indexname = 'idx_workflow_phase_event_source'")
+                .getSingleResult();
+        assertThat(phaseEventSourceIndexDef.toString())
+                .as("idx_workflow_phase_event_source must be a UNIQUE index on (run_id, source_id)")
+                .contains("CREATE UNIQUE INDEX")
+                .contains("run_id")
+                .contains("source_id");
         // The idempotency key must be a UNIQUE index with NULLS NOT DISTINCT: the property that
         // dedupes runs with null repo/issue_number/branch. ddl-auto:validate cannot see this, and the
         // behavioral upsert test uses only non-null keys, so a regression dropping NULLS NOT DISTINCT

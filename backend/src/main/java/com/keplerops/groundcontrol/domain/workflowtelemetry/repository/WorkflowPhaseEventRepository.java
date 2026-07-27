@@ -1,14 +1,35 @@
 package com.keplerops.groundcontrol.domain.workflowtelemetry.repository;
 
+import com.keplerops.groundcontrol.domain.workflowtelemetry.PhaseEventType;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowPhaseEvent;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface WorkflowPhaseEventRepository extends JpaRepository<WorkflowPhaseEvent, UUID> {
+
+    /**
+     * Attempt ordinal source for a {@code STARTED} event whose emitter cannot attest attempt order
+     * (issue #1435). Counting durable history rather than in-process state keeps the ordinal correct
+     * across an emitter restart, which is precisely when an in-memory counter would silently reset.
+     */
+    long countByRunIdAndPhaseAndEventType(UUID runId, String phase, PhaseEventType eventType);
+
+    /** Idempotency lookup: the logical fact already recorded for this run under {@code sourceId}. */
+    Optional<WorkflowPhaseEvent> findByRunIdAndSourceId(UUID runId, String sourceId);
+
+    /**
+     * Project-scoped, chronologically ordered events for one run. {@code project} is matched on the
+     * event's own denormalized column so a caller cannot page another project's events even with a
+     * valid run id.
+     */
+    List<WorkflowPhaseEvent> findByRunIdAndProjectOrderByOccurredAtAscIdAsc(
+            UUID runId, String project, Pageable pageable);
 
     /** Project-scoped read for the mixed graph, resolving its UUID to the immutable identifier. */
     @Query("SELECT e FROM WorkflowPhaseEvent e "

@@ -132,6 +132,7 @@ const FINAL_STATE_STYLE: Record<WorkflowRunFinalState, string> = {
   ESCALATED: "bg-orange-100 text-orange-800",
   ABANDONED: "bg-red-100 text-red-800",
   SUPERSEDED: "bg-slate-100 text-slate-600",
+  FAILED: "bg-red-100 text-red-900",
 };
 
 const OUTCOME_STYLE: Record<WorkflowRunOutcome, string> = {

@@ -1107,9 +1107,12 @@ export function addAuthorizationHeader(path, headers) {
   }
 }
 
-async function request(method, path, { body, rawBody, params, formData } = {}) {
+async function request(method, path, { body, rawBody, params, formData, signal } = {}) {
   const url = buildUrl(path, params);
   const options = { method };
+  // Optional caller-supplied abort. Fail-open emitters bound their writes so a hung backend cannot
+  // stall the operation they are observing; every other caller passes nothing and is unaffected.
+  if (signal) options.signal = signal;
 
   if (formData) {
     options.headers = { "X-Actor": "mcp-server" };
@@ -20421,8 +20424,8 @@ export async function runAssertCompletion(input) {
  * re-observing the same run merges non-null fields onto the existing row. `data` must include
  * workflowType and provenance.
  */
-export async function createWorkflowRun(data, project) {
-  return request("POST", "/api/v1/workflow-runs", { body: data, params: { project } });
+export async function createWorkflowRun(data, project, { signal } = {}) {
+  return request("POST", "/api/v1/workflow-runs", { body: data, params: { project }, signal });
 }
 
 /**
@@ -20430,10 +20433,11 @@ export async function createWorkflowRun(data, project) {
  * Append a phase event to a workflow run. `project` scopes the run lookup so a caller cannot
  * append events to another project's run (issue #859 security review).
  */
-export async function recordWorkflowRunEvent(runId, data, project) {
+export async function recordWorkflowRunEvent(runId, data, project, { signal } = {}) {
   return request("POST", `/api/v1/workflow-runs/${encodeURIComponent(runId)}/events`, {
     body: data,
     params: { project },
+    signal,
   });
 }
 
@@ -20454,6 +20458,17 @@ export async function importWorkflowRunCost(runId, data, project) {
  */
 export async function listWorkflowRuns({ project, limit } = {}) {
   return request("GET", "/api/v1/workflow-runs", { params: { project, limit } });
+}
+
+/**
+ * GET /api/v1/workflow-runs/{runId}/events?project=<id>
+ * Phase events for one run, oldest first. `project` scopes the run lookup, so a run id alone never
+ * authorizes a read of another project's events.
+ */
+export async function listWorkflowRunEvents(runId, { project, limit } = {}) {
+  return request("GET", `/api/v1/workflow-runs/${encodeURIComponent(runId)}/events`, {
+    params: { project, limit },
+  });
 }
 
 /**

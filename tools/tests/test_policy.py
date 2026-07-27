@@ -82,6 +82,9 @@ class PolicyChecksTest(unittest.TestCase):
             "mcp/ground-control/gc-workflow-run-ingest.js",
             "mcp/ground-control/gc-workflow-run.js",
             "mcp/ground-control/telemetry.js",
+            # The live /implement lifecycle emitter and the tool that drives it (issue #1435).
+            "mcp/ground-control/workflow-run-lifecycle.js",
+            "mcp/ground-control/gc-implement-mechanical.js",
         ):
             with self.subTest(path=path):
                 violations = run_adr_guard([path])
@@ -526,6 +529,32 @@ class PolicyChecksTest(unittest.TestCase):
                     "docs/API.md",
                     "mcp/ground-control/lib.js",
                     "mcp/ground-control/gc-risk-governance.js",
+                    "backend/src/test/java/com/keplerops/groundcontrol/unit/api/FooControllerTest.java",
+                ],
+                root=root,
+            )
+            codes = {item.code for item in violations}
+            self.assertNotIn("controller-parity", codes)
+
+    def test_controller_contracts_accept_gc_workflow_run_as_mcp_adapter(self):
+        """gc-workflow-run.js satisfies the MCP-adapter companion (in lieu of index.js)."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            test_file = (
+                root
+                / "backend/src/test/java/com/keplerops/groundcontrol/unit/api/FooControllerTest.java"
+            )
+            test_file.parent.mkdir(parents=True, exist_ok=True)
+            test_file.write_text(
+                "@WebMvcTest(FooController.class)\nclass FooControllerTest {}\n",
+                encoding="utf-8",
+            )
+            violations = run_controller_contracts(
+                [
+                    "backend/src/main/java/com/keplerops/groundcontrol/api/foo/FooController.java",
+                    "docs/API.md",
+                    "mcp/ground-control/lib.js",
+                    "mcp/ground-control/gc-workflow-run.js",
                     "backend/src/test/java/com/keplerops/groundcontrol/unit/api/FooControllerTest.java",
                 ],
                 root=root,
@@ -1053,9 +1082,21 @@ class PolicyChecksTest(unittest.TestCase):
         self.assertIn("gc.workflow.run-record.phase-state-closed-set", invariant_ids)
         self.assertEqual(
             schema["properties"]["finalState"]["enum"],
-            ["RUNNING", "READY_FOR_REVIEW", "MERGED", "CLOSED", "ESCALATED", "ABANDONED", "SUPERSEDED"],
+            [
+                "RUNNING",
+                "READY_FOR_REVIEW",
+                "MERGED",
+                "CLOSED",
+                "ESCALATED",
+                "ABANDONED",
+                "SUPERSEDED",
+                "FAILED",
+            ],
         )
-        self.assertEqual(schema["properties"]["provenance"]["enum"], ["ISSUE_THREAD", "TEMPORAL_VISIBILITY", "MANUAL_IMPORT"])
+        self.assertEqual(
+            schema["properties"]["provenance"]["enum"],
+            ["ISSUE_THREAD", "TEMPORAL_VISIBILITY", "MANUAL_IMPORT", "LIVE_EMISSION"],
+        )
 
     def test_authz_matrix_sync_detects_missing_contract_row(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

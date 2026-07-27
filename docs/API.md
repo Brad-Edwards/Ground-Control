@@ -1001,6 +1001,7 @@ the MCP adapter (not in the `gc_query` allowlist).
 | POST | `/workflow-runs/{runId}/events` | RecordPhaseEventRequest | 201 | Append one phase/gate event to a run |
 | POST | `/workflow-runs/{runId}/cost` | ImportRunCostRequest | 200 | Import manual economics for a run |
 | GET | `/workflow-runs` | - | 200 | List recent runs for a project |
+| GET | `/workflow-runs/{runId}/events` | - | 200 | Phase events for one run, oldest first |
 | GET | `/workflow-runs/aggregate` | - | 200 | Project-scoped reporting aggregate |
 | GET | `/workflow-runs/cross-project-aggregate` | - | 200 (ROLE_ADMIN; 403 otherwise) | Cross-project operator rollup |
 
@@ -1013,12 +1014,14 @@ carrying the reserved `<!-- gc:` marker sequence is rejected with 422, and
 prompts/completions/tokens/keys/raw payloads are never stored.
 
 **RecordWorkflowRunRequest fields:** `workflowType` (required, max 100),
-`provenance` (required: `ISSUE_THREAD` | `TEMPORAL_VISIBILITY` | `MANUAL_IMPORT`;
-`TEMPORAL_VISIBILITY` is retained only for historical rows recorded before issue
+`provenance` (required: `ISSUE_THREAD` | `TEMPORAL_VISIBILITY` | `MANUAL_IMPORT` |
+`LIVE_EMISSION`; `TEMPORAL_VISIBILITY` is retained only for historical rows recorded before issue
 #1359 removed the Temporal orchestration lane and is no longer written by any
-active ingestion path), `repo`, `issueNumber`, `prNumber`, `branch`, `runtimeDriver`, `requirementUids`
+active ingestion path; `LIVE_EMISSION` names a fact the MCP tool layer observed as a workflow phase
+transitioned, as opposed to one reconstructed from the issue thread), `repo`, `issueNumber`,
+`prNumber`, `branch`, `runtimeDriver`, `requirementUids`
 (string array), `startedAt`/`endedAt` (ISO 8601), `finalState` (`RUNNING` |
-`READY_FOR_REVIEW` | `MERGED` | `CLOSED` | `ESCALATED` | `ABANDONED` | `SUPERSEDED`),
+`READY_FOR_REVIEW` | `MERGED` | `CLOSED` | `ESCALATED` | `ABANDONED` | `SUPERSEDED` | `FAILED`),
 `outcome` (`MERGED` | `CLOSED_WITHOUT_MERGE` | `NONE`), and the optional/nullable
 economics `provider`, `model`, `modelInvocationCount`, `wallClockMinutes`,
 `costProxy`, `costCurrency`, `tokenUsage`. The idempotent upsert key is
@@ -1026,10 +1029,30 @@ economics `provider`, `model`, `modelInvocationCount`, `wallClockMinutes`,
 non-null fields onto the existing row. A concurrent duplicate insert is rejected
 by the unique key and returns `409 conflict`; retry to take the update path.
 
+The merge is monotonic (issue #1435): the earliest `startedAt` wins, `endedAt` before `startedAt` is
+rejected with 422, and a terminal `finalState` (`MERGED`, `CLOSED`, `ABANDONED`, `SUPERSEDED`,
+`FAILED`) is never reopened or un-ended by a later or delayed observation. Recording a
+`LIVE_EMISSION` `RUNNING` run also marks any other still-open run for the same
+`(project, repo, issueNumber)` on a different branch as `SUPERSEDED`: a new attempt on the same work
+item means the earlier one was abandoned.
+
 **RecordPhaseEventRequest fields:** `phase` (required, stable machine id),
 `eventType` (required: `STARTED` | `COMPLETED` | `FAILED` | `ESCALATED` |
 `SKIPPED`), `occurredAt` (required ISO 8601), `provenance` (required), `cycleIndex`,
-`durationMs`, `outcome`.
+`durationMs`, `outcome`, `sourceId` (max 200).
+
+`cycleIndex` and `sourceId` are derived when omitted. A `STARTED` event opens an attempt and takes
+the next ordinal for `(run, phase, STARTED)` read from stored history; any other event type without
+an explicit ordinal takes attempt `0`, so an unordered reconciliation record lands on the first live
+attempt instead of appending a phantom retry. `sourceId` defaults to
+`phase:eventType:cycleIndex` and is unique per run: re-recording an existing `(runId, sourceId)`
+returns the stored event rather than appending a duplicate, which is what lets live emission and
+`gc_workflow_run_ingest` describe the same attempt without double-counting it.
+
+**GET `/workflow-runs/{runId}/events`:** requires `project` (which scopes the run lookup, so a run id
+alone never authorizes the read) and accepts `limit` (default 200, capped at 500). Events are
+returned oldest first. This is the event-level view of an in-flight run; `/aggregate` only reports
+per-phase hot spots across a window.
 
 **GET aggregate query parameters:** `project` (required for `/aggregate`), plus
 optional `repo`, `runtime`, `requirement`, `workflowType`, `outcome`, and
@@ -1048,7 +1071,11 @@ the outcome count is zero.
 `gc_query` lists `GET /api/v1/workflow-runs` and `/api/v1/workflow-runs/aggregate`
 in its allowlist; the cross-project rollup and all POST paths are excluded. Bridge
 ingestion (`gc_workflow_run_ingest`) seeds the read-model from canonical issue-thread
-`gc:` markers with `provenance=ISSUE_THREAD`.
+`gc:` markers with `provenance=ISSUE_THREAD`, and remains the backfill/reconciliation path.
+`/implement` records its own run live from the MCP tool layer with
+`provenance=LIVE_EMISSION` (issue #1435): the run is opened when it starts, a phase event is written
+at each gate boundary while the run is open, and a terminal state is recorded when the tool layer
+observes one. That emission is strictly fail-open and never gates a phase.
 
 ### Plugins
 
