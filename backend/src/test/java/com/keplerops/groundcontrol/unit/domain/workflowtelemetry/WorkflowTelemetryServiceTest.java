@@ -469,10 +469,11 @@ class WorkflowTelemetryServiceTest {
 
     @Test
     void listPhaseEventsRejectsAMissingRunIdOrProject() {
+        var runId = UUID.randomUUID();
         assertThatThrownBy(() -> service.listPhaseEvents(null, "ground-control", 50))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("runId");
-        assertThatThrownBy(() -> service.listPhaseEvents(UUID.randomUUID(), "  ", 50))
+        assertThatThrownBy(() -> service.listPhaseEvents(runId, "  ", 50))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("project");
     }
