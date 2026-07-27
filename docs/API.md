@@ -1058,7 +1058,7 @@ per-phase hot spots across a window.
 **GET `/workflow-runs/stream`** (issue #1436, ADR-061 #1436 amendment): a project-scoped
 Server-Sent Events stream of committed run and phase-event facts, so a dashboard reflects a phase
 transition without a reload. Requires `project`, resolved through `ProjectService` before the
-connection is registered, and inherits the ordinary authenticated `/api/v1/**` rule — a stream is
+connection is registered, and inherits the ordinary authenticated `/api/v1/**` rule—a stream is
 not an access-control exemption, and it grants nothing `GET /workflow-runs` does not.
 
 Named events are `workflow-run` and `phase-event`; their `data` payloads are exactly the
@@ -1066,7 +1066,7 @@ Named events are `workflow-run` and `phase-event`; their `data` payloads are exa
 them into the same cache its polling reads populate. Heartbeats are SSE comments with no payload.
 
 Delivery is **best-effort and may duplicate**: reconcile by entity id, and refetch the REST
-snapshots on connect and reconnect. There is no `Last-Event-ID` replay and no durable backlog — an
+snapshots on connect and reconnect. There is no `Last-Event-ID` replay and no durable backlog—an
 in-memory notification can be lost if the process dies after the database commit.
 
 Connections are bounded (`groundcontrol.workflow-telemetry.stream.*`): a global cap, a

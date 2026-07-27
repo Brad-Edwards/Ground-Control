@@ -24,7 +24,7 @@ amendment).
   is disconnected rather than silently skipped, so a client is never left
   believing a live stream is current while missing an event.
 - No breaking change for existing consumers; a client that ignores the new path
-  is unaffected. `gc_query` denylists the path — it is a browser transport, not
+  is unaffected. `gc_query` denylists the path—it is a browser transport, not
   an agent read.
 
 ## 0.7.0 - 2026-07-26

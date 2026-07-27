@@ -392,7 +392,7 @@ The stream does not create React state that competes with React Query:
 Controller slice coverage owns the endpoint media type, project resolution,
 pre-commit error envelope, and response shapes. Security-enabled tests own
 anonymous rejection and bearer/session access. Hub tests use controllable sinks
-and schedulers to prove project isolation, atomic caps, heartbeat, exactly-once
+and schedulers to prove project isolation, atomic caps, heartbeat, exactly once
 cleanup, ordering, overflow disconnect, and that one slow/failing client cannot
 retain unbounded memory or prevent another client receiving an event. Service
 tests pin after-commit publication and no publication on rollback. Frontend

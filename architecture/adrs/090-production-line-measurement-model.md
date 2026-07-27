@@ -391,7 +391,7 @@ accidentally grow a second measurement model:
   backfilled copy counting as one station attempt, and the transport reuses it
   rather than introducing a delivery-side dedup key.
 - **`RUNNING` still means "no terminal observation recorded."** An open
-  connection is not a lease and a heartbeat is not a workflow liveness signal —
+  connection is not a lease and a heartbeat is not a workflow liveness signal—
   the heartbeat proves the socket is open, nothing more. Strict liveness and
   stale-run reaping still require the separate lease decision both this ADR and
   ADR-061 defer, and the console must not present transport health as process

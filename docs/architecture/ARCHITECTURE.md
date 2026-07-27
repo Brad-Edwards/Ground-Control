@@ -296,7 +296,7 @@ The report contract is derived evidence: each finding carries the DRAFT requirem
 
 - Live workflow-run telemetry transport (issue #1436, ADR-061 #1436 amendment). `GET
   /api/v1/workflow-runs/stream?project=…` is a project-scoped Server-Sent Events surface over the
-  existing ADR-061 reporting model — a delivery path for committed facts, not a second store,
+  existing ADR-061 reporting model—a delivery path for committed facts, not a second store,
   workflow engine, or liveness signal. `WorkflowTelemetryService` publishes an identifier-only
   `WorkflowTelemetryChangeEvent` from each committed run mutation and phase-event append;
   `WorkflowRunStreamHub` (`api/workflowtelemetry/stream/`, a `@Component` because `@Service` is
@@ -312,7 +312,7 @@ The report contract is derived evidence: each finding carries the DRAFT requirem
   `@ConfigurationProperties`. The console's `useWorkflowRunStream` reconciles into the existing
   React Query cache by entity id (aggregates are invalidated, never recomputed in the browser),
   suppresses the 30-second fallback poll only while connected, and renders `Live` / `Connecting` /
-  `Polling` as *transport* health — never as evidence that a workflow process is alive. Fan-out is
+  `Polling` as *transport* health—never as evidence that a workflow process is alive. Fan-out is
   process-local, matching ADR-030's single-backend topology; the identifier-only notification is
   the seam a multi-instance deployment replaces with a broker or outbox.
 
