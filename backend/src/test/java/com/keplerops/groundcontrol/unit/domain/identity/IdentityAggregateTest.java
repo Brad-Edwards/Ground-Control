@@ -101,11 +101,12 @@ class IdentityAggregateTest {
 
         assignment.revoke();
 
-        assertThat(user.getLoginName()).isEqualTo("alice");
-        assertThat(user.getDisplayName()).isEqualTo("Alice");
-        assertThat(user.getKind()).isEqualTo(IdentityUserKind.HUMAN);
-        assertThat(group.getName()).isEqualTo("operators");
-        assertThat(group.getDisplayName()).isEqualTo("Operators");
+        assertThat(user)
+                .extracting(IdentityUser::getLoginName, IdentityUser::getDisplayName, IdentityUser::getKind)
+                .containsExactly("alice", "Alice", IdentityUserKind.HUMAN);
+        assertThat(group)
+                .extracting(IdentityGroup::getName, IdentityGroup::getDisplayName)
+                .containsExactly("operators", "Operators");
         assertThat(role.getKey()).isEqualTo("PROJECT_READER");
         assertThat(role.getDisplayName()).isEqualTo("Project reader");
         assertThat(role.getDescription()).isEqualTo("Reads projects");
