@@ -863,6 +863,22 @@ describe("runImplementMechanical live lifecycle emission", () => {
     assert.equal(identity.runtimeDriver, "codex");
   });
 
+  it("passes the PR number to the emitter on the actions that know one", async () => {
+    // monitor, readiness, and finalize are the boundaries where the tool layer holds the PR. If the
+    // identity drops it, the run row keeps pr_number null for its whole life and only a deliberate
+    // issue-thread backfill can ever supply it.
+    const spy = lifecycleSpy();
+    await runImplementMechanical({
+      action: "monitor",
+      repoPath: "/repo",
+      issueNumber: 1426,
+      branchName: "1426-script-phases",
+      prNumber: 99,
+    }, baseDeps({ createLifecycle: spy.factory }));
+
+    assert.equal(spy.calls[0][1].prNumber, 99);
+  });
+
   it("resolves the run without re-asserting RUNNING on a mid-run boundary", async () => {
     const spy = lifecycleSpy();
     await runImplementMechanical({

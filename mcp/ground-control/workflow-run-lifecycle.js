@@ -72,6 +72,7 @@ const defaultDeps = {
  * @param {string} p.workflowType      closed WorkflowType vocabulary value
  * @param {string} [p.runtimeDriver]   agent/runtime that is executing the run
  * @param {string[]} [p.requirementUids] in-scope requirement UIDs
+ * @param {number} [p.prNumber]        pull request carrying this attempt, once one exists
  * @param {object} [p.deps]            injected collaborators (tests and alternate transports)
  */
 export function createWorkflowRunLifecycleEmitter({
@@ -82,6 +83,7 @@ export function createWorkflowRunLifecycleEmitter({
   workflowType,
   runtimeDriver,
   requirementUids,
+  prNumber,
   deps = {},
 } = {}) {
   const d = { ...defaultDeps, ...deps };
@@ -151,6 +153,11 @@ export function createWorkflowRunLifecycleEmitter({
       runtime_driver: runtimeDriver,
       provenance: LIFECYCLE_PROVENANCE,
       ...(requirementUids?.length ? { requirement_uids: requirementUids } : {}),
+      // Omitted rather than sent as null until a PR exists: the early boundaries upsert the same row
+      // the later ones do, so an explicit null would let a re-run erase a PR a later boundary
+      // recorded. Without this the run holds no link to the pull request that carried it, and only a
+      // deliberate gc_workflow_run_ingest backfill — which does record one — could ever supply it.
+      ...(Number.isInteger(prNumber) && prNumber > 0 ? { pr_number: prNumber } : {}),
     };
   }
 
