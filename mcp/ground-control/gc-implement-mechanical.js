@@ -908,6 +908,9 @@ async function resolveEmitter(args, deps) {
       workflowType: "IMPLEMENT",
       runtimeDriver: args.driver,
       requirementUids: args.requirements?.map((item) => item.uid),
+      // Known from the monitor boundary onward; absent on the earlier actions, which leave the
+      // field alone rather than clearing it.
+      prNumber: args.prNumber,
     });
   } catch {
     return INERT_EMITTER;
