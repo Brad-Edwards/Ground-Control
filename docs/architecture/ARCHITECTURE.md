@@ -294,6 +294,28 @@ The report contract is derived evidence: each finding carries the DRAFT requirem
   tool. Executors and the sandbox runtime remain out of scope (see "Does not exist
   yet").
 
+- Live workflow-run telemetry transport (issue #1436, ADR-061 #1436 amendment). `GET
+  /api/v1/workflow-runs/stream?project=…` is a project-scoped Server-Sent Events surface over the
+  existing ADR-061 reporting model — a delivery path for committed facts, not a second store,
+  workflow engine, or liveness signal. `WorkflowTelemetryService` publishes an identifier-only
+  `WorkflowTelemetryChangeEvent` from each committed run mutation and phase-event append;
+  `WorkflowRunStreamHub` (`api/workflowtelemetry/stream/`, a `@Component` because `@Service` is
+  reserved for the domain and `SseEmitter` must not enter `domain/`) consumes it on an
+  `AFTER_COMMIT` `@TransactionalEventListener`, reloads the project-scoped projection in a new
+  read-only transaction, and fans out the existing `WorkflowRunResponse` / `PhaseEventResponse`
+  shapes as `workflow-run` and `phase-event` events. `SseEmitter` supplies no backpressure, so the
+  hub enforces a global and per-principal connection cap taken atomically, a finite emitter
+  lifetime, a heartbeat below it, a bounded per-connection FIFO drained by at most one task, and a
+  bounded delivery executor; publishing threads only enqueue, and overflow or send failure
+  disconnects the consumer rather than dropping an update while still calling the stream live.
+  Bounds live in a startup-validated `groundcontrol.workflow-telemetry.stream.*`
+  `@ConfigurationProperties`. The console's `useWorkflowRunStream` reconciles into the existing
+  React Query cache by entity id (aggregates are invalidated, never recomputed in the browser),
+  suppresses the 30-second fallback poll only while connected, and renders `Live` / `Connecting` /
+  `Polling` as *transport* health — never as evidence that a workflow process is alive. Fan-out is
+  process-local, matching ADR-030's single-backend topology; the identifier-only notification is
+  the seam a multi-instance deployment replaces with a broker or outbox.
+
 ## Knowledge Ingest Engine (repo-local, out of the product model)
 
 Each repository that uses Ground Control can declare an agent-maintained knowledge base under `docs/knowledge/` via the `knowledge` section of its `.ground-control.yaml`. The `gc_remember` MCP tool captures observations into that repo's inbox; a detached ingest subprocess reads the inbox item, decides update-vs-create via codex, writes the wiki page, and commits the change under a per-repo interprocess lock. The engine lives at `mcp/ground-control/knowledge_ingest.js` with a thin CLI entry at `mcp/ground-control/knowledge_ingest_cli.js`.

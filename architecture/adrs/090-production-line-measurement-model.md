@@ -361,6 +361,54 @@ is the moment of transition, not the moment of delivery, so a late flush never d
 `measurement-model-sync` trigger. A live emitter the gate does not name is a
 hole in the gate.
 
+## Amendment (issue #1436, 2026-07-27): live delivery is transport, not a new emitter
+
+Issue #1436 adds a project-scoped SSE transport over the ADR-061 reporting
+model. It introduces **no new emitter and no new measurement record**, so the
+canonical dimensions, the three outcome axes, and the formulas in Decisions 2–4
+are untouched. The stream re-reads the committed `WorkflowRun` and
+`WorkflowPhaseEvent` projections and serialises the existing REST response
+shapes; a subscriber sees exactly the rows a poll would have returned, only
+sooner.
+
+This is stated explicitly because a delivery path is the easiest place to
+accidentally grow a second measurement model:
+
+- **No stream-only schema.** The SSE payloads are `WorkflowRunResponse` and
+  `PhaseEventResponse`. A stream-only envelope, event vocabulary, or DTO would
+  be the parallel measurement shape Decision 1 forbids, and the frontend would
+  then be reconciling two shapes of the same fact.
+- **Push is not a station result.** Delivering an event is not evidence that a
+  gate passed, that a station attempt occurred, or that a run is alive.
+  Decision 3's separation stands: the operation outcome of a delivery is not a
+  station result and never feeds a yield or rework denominator.
+- **No emitter/version fields.** `measurement_version` and `emitter` remain the
+  #1438 versioned contract's responsibility. The transport must not synthesize
+  them, and re-delivering a fact does not create a new observation of it.
+- **Duplicate delivery is not a second attempt.** Delivery is best-effort and
+  may repeat; subscribers reconcile by entity id. The `(run_id, source_id)`
+  identity settled by the #1435 amendment is what keeps a live frame and its
+  backfilled copy counting as one station attempt, and the transport reuses it
+  rather than introducing a delivery-side dedup key.
+- **`RUNNING` still means "no terminal observation recorded."** An open
+  connection is not a lease and a heartbeat is not a workflow liveness signal —
+  the heartbeat proves the socket is open, nothing more. Strict liveness and
+  stale-run reaping still require the separate lease decision both this ADR and
+  ADR-061 defer, and the console must not present transport health as process
+  health.
+
+Consistent with Decision 7, the endpoint stays behind the shared `/api/v1/**`
+security chain, `IpAllowlistFilter`, and `ApiPathMatrix` with project scoping
+resolved through `ProjectService`; its bounds live in a validated
+`@ConfigurationProperties` object rather than parsed environment strings; and
+its logs carry only bounded identifiers, counts, and a closed disconnect reason.
+
+Because process-local fan-out cannot reach a connection held by another node,
+the internal post-commit change notification is the seam a multi-instance
+deployment replaces with a broker, outbox, or database notification. That
+replacement is a delivery concern and must not become a reason to fork the
+measurement model.
+
 ## Relationship to existing ADRs
 
 - ADR-027: agent-neutral context and privileged-side-effect boundary remain

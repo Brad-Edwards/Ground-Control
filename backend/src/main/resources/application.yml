@@ -71,6 +71,18 @@ groundcontrol:
     openapi-public: ${GC_SECURITY_OPENAPI_PUBLIC:false}
     credentials: []
     ip-allowlist: []
+  workflow-telemetry:
+    # Bounds for the live workflow-run SSE stream (issue #1436, ADR-061 #1436 amendment).
+    # Non-secret operational tuning. heartbeat-interval must stay below idle-timeout and below any
+    # reverse-proxy read timeout, and max-connections-per-principal must not exceed max-connections;
+    # both relations are validated at startup.
+    stream:
+      enabled: ${GC_STREAM_ENABLED:true}
+      max-connections: ${GC_STREAM_MAX_CONNECTIONS:64}
+      max-connections-per-principal: ${GC_STREAM_MAX_CONNECTIONS_PER_PRINCIPAL:8}
+      queue-capacity: ${GC_STREAM_QUEUE_CAPACITY:64}
+      heartbeat-interval: ${GC_STREAM_HEARTBEAT_INTERVAL:15s}
+      idle-timeout: ${GC_STREAM_IDLE_TIMEOUT:15m}
   github:
     gh-path: ${GC_GH_PATH:}
   age:

@@ -28183,6 +28183,45 @@
           "stub-controller"
         ]
       }
+    },
+    "/api/v1/workflow-runs/stream": {
+      "get": {
+        "operationId": "stream",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "project",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "description": "Payload of one named SSE data frame",
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/WorkflowRunResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PhaseEventResponse"
+                    }
+                  ],
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Event stream. Each `workflow-run` or `phase-event` frame carries the same JSON projection the corresponding REST read returns; heartbeats are SSE comments with no payload. Delivery is best-effort and may duplicate — reconcile by entity id."
+          }
+        },
+        "tags": [
+          "workflow-run-controller"
+        ]
+      }
     }
   },
   "servers": [

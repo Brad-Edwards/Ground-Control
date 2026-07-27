@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -54,6 +55,8 @@ public class WorkflowTelemetryService {
 
     private static final String RUN_NOT_FOUND = "Workflow run not found: ";
 
+    private static final String PHASE_EVENT_NOT_FOUND = "Workflow phase event not found: ";
+
     private static final int MAX_RUN_LIST_SIZE = 200;
 
     /** Bound on the per-run event page; a long-running review loop can accrue many attempts. */
@@ -61,11 +64,15 @@ public class WorkflowTelemetryService {
 
     private final WorkflowRunRepository runRepository;
     private final WorkflowPhaseEventRepository phaseEventRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public WorkflowTelemetryService(
-            WorkflowRunRepository runRepository, WorkflowPhaseEventRepository phaseEventRepository) {
+            WorkflowRunRepository runRepository,
+            WorkflowPhaseEventRepository phaseEventRepository,
+            ApplicationEventPublisher eventPublisher) {
         this.runRepository = runRepository;
         this.phaseEventRepository = phaseEventRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -129,6 +136,7 @@ public class WorkflowTelemetryService {
                 saved.getBranch(),
                 saved.getFinalState(),
                 saved.getProvenance());
+        publishChange(WorkflowTelemetryChangeEvent.run(saved.getProject(), saved.getId()));
         return loadRequirementUids(saved);
     }
 
@@ -202,7 +210,13 @@ public class WorkflowTelemetryService {
         event.setCycleIndex(cycleIndex);
         event.setOutcome(command.outcome());
         event.setSourceId(sourceId);
-        return phaseEventRepository.save(event);
+        var appended = phaseEventRepository.save(event);
+        // Only a genuinely new append is announced. The idempotent (runId, sourceId) hit above
+        // returns early without publishing, so a retry or a backfill of an already-delivered fact
+        // does not re-notify; a subscriber that missed the original resynchronizes on reconnect.
+        publishChange(
+                WorkflowTelemetryChangeEvent.phaseEvent(appended.getProject(), appended.getRunId(), appended.getId()));
+        return appended;
     }
 
     private int resolveCycleIndex(RecordPhaseEventCommand command, UUID runId) {
@@ -251,7 +265,9 @@ public class WorkflowTelemetryService {
         if (command.tokenUsage() != null) {
             run.setTokenUsage(command.tokenUsage());
         }
-        return loadRequirementUids(runRepository.save(run));
+        var saved = runRepository.save(run);
+        publishChange(WorkflowTelemetryChangeEvent.run(saved.getProject(), saved.getId()));
+        return loadRequirementUids(saved);
     }
 
     /**
@@ -274,6 +290,33 @@ public class WorkflowTelemetryService {
         int bounded = Math.clamp(limit, 1, MAX_PHASE_EVENT_LIST_SIZE);
         return phaseEventRepository.findByRunIdAndProjectOrderByOccurredAtAscIdAsc(
                 runId, project, PageRequest.of(0, bounded));
+    }
+
+    /**
+     * One run, resolved project-scoped. A caller holding a run id from another project gets
+     * not-found rather than that run, so a run UUID is never on its own an authorization capability.
+     */
+    @Transactional(readOnly = true)
+    public WorkflowRun getRun(UUID runId, String project) {
+        if (runId == null) {
+            throw new DomainValidationException("runId must not be null");
+        }
+        requireText(project, PROJECT_FIELD);
+        return loadRequirementUids(runRepository
+                .findByIdAndProject(runId, project)
+                .orElseThrow(() -> new NotFoundException(RUN_NOT_FOUND + runId)));
+    }
+
+    /** One phase event, resolved against the event's own denormalized project column. */
+    @Transactional(readOnly = true)
+    public WorkflowPhaseEvent getPhaseEvent(UUID eventId, String project) {
+        if (eventId == null) {
+            throw new DomainValidationException("eventId must not be null");
+        }
+        requireText(project, PROJECT_FIELD);
+        return phaseEventRepository
+                .findByIdAndProject(eventId, project)
+                .orElseThrow(() -> new NotFoundException(PHASE_EVENT_NOT_FOUND + eventId));
     }
 
     /** Recent runs for one project, newest first (bounded). */
@@ -407,6 +450,10 @@ public class WorkflowTelemetryService {
                     run.getIssueNumber(),
                     run.getBranch(),
                     saved.getBranch());
+            // A retired attempt is a state change a watching dashboard must see, not a silent
+            // bookkeeping write: without this the superseded run would sit at RUNNING on screen
+            // until the next poll (issue #1436).
+            publishChange(WorkflowTelemetryChangeEvent.run(run.getProject(), run.getId()));
         }
     }
 
@@ -469,6 +516,15 @@ public class WorkflowTelemetryService {
             return null;
         }
         return total.divide(BigDecimal.valueOf(count), 4, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Announce a committed telemetry change. Spring holds the notification until the surrounding
+     * transaction commits, so a rolled-back write is never announced; see the {@code AFTER_COMMIT}
+     * listener that delivers it (issue #1436).
+     */
+    private void publishChange(WorkflowTelemetryChangeEvent change) {
+        eventPublisher.publishEvent(change);
     }
 
     private static void requireText(String value, String field) {
