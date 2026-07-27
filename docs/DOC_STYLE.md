@@ -1,5 +1,14 @@
 # Documentation style
 
+> **Sync note for issue #1282 (2026-07-27, identity administration):** Added
+> the non-secret `gc_identity_admin` MCP surface and extended the authorization
+> path-matrix policy check to distinguish legacy `ROLE_ADMIN` access from
+> `PERMISSION_IDENTITY_ADMIN`. The API and MCP contracts are documented in
+> `docs/API.md`, `docs/architecture/ARCHITECTURE.md`,
+> `mcp/ground-control/README.md`, ADR-035, ADR-054, and amended ADR-085. The
+> documentation-coverage classifier, `outcome_required` mapping, Vale rules,
+> installer, `.vale.ini`, and this file's style rules are unchanged.
+
 > **Sync note for issue #1421 (2026-07-26):** The `/implement` workflow gains
 > repository-bound MCP tools for remote integration-branch synchronization and
 > synchronized PR creation. The routing parser retires execution-control fields

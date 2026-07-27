@@ -12,7 +12,10 @@ When `groundcontrol.security.enabled=true`:
 - Send `Authorization: Bearer <token>` on every `/api/v1/**` request.
 - `/api/v1/admin/**`, `/api/v1/embeddings/**`, `/api/v1/analysis/sweep/**`,
   and `/api/v1/pack-registry/**` require a token whose configured `role`
-  is `ADMIN`. Other `/api/v1/**` paths accept any authenticated token.
+  is `ADMIN`. The narrower `/api/v1/admin/identity/**` namespace also accepts
+  a UUID-backed identity principal with the closed-catalog `IDENTITY_ADMIN`
+  permission; legacy `ROLE_ADMIN` remains a compatibility bridge there until
+  #1411. Other `/api/v1/**` paths accept any authenticated token.
 - `/actuator/health` and `/actuator/info` are anonymous; the OpenAPI
   schema is gated by `groundcontrol.security.openapi-public`.
 - An optional CIDR allowlist (`groundcontrol.security.ip-allowlist`)
@@ -2057,6 +2060,37 @@ admin page operating under the signed-in operator's session.
 | DELETE | `/admin/users/{username}` | (none) | 204, 404, 409 | Delete user. `409 last_admin` refuses deleting the last enabled admin. |
 
 `CreateUserRequest`: `{"username":"<lowercase, 2-64 chars, matches /^[a-z][a-z0-9._-]{1,63}$/>", "password":"<12-200 chars>", "role":"USER"\|"ADMIN"}`. Passwords are BCrypt-hashed server-side; the JSON never echoes the password back. First-admin bootstrap is out of band; see `DEPLOYMENT.md`'s Web UI login section.
+
+### Identity Administration (ADR-085)
+
+The identity/RBAC foundation is separate from the ADR-037 credential store.
+These routes never accept passwords or raw tokens. Collections are pageable;
+access-bearing edges are revoked by lifecycle transition rather than deleted.
+Role grants may be global or project-scoped through the optional `project`
+query parameter. Project-access grants require that parameter.
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| GET | `/admin/identity/permissions` | - | 200 | Read the closed, versioned permission catalog |
+| POST / GET | `/admin/identity/users` | `IdentityCreateUserRequest` / - | 201 / 200 | Create or page identity users |
+| GET / PATCH | `/admin/identity/users/{id}` | - / `IdentityUpdateUserRequest` | 200 | Read or transition an identity user |
+| POST / GET | `/admin/identity/groups` | `IdentityCreateGroupRequest` / - | 201 / 200 | Create or page groups |
+| GET / PATCH | `/admin/identity/groups/{id}` | - / `IdentityUpdateGroupRequest` | 200 | Read or transition a group |
+| POST / GET | `/admin/identity/memberships` | `IdentityCreateMembershipRequest` / - | 201 / 200 | Add or page group memberships |
+| POST | `/admin/identity/memberships/{id}/revoke` | - | 200 | Revoke a membership |
+| POST / GET | `/admin/identity/roles` | `IdentityCreateRoleRequest` / - | 201 / 200 | Create or page roles |
+| GET / PATCH | `/admin/identity/roles/{id}` | - / `IdentityUpdateRoleRequest` | 200 | Read or transition a role |
+| POST / GET | `/admin/identity/role-permissions` | `IdentityAssignPermissionRequest` / - | 201 / 200 | Assign or page closed-catalog permissions |
+| POST | `/admin/identity/role-permissions/{id}/revoke` | - | 200 | Revoke a role-permission assignment |
+| POST / GET | `/admin/identity/role-grants` | `IdentityCreateRoleGrantRequest` / - | 201 / 200 | Create or page direct/group role grants |
+| POST | `/admin/identity/role-grants/{id}/revoke` | - | 200 | Revoke a role grant |
+| POST / GET | `/admin/identity/project-access-grants` | `IdentityCreateProjectAccessGrantRequest` / - | 201 / 200 | Create or page direct/group project admission |
+| POST | `/admin/identity/project-access-grants/{id}/revoke` | - | 200 | Revoke project admission |
+
+Every role/project grant request names exactly one of `userId` or `groupId`.
+Project-scoped authorization requires both an effective role path and an
+independent project-access grant. All access-removing mutations reject a
+change that would remove the last effective global identity administrator.
 
 For control packs, use `/pack-registry/import` or `/pack-registry` to persist the
 pack definition first, then call one of these routes with the `packId` and optional

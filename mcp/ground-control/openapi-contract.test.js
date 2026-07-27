@@ -96,6 +96,24 @@ import {
   GC_ASSET_UPDATE_FIELDS,
 } from "./gc-asset.js";
 
+import {
+  IDENTITY_USER_KINDS,
+  IDENTITY_USER_STATES,
+  IDENTITY_GROUP_STATES,
+  IDENTITY_ROLE_STATES,
+  IDENTITY_PERMISSIONS,
+  IDENTITY_CREATE_USER_FIELDS,
+  IDENTITY_UPDATE_USER_FIELDS,
+  IDENTITY_CREATE_GROUP_FIELDS,
+  IDENTITY_UPDATE_GROUP_FIELDS,
+  IDENTITY_CREATE_MEMBERSHIP_FIELDS,
+  IDENTITY_CREATE_ROLE_FIELDS,
+  IDENTITY_UPDATE_ROLE_FIELDS,
+  IDENTITY_ASSIGN_PERMISSION_FIELDS,
+  IDENTITY_CREATE_ROLE_GRANT_FIELDS,
+  IDENTITY_CREATE_PROJECT_ACCESS_GRANT_FIELDS,
+} from "./gc-identity-admin.js";
+
 import { LINK_CREATE_BODY_FIELDS } from "./link-create.js";
 
 // GOVERNANCE_FIELDS lives in lib.js and is now exported.
@@ -715,6 +733,99 @@ describe("MCP–OpenAPI write-contract", () => {
       },
       // UpdateObservationRequest carries no enum-typed properties;
       // category is create-only and absent from UpdateObservationRequest.
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // gc_identity_admin — non-secret identity/RBAC write contracts (ADR-085)
+  // -------------------------------------------------------------------------
+
+  describe("gc_identity_admin/create_user → IdentityCreateUserRequest", () => {
+    assertRow({
+      label: "gc_identity_admin/create_user",
+      mcpFields: IDENTITY_CREATE_USER_FIELDS,
+      openapiSchema: "IdentityCreateUserRequest",
+      manualFieldMap: { user_kind: "kind" },
+      enums: { kind: IDENTITY_USER_KINDS },
+    });
+  });
+
+  describe("gc_identity_admin/update_user → IdentityUpdateUserRequest", () => {
+    assertRow({
+      label: "gc_identity_admin/update_user",
+      mcpFields: IDENTITY_UPDATE_USER_FIELDS,
+      openapiSchema: "IdentityUpdateUserRequest",
+      manualFieldMap: { user_state: "state" },
+      enums: { state: IDENTITY_USER_STATES },
+    });
+  });
+
+  describe("gc_identity_admin/create_group → IdentityCreateGroupRequest", () => {
+    assertRow({
+      label: "gc_identity_admin/create_group",
+      mcpFields: IDENTITY_CREATE_GROUP_FIELDS,
+      openapiSchema: "IdentityCreateGroupRequest",
+    });
+  });
+
+  describe("gc_identity_admin/update_group → IdentityUpdateGroupRequest", () => {
+    assertRow({
+      label: "gc_identity_admin/update_group",
+      mcpFields: IDENTITY_UPDATE_GROUP_FIELDS,
+      openapiSchema: "IdentityUpdateGroupRequest",
+      manualFieldMap: { group_state: "state" },
+      enums: { state: IDENTITY_GROUP_STATES },
+    });
+  });
+
+  describe("gc_identity_admin/add_membership → IdentityCreateMembershipRequest", () => {
+    assertRow({
+      label: "gc_identity_admin/add_membership",
+      mcpFields: IDENTITY_CREATE_MEMBERSHIP_FIELDS,
+      openapiSchema: "IdentityCreateMembershipRequest",
+    });
+  });
+
+  describe("gc_identity_admin/create_role → IdentityCreateRoleRequest", () => {
+    assertRow({
+      label: "gc_identity_admin/create_role",
+      mcpFields: IDENTITY_CREATE_ROLE_FIELDS,
+      openapiSchema: "IdentityCreateRoleRequest",
+    });
+  });
+
+  describe("gc_identity_admin/update_role → IdentityUpdateRoleRequest", () => {
+    assertRow({
+      label: "gc_identity_admin/update_role",
+      mcpFields: IDENTITY_UPDATE_ROLE_FIELDS,
+      openapiSchema: "IdentityUpdateRoleRequest",
+      manualFieldMap: { role_state: "state" },
+      enums: { state: IDENTITY_ROLE_STATES },
+    });
+  });
+
+  describe("gc_identity_admin/assign_role_permission → IdentityAssignPermissionRequest", () => {
+    assertRow({
+      label: "gc_identity_admin/assign_role_permission",
+      mcpFields: IDENTITY_ASSIGN_PERMISSION_FIELDS,
+      openapiSchema: "IdentityAssignPermissionRequest",
+      enums: { permission: IDENTITY_PERMISSIONS },
+    });
+  });
+
+  describe("gc_identity_admin/create_role_grant → IdentityCreateRoleGrantRequest", () => {
+    assertRow({
+      label: "gc_identity_admin/create_role_grant",
+      mcpFields: IDENTITY_CREATE_ROLE_GRANT_FIELDS,
+      openapiSchema: "IdentityCreateRoleGrantRequest",
+    });
+  });
+
+  describe("gc_identity_admin/create_project_access_grant → IdentityCreateProjectAccessGrantRequest", () => {
+    assertRow({
+      label: "gc_identity_admin/create_project_access_grant",
+      mcpFields: IDENTITY_CREATE_PROJECT_ACCESS_GRANT_FIELDS,
+      openapiSchema: "IdentityCreateProjectAccessGrantRequest",
     });
   });
 

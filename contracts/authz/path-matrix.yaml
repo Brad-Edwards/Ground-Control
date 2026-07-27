@@ -2,6 +2,10 @@
 # Runtime enforcement stays in ApiPathMatrix.java. This file is the committed
 # contract artifact that policy checks sync against that Java source.
 rules:
+  - id: identity-admin-prefix
+    method: "*"
+    path: "/api/v1/admin/identity/**"
+    access: "PERMISSION_IDENTITY_ADMIN"
   - id: admin-prefix
     method: "*"
     path: "/api/v1/admin/**"

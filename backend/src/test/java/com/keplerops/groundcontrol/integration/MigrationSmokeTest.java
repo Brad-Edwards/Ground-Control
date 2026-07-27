@@ -280,7 +280,30 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "203",
                         // V204 (#1435): workflow_phase_event.source_id — deterministic identity so
                         // live emission and issue-thread backfill converge on one row per attempt.
-                        "204");
+                        "204",
+                        // V205-V206 (#1282, GC-P024): identity/RBAC foundation, deterministic
+                        // compatibility roles, and matching Envers audit shadows.
+                        "205",
+                        "206");
+    }
+
+    @Test
+    void identityMigrationSeedsCompatibilityRolesWithoutImportingLegacyPrincipals() throws Exception {
+        try (var conn = dataSource.getConnection();
+                var statement = conn.createStatement()) {
+            try (var rs = statement.executeQuery(
+                    "SELECT role_key FROM identity_role WHERE built_in = true ORDER BY role_key")) {
+                List<String> roleKeys = new ArrayList<>();
+                while (rs.next()) {
+                    roleKeys.add(rs.getString(1));
+                }
+                assertThat(roleKeys).containsExactly("ADMIN", "USER");
+            }
+            try (var rs = statement.executeQuery("SELECT count(*) FROM identity_user")) {
+                rs.next();
+                assertThat(rs.getLong(1)).isZero();
+            }
+        }
     }
 
     @Test
@@ -306,6 +329,28 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                 .getResultList();
         entityManager
                 .createNativeQuery("SELECT 1 FROM traceability_link_audit LIMIT 1")
+                .getResultList();
+        entityManager.createNativeQuery("SELECT 1 FROM identity_user LIMIT 1").getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM identity_user_audit LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM identity_group_audit LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM group_membership_audit LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM identity_role_audit LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM role_permission_assignment_audit LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM role_grant_audit LIMIT 1")
+                .getResultList();
+        entityManager
+                .createNativeQuery("SELECT 1 FROM project_access_grant_audit LIMIT 1")
                 .getResultList();
         entityManager
                 .createNativeQuery("SELECT 1 FROM operational_asset LIMIT 1")

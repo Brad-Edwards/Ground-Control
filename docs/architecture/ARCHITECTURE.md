@@ -147,11 +147,28 @@ identity tracks the authenticated principal; it writes the principal to MDC
 key `actor_id`, the key `logback-spring.xml`'s production JSON appender
 exports (alongside `request_id` / `tenant_id`). See [ADR-033](../../architecture/adrs/033-authenticated-audit-actor-provenance.md).
 
+ADR-085's identity/RBAC foundation is the first permission-backed exception to
+the legacy two-role matrix. Requests under `/api/v1/admin/identity/**` use an
+`IdentityAuthorizationManager` before the broader `/api/v1/admin/**` matcher:
+a UUID-backed `IdentityPrincipal` must hold the closed-catalog
+`IDENTITY_ADMIN` permission, while existing `ROLE_ADMIN` callers receive a
+narrow compatibility bridge only on that namespace. The domain authorization
+decision is `(identity user UUID, permission key, optional project UUID)`;
+project-scoped decisions require both a direct/group role path and an
+independent direct/group project-access grant. V059 browser users and
+configuration bearer credentials remain authoritative until #1411, so this
+foundation does not silently reinterpret legacy principal names as identity
+rows.
+
 ## What Exists vs. What Doesn't
 
 ### Exists
 
-**Domain entities:** Requirement, RequirementRelation, TraceabilityLink, GitHubIssueSync, RequirementImport - all JPA with Envers auditing.
+**Domain entities:** Requirement, RequirementRelation, TraceabilityLink,
+GitHubIssueSync, RequirementImport, plus the ADR-085 identity family
+(`IdentityUser`, `IdentityGroup`, `GroupMembership`, `IdentityRole`,
+`RolePermissionAssignment`, `RoleGrant`, `ProjectAccessGrant`) - all JPA with
+Envers auditing.
 
 **Services:** RequirementService (9 methods), TraceabilityService (forward and reverse artifact lookup), ImportService (StrictDoc parser + idempotent import), GitHubIssueSyncService (CLI-based GitHub sync), AnalysisService (cycle/orphan/coverage/impact/cross-wave; status drift belongs here as read-only analysis), AgeGraphService (Apache AGE graph materialization + Cypher queries).
 
@@ -243,9 +260,9 @@ The report contract is derived evidence: each finding carries the DRAFT requirem
 
 ### Does not exist yet
 
-- Interactive login / OIDC flows (the REST API access-control boundary exists
-  via ADR-026; browser login UX and external identity-provider integration do
-  not)
+- Identity-backed login, credential ownership, and OIDC flows. The existing
+  ADR-026 bearer and ADR-037 browser stores still authenticate callers; #1411
+  performs the authoritative credential cutover.
 - Redis integration (Redis is in docker-compose.yml but nothing in the app uses it)
 - Multi-tenancy
 - Search

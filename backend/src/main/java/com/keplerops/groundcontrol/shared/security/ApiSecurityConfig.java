@@ -1,6 +1,8 @@
 package com.keplerops.groundcontrol.shared.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.keplerops.groundcontrol.domain.identity.service.IdentityAuthorizationService;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -84,6 +86,12 @@ public class ApiSecurityConfig {
     }
 
     @Bean
+    public IdentityAuthorizationManager identityAuthorizationManager(
+            ObjectProvider<IdentityAuthorizationService> authorizationService) {
+        return new IdentityAuthorizationManager(authorizationService.getIfAvailable());
+    }
+
+    @Bean
     @Order(1)
     public SecurityFilterChain apiSecurityFilterChain(
             HttpSecurity http,
@@ -91,7 +99,8 @@ public class ApiSecurityConfig {
             BearerTokenAuthFilter bearerTokenAuthFilter,
             IpAllowlistFilter ipAllowlistFilter,
             ApiAuthenticationEntryPoint authenticationEntryPoint,
-            ApiAccessDeniedHandler accessDeniedHandler)
+            ApiAccessDeniedHandler accessDeniedHandler,
+            IdentityAuthorizationManager identityAuthorizationManager)
             throws Exception {
         // Scope this chain to bearer-only traffic. Spring Security picks the first matching
         // chain (declaration / @Order), so every non-bearer request — browser navigation, SPA
@@ -131,7 +140,7 @@ public class ApiSecurityConfig {
         }
 
         http.authorizeHttpRequests(auth -> {
-            ApiPathMatrix.applySharedRules(auth, properties);
+            ApiPathMatrix.applySharedRules(auth, properties, identityAuthorizationManager);
             // No SPA static-asset / route allowlist on this chain. Bearer callers never
             // fetch /index.html or SPA routes; the browser chain owns that surface
             // (BrowserSecurityConfig). Anything outside the shared matrix is fail-closed.

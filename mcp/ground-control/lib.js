@@ -447,6 +447,11 @@ export function reqArg(args, key, action) {
 // ---------------------------------------------------------------------------
 
 export const TO_CAMEL = {
+  login_name: "loginName",
+  display_name: "displayName",
+  user_id: "userId",
+  group_id: "groupId",
+  role_id: "roleId",
   requirement_type: "requirementType",
   artifact_type: "artifactType",
   artifact_identifier: "artifactIdentifier",
@@ -19606,6 +19611,41 @@ export async function updateAdminUserEnabled(username, enabled) {
 
 export async function deleteAdminUser(username) {
   await request("DELETE", `/api/v1/admin/users/${encodeURIComponent(username)}`);
+}
+
+// ---------------------------------------------------------------------------
+// Identity and RBAC administration API functions (ADR-085; non-secret)
+// ---------------------------------------------------------------------------
+
+const IDENTITY_ADMIN_ROOT = "/api/v1/admin/identity";
+
+export async function listIdentityPermissions() {
+  return request("GET", `${IDENTITY_ADMIN_ROOT}/permissions`);
+}
+
+export async function listIdentityRecords(resource, { page, size } = {}) {
+  return request("GET", `${IDENTITY_ADMIN_ROOT}/${resource}`, { params: { page, size } });
+}
+
+export async function getIdentityRecord(resource, id) {
+  return request("GET", `${IDENTITY_ADMIN_ROOT}/${resource}/${encodeURIComponent(id)}`);
+}
+
+export async function createIdentityRecord(resource, data, { project } = {}) {
+  return request("POST", `${IDENTITY_ADMIN_ROOT}/${resource}`, {
+    body: data,
+    params: { project },
+  });
+}
+
+export async function updateIdentityRecord(resource, id, data) {
+  return request("PATCH", `${IDENTITY_ADMIN_ROOT}/${resource}/${encodeURIComponent(id)}`, {
+    body: data,
+  });
+}
+
+export async function revokeIdentityRecord(resource, id) {
+  return request("POST", `${IDENTITY_ADMIN_ROOT}/${resource}/${encodeURIComponent(id)}/revoke`);
 }
 
 // ---------------------------------------------------------------------------
