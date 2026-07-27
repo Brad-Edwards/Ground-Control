@@ -1,5 +1,7 @@
+import copy
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -13,6 +15,7 @@ from tools.policy.checks import (
     FRONTEND_API_TYPES_PATH,
     MCP_LIB_PATH,
     REPO_ROOT,
+    Violation,
     _is_release_pr,
     _jsonpath_keys,
     _resolve_pr_refs,
@@ -37,6 +40,7 @@ from tools.policy.checks import (
     run_enum_contract_check,
     run_ghcr_namespace_drift,
     run_repo_identity_drift,
+    run_measurement_catalogue_check,
     run_migration_policy,
     run_no_deferral_disposition_check,
     run_ontology_binding_check,
@@ -3901,6 +3905,291 @@ class TraceabilityReconciliationGateContractTest(unittest.TestCase):
 # `.tools/vale/current/vale`; the test is skipped if the binary is absent so
 # CI on a bare checkout is not broken.
 # ---------------------------------------------------------------------------
+
+
+class MeasurementCatalogueChecksTest(unittest.TestCase):
+    """ADR-090 / GC-O014: the station catalogue is the authority for station identity.
+
+    Each drift assertion is paired with a mutation that must make the check fire. A
+    check that silently scans nothing also reports zero violations, so proving the
+    negative is the only thing that distinguishes "resolved" from "never looked".
+    """
+
+    CATALOGUE_PATH = REPO_ROOT / "contracts/measurement/gc-station-catalogue-v1.json"
+    RECORD_SCHEMA_PATH = REPO_ROOT / "contracts/schemas/measurement/measurement-record.v1.schema.json"
+    CATALOGUE_SCHEMA_PATH = REPO_ROOT / "contracts/schemas/measurement/station-catalogue.v1.schema.json"
+
+    def _catalogue(self) -> dict:
+        return json.loads(self.CATALOGUE_PATH.read_text(encoding="utf-8"))
+
+    def _record_schema(self) -> dict:
+        return json.loads(self.RECORD_SCHEMA_PATH.read_text(encoding="utf-8"))
+
+    # ---- catalogue integrity -------------------------------------------------
+
+    def test_station_catalogue_ids_and_aliases_are_unique(self):
+        catalogue = self._catalogue()
+        station_ids = [s["station_id"] for s in catalogue["stations"]]
+        marker_ids = [m["marker_id"] for m in catalogue["lifecycle_markers"]]
+
+        self.assertEqual(len(station_ids), len(set(station_ids)))
+        self.assertEqual(len(marker_ids), len(set(marker_ids)))
+        self.assertEqual(set(station_ids) & set(marker_ids), set())
+        self.assertEqual(run_measurement_catalogue_check(), [])
+
+    # ---- every violation code is proven to fire ------------------------------
+    #
+    # A code asserted only against the already-compliant repo passes identically
+    # whether its detection works or has been deleted. Each mutation below breaks one
+    # invariant and demands that exact code; the structural guard underneath then makes
+    # a new code without a mutation a test failure, so this cannot silently reopen.
+
+    def _mutations(self):
+        def duplicate_station_id(cat):
+            cat["stations"].append(copy.deepcopy(cat["stations"][0]))
+            return cat, None
+
+        def marker_shadows_station(cat):
+            cat["lifecycle_markers"][0]["marker_id"] = cat["stations"][0]["station_id"]
+            return cat, None
+
+        def ambiguous_alias(cat):
+            cat["stations"][1]["aliases"].setdefault("mcp_action", []).append("bootstrap")
+            return cat, None
+
+        def undeclared_alias_kind(cat):
+            cat["stations"][0]["aliases"]["invented_kind"] = ["something"]
+            return cat, None
+
+        def undeclared_emitter_station(cat):
+            cat["stations"] = [s for s in cat["stations"] if s["station_id"] != "ci"]
+            return cat, None
+
+        def undeclared_phase_marker(cat):
+            cat["lifecycle_markers"] = [
+                m for m in cat["lifecycle_markers"] if m["marker_id"] != "pre_merge"
+            ]
+            return cat, None
+
+        def unresolved_routing_stage(cat):
+            config = (REPO_ROOT / ".ground-control.yaml").read_text(encoding="utf-8")
+            # Append a stage the catalogue cannot resolve, inside the routing.stages block.
+            config = config.replace(
+                "  stages:\n",
+                "  stages:\n    invented_stage:\n      tier: low\n",
+                1,
+            )
+            return cat, config
+
+        return {
+            "measurement-catalogue-duplicate-id": duplicate_station_id,
+            "measurement-catalogue-station-marker-overlap": marker_shadows_station,
+            "measurement-catalogue-ambiguous-alias": ambiguous_alias,
+            "measurement-catalogue-undeclared-alias-kind": undeclared_alias_kind,
+            "measurement-catalogue-emitter-drift": undeclared_emitter_station,
+            "measurement-catalogue-phase-marker-drift": undeclared_phase_marker,
+            "measurement-catalogue-routing-stage-drift": unresolved_routing_stage,
+        }
+
+    def test_every_catalogue_violation_code_fires_on_its_mutation(self):
+        for code, mutate in self._mutations().items():
+            with self.subTest(code=code):
+                catalogue, config = mutate(self._catalogue())
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = self._mirror(tmp, catalogue, config=config)
+                    violations = run_measurement_catalogue_check(root=root)
+                self.assertIn(
+                    code,
+                    {v.code for v in violations},
+                    f"{code} never fired; its detection may be scanning nothing",
+                )
+
+    def test_catalogue_check_reports_a_missing_catalogue(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            violations = run_measurement_catalogue_check(root=Path(tmp))
+
+        self.assertTrue(any(v.code == "measurement-catalogue-missing" for v in violations))
+
+    def test_catalogue_check_reports_malformed_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "contracts/measurement").mkdir(parents=True)
+            (root / "contracts/measurement/gc-station-catalogue-v1.json").write_text(
+                "{ not json", encoding="utf-8"
+            )
+            violations = run_measurement_catalogue_check(root=root)
+
+        self.assertTrue(any(v.code == "measurement-catalogue-json-invalid" for v in violations))
+
+    def test_violation_without_details_constructs_and_renders(self):
+        """A violation that carries no detail lines must still be constructible.
+
+        `details` was a required field, so every call site that omitted it raised
+        TypeError at the exact moment it tried to report a violation: the policy gate
+        crashed instead of failing cleanly. Seven call sites were in that shape.
+        """
+        violation = Violation(code="example-code", message="Example message.")
+
+        self.assertEqual(violation.details, [])
+        self.assertEqual(violation.render(), "[example-code] Example message.")
+
+    def test_every_declared_violation_code_has_a_mutation_case(self):
+        """Structural guard: a new violation code without a mutation is a test failure.
+
+        This is what closes the category rather than the six instances that opened it —
+        without it the same gap reappears the next time a code is added.
+        """
+        source = (REPO_ROOT / "tools/policy/checks.py").read_text(encoding="utf-8")
+        declared = set(re.findall(r'code="(measurement-catalogue-[a-z-]+)"', source))
+        self.assertGreaterEqual(len(declared), 7, "code extraction found too little to be meaningful")
+
+        # The two file-guard codes are covered by their own dedicated tests above.
+        file_guards = {"measurement-catalogue-missing", "measurement-catalogue-json-invalid"}
+        self.assertEqual(declared - file_guards - set(self._mutations()), set())
+
+    def test_station_catalogue_separates_stations_from_lifecycle_markers(self):
+        catalogue = self._catalogue()
+        # A station says what it inspects; a marker says what it records. ready_for_review
+        # and post_merge inspect nothing, so classifying them as stations would manufacture
+        # pass/fail data for a gate that does not exist.
+        for station in catalogue["stations"]:
+            self.assertTrue(station["inspects"].strip())
+        marker_ids = {m["marker_id"] for m in catalogue["lifecycle_markers"]}
+        self.assertIn("ready_for_review", marker_ids)
+        self.assertIn("post_merge", marker_ids)
+        self.assertIn("traceability_reconciled", marker_ids)
+
+        station_ids = {s["station_id"] for s in catalogue["stations"]}
+        self.assertEqual(station_ids & marker_ids, set())
+
+    # ---- drift against what the system actually emits -------------------------
+
+    def test_station_catalogue_covers_live_emitter_station_ids(self):
+        source = (REPO_ROOT / "mcp/ground-control/gc-implement-mechanical.js").read_text(encoding="utf-8")
+        block = re.search(r"STATION_BY_ACTION\s*=\s*Object\.freeze\(\{(.*?)\}\)", source, re.DOTALL)
+        self.assertIsNotNone(block, "STATION_BY_ACTION must be discoverable or the drift check scans nothing")
+        emitted = {station for _action, station in re.findall(r"^\s*([a-z_]+)\s*:\s*\"([a-z_]+)\"\s*,?\s*$", block.group(1), re.MULTILINE)}
+        emitted |= set(re.findall(r"\.station\(\s*\"([a-z_]+)\"", source))
+
+        # Guards the guard: an extraction that finds nothing would make the check vacuous.
+        self.assertGreaterEqual(len(emitted), 7)
+
+        catalogue = self._catalogue()
+        declared = {s["station_id"] for s in catalogue["stations"]} | {
+            m["marker_id"] for m in catalogue["lifecycle_markers"]
+        }
+        self.assertEqual(emitted - declared, set())
+
+    def test_station_catalogue_covers_issue_thread_phase_markers(self):
+        source = (REPO_ROOT / "mcp/ground-control/lib.js").read_text(encoding="utf-8")
+        written = set(re.findall(r"gc:phase\s+phase=\\?\"([a-z_]+)\\?\"", source))
+        written |= {m for m in re.findall(r"phase:\s*\"([a-z_]+)\"", source)}
+        self.assertGreaterEqual(len(written), 4)
+
+        catalogue = self._catalogue()
+        resolvable = {s["station_id"] for s in catalogue["stations"]} | {
+            m["marker_id"] for m in catalogue["lifecycle_markers"]
+        }
+        for entry in catalogue["stations"] + catalogue["lifecycle_markers"]:
+            resolvable |= set(entry["aliases"].get("issue_thread_marker", []))
+
+        self.assertEqual(written - resolvable, set())
+
+    def test_station_catalogue_covers_routing_stages(self):
+        catalogue = self._catalogue()
+        excused = {e["adr036_stage"] for e in catalogue["non_station_stages"]}
+        aliased: set[str] = set()
+        for entry in catalogue["stations"] + catalogue["lifecycle_markers"]:
+            aliased |= set(entry["aliases"].get("adr036_stage", []))
+
+        # Scope to the routing.stages block: other 4-space key lists exist in this file
+        # (architecture.vocabulary among them), and sweeping the whole file would compare
+        # the catalogue against keys that are not stages at all.
+        config = (REPO_ROOT / ".ground-control.yaml").read_text(encoding="utf-8")
+        block = re.search(r"^  stages:\s*$(.*?)(?=^  \S|\Z)", config, re.MULTILINE | re.DOTALL)
+        self.assertIsNotNone(block, "routing.stages must be discoverable or this check scans nothing")
+        stages = set(re.findall(r"^    ([a-z0-9_]+):\s*$", block.group(1), re.MULTILINE))
+        # Floor guards the guard: an extraction that silently matches nothing would make
+        # the set-difference assertion below trivially true.
+        self.assertGreaterEqual(len(stages), 20)
+
+        self.assertEqual(stages - aliased - excused, set())
+
+    # ---- record schema: the three axes cannot be conflated --------------------
+
+    def test_measurement_record_outcome_axes_share_no_value(self):
+        defs = self._record_schema()["$defs"]
+        operation = set(defs["OperationOutcome"]["enum"])
+        station = set(defs["StationResult"]["enum"])
+        run_state = set(defs["RunState"]["enum"])
+        run_outcome = set(defs["RunOutcome"]["enum"])
+
+        # ADR-090 section 3 by construction: `pass` can never reach the operation axis and
+        # `ok` can never reach the station axis, so no aggregate can read a tool succeeding
+        # as a gate passing.
+        self.assertEqual(operation & station, set())
+        self.assertEqual(operation & run_state, set())
+        self.assertEqual(station & run_state, set())
+        self.assertEqual(station & run_outcome, set())
+        self.assertIn("pass", station)
+        self.assertNotIn("pass", operation)
+        self.assertIn("ok", operation)
+        self.assertNotIn("ok", station)
+        self.assertIn("unobserved", station)
+
+    def test_measurement_record_declares_three_separate_outcome_properties(self):
+        schema = self._record_schema()
+        properties = schema["properties"]
+        for axis in ("operationOutcome", "stationResult", "runState", "runOutcome"):
+            self.assertIn(axis, properties)
+        # One shared `outcome` field would let the axes be substituted for one another.
+        self.assertNotIn("outcome", properties)
+
+    def test_measurement_record_station_id_resolves_against_catalogue(self):
+        schema = self._record_schema()
+        self.assertIn("stationId", schema["properties"])
+        catalogue = self._catalogue()
+        self.assertTrue(catalogue["stations"])
+        for station in catalogue["stations"]:
+            self.assertRegex(station["station_id"], r"^[a-z][a-z0-9_]*$")
+
+    def test_measurement_record_requires_only_provenance_fields(self):
+        schema = self._record_schema()
+        # Absence over synthesis: an emitter that cannot attest a dimension omits it rather
+        # than defaulting it into something that reads as a real observation.
+        self.assertEqual(sorted(schema["required"]), ["emitter", "measurementVersion", "observedAt"])
+
+    def test_measurement_schemas_declare_enforced_invariants(self):
+        for path in (self.RECORD_SCHEMA_PATH, self.CATALOGUE_SCHEMA_PATH):
+            schema = json.loads(path.read_text(encoding="utf-8"))
+            invariants = schema["x-ground-control-invariants"]
+            self.assertTrue(invariants)
+            for entry in invariants:
+                self.assertTrue(entry["enforcedBy"])
+
+    # ---- helpers -------------------------------------------------------------
+
+    def _mirror(self, tmp: str, catalogue: dict, config: str | None = None) -> Path:
+        """Mirror the repo paths the check reads, with a mutated catalogue and optional config."""
+        root = Path(tmp)
+        (root / "contracts/measurement").mkdir(parents=True)
+        (root / "contracts/measurement/gc-station-catalogue-v1.json").write_text(
+            json.dumps(catalogue), encoding="utf-8"
+        )
+        (root / "mcp/ground-control").mkdir(parents=True)
+        shutil.copy(
+            REPO_ROOT / "mcp/ground-control/gc-implement-mechanical.js",
+            root / "mcp/ground-control/gc-implement-mechanical.js",
+        )
+        shutil.copy(
+            REPO_ROOT / "mcp/ground-control/lib.js",
+            root / "mcp/ground-control/lib.js",
+        )
+        if config is None:
+            shutil.copy(REPO_ROOT / ".ground-control.yaml", root / ".ground-control.yaml")
+        else:
+            (root / ".ground-control.yaml").write_text(config, encoding="utf-8")
+        return root
 
 
 class ValeEmDashDensityTest(unittest.TestCase):

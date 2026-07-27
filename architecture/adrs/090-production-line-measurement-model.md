@@ -409,6 +409,55 @@ deployment replaces with a broker, outbox, or database notification. That
 replacement is a delivery concern and must not become a reason to fork the
 measurement model.
 
+## Amendment (issue #1438, 2026-07-27): the contract is published
+
+Decision 7 required the model to become a versioned contract; issue #1438
+publishes it, so the authority for these definitions moves out of this prose
+and into artifacts a consumer can validate against:
+
+- `contracts/schemas/measurement/measurement-record.v1.schema.json`
+  (`gc.measurement.record.v1`): the record shape, with Decision 2's dimensions
+  and Decision 3's three outcome axes.
+- `contracts/schemas/measurement/station-catalogue.v1.schema.json` and
+  `contracts/measurement/gc-station-catalogue-v1.json`: the station catalogue's
+  shape and its data.
+
+Three things this settles that the prose left open.
+
+**Station identity.** `station_id` is authoritative. ADR-061 `phase` strings,
+ADR-036 routing stages, issue-thread `gc:phase` values, MCP action names, and
+SKILL step numbers are aliases declared *by kind*, so a display rename can never
+become a breaking identity change. The divergence was wider than Decision 5
+implied: five vocabularies were in use, and they collided rather than cleanly
+renamed (`ci` as an emitted station id against `ci_monitor` as a routing stage).
+Alias uniqueness is therefore an enforced invariant, not an assumption.
+
+**Stations are not lifecycle markers.** A station inspects something and can
+yield a station result. `ready_for_review`, `post_merge`, `pre_merge`, `plan`,
+and `traceability_reconciled` record a transition and inspect nothing, so they
+are lifecycle markers and can never carry pass/fail. The #1435 emitter currently
+routes `ready_for_review` and `post_merge` through its station channel; the
+catalogue records them honestly as markers and the drift gate accepts them as
+declared. Reconciling the write path is #1439's work, which is why this issue
+publishes the contract without changing persistence.
+
+**Axis separation is structural.** The three axes are separate properties over
+separate closed enums that share no value, so `pass` cannot reach the operation
+axis and `ok` cannot reach the station axis. Decision 3's rule is now enforced by
+construction rather than by reviewer vigilance.
+
+The catalogue is authoritative rather than descriptive because
+`run_measurement_catalogue_check` fails the build when a station id the MCP layer
+emits, a `gc:phase` marker value, or an ADR-036 routing stage resolves to nothing
+declared. Routing stages that map to no station and no marker are declared
+explicitly with a reason, so the gate is total: it can never pass by silently
+ignoring what it failed to resolve.
+
+This amendment publishes data and gates only. It adds no aggregate, endpoint,
+MCP tool, dashboard, roll-up, or retention job, and it backfills no legacy
+station result: a record whose source never captured a verdict stays
+`unobserved` and stays out of formula denominators.
+
 ## Relationship to existing ADRs
 
 - ADR-027: agent-neutral context and privileged-side-effect boundary remain

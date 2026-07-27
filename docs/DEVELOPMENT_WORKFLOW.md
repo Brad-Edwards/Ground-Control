@@ -373,6 +373,20 @@ The guard is a pre-execution *lexical* policy control, not an OS sandbox. It pro
   `allowed_edges`. The backend surface is enforced against the same registry by
   `RegistryBoundaryArchitectureTest` (ArchUnit, in the `test` job). See
   `architecture/registry/README.md` for the schema (GC-CLD-2 / ADR-087 §3).
+- **Measurement catalogue drift** (`tools/policy/checks.py::run_measurement_catalogue_check`,
+  issue #1438 / ADR-090 / GC-O014) keeps the ADR-090 station catalogue authoritative
+  rather than descriptive. `contracts/measurement/gc-station-catalogue-v1.json` owns
+  `station_id`; ADR-061 phase strings, ADR-036 routing stages, issue-thread `gc:phase`
+  values, MCP action names, and SKILL step numbers are declared aliases. The check
+  fails on: an id declared twice or as both a station and a lifecycle marker
+  (`measurement-catalogue-duplicate-id`, `measurement-catalogue-station-marker-overlap`);
+  an alias resolving to two entries (`measurement-catalogue-ambiguous-alias`); a station
+  id emitted by `gc-implement-mechanical.js` that the catalogue does not declare
+  (`measurement-catalogue-emitter-drift`); or a `routing.stages` key that resolves to no
+  station, no marker, and no declared non-station stage
+  (`measurement-catalogue-routing-stage-drift`). Adding a station or an alias is a
+  catalogue edit; a breaking station-id or vocabulary change is a new schema version
+  under ADR-082, never an in-place edit of a published one.
 - `make policy` is the common path for Claude, Codex, and CI
 - `make sync-ground-control-policy` and `make policy-live` keep Ground Control quality gates and ADR metadata aligned when a live GC instance is available
 

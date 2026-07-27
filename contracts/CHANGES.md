@@ -1,6 +1,36 @@
 # Contract Changes
 
-Current contract version: 0.8.0
+Current contract version: 0.9.0
+
+## 0.9.0 - 2026-07-27
+
+Versioned measurement contract and station catalogue (issue #1438, ADR-090,
+ADR-082 governance, GC-O014).
+
+- Additive only. No existing schema, field, or vocabulary changes, so the
+  published `gc.workflow.run-record.v1` and `gc.implement.final-report.v1`
+  schemas are untouched and no consumer needs to migrate.
+- Added `gc.measurement.record.v1`
+  (`contracts/schemas/measurement/measurement-record.v1.schema.json`): the shape
+  every ADR-090 emitter maps its native record onto. The three outcome axes are
+  separate properties over separate closed enums that share no value, so
+  operation outcome, station result, and run state cannot be substituted for one
+  another by construction rather than by convention.
+- Added `gc.measurement.station-catalogue.v1`
+  (`contracts/schemas/measurement/station-catalogue.v1.schema.json`) and the
+  catalogue data at `contracts/measurement/gc-station-catalogue-v1.json`.
+  `station_id` is now the authoritative station identity; ADR-061 phase strings,
+  ADR-036 routing stages, issue-thread `gc:phase` values, MCP action names, and
+  SKILL step numbers are declared aliases. Display labels are declared
+  explicitly non-identity, so renaming one is never a breaking change.
+- Stations and lifecycle markers are disjoint sets. `ready_for_review`,
+  `post_merge`, `pre_merge`, `plan`, and `traceability_reconciled` record a
+  transition and inspect nothing, so they are markers and can never carry a
+  station result.
+- A breaking station-id or vocabulary change takes a new schema version; a
+  published version is never edited in place.
+
+## 0.8.0 - 2026-07-27
 
 ## 0.8.0 - 2026-07-27
 
