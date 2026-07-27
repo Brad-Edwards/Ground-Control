@@ -274,6 +274,138 @@ liveness and stale-run reaping require a separate lease/heartbeat decision and
 must not be simulated with a timer in skill prose or by treating telemetry as
 workflow authority.
 
+## Amendment (issue #1436, 2026-07-27): bounded live projection transport
+
+Issue #1435 makes lifecycle changes observable at write time, but the REST
+dashboard still observes them by snapshot polling. Issue #1436 adds a
+project-scoped Server-Sent Events (SSE) transport over the existing Spring MVC
+stack. This is a delivery path for committed ADR-061 facts, not another event
+store, workflow engine, liveness lease, or source of truth.
+
+### Transport and event contract
+
+- The endpoint is `GET /api/v1/workflow-runs/stream?project={identifier}` with
+  `text/event-stream`. It resolves the project through `ProjectService` before
+  registering a connection and falls through the existing authenticated
+  `/api/v1/**` rule in `ApiPathMatrix`; it is neither anonymous nor admin-only.
+  The bearer and browser/session chains, IP allowlist, and standard pre-response
+  401/403 behavior therefore remain the ADR-026/ADR-037 authority.
+- Named SSE events are `workflow-run` and `phase-event`. Their `data` values are
+  the existing `WorkflowRunResponse` and `PhaseEventResponse` JSON shapes.
+  Heartbeats are SSE comments with no product payload. Do not add a parallel
+  telemetry envelope, hand-mirrored frontend DTO, or stream-only enum.
+- The service publishes an internal identifier-only change notification from
+  every committed run mutation (`recordRun`, cost refinement) and phase-event
+  append. Reuse the existing `ApplicationEventPublisher` /
+  `@TransactionalEventListener` pattern: the transport listener runs only
+  after commit, reloads the project-scoped response through
+  `WorkflowTelemetryService` in a new read-only transaction, and then offers it
+  to the stream hub. It must never expose uncommitted state, import repositories
+  into `api/`, or perform socket writes on the mutation/transaction thread.
+- Delivery is best-effort and may be duplicated. Entity ids plus the existing
+  idempotent persistence rules make cache reconciliation idempotent. A process
+  crash can lose an in-memory notification after the database commit, so every
+  initial connection and reconnection refetches the current REST snapshots.
+  `Last-Event-ID` replay is not promised, and no fake durable cursor or second
+  backlog is introduced.
+
+### Resource bounds and failure semantics
+
+`SseEmitter` is a transport primitive, not backpressure. The stream hub must
+enforce all of these bounds together:
+
+- a finite global connection cap and a finite per-authenticated-principal cap;
+- a finite emitter lifetime/timeout so authorization is re-evaluated on
+  reconnect and no connection is immortal;
+- a heartbeat interval shorter than that timeout and than any documented proxy
+  idle timeout;
+- a bounded FIFO per connection, with at most one drain active for that
+  connection; and
+- a bounded delivery executor. Heartbeat scheduling and mutation threads only
+  offer to the FIFO; they never call a possibly blocking socket write.
+
+Queue overflow, executor refusal, send failure, or timeout closes and removes
+the connection exactly once. Dropping one data event while continuing to label
+the stream live is forbidden: disconnecting forces the client onto the honest
+polling path. Connection registration and both caps are atomic, so concurrent
+subscribers cannot oversubscribe them. Completion, error, timeout, project
+change, application shutdown, and client unmount all release registry counts
+and worker resources.
+
+The bounds live under a narrow validated
+`groundcontrol.workflow-telemetry.stream.*` `@ConfigurationProperties` object,
+registered by the existing application scan. Durations and capacities are
+typed, positive, and relation-validated at startup (heartbeat below timeout;
+per-principal cap no greater than global cap). Operator-facing environment
+bindings must flow through `application.yml`, the production Compose
+passthrough, `deploy/docker/env.schema`, `.env.example`, and deployment
+documentation as one configuration contract. These values are non-secret and
+must not be passed in process argv.
+
+Capacity rejection before the response is committed uses the existing
+`GroundControlException` -> `GlobalExceptionHandler` -> `ErrorResponse` path.
+After the event-stream headers are committed, an HTTP error envelope is no
+longer possible: the hub logs a stable bounded reason and closes the emitter.
+Logs may carry project, authenticated principal, safe entity ids, counts, and a
+closed disconnect reason; they must not carry cookies, authorization headers,
+credentials, event payloads, response bodies, or stack traces from expected
+disconnects. Actuator/Micrometer counters and gauges use only bounded reason
+tags; project, principal, run id, and branch are not metric labels.
+
+The production topology in ADR-030 is one backend process, so process-local
+fan-out is sufficient. A future multi-instance deployment must replace the
+internal notification delivery with a broker/outbox or database notification
+behind the post-commit change-notification seam; it must not pretend an
+in-process hub reaches connections on another node. Any reverse proxy must
+disable buffering/compression for this route and keep its read timeout above
+the heartbeat interval.
+
+### React Query reconciliation and degraded mode
+
+The browser uses same-origin `EventSource`, so the existing hardened
+`GC_SESSION` cookie authenticates the GET without putting a bearer token in a
+URL, browser storage, or JavaScript-managed header. The hook owns exactly one
+connection for its mounted project and closes it on project change/unmount.
+
+The stream does not create React state that competes with React Query:
+
+- `workflow-run` replaces/inserts by run id in the existing project run-list
+  query; `phase-event` reconciles by event id into an existing per-run event
+  query when one is present.
+- Every committed event invalidates the matching project aggregate queries
+  rather than reimplementing database percentile/filter/window logic in the
+  browser. Query-key factories are the shared identity for the fetch hooks and
+  stream hook.
+- The generated OpenAPI response types remain the compile-time contract. The
+  stream ingress performs a narrow runtime shape/project check before writing
+  to cache; malformed, unknown, or cross-project data closes the stream and
+  triggers REST reconciliation rather than poisoning the cache.
+- `onopen` marks the view live and invalidates the project snapshots to close
+  the subscribe/fetch race. `onerror` marks it degraded and enables the
+  existing 30-second `refetchInterval`; a later successful reconnect disables
+  interval polling again. Poll success does not claim that push is live.
+  The UI exposes at least `Live`, `Reconnecting`, and `Polling` states instead
+  of presenting last-reported data as current.
+
+### Testing and non-goals
+
+Controller slice coverage owns the endpoint media type, project resolution,
+pre-commit error envelope, and response shapes. Security-enabled tests own
+anonymous rejection and bearer/session access. Hub tests use controllable sinks
+and schedulers to prove project isolation, atomic caps, heartbeat, exactly once
+cleanup, ordering, overflow disconnect, and that one slow/failing client cannot
+retain unbounded memory or prevent another client receiving an event. Service
+tests pin after-commit publication and no publication on rollback. Frontend
+tests pin connection cleanup, cache-key reconciliation, reconnect refetch, the
+visible degraded state, and polling only while degraded.
+
+This amendment does not add WebSocket/WebFlux infrastructure, cross-project or
+admin streams, durable SSE replay, a message broker, a second telemetry schema
+or cache, workflow control/signalling, run leases/stale-run reaping, or
+multi-tenant project membership. Reconsider the transport only if measured
+event volume, bidirectional control, or multi-instance delivery invalidates the
+single-process, low-volume SSE assumptions.
+
 ## Relationship to other ADRs
 
 - **ADR-028** (Temporal boundary, superseded #1359): originally specified

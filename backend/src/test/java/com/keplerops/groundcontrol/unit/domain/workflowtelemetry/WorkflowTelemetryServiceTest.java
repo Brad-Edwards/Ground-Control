@@ -1,5 +1,6 @@
 package com.keplerops.groundcontrol.unit.domain.workflowtelemetry;
 
+import static com.keplerops.groundcontrol.TestUtil.setField;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -25,6 +26,7 @@ import com.keplerops.groundcontrol.domain.workflowtelemetry.service.ImportRunCos
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.RecordPhaseEventCommand;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.RecordWorkflowRunCommand;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowRunFilter;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowTelemetryChangeEvent;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowTelemetryService;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -38,6 +40,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 
@@ -49,6 +52,9 @@ class WorkflowTelemetryServiceTest {
 
     @Mock
     private WorkflowPhaseEventRepository phaseEventRepository;
+
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private WorkflowTelemetryService service;
@@ -245,6 +251,133 @@ class WorkflowTelemetryServiceTest {
         assertThatThrownBy(() -> service.recordRun(command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("costProxy");
+    }
+
+    // ---- live-stream change notification (issue #1436) ------------------------------------------
+
+    @Test
+    void recordRunAnnouncesTheSavedRun() {
+        var runId = UUID.randomUUID();
+        when(runRepository.findRunForUpdate(any(), any(), any(), any())).thenReturn(Optional.empty());
+        when(runRepository.saveAndFlush(any())).thenAnswer(inv -> {
+            setField(inv.getArgument(0), "id", runId);
+            return inv.getArgument(0);
+        });
+
+        service.recordRun(runCommand().build());
+
+        var change = capturedChange();
+        assertThat(change.kind()).isEqualTo(WorkflowTelemetryChangeEvent.Kind.RUN);
+        assertThat(change.project()).isEqualTo("ground-control");
+        assertThat(change.entityId()).isEqualTo(runId);
+    }
+
+    @Test
+    void recordRunAnnouncesEveryRunItSupersedes() {
+        // The retired attempt changes state too; without its own notification a watching dashboard
+        // would keep showing it as RUNNING until the next poll.
+        var supersededId = UUID.randomUUID();
+        var superseded = new WorkflowRun("ground-control", "implement", TelemetryProvenance.LIVE_EMISSION);
+        setField(superseded, "id", supersededId);
+        superseded.setFinalState(WorkflowRunState.RUNNING);
+        when(runRepository.findRunForUpdate(any(), any(), any(), any())).thenReturn(Optional.empty());
+        when(runRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(runRepository.findOpenRunsForWorkItem(any(), any(), any(), any())).thenReturn(List.of(superseded));
+
+        service.recordRun(runCommand()
+                .withProvenance(TelemetryProvenance.LIVE_EMISSION)
+                .withState(WorkflowRunState.RUNNING)
+                .build());
+
+        var captor = ArgumentCaptor.forClass(WorkflowTelemetryChangeEvent.class);
+        verify(eventPublisher, times(2)).publishEvent(captor.capture());
+        assertThat(captor.getAllValues())
+                .extracting(WorkflowTelemetryChangeEvent::entityId)
+                .contains(supersededId);
+    }
+
+    @Test
+    void recordPhaseEventAnnouncesOnlyAGenuinelyNewAppend() {
+        var runId = UUID.randomUUID();
+        var eventId = UUID.randomUUID();
+        var run = new WorkflowRun("ground-control", "implement", TelemetryProvenance.LIVE_EMISSION);
+        when(runRepository.findByIdAndProjectForUpdate(runId, "ground-control")).thenReturn(Optional.of(run));
+        when(phaseEventRepository.save(any())).thenAnswer(inv -> {
+            setField(inv.getArgument(0), "id", eventId);
+            return inv.getArgument(0);
+        });
+
+        service.recordPhaseEvent(phaseEvent(runId, "ci", PhaseEventType.COMPLETED, 0, null));
+
+        var change = capturedChange();
+        assertThat(change.kind()).isEqualTo(WorkflowTelemetryChangeEvent.Kind.PHASE_EVENT);
+        assertThat(change.runId()).isEqualTo(runId);
+        assertThat(change.entityId()).isEqualTo(eventId);
+    }
+
+    @Test
+    void recordPhaseEventAnnouncesNothingOnTheIdempotentReplay() {
+        // A retry or a backfill of an already-stored fact must not re-notify; a subscriber that
+        // missed the original resynchronizes on reconnect instead.
+        var runId = UUID.randomUUID();
+        var run = new WorkflowRun("ground-control", "implement", TelemetryProvenance.LIVE_EMISSION);
+        when(runRepository.findByIdAndProjectForUpdate(runId, "ground-control")).thenReturn(Optional.of(run));
+        when(phaseEventRepository.findByRunIdAndSourceId(eq(runId), any()))
+                .thenReturn(Optional.of(new WorkflowPhaseEvent(
+                        runId,
+                        "ground-control",
+                        "ci",
+                        PhaseEventType.COMPLETED,
+                        FROM,
+                        10L,
+                        TelemetryProvenance.LIVE_EMISSION)));
+
+        service.recordPhaseEvent(phaseEvent(runId, "ci", PhaseEventType.COMPLETED, 0, null));
+
+        verify(eventPublisher, never()).publishEvent(any(WorkflowTelemetryChangeEvent.class));
+        verify(phaseEventRepository, never()).save(any());
+    }
+
+    @Test
+    void importCostAnnouncesTheRefinedRun() {
+        var runId = UUID.randomUUID();
+        var run = new WorkflowRun("ground-control", "implement", TelemetryProvenance.LIVE_EMISSION);
+        setField(run, "id", runId);
+        when(runRepository.findByIdAndProject(runId, "ground-control")).thenReturn(Optional.of(run));
+        when(runRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.importCost(new ImportRunCostCommand(
+                runId, "ground-control", "anthropic", "claude", 3, 20, new BigDecimal("1.50"), "USD", 1000L));
+
+        assertThat(capturedChange().entityId()).isEqualTo(runId);
+    }
+
+    // These two assert only the service's empty -> NotFoundException mapping. They deliberately do
+    // NOT claim project isolation: the repository is mocked here, so they would keep passing if the
+    // project predicate were dropped from the query. The real-DB two-project denial lives in
+    // WorkflowRunStreamPublicationIntegrationTest, which is the only place that can prove it.
+
+    @Test
+    void getRunThrowsNotFoundWhenTheScopedLookupResolvesEmpty() {
+        var runId = UUID.randomUUID();
+        when(runRepository.findByIdAndProject(runId, "ground-control")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getRun(runId, "ground-control")).isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void getPhaseEventThrowsNotFoundWhenTheScopedLookupResolvesEmpty() {
+        var eventId = UUID.randomUUID();
+        when(phaseEventRepository.findByIdAndProject(eventId, "ground-control")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getPhaseEvent(eventId, "ground-control"))
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    private WorkflowTelemetryChangeEvent capturedChange() {
+        var captor = ArgumentCaptor.forClass(WorkflowTelemetryChangeEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        return captor.getValue();
     }
 
     // ---- recordPhaseEvent ----------------------------------------------------------------------

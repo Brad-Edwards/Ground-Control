@@ -1003,6 +1003,7 @@ the MCP adapter (not in the `gc_query` allowlist).
 | GET | `/workflow-runs` | - | 200 | List recent runs for a project |
 | GET | `/workflow-runs/{runId}/events` | - | 200 | Phase events for one run, oldest first |
 | GET | `/workflow-runs/aggregate` | - | 200 | Project-scoped reporting aggregate |
+| GET | `/workflow-runs/stream` | - | 200 `text/event-stream` (503 at capacity) | Live project-scoped run/phase-event stream |
 | GET | `/workflow-runs/cross-project-aggregate` | - | 200 (ROLE_ADMIN; 403 otherwise) | Cross-project operator rollup |
 
 This is a reporting read-model, not a workflow engine (ADR-061). All
@@ -1053,6 +1054,34 @@ returns the stored event rather than appending a duplicate, which is what lets l
 alone never authorizes the read) and accepts `limit` (default 200, capped at 500). Events are
 returned oldest first. This is the event-level view of an in-flight run; `/aggregate` only reports
 per-phase hot spots across a window.
+
+**GET `/workflow-runs/stream`** (issue #1436, ADR-061 #1436 amendment): a project-scoped
+Server-Sent Events stream of committed run and phase-event facts, so a dashboard reflects a phase
+transition without a reload. Requires `project`, resolved through `ProjectService` before the
+connection is registered, and inherits the ordinary authenticated `/api/v1/**` rule—a stream is
+not an access-control exemption, and it grants nothing `GET /workflow-runs` does not.
+
+Named events are `workflow-run` and `phase-event`; their `data` payloads are exactly the
+`WorkflowRunResponse` and `PhaseEventResponse` JSON shapes documented above, so a client reconciles
+them into the same cache its polling reads populate. Heartbeats are SSE comments with no payload.
+
+Delivery is **best-effort and may duplicate**: reconcile by entity id, and refetch the REST
+snapshots on connect and reconnect. There is no `Last-Event-ID` replay and no durable backlog—an
+in-memory notification can be lost if the process dies after the database commit.
+
+Connections are bounded (`groundcontrol.workflow-telemetry.stream.*`): a global cap, a
+per-authenticated-principal cap, a finite emitter lifetime that forces re-authorization on
+reconnect, a heartbeat below that lifetime, and a bounded per-connection queue. Exceeding a cap is
+refused with `503 service_unavailable` in the standard `ErrorResponse` envelope, before the
+event-stream headers commit. A consumer too slow to keep up is **disconnected rather than silently
+skipped**, so a client is never left believing a live stream is current while missing an event;
+it falls back to interval polling and reconnects. Fan-out is process-local, so a multi-instance
+deployment needs a broker behind the change-notification seam. Any reverse proxy must disable
+buffering and compression for this route and keep its read timeout above the heartbeat interval.
+
+`gc_query` **denylists** this path: it is a browser transport, not an agent read, and reading a
+never-ending response would simply burn the tool's timeout. Agents use `GET /workflow-runs` and
+`GET /workflow-runs/{runId}/events` for bounded snapshots.
 
 **GET aggregate query parameters:** `project` (required for `/aggregate`), plus
 optional `repo`, `runtime`, `requirement`, `workflowType`, `outcome`, and
