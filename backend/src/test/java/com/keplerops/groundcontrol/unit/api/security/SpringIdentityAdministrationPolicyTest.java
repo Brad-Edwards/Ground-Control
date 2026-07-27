@@ -1,5 +1,6 @@
 package com.keplerops.groundcontrol.unit.api.security;
 
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -49,8 +50,9 @@ class SpringIdentityAdministrationPolicyTest {
         authenticateIdentity();
         when(authorizationService.isAllowed(USER_ID, PermissionKey.PROJECT_ACCESS_ADMIN, PROJECT_ID))
                 .thenReturn(false);
+        var policy = policy(true);
 
-        assertThatThrownBy(() -> policy(true).requireProjectAccessDelegation(PROJECT_ID))
+        assertThatThrownBy(() -> policy.requireProjectAccessDelegation(PROJECT_ID))
                 .isInstanceOf(AuthorizationException.class);
     }
 
@@ -58,14 +60,16 @@ class SpringIdentityAdministrationPolicyTest {
     void missingIdentityAndLegacyAdminRoleIsDenied() {
         SecurityContextHolder.getContext()
                 .setAuthentication(new TestingAuthenticationToken("legacy-user", null, "ROLE_USER"));
+        var policy = policy(true);
 
-        assertThatThrownBy(() -> policy(true).requireIdentityAdministration())
-                .isInstanceOf(AuthorizationException.class);
+        assertThatThrownBy(policy::requireIdentityAdministration).isInstanceOf(AuthorizationException.class);
     }
 
     @Test
     void disabledSecurityPreservesTheExistingPermitAllDevelopmentMode() {
-        policy(false).requireIdentityAdministration();
+        var policy = policy(false);
+
+        assertThatCode(policy::requireIdentityAdministration).doesNotThrowAnyException();
     }
 
     private static void authenticateIdentity() {

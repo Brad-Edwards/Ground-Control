@@ -18,6 +18,8 @@ import org.hibernate.envers.Audited;
 @Table(name = "identity_user")
 public class IdentityUser extends BaseEntity {
 
+    private static final String FIELD = "field";
+
     @Column(name = "login_name", nullable = false, length = 64, updatable = false, unique = true)
     private String loginName;
 
@@ -38,17 +40,17 @@ public class IdentityUser extends BaseEntity {
         if (loginName == null
                 || !UserCredentialPolicy.USERNAME_PATTERN.matcher(loginName).matches()) {
             throw new DomainValidationException(
-                    "Invalid identity login name", "invalid_identity_login", Map.of("field", "loginName"));
+                    "Invalid identity login name", "invalid_identity_login", Map.of(FIELD, "loginName"));
         }
         if (displayName == null || displayName.isBlank() || displayName.length() > 200) {
             throw new DomainValidationException(
                     "Display name must contain 1 to 200 characters",
                     "invalid_identity_display_name",
-                    Map.of("field", "displayName"));
+                    Map.of(FIELD, "displayName"));
         }
         if (kind == null) {
             throw new DomainValidationException(
-                    "Identity user kind is required", "invalid_identity_kind", Map.of("field", "kind"));
+                    "Identity user kind is required", "invalid_identity_kind", Map.of(FIELD, "kind"));
         }
         this.loginName = loginName;
         this.displayName = displayName.trim();
@@ -60,7 +62,7 @@ public class IdentityUser extends BaseEntity {
             throw new DomainValidationException(
                     "Display name must contain 1 to 200 characters",
                     "invalid_identity_display_name",
-                    Map.of("field", "displayName"));
+                    Map.of(FIELD, "displayName"));
         }
         this.displayName = displayName.trim();
     }

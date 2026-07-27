@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -15,7 +16,6 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.PreparedStatementCallback;
 
@@ -23,16 +23,16 @@ class LastEffectiveAdministratorGuardTest {
 
     @Test
     void serializedPostMutationCheckRejectsRemovingTheLastAdministrator() {
-        var repository = Mockito.mock(EffectiveAuthorizationRepository.class);
-        var jdbc = Mockito.mock(JdbcTemplate.class);
-        var entityManager = Mockito.mock(EntityManager.class);
+        var repository = mock(EffectiveAuthorizationRepository.class);
+        var jdbc = mock(JdbcTemplate.class);
+        var entityManager = mock(EntityManager.class);
         var now = Instant.parse("2026-07-27T00:00:00Z");
         var guard =
                 new LastEffectiveAdministratorGuard(repository, jdbc, entityManager, Clock.fixed(now, ZoneOffset.UTC));
         when(repository.hasAnyEffectiveGlobalPermission(
                         com.keplerops.groundcontrol.domain.identity.state.PermissionKey.IDENTITY_ADMIN, now))
                 .thenReturn(true, false);
-        Runnable mutation = Mockito.mock(Runnable.class);
+        Runnable mutation = mock(Runnable.class);
 
         assertThatThrownBy(() -> guard.protect(mutation))
                 .isInstanceOf(ConflictException.class)

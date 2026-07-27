@@ -35,14 +35,18 @@ import com.keplerops.groundcontrol.domain.identity.state.IdentityUserState;
 import com.keplerops.groundcontrol.domain.identity.state.PermissionKey;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 
 @ExtendWith(MockitoExtension.class)
 class IdentityAdminServiceTest {
@@ -83,6 +87,7 @@ class IdentityAdminServiceTest {
     @Mock
     private LastEffectiveAdministratorGuard lastAdminGuard;
 
+    @InjectMocks
     private IdentityAdminService service;
 
     private IdentityUser user;
@@ -92,17 +97,6 @@ class IdentityAdminServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new IdentityAdminService(
-                users,
-                groups,
-                memberships,
-                roles,
-                permissions,
-                roleGrants,
-                projectAccessGrants,
-                projects,
-                policy,
-                lastAdminGuard);
         user = identified(new IdentityUser("alice", "Alice", IdentityUserKind.HUMAN), USER_ID);
         group = identified(new IdentityGroup("operators", "Operators"), GROUP_ID);
         role = identified(new IdentityRole("IDENTITY_OPERATOR", "Identity operator"), ROLE_ID);
@@ -173,10 +167,115 @@ class IdentityAdminServiceTest {
 
     @Test
     void roleGrantRejectsAnAmbiguousSubjectAtTheServiceBoundary() {
-        assertThatThrownBy(() -> service.createRoleGrant(
-                        new IdentityCommands.CreateRoleGrant(ROLE_ID, USER_ID, GROUP_ID, null, null, null)))
+        var command = new IdentityCommands.CreateRoleGrant(ROLE_ID, USER_ID, GROUP_ID, null, null, null);
+
+        assertThatThrownBy(() -> service.createRoleGrant(command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("Exactly one");
+    }
+
+    @Test
+    void userGroupAndRoleCrudDelegatesToRepositories() {
+        var page = Pageable.unpaged();
+        when(users.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(users.findAll(page)).thenReturn(new PageImpl<>(List.of(user)));
+        when(users.findById(USER_ID)).thenReturn(Optional.of(user));
+        when(groups.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(groups.findAll(page)).thenReturn(new PageImpl<>(List.of(group)));
+        when(groups.findById(GROUP_ID)).thenReturn(Optional.of(group));
+        when(roles.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(roles.findAll(page)).thenReturn(new PageImpl<>(List.of(role)));
+        when(roles.findById(ROLE_ID)).thenReturn(Optional.of(role));
+
+        var createdUser = service.createUser(new IdentityCommands.CreateUser("bob", " Bob ", IdentityUserKind.SERVICE));
+        assertThat(createdUser.getDisplayName()).isEqualTo("Bob");
+        assertThat(service.listUsers(page).getContent()).containsExactly(user);
+        assertThat(service.getUser(USER_ID)).isSameAs(user);
+        assertThat(service.updateUser(USER_ID, new IdentityCommands.UpdateUser("Alice A", null))
+                        .getDisplayName())
+                .isEqualTo("Alice A");
+
+        var createdGroup = service.createGroup(new IdentityCommands.CreateGroup("reviewers", " Reviewers "));
+        assertThat(createdGroup.getDisplayName()).isEqualTo("Reviewers");
+        assertThat(service.listGroups(page).getContent()).containsExactly(group);
+        assertThat(service.getGroup(GROUP_ID)).isSameAs(group);
+        assertThat(service.updateGroup(GROUP_ID, new IdentityCommands.UpdateGroup("Operators A", null))
+                        .getDisplayName())
+                .isEqualTo("Operators A");
+
+        var createdRole = service.createRole(new IdentityCommands.CreateRole("PROJECT_EDITOR", "Editor", "Writes"));
+        assertThat(createdRole.getDescription()).isEqualTo("Writes");
+        assertThat(service.listRoles(page).getContent()).containsExactly(role);
+        assertThat(service.getRole(ROLE_ID)).isSameAs(role);
+        assertThat(service.updateRole(
+                                ROLE_ID,
+                                new IdentityCommands.UpdateRole(
+                                        "Identity administrator", "Full identity access", IdentityRoleState.ACTIVE))
+                        .getDescription())
+                .isEqualTo("Full identity access");
+
+        verify(policy, times(12)).requireIdentityAdministration();
+    }
+
+    @Test
+    void accessRelationshipsSupportBothSubjectsAndPagedReads() {
+        var page = Pageable.unpaged();
+        var from = Instant.parse("2026-07-27T00:00:00Z");
+        var until = Instant.parse("2026-08-27T00:00:00Z");
+        var membership = identified(new GroupMembership(user, group, from, until), EDGE_ID);
+        var assignment = identified(new RolePermissionAssignment(role, PermissionKey.PROJECT_READ), EDGE_ID);
+        var groupRoleGrant = identified(RoleGrant.forGroup(role, group, project, from, until), EDGE_ID);
+        var groupProjectGrant = identified(ProjectAccessGrant.forGroup(group, project, from, until), EDGE_ID);
+        when(users.findById(USER_ID)).thenReturn(Optional.of(user));
+        when(groups.findById(GROUP_ID)).thenReturn(Optional.of(group));
+        when(roles.findById(ROLE_ID)).thenReturn(Optional.of(role));
+        when(projects.getById(PROJECT_ID)).thenReturn(project);
+        when(memberships.save(any())).thenReturn(membership);
+        when(memberships.findAll(page)).thenReturn(new PageImpl<>(List.of(membership)));
+        when(permissions.findAll(page)).thenReturn(new PageImpl<>(List.of(assignment)));
+        when(permissions.findByRoleIdAndState(
+                        ROLE_ID,
+                        com.keplerops.groundcontrol.domain.identity.state.RolePermissionAssignmentState.ACTIVE))
+                .thenReturn(List.of());
+        when(roleGrants.save(any())).thenReturn(groupRoleGrant);
+        when(roleGrants.findAll(page)).thenReturn(new PageImpl<>(List.of(groupRoleGrant)));
+        when(projectAccessGrants.save(any())).thenReturn(groupProjectGrant);
+        when(projectAccessGrants.findAll(page)).thenReturn(new PageImpl<>(List.of(groupProjectGrant)));
+
+        assertThat(service.createMembership(new IdentityCommands.CreateMembership(USER_ID, GROUP_ID, from, until))
+                        .getGroup())
+                .isSameAs(group);
+        assertThat(service.listMemberships(page).getContent()).containsExactly(membership);
+        assertThat(service.listPermissions(page).getContent()).containsExactly(assignment);
+
+        var roleGrant = service.createRoleGrant(
+                new IdentityCommands.CreateRoleGrant(ROLE_ID, null, GROUP_ID, PROJECT_ID, from, until));
+        assertThat(roleGrant.getGroup()).isSameAs(group);
+        assertThat(service.listRoleGrants(page).getContent()).containsExactly(groupRoleGrant);
+
+        var projectGrant = service.createProjectAccessGrant(
+                new IdentityCommands.CreateProjectAccessGrant(null, GROUP_ID, PROJECT_ID, from, until));
+        assertThat(projectGrant.getGroup()).isSameAs(group);
+        assertThat(service.listProjectAccessGrants(page).getContent()).containsExactly(groupProjectGrant);
+        verify(policy).requireProjectAccessDelegation(PROJECT_ID);
+    }
+
+    @Test
+    void duplicateAndMissingResourcesFailBeforeWriting() {
+        when(users.existsByLoginName("alice")).thenReturn(true);
+        when(groups.existsByName("operators")).thenReturn(true);
+        when(roles.existsByKey("IDENTITY_OPERATOR")).thenReturn(true);
+
+        var createUser = new IdentityCommands.CreateUser("alice", "Alice", IdentityUserKind.HUMAN);
+        var createGroup = new IdentityCommands.CreateGroup("operators", "Operators");
+        var createRole = new IdentityCommands.CreateRole("IDENTITY_OPERATOR", "Operator", null);
+
+        assertThatThrownBy(() -> service.createUser(createUser)).hasMessageContaining("already exists");
+        assertThatThrownBy(() -> service.createGroup(createGroup)).hasMessageContaining("already exists");
+        assertThatThrownBy(() -> service.createRole(createRole)).hasMessageContaining("already exists");
+        assertThatThrownBy(() -> service.getUser(USER_ID)).hasMessageContaining("not found");
+        assertThatThrownBy(() -> service.getGroup(GROUP_ID)).hasMessageContaining("not found");
+        assertThatThrownBy(() -> service.getRole(ROLE_ID)).hasMessageContaining("not found");
     }
 
     private static <T> T identified(T entity, UUID id) {
