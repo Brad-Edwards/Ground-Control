@@ -1,3 +1,4 @@
+import { workflowRunKeys } from "@/hooks/workflow-run-keys";
 import { apiFetch } from "@/lib/api-client";
 import type {
   WorkflowRunAggregateResponse,
@@ -16,40 +17,46 @@ export interface WorkflowRunFilters {
 }
 
 /**
- * Runs now advance while the page is open (issue #1435), so a snapshot taken at mount goes stale
- * within a phase. Refreshing on this cadence keeps the in-flight view roughly current without
- * polling hard enough to matter.
+ * Fallback poll cadence. Runs advance while the page is open (issue #1435), so a snapshot taken at
+ * mount goes stale within a phase.
+ *
+ * Since #1436 this is the *degraded* path: while the live stream is connected it pushes changes as
+ * they commit and polling is switched off. It re-arms the moment the stream drops, so losing the
+ * push transport can never make the page staler than it was before the stream existed.
  */
-const LIVE_REFRESH_MS = 30_000;
+const FALLBACK_POLL_MS = 30_000;
 
-export function useWorkflowRuns(projectIdentifier: string) {
+export interface LiveOptions {
+  /** True while the live stream is connected. Suppresses interval polling; see {@link FALLBACK_POLL_MS}. */
+  live?: boolean;
+}
+
+function fallbackInterval(live: boolean | undefined): number | false {
+  return live ? false : FALLBACK_POLL_MS;
+}
+
+export function useWorkflowRuns(
+  projectIdentifier: string,
+  { live }: LiveOptions = {},
+) {
   return useQuery({
-    queryKey: ["workflow-runs", projectIdentifier],
+    queryKey: workflowRunKeys.runs(projectIdentifier),
     queryFn: () =>
       apiFetch<WorkflowRunResponse[]>("/workflow-runs", {
         params: { project: projectIdentifier, limit: "50" },
       }),
     enabled: !!projectIdentifier,
-    refetchInterval: LIVE_REFRESH_MS,
+    refetchInterval: fallbackInterval(live),
   });
 }
 
 export function useWorkflowRunAggregate(
   projectIdentifier: string,
   filters: WorkflowRunFilters = {},
+  { live }: LiveOptions = {},
 ) {
   return useQuery({
-    queryKey: [
-      "workflow-run-aggregate",
-      projectIdentifier,
-      filters.repo,
-      filters.runtime,
-      filters.requirement,
-      filters.workflowType,
-      filters.outcome,
-      filters.from,
-      filters.to,
-    ],
+    queryKey: workflowRunKeys.aggregate(projectIdentifier, filters),
     queryFn: () => {
       const params: Record<string, string> = {
         project: projectIdentifier,
@@ -67,6 +74,6 @@ export function useWorkflowRunAggregate(
       );
     },
     enabled: !!projectIdentifier,
-    refetchInterval: LIVE_REFRESH_MS,
+    refetchInterval: fallbackInterval(live),
   });
 }

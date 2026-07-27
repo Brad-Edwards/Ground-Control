@@ -24,6 +24,12 @@ public interface WorkflowPhaseEventRepository extends JpaRepository<WorkflowPhas
     Optional<WorkflowPhaseEvent> findByRunIdAndSourceId(UUID runId, String sourceId);
 
     /**
+     * Project-scoped single-event read. Matched on the event's own denormalized project column so an
+     * event id from another project resolves to empty rather than to that project's event.
+     */
+    Optional<WorkflowPhaseEvent> findByIdAndProject(UUID id, String project);
+
+    /**
      * Project-scoped, chronologically ordered events for one run. {@code project} is matched on the
      * event's own denormalized column so a caller cannot page another project's events even with a
      * valid run id.

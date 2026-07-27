@@ -1,5 +1,6 @@
 package com.keplerops.groundcontrol.api.workflowtelemetry;
 
+import com.keplerops.groundcontrol.api.workflowtelemetry.stream.WorkflowRunStreamHub;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowRunOutcome;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.ImportRunCostCommand;
@@ -7,12 +8,17 @@ import com.keplerops.groundcontrol.domain.workflowtelemetry.service.RecordPhaseE
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.RecordWorkflowRunCommand;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowRunFilter;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowTelemetryService;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,6 +27,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
  * Workflow-run telemetry & economics reporting surface (issue #859, ADR-061).
@@ -37,10 +44,55 @@ public class WorkflowRunController {
 
     private final WorkflowTelemetryService telemetryService;
     private final ProjectService projectService;
+    private final WorkflowRunStreamHub streamHub;
 
-    public WorkflowRunController(WorkflowTelemetryService telemetryService, ProjectService projectService) {
+    public WorkflowRunController(
+            WorkflowTelemetryService telemetryService, ProjectService projectService, WorkflowRunStreamHub streamHub) {
         this.telemetryService = telemetryService;
         this.projectService = projectService;
+        this.streamHub = streamHub;
+    }
+
+    /**
+     * Live projection of this project's runs and phase events (issue #1436). Resolves the project
+     * before registering, so the connection is scoped exactly as the polling reads above are, and
+     * falls through the existing authenticated {@code /api/v1/**} rule — a stream is not an
+     * access-control exemption.
+     *
+     * <p>Delivery is best-effort: the client refetches the REST snapshots on connect and reconnect
+     * and reconciles by entity id. The stream reports committed telemetry and cannot advance, retry,
+     * or prove the present liveness of a workflow.
+     */
+    @ApiResponse(
+            responseCode = "200",
+            description = "Event stream. Each `workflow-run` or `phase-event` frame carries the same JSON"
+                    + " projection the corresponding REST read returns; heartbeats are SSE comments with no"
+                    + " payload. Delivery is best-effort and may duplicate — reconcile by entity id.",
+            content =
+                    @Content(
+                            mediaType = MediaType.TEXT_EVENT_STREAM_VALUE,
+                            schema =
+                                    @Schema(
+                                            oneOf = {WorkflowRunResponse.class, PhaseEventResponse.class},
+                                            description = "Payload of one named SSE data frame")))
+    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter stream(@RequestParam(required = false) String project) {
+        var projectIdentifier = projectService.requireProjectIdentifier(project);
+        return streamHub.subscribe(projectIdentifier, currentPrincipal());
+    }
+
+    /**
+     * Principal for the per-principal connection quota, read on the request thread. It is a quota
+     * key only — the security chain has already authorized this request, and this value is never
+     * treated as authentication on a delivery thread.
+     */
+    private static String currentPrincipal() {
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || authentication.getName() == null) {
+            // Security disabled (dev/test profiles): every caller shares one quota bucket.
+            return WorkflowRunStreamHub.ANONYMOUS_PRINCIPAL;
+        }
+        return authentication.getName();
     }
 
     @PostMapping

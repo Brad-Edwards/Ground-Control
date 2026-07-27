@@ -53,6 +53,15 @@ services:
       # being upstreamed back here.
       - GC_SECURITY_ENABLED=${GC_SECURITY_ENABLED:-true}
       - GC_SECURITY_OPENAPI_PUBLIC=${GC_SECURITY_OPENAPI_PUBLIC:-false}
+      # Live workflow-run SSE stream bounds (issue #1436). Non-secret tuning; the defaults here
+      # match application.yml. Any reverse proxy in front of /api/v1/workflow-runs/stream must
+      # disable response buffering and keep its read timeout above GC_STREAM_HEARTBEAT_INTERVAL.
+      - GC_STREAM_ENABLED=${GC_STREAM_ENABLED:-true}
+      - GC_STREAM_MAX_CONNECTIONS=${GC_STREAM_MAX_CONNECTIONS:-64}
+      - GC_STREAM_MAX_CONNECTIONS_PER_PRINCIPAL=${GC_STREAM_MAX_CONNECTIONS_PER_PRINCIPAL:-8}
+      - GC_STREAM_QUEUE_CAPACITY=${GC_STREAM_QUEUE_CAPACITY:-64}
+      - GC_STREAM_HEARTBEAT_INTERVAL=${GC_STREAM_HEARTBEAT_INTERVAL:-15s}
+      - GC_STREAM_IDLE_TIMEOUT=${GC_STREAM_IDLE_TIMEOUT:-15m}
       - GROUNDCONTROL_SECURITY_CREDENTIALS_0_PRINCIPAL_NAME
       - GROUNDCONTROL_SECURITY_CREDENTIALS_0_TOKEN
       - GROUNDCONTROL_SECURITY_CREDENTIALS_0_ROLE

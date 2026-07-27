@@ -1140,6 +1140,21 @@ async function request(method, path, { body, rawBody, params, formData, signal }
 
   if (res.status === 204) return null;
 
+  // Refuse an event stream before reading it (issue #1436). `res.text()` on a live SSE response
+  // never resolves — the connection stays open by design and heartbeats keep it from even failing
+  // idle — so a streaming endpoint reached through this client would hang the MCP server outright
+  // rather than erroring. gc_query denylists the one such path that exists today; this guard is
+  // what keeps the next one from being an unbounded hang instead of a clear failure.
+  const contentType = res.headers?.get?.("content-type") ?? "";
+  if (contentType.toLowerCase().includes("text/event-stream")) {
+    throw new RequestError({
+      status: res.status,
+      code: "unsupported_media_type",
+      message: `${path} returns an event stream, which this client cannot consume`,
+      detail: null,
+    });
+  }
+
   const text = await res.text();
 
   if (!res.ok) {

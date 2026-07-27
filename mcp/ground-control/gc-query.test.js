@@ -693,6 +693,13 @@ describe("validateGcQueryPath", () => {
       /invalid_query_path/,
     );
   });
+
+  it("rejects the live workflow-run stream, which the prefix would otherwise admit", () => {
+    // The SSE stream sits under the allowlisted /api/v1/workflow-runs prefix but never ends
+    // (issue #1436). Without this denylist entry gc_query opens it and blocks reading a response
+    // that heartbeats forever, burning the full 30s timeout to return nothing.
+    assert.throws(() => validateGcQueryPath("/api/v1/workflow-runs/stream"), /invalid_query_path/);
+  });
 });
 
 describe("validateGcQueryParams", () => {

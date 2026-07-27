@@ -1,6 +1,31 @@
 # Contract Changes
 
-Current contract version: 0.7.0
+Current contract version: 0.8.0
+
+## 0.8.0 - 2026-07-27
+
+Live workflow-run telemetry transport (issue #1436, ADR-061 amendment, ADR-090
+amendment).
+
+- Additive only; no existing path, field, or vocabulary changes, so
+  `contracts/schemas/workflow/workflow-run-record.v1.schema.json` stays at `v1`
+  and no generated TypeScript interface changes.
+- Added `GET /api/v1/workflow-runs/stream` (project-scoped, `text/event-stream`).
+  Named events are `workflow-run` and `phase-event`; each data frame is the
+  existing `WorkflowRunResponse` or `PhaseEventResponse` JSON, so the stream
+  introduces no second telemetry shape for consumers to reconcile. Heartbeats are
+  SSE comments with no payload.
+- The 200 response is documented as a `oneOf` over those two schemas rather than
+  the `SseEmitter` return type, which would have published a Java transport
+  detail (`{timeout}`) as the apparent response body.
+- Delivery is best-effort and may duplicate: reconcile by entity id and refetch
+  the REST snapshots on connect and reconnect. There is no `Last-Event-ID` replay
+  and no durable backlog. Connections are capped and a consumer that falls behind
+  is disconnected rather than silently skipped, so a client is never left
+  believing a live stream is current while missing an event.
+- No breaking change for existing consumers; a client that ignores the new path
+  is unaffected. `gc_query` denylists the path—it is a browser transport, not
+  an agent read.
 
 ## 0.7.0 - 2026-07-26
 

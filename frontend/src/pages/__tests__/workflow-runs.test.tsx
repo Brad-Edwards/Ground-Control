@@ -12,6 +12,10 @@ vi.mock("@/hooks/use-workflow-runs", () => ({
   useWorkflowRuns: vi.fn(),
 }));
 
+vi.mock("@/hooks/use-workflow-run-stream", () => ({
+  useWorkflowRunStream: vi.fn(),
+}));
+
 vi.mock("@/contexts/project-context", () => ({
   useProjectContext: () => ({
     activeProject: { identifier: "ground-control", name: "Ground Control" },
@@ -20,15 +24,14 @@ vi.mock("@/contexts/project-context", () => ({
 
 vi.mock("react-router", async () => {
   const actual =
-    await vi.importActual<typeof import("react-router")>(
-      "react-router",
-    );
+    await vi.importActual<typeof import("react-router")>("react-router");
   return {
     ...actual,
     useParams: () => ({ projectId: "ground-control" }),
   };
 });
 
+import { useWorkflowRunStream } from "@/hooks/use-workflow-run-stream";
 import {
   useWorkflowRunAggregate,
   useWorkflowRuns,
@@ -37,6 +40,7 @@ import { WorkflowRuns } from "../workflow-runs";
 
 const mockUseAggregate = vi.mocked(useWorkflowRunAggregate);
 const mockUseRuns = vi.mocked(useWorkflowRuns);
+const mockUseStream = vi.mocked(useWorkflowRunStream);
 
 const emptyAggregate: WorkflowRunAggregateResponse = {
   from: "2026-06-01T00:00:00Z",
@@ -167,6 +171,11 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+beforeEach(() => {
+  // Default every page test to a connected stream; the transport-state tests override it.
+  mockUseStream.mockReturnValue({ status: "live" });
+});
+
 describe("WorkflowRuns — data loaded", () => {
   beforeEach(() => {
     mockUseAggregate.mockReturnValue({
@@ -285,6 +294,52 @@ describe("WorkflowRuns — data loaded", () => {
   });
 });
 
+describe("WorkflowRuns — transport state", () => {
+  beforeEach(() => {
+    mockUseAggregate.mockReturnValue({
+      data: composedAggregate,
+      isLoading: false,
+      isError: false,
+      error: null,
+    } as ReturnType<typeof useWorkflowRunAggregate>);
+    mockUseRuns.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    } as unknown as ReturnType<typeof useWorkflowRuns>);
+  });
+
+  it("says Live and suppresses polling while the stream is connected", () => {
+    mockUseStream.mockReturnValue({ status: "live" });
+
+    render(<WorkflowRuns />);
+
+    expect(screen.getByText("Live")).toBeTruthy();
+    expect(mockUseRuns).toHaveBeenCalledWith("ground-control", { live: true });
+  });
+
+  it("says Polling and re-arms the fallback when the stream drops", () => {
+    // Stream loss must be visible (issue #1436 AC-4): silently showing the last pushed values as
+    // current is the failure this state exists to prevent.
+    mockUseStream.mockReturnValue({ status: "degraded" });
+
+    render(<WorkflowRuns />);
+
+    expect(screen.getByText("Polling")).toBeTruthy();
+    expect(screen.getByText(/refreshing every 30 seconds/i)).toBeTruthy();
+    expect(mockUseRuns).toHaveBeenCalledWith("ground-control", { live: false });
+  });
+
+  it("reports the connecting state before the stream is established", () => {
+    mockUseStream.mockReturnValue({ status: "connecting" });
+
+    render(<WorkflowRuns />);
+
+    expect(screen.getByText("Connecting")).toBeTruthy();
+  });
+});
+
 describe("WorkflowRuns — loading state", () => {
   it("shows loading message while data is fetching", () => {
     mockUseAggregate.mockReturnValue({
@@ -376,7 +431,11 @@ describe("WorkflowRuns — hook contract", () => {
     expect(mockUseAggregate).toHaveBeenCalledWith(
       "ground-control",
       expect.any(Object),
+      expect.any(Object),
     );
-    expect(mockUseRuns).toHaveBeenCalledWith("ground-control");
+    expect(mockUseRuns).toHaveBeenCalledWith(
+      "ground-control",
+      expect.any(Object),
+    );
   });
 });

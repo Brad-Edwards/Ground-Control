@@ -1,4 +1,8 @@
 import {
+  type StreamStatus,
+  useWorkflowRunStream,
+} from "@/hooks/use-workflow-run-stream";
+import {
   type WorkflowRunFilters,
   useWorkflowRunAggregate,
   useWorkflowRuns,
@@ -599,6 +603,50 @@ function ActiveRunsSection({
 }
 
 // ---------------------------------------------------------------------------
+// Transport health indicator
+// ---------------------------------------------------------------------------
+
+/**
+ * Reports how updates are arriving, not whether a workflow is alive. `Polling` is a truthful
+ * statement that the page is on the 30-second fallback — a poll succeeding is not evidence that
+ * push is working, and telemetry never proves a process is currently running.
+ */
+function StreamStatusBadge({ status }: Readonly<{ status: StreamStatus }>) {
+  const { label, detail, dot } = {
+    connecting: {
+      label: "Connecting",
+      detail: "Opening the live update stream.",
+      dot: "bg-yellow-400",
+    },
+    live: {
+      label: "Live",
+      detail: "Updates are pushed as they are recorded.",
+      dot: "bg-green-400",
+    },
+    degraded: {
+      label: "Polling",
+      detail: "Live stream unavailable — refreshing every 30 seconds instead.",
+      dot: "bg-orange-400",
+    },
+  }[status];
+
+  return (
+    // <output> carries role="status" natively, so the live-region announcement works without
+    // hand-applying an ARIA role to a generic container.
+    <output
+      className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2"
+      aria-label={`Update transport: ${label}`}
+    >
+      <span className={`h-2 w-2 rounded-full ${dot}`} aria-hidden="true" />
+      <div>
+        <p className="text-sm font-medium">{label}</p>
+        <p className="text-xs text-muted-foreground">{detail}</p>
+      </div>
+    </output>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Root page component
 // ---------------------------------------------------------------------------
 
@@ -606,18 +654,23 @@ export function WorkflowRuns() {
   const { projectId = "" } = useParams<{ projectId: string }>();
   const [filters, setFilters] = useState<WorkflowRunFilters>({});
 
+  // The stream drives the fetch hooks rather than the reverse: while push is connected they stop
+  // polling, and they re-arm the moment it drops (issue #1436).
+  const { status: streamStatus } = useWorkflowRunStream(projectId);
+  const live = streamStatus === "live";
+
   const {
     data: aggregate,
     isLoading: aggLoading,
     isError: aggError,
     error: aggErr,
-  } = useWorkflowRunAggregate(projectId, filters);
+  } = useWorkflowRunAggregate(projectId, filters, { live });
 
   const {
     data: runs = [],
     isLoading: runsLoading,
     isError: runsError,
-  } = useWorkflowRuns(projectId);
+  } = useWorkflowRuns(projectId, { live });
 
   const isLoading = aggLoading || runsLoading;
   const isError = aggError || runsError;
@@ -632,6 +685,7 @@ export function WorkflowRuns() {
             AI-driven workflow executions.
           </p>
         </div>
+        <StreamStatusBadge status={streamStatus} />
       </div>
 
       <FiltersPanel filters={filters} onChange={setFilters} />

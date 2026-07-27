@@ -8,6 +8,15 @@
 //   - Never forward prompts, completions, raw review bodies, or bearer material.
 //   - The cross_project_aggregate action requires ROLE_ADMIN; it is registered
 //     unconditionally but the backend enforces the role at the HTTP layer.
+//
+// Deliberately NOT an action here: GET /api/v1/workflow-runs/stream, the live SSE
+// transport added by issue #1436. It is a browser-facing, session-authenticated
+// connection that stays open indefinitely, which has no request/response tool shape —
+// an agent wanting current state calls `list` or `list_events`, which return bounded
+// snapshots of the same committed facts. The exclusion is enforced, not just
+// documented: gc-query.js denylists the path and lib.js refuses any text/event-stream
+// response. Adding a `stream` action here would require solving cancellation,
+// backpressure, and result framing that the MCP tool contract does not have.
 
 import { z } from "zod";
 import {
