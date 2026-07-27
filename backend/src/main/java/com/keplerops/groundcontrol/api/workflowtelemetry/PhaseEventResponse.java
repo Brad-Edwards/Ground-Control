@@ -17,7 +17,8 @@ public record PhaseEventResponse(
         Instant occurredAt,
         Long durationMs,
         String outcome,
-        TelemetryProvenance provenance) {
+        TelemetryProvenance provenance,
+        String sourceId) {
 
     public static PhaseEventResponse from(WorkflowPhaseEvent event) {
         return new PhaseEventResponse(
@@ -30,6 +31,7 @@ public record PhaseEventResponse(
                 event.getOccurredAt(),
                 event.getDurationMs(),
                 event.getOutcome(),
-                event.getProvenance());
+                event.getProvenance(),
+                event.getSourceId());
     }
 }

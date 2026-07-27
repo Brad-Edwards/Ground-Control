@@ -46,7 +46,8 @@
         "CLOSED",
         "ESCALATED",
         "ABANDONED",
-        "SUPERSEDED"
+        "SUPERSEDED",
+        "FAILED"
       ]
     },
     "provenance": {
@@ -54,7 +55,8 @@
       "enum": [
         "ISSUE_THREAD",
         "TEMPORAL_VISIBILITY",
-        "MANUAL_IMPORT"
+        "MANUAL_IMPORT",
+        "LIVE_EMISSION"
       ]
     }
   },

@@ -212,6 +212,7 @@ claiming these metrics:
 
 | Dependency | Issue |
 |---|---|
+| Live `/implement` lifecycle emission | #1435 (delivered) |
 | Versioned contract and station catalogue | #1438 |
 | ADR-061 station-result vocabulary and safe legacy handling | #1439 |
 | Owner-specific retention and daily roll-ups | #1440 |
@@ -260,6 +261,105 @@ dependencies, not a new workflow lane or implementation plan.
   ADR-059's fail-open capture, or ADR-061's reporting-not-execution boundary.
 - Reinstating the withdrawn CLD programme, introducing Temporal, or creating a
   new human workflow gate.
+
+## Amendment (issue #1435, 2026-07-26): live ADR-061 emitter mapping
+
+Live lifecycle emission uses the existing ADR-061 owners and maps to this
+model without a second run, station, or outcome schema:
+
+- work item: exact `(project, repo, issue_number)`;
+- run: the `workflow_run.id` resolved by the existing
+  `(project, repo, issue_number, branch)` upsert key;
+- station: the stable ADR-061 `phase` id, never the SKILL step number,
+  user-facing phase label, MCP tool name, or `next_action`;
+- station attempt: the authoritative `cycle_index` when one exists, otherwise
+  absent rather than inferred;
+- observation time: `started_at`, `ended_at`, or event `occurred_at` supplied
+  by the tool-layer transition owner;
+- run state/outcome: ADR-061 lifecycle fields, kept separate from
+  `PhaseEventType`, MCP operation outcome, and ADR-036 JSONL outcome.
+
+The first live producer does not authorize a catch-all lifecycle event or a
+second copy of the station catalogue planned by #1438. Its seam is a bounded
+workflow-run observation helper in the MCP layer that accepts the explicit
+correlation tuple and closed lifecycle/event values, uses the existing REST
+client and authentication path, and returns no control-flow authority.
+Emitter/version fields introduced by the #1438 versioned contract remain that
+contract's responsibility; issue #1435 must not synthesize them, fork the
+schema, or reinterpret legacy fields to imitate them.
+
+At-least-once tool execution plus append-only phase events creates a
+reconciliation requirement: every logical event needs deterministic source
+identity so retries and issue-thread backfill converge. A timestamp is an
+observation, not an idempotency key; provenance is a source class, not event
+identity; and a cycle index distinguishes attempts but does not identify the
+source record. Aggregates must not count both a live observation and its
+backfilled copy as two station attempts.
+
+Lifecycle capture inherits ADR-059's failure-isolation pattern, not its record
+shape: determine the workflow result first, launch the bounded telemetry write
+afterward, catch every write failure, log only safe correlation identifiers
+plus a stable failure class, and preserve the original result unchanged.
+Unlike ADR-059 tool-usage capture, lifecycle emission must be attached only to
+registered workflow boundaries; wrapping every MCP call would conflate tool
+operations with production stations.
+
+### Decisions this amendment settles
+
+The open questions above resolve as follows.
+
+**Provenance.** `LIVE_EMISSION` is added to the closed provenance vocabulary.
+A fact the tool layer observed as a phase transitioned is not a fact
+reconstructed from the issue thread: the two carry different freshness and
+different reconciliation semantics, and labelling the first `ISSUE_THREAD`
+would erase the seam provenance exists to mark. Backfill keeps `ISSUE_THREAD`,
+`MANUAL_IMPORT` stays economics-only, and `TEMPORAL_VISIBILITY` stays
+historical.
+
+**Event identity.** `workflow_phase_event.source_id` carries the identity of
+the logical fact, unique within the run. When an emitter cannot attest it, the
+service derives `phase:eventType:cycleIndex`. Re-recording an existing
+`(run_id, source_id)` returns the stored event rather than appending a second
+one, so the table stays append-only per logical fact instead of per HTTP call,
+and a live observation plus its backfilled copy count as one station attempt.
+
+**Attempt ordinal.** A `STARTED` event opens an attempt and takes the next
+ordinal for `(run, phase, STARTED)`, read from durable history so an emitter
+restart cannot silently reset it; the emitter threads that ordinal onto the
+terminal event so both halves describe one attempt. Every other event type
+without an explicit ordinal takes attempt `0`. An emitter that cannot order
+attempts is describing the first one, and that is precisely what makes an
+unordered reconciliation record converge instead of appending a phantom retry.
+
+**Station vocabulary.** The `/implement` mechanical bands map to stable phase
+ids one per gate: `issue_branch_resolution`, `completion_gate`, `git_publish`,
+`ci`, `sonarcloud`, `ready_for_review`, `post_merge`. CI and SonarCloud stay
+separate stations because they are separate gates with separate rework
+profiles; collapsing them would make per-gate first-pass yield meaningless.
+The versioned station catalogue remains #1438's.
+
+**Terminal coverage.** The tool layer records `MERGED` when the post-merge
+phase completes, `CLOSED`/`CLOSED_WITHOUT_MERGE` when it observes the linked PR
+closed unmerged, and `SUPERSEDED` when a new live attempt opens on a different
+branch of the same work item, the only abandonment observable at the moment
+it happens, since an agent that walks away emits nothing. `FAILED` joins the
+run-state vocabulary for an explicitly observed non-recoverable failure; it is
+never inferred from a retryable phase failure, and a failed station attempt
+leaves the run open. Consistent with the ADR-061 amendment, `RUNNING` means
+that no terminal observation has been recorded, and closing the remaining gap
+requires the lease/heartbeat decision that amendment defers.
+
+**Transport isolation.** The emitter timestamps each transition locally and appends the write to an
+internal FIFO chain that the workflow never awaits. A bounded timeout alone would still put the
+backend on the critical path, because it caps the delay rather than removing it. The queue is what
+makes observation genuinely unable to stall the observed operation, rather than merely bounded in
+how long it stalls. Ordering within a run is preserved by the chain, and the recorded `occurred_at`
+is the moment of transition, not the moment of delivery, so a late flush never distorts a duration.
+
+**Enforcement.** `mcp/ground-control/workflow-run-lifecycle.js` and
+`mcp/ground-control/gc-implement-mechanical.js` join the
+`measurement-model-sync` trigger. A live emitter the gate does not name is a
+hole in the gate.
 
 ## Relationship to existing ADRs
 

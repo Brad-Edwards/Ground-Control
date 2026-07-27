@@ -4887,12 +4887,16 @@
             "enum": [
               "ISSUE_THREAD",
               "TEMPORAL_VISIBILITY",
-              "MANUAL_IMPORT"
+              "MANUAL_IMPORT",
+              "LIVE_EMISSION"
             ],
             "type": "string"
           },
           "runId": {
             "format": "uuid",
+            "type": "string"
+          },
+          "sourceId": {
             "type": "string"
           }
         },
@@ -5811,8 +5815,14 @@
             "enum": [
               "ISSUE_THREAD",
               "TEMPORAL_VISIBILITY",
-              "MANUAL_IMPORT"
+              "MANUAL_IMPORT",
+              "LIVE_EMISSION"
             ],
+            "type": "string"
+          },
+          "sourceId": {
+            "maxLength": 200,
+            "minLength": 0,
             "type": "string"
           }
         },
@@ -5891,7 +5901,8 @@
               "CLOSED",
               "ESCALATED",
               "ABANDONED",
-              "SUPERSEDED"
+              "SUPERSEDED",
+              "FAILED"
             ],
             "type": "string"
           },
@@ -5924,7 +5935,8 @@
             "enum": [
               "ISSUE_THREAD",
               "TEMPORAL_VISIBILITY",
-              "MANUAL_IMPORT"
+              "MANUAL_IMPORT",
+              "LIVE_EMISSION"
             ],
             "type": "string"
           },
@@ -12442,7 +12454,8 @@
               "CLOSED",
               "ESCALATED",
               "ABANDONED",
-              "SUPERSEDED"
+              "SUPERSEDED",
+              "FAILED"
             ],
             "type": "string"
           },
@@ -12483,7 +12496,8 @@
             "enum": [
               "ISSUE_THREAD",
               "TEMPORAL_VISIBILITY",
-              "MANUAL_IMPORT"
+              "MANUAL_IMPORT",
+              "LIVE_EMISSION"
             ],
             "type": "string"
           },
@@ -27854,6 +27868,56 @@
       }
     },
     "/api/v1/workflow-runs/{runId}/events": {
+      "get": {
+        "operationId": "listEvents",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PhaseEventResponse"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "workflow-run-controller"
+        ]
+      },
       "post": {
         "operationId": "recordEvent",
         "parameters": [

@@ -48,8 +48,7 @@ public final class RequirementSpecifications {
     public static Specification<Requirement> fromFilter(RequirementFilter filter) {
         // Exclude archived by default unless explicitly filtering for ARCHIVED status
         boolean wantsArchived = filter != null && filter.status() == Status.ARCHIVED;
-        Specification<Requirement> spec =
-                wantsArchived ? Specification.where(null) : Specification.where(notArchived());
+        Specification<Requirement> spec = wantsArchived ? Specification.unrestricted() : notArchived();
 
         if (filter == null) {
             return spec;

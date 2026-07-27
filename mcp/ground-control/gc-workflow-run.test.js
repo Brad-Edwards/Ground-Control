@@ -113,10 +113,18 @@ describe("gcWorkflowRunZodShape", () => {
 });
 
 describe("GC_WORKFLOW_RUN_ACTIONS constant", () => {
-  it("contains exactly the six documented actions", () => {
+  it("contains exactly the seven documented actions", () => {
     assert.deepEqual(
       [...GC_WORKFLOW_RUN_ACTIONS].sort(),
-      ["aggregate", "cross_project_aggregate", "import_cost", "list", "record", "record_event"],
+      [
+        "aggregate",
+        "cross_project_aggregate",
+        "import_cost",
+        "list",
+        "list_events",
+        "record",
+        "record_event",
+      ],
     );
   });
 });
@@ -136,11 +144,19 @@ describe("closed vocabulary constants", () => {
     assert.deepEqual([...WORKFLOW_RUN_OUTCOMES].sort(), ["CLOSED_WITHOUT_MERGE", "MERGED", "NONE"]);
   });
 
-  it("WORKFLOW_RUN_PROVENANCES are the three documented values", () => {
+  it("WORKFLOW_RUN_PROVENANCES are the documented values", () => {
+    // LIVE_EMISSION (issue #1435) names a fact the tool layer observed as a phase transitioned,
+    // which is a different freshness and reconciliation contract from a reconstructed one.
     assert.deepEqual(
       [...WORKFLOW_RUN_PROVENANCES].sort(),
-      ["ISSUE_THREAD", "MANUAL_IMPORT", "TEMPORAL_VISIBILITY"],
+      ["ISSUE_THREAD", "LIVE_EMISSION", "MANUAL_IMPORT", "TEMPORAL_VISIBILITY"],
     );
+  });
+
+  it("WORKFLOW_RUN_FINAL_STATES carries the FAILED terminal state", () => {
+    // Without it a non-recoverable failure is indistinguishable from an abandonment or a pause for
+    // a human decision, and all three collapse into one bucket.
+    assert.ok(WORKFLOW_RUN_FINAL_STATES.includes("FAILED"));
   });
 
   it("WORKFLOW_RUN_EVENT_TYPES contains STARTED and FAILED", () => {
@@ -221,6 +237,23 @@ describe("gcWorkflowRunToolHandler — record_event action", () => {
     assert.equal(calls[0].body.phase, "plan");
     assert.equal(calls[0].body.eventType, "COMPLETED");
     assert.equal(calls[0].body.provenance, "ISSUE_THREAD");
+  });
+
+  it("forwards an emitter-supplied source_id as sourceId", async () => {
+    const calls = makeFetchSpy({ status: 201, body: { id: "evt-uuid" } });
+    await gcWorkflowRunToolHandler({
+      action: "record_event",
+      run_id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      project: "test-proj",
+      phase: "ci",
+      event_type: "COMPLETED",
+      cycle_index: 2,
+      occurred_at: "2026-01-01T12:00:00Z",
+      provenance: "LIVE_EMISSION",
+      source_id: "ci:COMPLETED:2",
+    });
+    assert.equal(calls[0].body.sourceId, "ci:COMPLETED:2");
+    assert.equal(calls[0].body.cycleIndex, 2);
   });
 
   it("throws when run_id is missing", async () => {
@@ -399,6 +432,12 @@ describe("WORKFLOW_RUN_EVENT_FIELDS", () => {
     assert.ok(WORKFLOW_RUN_EVENT_FIELDS.includes("event_type"));
     assert.ok(WORKFLOW_RUN_EVENT_FIELDS.includes("occurred_at"));
     assert.ok(WORKFLOW_RUN_EVENT_FIELDS.includes("provenance"));
+  });
+
+  it("includes source_id so an emitter can attest the logical fact's identity", () => {
+    // The backend derives phase:eventType:cycleIndex when this is absent. Dropping it from the pick
+    // list would silently discard an emitter-supplied identity and fall back to the derived one.
+    assert.ok(WORKFLOW_RUN_EVENT_FIELDS.includes("source_id"));
   });
 
   it("does NOT include run_id (path param, not body field)", () => {

@@ -1,7 +1,7 @@
 package com.keplerops.groundcontrol.shared.security;
 
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.security.web.util.matcher.OrRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 
@@ -30,12 +30,15 @@ public final class ApiRequestPaths {
         "/api/", "/v3/api-docs", "/swagger-ui",
     };
 
+    private static final PathPatternRequestMatcher.Builder PATH_MATCHER_BUILDER =
+            PathPatternRequestMatcher.withDefaults();
+
     private static final RequestMatcher MATCHER = new OrRequestMatcher(
-            new AntPathRequestMatcher("/api/**"),
-            new AntPathRequestMatcher("/v3/api-docs/**"),
-            new AntPathRequestMatcher("/v3/api-docs"),
-            new AntPathRequestMatcher("/swagger-ui/**"),
-            new AntPathRequestMatcher("/swagger-ui.html"));
+            PATH_MATCHER_BUILDER.matcher("/api/**"),
+            PATH_MATCHER_BUILDER.matcher("/v3/api-docs/**"),
+            PATH_MATCHER_BUILDER.matcher("/v3/api-docs"),
+            PATH_MATCHER_BUILDER.matcher("/swagger-ui/**"),
+            PATH_MATCHER_BUILDER.matcher("/swagger-ui.html"));
 
     private ApiRequestPaths() {
         // utility

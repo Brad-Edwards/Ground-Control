@@ -1306,6 +1306,7 @@ export interface PhaseEventResponse {
   "project": any;
   "provenance": any;
   "runId": any;
+  "sourceId": any;
 }
 
 export interface PhaseHotspotResponse {
@@ -1547,6 +1548,7 @@ export interface RecordPhaseEventRequest {
   "outcome"?: any;
   "phase": any;
   "provenance": any;
+  "sourceId"?: any;
 }
 
 export interface RecordProtocolPlanRequest {
@@ -3465,9 +3467,9 @@ export type VerificationStatus = "PROVEN" | "REFUTED" | "TIMEOUT" | "UNKNOWN" | 
 export const VERIFICATION_STATUSES: VerificationStatus[] = ["PROVEN","REFUTED","TIMEOUT","UNKNOWN","ERROR"];
 export type AssuranceLevel = "L0" | "L1" | "L2" | "L3";
 export const ASSURANCE_LEVELS: AssuranceLevel[] = ["L0","L1","L2","L3"];
-export type WorkflowRunFinalState = "RUNNING" | "READY_FOR_REVIEW" | "MERGED" | "CLOSED" | "ESCALATED" | "ABANDONED" | "SUPERSEDED";
+export type WorkflowRunFinalState = "RUNNING" | "READY_FOR_REVIEW" | "MERGED" | "CLOSED" | "ESCALATED" | "ABANDONED" | "SUPERSEDED" | "FAILED";
 export type WorkflowRunOutcome = "MERGED" | "CLOSED_WITHOUT_MERGE" | "NONE";
-export type WorkflowRunProvenance = "ISSUE_THREAD" | "TEMPORAL_VISIBILITY" | "MANUAL_IMPORT";
+export type WorkflowRunProvenance = "ISSUE_THREAD" | "TEMPORAL_VISIBILITY" | "MANUAL_IMPORT" | "LIVE_EMISSION";
 
 export type PackRegistryImportFormat = "AUTO" | "OSCAL_JSON" | "GC_MANIFEST";
 export const PACK_REGISTRY_IMPORT_FORMATS: PackRegistryImportFormat[] = ["AUTO","OSCAL_JSON","GC_MANIFEST"];

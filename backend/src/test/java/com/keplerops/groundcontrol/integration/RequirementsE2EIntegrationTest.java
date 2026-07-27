@@ -627,6 +627,7 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "200", // V200: drops V198 with the Temporal orchestration lane (#1359)
                         "201", // V201: age_graph_snapshot.source_revision (#1309, ADR-084 §5)
                         "202", // V202: document_audit — Document joins the audited spine (#1309)
-                        "203"); // V203: workflow telemetry audit shadows for graph projection (#1311)
+                        "203", // V203: workflow telemetry audit shadows for graph projection (#1311)
+                        "204"); // V204: workflow_phase_event.source_id deterministic identity (#1435)
     }
 }

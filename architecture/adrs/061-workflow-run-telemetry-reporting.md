@@ -181,6 +181,99 @@ This amendment does not revive the Temporal execution model removed by issue
 ADR-089/V199. A first-class work-item aggregate, retention policy, or
 revision-stable projection-scope policy requires a separate decision.
 
+## Amendment (issue #1435, 2026-07-26): live lifecycle observation
+
+The issue #1359 amendment's statement that issue-thread ingestion is the sole
+active write path is superseded. Issue #1435 adopts live `/implement`
+lifecycle observation from the MCP tool layer while
+`gc_workflow_run_ingest` remains the backfill and reconciliation path. This
+does not make the read-model an executor: recording is a consequence of an
+already-determined workflow transition and can never authorize, advance,
+retry, or fail that transition.
+
+The live path is governed by these invariants:
+
+- Open the existing ADR-061 run, using its
+  `(project, repo, issue_number, branch)` natural key, as soon as the canonical
+  project/repository/issue/branch identity is available. The initial
+  observation carries `started_at` and `final_state=RUNNING`; Phase E re-entry
+  on the same issue branch refines the same run rather than creating another
+  run identity.
+- Emit only stable machine phase ids from the existing workflow/station
+  vocabulary. A SKILL step number, display label, MCP tool name, or
+  `next_action` string is not a phase id. `cycle_index` is present only when
+  the authoritative transition owner knows the attempt order, and duration is
+  measured from tool-layer timestamps rather than agent prose or reconstructed
+  guesses.
+- `READY_FOR_REVIEW` is an open, paused state and has no `ended_at`.
+  Successful merge/close, explicit abandonment, supersession, and a
+  non-recoverable failed run are terminal observations and carry `ended_at`.
+  A failed phase attempt is not automatically a failed run: retryable gate,
+  CI, review, or network failures remain phase events while the run stays
+  open. Because the existing closed run-state vocabulary does not distinguish
+  non-recoverable failure from abandonment or escalation, `FAILED` is added as
+  a run state; it must be kept synchronized across the versioned contract,
+  backend/MCP enums, REST documentation, and frontend type/badge vocabulary.
+- Live observations can race with one another and with reconciliation. The
+  `WorkflowTelemetryService` transaction boundary must merge them atomically:
+  preserve the earliest `started_at`, reject `ended_at < started_at`, prevent
+  an open observation from overwriting a terminal observation, and prevent
+  lost updates to correlation/economics fields. A delayed `RUNNING` write or
+  stale issue-thread ingest must never reopen a completed run. These are
+  projection-consistency rules, not workflow transition authority.
+- Live observation is strictly fail-open and happens after the workflow
+  operation has determined its own result. Backend unavailability,
+  authentication failure, validation failure, conflict, timeout, or malformed
+  telemetry response may produce only a bounded diagnostic containing safe
+  identifiers and a stable failure class; it must not alter the workflow
+  result or its `next_action`. No telemetry payload, credential, raw issue
+  body, response body, or stack trace is logged.
+- Provenance continues to name the source fact, not merely the delivery time.
+  A live write may use `ISSUE_THREAD` only when it is emitted from the same
+  successful tool-layer operation that established the canonical durable
+  issue record. Backfill retains `ISSUE_THREAD`; `MANUAL_IMPORT` remains
+  economics-only and `TEMPORAL_VISIBILITY` remains historical. A tool-local
+  fact with no issue-thread source must not be mislabeled and requires a
+  separately decided closed provenance value.
+- A live producer records the boundary that just occurred; it must not invoke
+  the full issue-thread ingest after every boundary. Reconciliation must
+  converge with live data rather than append a second copy of the same
+  logical phase attempt. The append-only event needs a deterministic source
+  identity/idempotency seam that survives retries and lets live emission and
+  `gc_workflow_run_ingest` identify the same fact. Provenance, timestamp, or
+  `(phase, event_type, cycle_index)` alone is not a safe deduplication key.
+
+The two values this amendment leaves open are decided here:
+
+- The closed provenance vocabulary gains `LIVE_EMISSION` for a tool-local fact
+  with no issue-thread source. `ISSUE_THREAD` continues to name a fact carried
+  by the durable issue record, so the two remain distinguishable in the store
+  rather than only in the emitter's intent.
+- The deterministic source identity is `workflow_phase_event.source_id`, unique
+  per `(run_id, source_id)` and derived as `phase:eventType:cycleIndex` when the
+  emitter cannot attest it. Re-recording an existing identity returns the stored
+  event, so live emission and `gc_workflow_run_ingest` converge on one row per
+  logical attempt. The service also assigns the attempt ordinal from durable
+  history for a `STARTED` event and `0` for any other unordered event, which is
+  what makes an unordered backfill land on the first live attempt instead of
+  appending a phantom retry.
+
+The terminal transitions the tool layer actually observes are: `MERGED` when
+the post-merge phase completes, `CLOSED` with `CLOSED_WITHOUT_MERGE` when the
+linked PR is seen closed unmerged, and `SUPERSEDED` when a new live attempt
+opens on a different branch of the same work item. That last one is the only
+abandonment observable at the moment it happens, because an agent that stops
+working emits nothing. `FAILED` is written only from an explicit terminal
+observation, never inferred from a retryable phase failure.
+
+This amendment guarantees closure for terminal paths the tool layer can
+observe. An abrupt process or host death cannot execute a terminal write;
+without a lease/heartbeat, `RUNNING` therefore means "no terminal observation
+has been recorded," not proof that a process is currently alive. Strict
+liveness and stale-run reaping require a separate lease/heartbeat decision and
+must not be simulated with a timer in skill prose or by treating telemetry as
+workflow authority.
+
 ## Relationship to other ADRs
 
 - **ADR-028** (Temporal boundary, superseded #1359): originally specified

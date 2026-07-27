@@ -15,6 +15,13 @@ export interface WorkflowRunFilters {
   to?: string;
 }
 
+/**
+ * Runs now advance while the page is open (issue #1435), so a snapshot taken at mount goes stale
+ * within a phase. Refreshing on this cadence keeps the in-flight view roughly current without
+ * polling hard enough to matter.
+ */
+const LIVE_REFRESH_MS = 30_000;
+
 export function useWorkflowRuns(projectIdentifier: string) {
   return useQuery({
     queryKey: ["workflow-runs", projectIdentifier],
@@ -23,6 +30,7 @@ export function useWorkflowRuns(projectIdentifier: string) {
         params: { project: projectIdentifier, limit: "50" },
       }),
     enabled: !!projectIdentifier,
+    refetchInterval: LIVE_REFRESH_MS,
   });
 }
 
@@ -59,5 +67,6 @@ export function useWorkflowRunAggregate(
       );
     },
     enabled: !!projectIdentifier,
+    refetchInterval: LIVE_REFRESH_MS,
   });
 }

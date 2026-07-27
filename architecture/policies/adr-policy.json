@@ -115,7 +115,9 @@
             "backend/src/main/java/com/keplerops/groundcontrol/api/mcptelemetry/**",
             "mcp/ground-control/gc-workflow-run.js",
             "mcp/ground-control/gc-workflow-run-ingest.js",
-            "mcp/ground-control/telemetry.js"
+            "mcp/ground-control/telemetry.js",
+            "mcp/ground-control/workflow-run-lifecycle.js",
+            "mcp/ground-control/gc-implement-mechanical.js"
           ],
           "requireAll": [
             "architecture/adrs/090-production-line-measurement-model.md"
