@@ -52,6 +52,8 @@ public class WorkflowTelemetryService {
 
     private static final String PROJECT_FIELD = "project";
 
+    private static final String RUN_NOT_FOUND = "Workflow run not found: ";
+
     private static final int MAX_RUN_LIST_SIZE = 200;
 
     /** Bound on the per-run event page; a long-running review loop can accrue many attempts. */
@@ -177,7 +179,7 @@ public class WorkflowTelemetryService {
         // are one atomic sequence per run rather than a race between concurrent deliveries.
         var run = runRepository
                 .findByIdAndProjectForUpdate(command.runId(), command.project())
-                .orElseThrow(() -> new NotFoundException("Workflow run not found: " + command.runId()));
+                .orElseThrow(() -> new NotFoundException(RUN_NOT_FOUND + command.runId()));
 
         int cycleIndex = resolveCycleIndex(command, command.runId());
         String sourceId = command.sourceId() != null && !command.sourceId().isBlank()
@@ -227,7 +229,7 @@ public class WorkflowTelemetryService {
                 command.modelInvocationCount(), command.wallClockMinutes(), command.costProxy(), command.tokenUsage());
         var run = runRepository
                 .findByIdAndProject(command.runId(), command.project())
-                .orElseThrow(() -> new NotFoundException("Workflow run not found: " + command.runId()));
+                .orElseThrow(() -> new NotFoundException(RUN_NOT_FOUND + command.runId()));
         if (command.provider() != null) {
             run.setProvider(command.provider());
         }
@@ -267,7 +269,7 @@ public class WorkflowTelemetryService {
         // because the event query is scoped on its own denormalized project column.
         var authorized = runRepository
                 .findByIdAndProject(runId, project)
-                .orElseThrow(() -> new NotFoundException("Workflow run not found: " + runId));
+                .orElseThrow(() -> new NotFoundException(RUN_NOT_FOUND + runId));
         log.trace("workflow_run_phase_events_requested: run={} project={}", authorized.getId(), project);
         int bounded = Math.clamp(limit, 1, MAX_PHASE_EVENT_LIST_SIZE);
         return phaseEventRepository.findByRunIdAndProjectOrderByOccurredAtAscIdAsc(
@@ -393,8 +395,9 @@ public class WorkflowTelemetryService {
         for (var run : abandoned) {
             run.setFinalState(WorkflowRunState.SUPERSEDED);
             if (run.getEndedAt() == null) {
-                // The successor's start is when this attempt demonstrably stopped being worked on;
-                // it is a real observation, unlike the wall-clock moment the sweep happened to run.
+                // Dated from the successor's start, which is when this attempt demonstrably stopped
+                // being worked on. That is a real observation, unlike the wall-clock moment at which
+                // this sweep happens to run.
                 run.setEndedAt(saved.getStartedAt() != null ? saved.getStartedAt() : Instant.now());
             }
             runRepository.save(run);
