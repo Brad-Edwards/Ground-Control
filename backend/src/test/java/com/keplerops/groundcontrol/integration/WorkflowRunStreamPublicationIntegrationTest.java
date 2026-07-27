@@ -124,20 +124,24 @@ class WorkflowRunStreamPublicationIntegrationTest extends BaseIntegrationTest {
                 TelemetryProvenance.LIVE_EMISSION,
                 null));
 
-        assertThatThrownBy(() -> service.getRun(run.getId(), FOREIGN_PROJECT)).isInstanceOf(NotFoundException.class);
-        assertThatThrownBy(() -> service.getPhaseEvent(event.getId(), FOREIGN_PROJECT))
+        var runId = run.getId();
+        var eventId = event.getId();
+
+        assertThatThrownBy(() -> service.getRun(runId, FOREIGN_PROJECT)).isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> service.getPhaseEvent(eventId, FOREIGN_PROJECT))
                 .isInstanceOf(NotFoundException.class);
 
         // The owning project still resolves both, so the assertions above are denial and not a
         // lookup that was broken for everyone.
-        assertThat(service.getRun(run.getId(), PROJECT).getId()).isEqualTo(run.getId());
-        assertThat(service.getPhaseEvent(event.getId(), PROJECT).getId()).isEqualTo(event.getId());
+        assertThat(service.getRun(runId, PROJECT).getId()).isEqualTo(runId);
+        assertThat(service.getPhaseEvent(eventId, PROJECT).getId()).isEqualTo(eventId);
     }
 
     @Test
     void announcesNothingWhenTheTransactionRollsBack() {
-        assertThatThrownBy(() -> rollbackHarness.recordThenFail(runCommand("1436-doomed")))
-                .isInstanceOf(IllegalStateException.class);
+        var doomed = runCommand("1436-doomed");
+
+        assertThatThrownBy(() -> rollbackHarness.recordThenFail(doomed)).isInstanceOf(IllegalStateException.class);
 
         // A rolled-back write is not a fact. Publishing it would push a run into every watching
         // dashboard that the database does not contain.

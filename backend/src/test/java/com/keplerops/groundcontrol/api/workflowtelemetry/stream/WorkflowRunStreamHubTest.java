@@ -85,7 +85,7 @@ class WorkflowRunStreamHubTest {
     // ---- project isolation ---------------------------------------------------------------------
 
     @Test
-    void deliversOnlyToSubscribersOfTheEventsProject() throws Exception {
+    void deliversOnlyToSubscribersOfTheEventsProject() {
         var watcher = subscribe(PROJECT, PRINCIPAL);
         var otherWatcher = subscribe(OTHER_PROJECT, "other-operator");
         when(telemetryService.getRun(RUN_ID, PROJECT)).thenReturn(sampleRun());
@@ -109,7 +109,7 @@ class WorkflowRunStreamHubTest {
     }
 
     @Test
-    void deliversPhaseEventsAsTheRestProjectionShape() throws Exception {
+    void deliversPhaseEventsAsTheRestProjectionShape() {
         var watcher = subscribe(PROJECT, PRINCIPAL);
         var eventId = UUID.randomUUID();
         when(telemetryService.getPhaseEvent(eventId, PROJECT)).thenReturn(sampleEvent());
@@ -119,9 +119,11 @@ class WorkflowRunStreamHubTest {
 
         assertThat(watcher.sent).hasSize(1);
         var frame = rendered(watcher.sent.get(0));
-        assertThat(frame).contains("phase-event");
         // The payload is the REST DTO, timestamps included — not a stream-only envelope.
-        assertThat(frame).contains("\"phase\":\"ci\"").contains("\"occurredAt\":\"2026-07-27T00:00:00Z\"");
+        assertThat(frame)
+                .contains("phase-event")
+                .contains("\"phase\":\"ci\"")
+                .contains("\"occurredAt\":\"2026-07-27T00:00:00Z\"");
     }
 
     // ---- caps ----------------------------------------------------------------------------------
@@ -205,7 +207,9 @@ class WorkflowRunStreamHubTest {
 
             try {
                 // The healthy subscriber receives while the other is still stuck mid-write.
-                await(() -> healthy.sent.size() == 1);
+                assertThat(healthy.delivered.await(5, TimeUnit.SECONDS))
+                        .as("healthy subscriber should receive while another is blocked mid-write")
+                        .isTrue();
                 assertThat(blocked.sent).isEmpty();
             } finally {
                 release.countDown();
@@ -213,17 +217,6 @@ class WorkflowRunStreamHubTest {
         } finally {
             pool.shutdownNow();
         }
-    }
-
-    private static void await(java.util.function.BooleanSupplier condition) throws InterruptedException {
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
-        while (System.nanoTime() < deadline) {
-            if (condition.getAsBoolean()) {
-                return;
-            }
-            Thread.sleep(10);
-        }
-        throw new AssertionError("condition not met before the timeout");
     }
 
     @Test
@@ -256,7 +249,7 @@ class WorkflowRunStreamHubTest {
     // ---- ordering, heartbeat, cleanup -----------------------------------------------------------
 
     @Test
-    void preservesPerConnectionOrdering() throws Exception {
+    void preservesPerConnectionOrdering() {
         properties.setQueueCapacity(8);
         var watcher = subscribe(PROJECT, PRINCIPAL);
         var first = sampleRun();
@@ -274,7 +267,7 @@ class WorkflowRunStreamHubTest {
     }
 
     @Test
-    void heartbeatEnqueuesACommentWithNoProductPayload() throws Exception {
+    void heartbeatEnqueuesACommentWithNoProductPayload() {
         var watcher = subscribe(PROJECT, PRINCIPAL);
 
         hub.heartbeat();
@@ -282,8 +275,7 @@ class WorkflowRunStreamHubTest {
 
         assertThat(watcher.sent).hasSize(1);
         var frame = rendered(watcher.sent.get(0));
-        assertThat(frame).startsWith(":");
-        assertThat(frame).doesNotContain("data:");
+        assertThat(frame).startsWith(":").doesNotContain("data:");
     }
 
     @Test
@@ -399,6 +391,9 @@ class WorkflowRunStreamHubTest {
     private static final class RecordingEmitter extends SseEmitter {
 
         private final List<SseEventBuilder> sent = new CopyOnWriteArrayList<>();
+        /** Counted down on every successful send so a concurrent test can await delivery. */
+        private final java.util.concurrent.CountDownLatch delivered = new java.util.concurrent.CountDownLatch(1);
+
         private boolean failNextSend;
         /** When set, send() blocks on this latch — a client that stopped reading, not one that failed. */
         private java.util.concurrent.CountDownLatch blockOn;
@@ -426,6 +421,7 @@ class WorkflowRunStreamHubTest {
                 }
             }
             sent.add(builder);
+            delivered.countDown();
         }
 
         @Override
@@ -501,12 +497,13 @@ class WorkflowRunStreamHubTest {
 
         @Override
         public boolean isTerminated() {
-            return shutdown;
+            // Shutdown alone is not termination: queued tasks may still be pending.
+            return shutdown && pending.isEmpty();
         }
 
         @Override
         public boolean awaitTermination(long timeout, TimeUnit unit) {
-            return shutdown;
+            return isTerminated();
         }
     }
 }
