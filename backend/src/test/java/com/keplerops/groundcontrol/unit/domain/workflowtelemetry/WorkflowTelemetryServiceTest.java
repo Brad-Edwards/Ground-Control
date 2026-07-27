@@ -3,7 +3,9 @@ package com.keplerops.groundcontrol.unit.domain.workflowtelemetry;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -37,6 +39,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Pageable;
 
 @ExtendWith(MockitoExtension.class)
 class WorkflowTelemetryServiceTest {
@@ -435,6 +438,79 @@ class WorkflowTelemetryServiceTest {
         assertThatThrownBy(() -> service.recordPhaseEvent(command))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("reserved");
+    }
+
+    // ---- listPhaseEvents (issue #1435) ---------------------------------------------------------
+
+    @Test
+    void listPhaseEventsReturnsTheRunsEventsInOrder() {
+        var runId = UUID.randomUUID();
+        var run = new WorkflowRun("ground-control", "implement", TelemetryProvenance.LIVE_EMISSION);
+        var event = new WorkflowPhaseEvent(
+                runId, "ground-control", "ci", PhaseEventType.STARTED, FROM, null, TelemetryProvenance.LIVE_EMISSION);
+        when(runRepository.findByIdAndProject(runId, "ground-control")).thenReturn(Optional.of(run));
+        when(phaseEventRepository.findByRunIdAndProjectOrderByOccurredAtAscIdAsc(
+                        eq(runId), eq("ground-control"), any()))
+                .thenReturn(List.of(event));
+
+        assertThat(service.listPhaseEvents(runId, "ground-control", 50)).containsExactly(event);
+    }
+
+    @Test
+    void listPhaseEventsTreatsAForeignProjectRunAsNotFound() {
+        // The run id is not a capability: resolving it project-scoped is what authorizes the read, so
+        // a caller holding another project's run id must not receive that project's events.
+        var runId = UUID.randomUUID();
+        when(runRepository.findByIdAndProject(runId, "other")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.listPhaseEvents(runId, "other", 50)).isInstanceOf(NotFoundException.class);
+        verify(phaseEventRepository, never()).findByRunIdAndProjectOrderByOccurredAtAscIdAsc(any(), any(), any());
+    }
+
+    @Test
+    void listPhaseEventsRejectsAMissingRunIdOrProject() {
+        assertThatThrownBy(() -> service.listPhaseEvents(null, "ground-control", 50))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("runId");
+        assertThatThrownBy(() -> service.listPhaseEvents(UUID.randomUUID(), "  ", 50))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("project");
+    }
+
+    @Test
+    void listPhaseEventsClampsTheRequestedPageSize() {
+        // An unbounded page would let one request pull a whole project's event history into memory.
+        var runId = UUID.randomUUID();
+        var run = new WorkflowRun("ground-control", "implement", TelemetryProvenance.LIVE_EMISSION);
+        when(runRepository.findByIdAndProject(runId, "ground-control")).thenReturn(Optional.of(run));
+        when(phaseEventRepository.findByRunIdAndProjectOrderByOccurredAtAscIdAsc(any(), any(), any()))
+                .thenReturn(List.of());
+
+        service.listPhaseEvents(runId, "ground-control", 100_000);
+        service.listPhaseEvents(runId, "ground-control", 0);
+
+        var pageable = ArgumentCaptor.forClass(Pageable.class);
+        verify(phaseEventRepository, times(2))
+                .findByRunIdAndProjectOrderByOccurredAtAscIdAsc(any(), any(), pageable.capture());
+        assertThat(pageable.getAllValues().get(0).getPageSize()).isEqualTo(500);
+        assertThat(pageable.getAllValues().get(1).getPageSize()).isEqualTo(1);
+    }
+
+    // ---- run-state vocabulary ------------------------------------------------------------------
+
+    @Test
+    void terminalRunStatesAreExactlyTheEndStates() {
+        // The monotonic merge keys on this: mislabelling READY_FOR_REVIEW or ESCALATED as terminal
+        // would freeze a run that is still moving, and the reverse would let a merged run reopen.
+        assertThat(java.util.Arrays.stream(WorkflowRunState.values())
+                        .filter(WorkflowRunState::isTerminal)
+                        .toList())
+                .containsExactlyInAnyOrder(
+                        WorkflowRunState.MERGED,
+                        WorkflowRunState.CLOSED,
+                        WorkflowRunState.ABANDONED,
+                        WorkflowRunState.SUPERSEDED,
+                        WorkflowRunState.FAILED);
     }
 
     // ---- importCost ----------------------------------------------------------------------------
