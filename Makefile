@@ -59,7 +59,7 @@ contract-breaking: ## Check OpenAPI breaking changes against BASE_REF (default o
 	node tools/contracts/check-breaking-changes.mjs
 
 mcp-openapi-contract: contracts ## MCP↔backend write-contract drift gate (ADR-034/#1106, ADR-082/#1275)
-	GC_OPENAPI_SPEC=contracts/openapi/openapi.json node --test mcp/ground-control/openapi-contract.test.js
+	GC_OPENAPI_SPEC=contracts/openapi/openapi.json node mcp/ground-control/scripts/run-node-tests.mjs mcp/ground-control/openapi-contract.*.test.js
 
 devmain: ## Open the dev -> main promotion PR titled so the PR-title gate passes
 	@gh pr create --base main --head dev \
@@ -82,11 +82,14 @@ vale-lint: vale-install ## Run Vale on .md docs touched in the diff vs BASE_REF 
 	  echo "vale-lint: Vale not installed at .tools/vale/current/vale; run 'make vale-install'" >&2; \
 	  exit 1; \
 	fi; \
+	if [ -n "$$GC_VALE_JSON" ]; then \
+	  .tools/vale/current/vale --config=.vale.ini --output=JSON $$CHANGED_DOCS > "$$GC_VALE_JSON" || true; \
+	fi; \
 	.tools/vale/current/vale --config=.vale.ini $$CHANGED_DOCS
 
 policy: policy-tests assert-backup-policy vale-lint ## Run repo-native policy checks shared by Claude and Codex
 	@BASE_REF="$${BASE_REF:-origin/dev}"; \
-	python3 bin/policy --base "$$BASE_REF" --skip-pr-body
+	python3 bin/policy --base "$$BASE_REF" --skip-pr-body $${GC_POLICY_JSON:+--json "$$GC_POLICY_JSON"}
 
 assert-backup-policy: ## Assert GC-P021 backup cadence / retention / verification defaults are intact
 	bash scripts/assert-backup-policy.sh

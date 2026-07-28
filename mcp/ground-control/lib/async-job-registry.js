@@ -1,0 +1,314 @@
+// Async job registry (gc_codex_job, issues #937 and #1473).
+//
+// Extracted from lib/close-issue.js under issue #1473. The generalized registry
+// is a shared concern — reviews, preflight, and the long mechanical /implement
+// actions — no longer specific to issue-close, and the 500-LOC gate (ADR-092)
+// requires it live in its own module. lib.js remains the barrel every caller
+// imports.
+//
+// Reviews, preflight, and the long mechanical /implement actions may outlive
+// one MCP request. The shared registry decouples that work from the request
+// while preserving the underlying result envelope exactly. Review jobs are
+// cancellable because their child process receives the AbortSignal. Mechanical
+// jobs explicitly opt out until their complete command/poll call graph honors
+// abort; returning `cancelling` while work continues would be false.
+//
+// In-memory is sufficient: the MCP server is a single long-lived stdio process
+// per workflow run, so the registry persists across the start + poll calls. If
+// the server restarts, jobs are lost and poll returns `job_not_found` — the
+// agent re-runs with the same logical-attempt key. Terminal jobs are retained
+// for a bounded TTL, and total capacity is bounded without evicting live work.
+
+import { detectSensitiveBodyContent } from "./grc-legacy-compat-2.js";
+
+export const ASYNC_JOB_TTL_MS = 30 * 60 * 1000;
+export const ASYNC_JOB_CAPACITY = 128;
+export const ASYNC_JOB_ID_MAX = 80;
+export const ASYNC_JOB_ID_RE = /^job-[a-z0-9]+-[a-z0-9]+$/;
+export const ASYNC_JOB_IDEMPOTENCY_KEY_MAX = 128;
+export const ASYNC_JOB_IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
+
+const _asyncJobs = new Map();
+let _asyncJobSeq = 0;
+let _asyncJobCapacity = ASYNC_JOB_CAPACITY;
+let _asyncJobNow = Date.now;
+
+function _reapExpiredAsyncJobs() {
+  const now = _asyncJobNow();
+  for (const [id, job] of _asyncJobs) {
+    if (job.finishedAt != null && now - job.finishedAt > ASYNC_JOB_TTL_MS) {
+      _asyncJobs.delete(id);
+    }
+  }
+}
+
+function _asyncJobNotFound() {
+  return {
+    ok: false,
+    error: "job_not_found",
+    message:
+      `No active job matches that bounded handle. It may have expired after ${ASYNC_JOB_TTL_MS} ms, ` +
+      "or the MCP server may have restarted. Re-run the originating tool with the same logical-attempt input.",
+  };
+}
+
+function _safeAsyncJobError(error) {
+  const raw = String(error?.message ?? error ?? "background job failed");
+  if (detectSensitiveBodyContent(raw)) return "<redacted>";
+  const max = 600;
+  return raw.length <= max ? raw : `${raw.slice(0, max - 1)}…`;
+}
+
+function _asyncJobEnvelope(job) {
+  const base = {
+    job_id: job.id,
+    kind: job.kind,
+    elapsed_ms: (job.finishedAt ?? _asyncJobNow()) - job.startedAt,
+  };
+  if (job.status === "running") {
+    return { ok: true, status: "running", ...base };
+  }
+  if (job.status === "done") {
+    return { ok: true, status: "done", ...base, result: job.result };
+  }
+  if (job.status === "cancelled") {
+    return {
+      ok: false,
+      status: "cancelled",
+      error: "job_cancelled",
+      message: "The background job was cancelled before it completed.",
+      ...base,
+    };
+  }
+  return {
+    ok: false,
+    status: "failed",
+    error: "job_failed",
+    message: _safeAsyncJobError(job.error),
+    ...base,
+  };
+}
+
+function _validateAsyncJobOptions(options) {
+  const {
+    idempotencyKey = null,
+    idempotencyNamespace = null,
+    fingerprint = null,
+    executionScope = null,
+    singleFlight = false,
+    cancellable = true,
+  } = options ?? {};
+  if (idempotencyKey != null) {
+    if (
+      typeof idempotencyKey !== "string"
+      || idempotencyKey.length > ASYNC_JOB_IDEMPOTENCY_KEY_MAX
+      || !ASYNC_JOB_IDEMPOTENCY_KEY_RE.test(idempotencyKey)
+      || typeof idempotencyNamespace !== "string"
+      || idempotencyNamespace.length === 0
+      || idempotencyNamespace.length > 512
+      || typeof fingerprint !== "string"
+      || !/^[a-f0-9]{64}$/.test(fingerprint)
+    ) {
+      return {
+        ok: false,
+        error: "job_idempotency_input_invalid",
+        message: "Idempotent jobs require a bounded key, namespace, and SHA-256 fingerprint.",
+      };
+    }
+  } else if (idempotencyNamespace != null || fingerprint != null) {
+    return {
+      ok: false,
+      error: "job_idempotency_input_invalid",
+      message: "An idempotency namespace or fingerprint requires an idempotency key.",
+    };
+  }
+  if (
+    executionScope != null
+    && (
+      typeof executionScope !== "string"
+      || executionScope.length === 0
+      || executionScope.length > 512
+    )
+  ) {
+    return {
+      ok: false,
+      error: "job_execution_scope_invalid",
+      message: "The execution scope must be a non-empty bounded string.",
+    };
+  }
+  if (typeof singleFlight !== "boolean" || typeof cancellable !== "boolean") {
+    return {
+      ok: false,
+      error: "job_options_invalid",
+      message: "singleFlight and cancellable must be booleans.",
+    };
+  }
+  return {
+    ok: true,
+    idempotencyKey,
+    idempotencyNamespace,
+    fingerprint,
+    executionScope,
+    singleFlight,
+    cancellable,
+  };
+}
+
+// Start one generic async job. `kind` is a stable label echoed in poll
+// responses. Idempotent callers provide a server-derived fingerprint and
+// namespace plus the caller-stable key for one logical attempt.
+export function startAsyncJob(kind, runFn, options = {}) {
+  if (typeof runFn !== "function") {
+    throw new Error("startAsyncJob: runFn must be a function");
+  }
+  const validated = _validateAsyncJobOptions(options);
+  if (!validated.ok) return validated;
+  _reapExpiredAsyncJobs();
+
+  if (validated.idempotencyKey != null) {
+    const existing = Array.from(_asyncJobs.values()).find((job) =>
+      job.idempotencyKey === validated.idempotencyKey
+      && job.idempotencyNamespace === validated.idempotencyNamespace,
+    );
+    if (existing) {
+      if (existing.fingerprint !== validated.fingerprint) {
+        return {
+          ok: false,
+          error: "job_idempotency_conflict",
+          message: "That idempotency key is already bound to different normalized input.",
+        };
+      }
+      return _asyncJobEnvelope(existing);
+    }
+  }
+
+  if (validated.singleFlight && validated.executionScope != null) {
+    const contended = Array.from(_asyncJobs.values()).some((job) =>
+      job.status === "running" && job.executionScope === validated.executionScope,
+    );
+    if (contended) {
+      return {
+        ok: false,
+        error: "job_execution_contended",
+        message: "Another background mutation or verification attempt is active for this checkout.",
+      };
+    }
+  }
+
+  if (_asyncJobs.size >= _asyncJobCapacity) {
+    return {
+      ok: false,
+      error: "job_capacity_exhausted",
+      message: "The bounded background-job registry is full; wait for active work to finish and retry.",
+    };
+  }
+
+  _asyncJobSeq += 1;
+  const now = _asyncJobNow();
+  const id = `job-${now.toString(36)}-${_asyncJobSeq.toString(36)}`;
+  const controller = new AbortController();
+  const job = {
+    id,
+    kind:
+      typeof kind === "string" && kind.length > 0 && kind.length <= 80
+        ? kind
+        : "background",
+    status: "running",
+    startedAt: now,
+    finishedAt: null,
+    result: null,
+    error: null,
+    controller,
+    cancellable: validated.cancellable,
+    idempotencyKey: validated.idempotencyKey,
+    idempotencyNamespace: validated.idempotencyNamespace,
+    fingerprint: validated.fingerprint,
+    executionScope: validated.executionScope,
+  };
+  _asyncJobs.set(id, job);
+  Promise.resolve()
+    .then(() => runFn(controller.signal))
+    .then((result) => {
+      job.result = result;
+      job.status = "done";
+    })
+    .catch((e) => {
+      job.error = _safeAsyncJobError(e);
+      job.status = controller.signal.aborted ? "cancelled" : "failed";
+    })
+    .finally(() => {
+      job.finishedAt = _asyncJobNow();
+    });
+  return _asyncJobEnvelope(job);
+}
+
+export function pollAsyncJob(jobId) {
+  _reapExpiredAsyncJobs();
+  if (
+    typeof jobId !== "string"
+    || jobId.length > ASYNC_JOB_ID_MAX
+    || !ASYNC_JOB_ID_RE.test(jobId)
+  ) {
+    return _asyncJobNotFound();
+  }
+  const job = _asyncJobs.get(jobId);
+  return job ? _asyncJobEnvelope(job) : _asyncJobNotFound();
+}
+
+// Cancel only jobs that declared and implement end-to-end AbortSignal support.
+// Terminal calls are idempotent.
+export function cancelAsyncJob(jobId) {
+  _reapExpiredAsyncJobs();
+  if (
+    typeof jobId !== "string"
+    || jobId.length > ASYNC_JOB_ID_MAX
+    || !ASYNC_JOB_ID_RE.test(jobId)
+  ) {
+    return _asyncJobNotFound();
+  }
+  const job = _asyncJobs.get(jobId);
+  if (!job) return _asyncJobNotFound();
+  if (job.status !== "running") {
+    return {
+      ok: true,
+      status: job.status,
+      job_id: job.id,
+      kind: job.kind,
+      message: `The background job is already terminal (${job.status}); nothing to cancel.`,
+    };
+  }
+  if (!job.cancellable) {
+    return {
+      ok: false,
+      status: "running",
+      error: "job_not_cancellable",
+      job_id: job.id,
+      kind: job.kind,
+      message: "This job does not claim cancellation because its full execution path does not honor abort.",
+    };
+  }
+  job.controller.abort();
+  return {
+    ok: true,
+    status: "cancelling",
+    job_id: job.id,
+    kind: job.kind,
+    message: "Abort signalled. Poll once more to confirm the cancelled state.",
+  };
+}
+
+// Test-only: clear the registry between cases.
+export function _resetAsyncJobsForTest() {
+  _asyncJobs.clear();
+  _asyncJobSeq = 0;
+  _asyncJobCapacity = ASYNC_JOB_CAPACITY;
+  _asyncJobNow = Date.now;
+}
+
+export function _setAsyncJobCapacityForTest(capacity) {
+  _asyncJobCapacity = capacity;
+}
+
+export function _setAsyncJobClockForTest(clock) {
+  _asyncJobNow = clock;
+}

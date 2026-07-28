@@ -1,5 +1,7 @@
 package com.keplerops.groundcontrol.domain.requirements.service;
 
+import static com.keplerops.groundcontrol.domain.requirements.service.AuditServiceSupport.filterAndPaginate;
+
 import com.keplerops.groundcontrol.domain.audit.GroundControlRevisionEntity;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
@@ -13,7 +15,6 @@ import com.keplerops.groundcontrol.domain.requirements.state.ChangeCategory;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -350,25 +351,6 @@ public class AuditService {
         }
 
         return filterAndPaginate(entries, actor, from, to, limit, offset);
-    }
-
-    private List<TimelineEntry> filterAndPaginate(
-            List<TimelineEntry> entries, String actor, Instant from, Instant to, int limit, int offset) {
-        var stream = entries.stream();
-        if (actor != null && !actor.isBlank()) {
-            stream = stream.filter(e -> actor.equals(e.actor()));
-        }
-        if (from != null) {
-            stream = stream.filter(e -> !e.timestamp().isBefore(from));
-        }
-        if (to != null) {
-            stream = stream.filter(e -> !e.timestamp().isAfter(to));
-        }
-
-        return stream.sorted(Comparator.comparing(TimelineEntry::timestamp).reversed())
-                .skip(offset)
-                .limit(limit)
-                .toList();
     }
 
     private List<TimelineEntry> buildRequirementEntries(UUID requirementId) {

@@ -1,5 +1,15 @@
 package com.keplerops.groundcontrol.domain.research.service;
 
+import static com.keplerops.groundcontrol.domain.research.service.ResearchProvenanceServiceSupport.FIELD;
+import static com.keplerops.groundcontrol.domain.research.service.ResearchProvenanceServiceSupport.IDEMPOTENCY_FIELD;
+import static com.keplerops.groundcontrol.domain.research.service.ResearchProvenanceServiceSupport.IDEMPOTENCY_KEY_MAX;
+import static com.keplerops.groundcontrol.domain.research.service.ResearchProvenanceServiceSupport.INVALID_NODE;
+import static com.keplerops.groundcontrol.domain.research.service.ResearchProvenanceServiceSupport.SUMMARY_MAX;
+import static com.keplerops.groundcontrol.domain.research.service.ResearchProvenanceServiceSupport.nodesEquivalent;
+import static com.keplerops.groundcontrol.domain.research.service.ResearchProvenanceServiceSupport.replayIfPresent;
+import static com.keplerops.groundcontrol.domain.research.service.ResearchProvenanceServiceSupport.requireUnder;
+import static com.keplerops.groundcontrol.domain.research.service.ResearchProvenanceServiceSupport.validateNodeLengths;
+
 import com.keplerops.groundcontrol.domain.audit.ActorHolder;
 import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
@@ -24,11 +34,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Function;
-import java.util.function.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -57,17 +64,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ResearchProvenanceService {
 
     private static final Logger log = LoggerFactory.getLogger(ResearchProvenanceService.class);
-
-    private static final int SUBJECT_KEY_MAX = 200;
-    private static final int LOCATOR_MAX = 500;
-    private static final int HASH_MAX = 128;
-    private static final int EXTERNAL_ID_MAX = 200;
-    private static final int SUMMARY_MAX = 2000;
-    private static final int TOOL_NAME_MAX = 200;
-    private static final int TOOL_VERSION_MAX = 100;
-    private static final int ACTION_ID_MAX = 200;
     private static final int ROLE_MAX = 200;
-    private static final int IDEMPOTENCY_KEY_MAX = 200;
 
     /** Hard ceiling on traversal depth regardless of caller request (ADR-069 §6). */
     private static final int MAX_CHAIN_DEPTH = 50;
@@ -77,11 +74,7 @@ public class ResearchProvenanceService {
     /** Hard ceiling on total nodes a single chain read may return. */
     private static final int CHAIN_NODE_CAP = 1000;
 
-    private static final String INVALID_NODE = "invalid_provenance_node";
     private static final String INVALID_EDGE = "invalid_provenance_edge";
-    private static final String FIELD = "field";
-    private static final String IDEMPOTENCY_FIELD = "idempotencyKey";
-    private static final String IDEMPOTENCY_CONFLICT = "provenance_idempotency_conflict";
 
     private final ResearchRunRepository runRepository;
     private final ResearchProvenanceNodeRepository nodeRepository;
@@ -165,18 +158,6 @@ public class ResearchProvenanceService {
         node.setIdempotencyKey(emptyToNull(command.idempotencyKey()));
         node.setActor(currentActor());
         return node;
-    }
-
-    private void validateNodeLengths(RecordProvenanceNodeCommand command, String subjectKey) {
-        requireUnder(subjectKey, SUBJECT_KEY_MAX, "subjectKey");
-        requireUnder(command.locator(), LOCATOR_MAX, "locator");
-        requireUnder(command.contentHash(), HASH_MAX, "contentHash");
-        requireUnder(command.externalIdentifier(), EXTERNAL_ID_MAX, "externalIdentifier");
-        requireUnder(command.summary(), SUMMARY_MAX, "summary");
-        requireUnder(command.toolName(), TOOL_NAME_MAX, "toolName");
-        requireUnder(command.toolVersion(), TOOL_VERSION_MAX, "toolVersion");
-        requireUnder(command.sourceActionId(), ACTION_ID_MAX, "sourceActionId");
-        requireUnder(command.idempotencyKey(), IDEMPOTENCY_KEY_MAX, IDEMPOTENCY_FIELD);
     }
 
     private ResearchRunStage stageOf(ResearchRunArtifact artifact) {
@@ -318,30 +299,6 @@ public class ResearchProvenanceService {
             prior.linkSuperseder(replacementId);
             edgeRepository.save(prior);
         }
-    }
-
-    /**
-     * Shared idempotent-replay gate. Returns the existing record when the key
-     * matches a compatible payload; throws {@link ConflictException} when the key
-     * was reused with a different payload (never a silent no-op that could
-     * suppress or poison the durable provenance chain); returns empty when no key
-     * or no existing record (the caller then inserts a new record).
-     */
-    private <T> Optional<T> replayIfPresent(String key, Function<String, Optional<T>> lookup, Predicate<T> compatible) {
-        if (key == null) {
-            return Optional.empty();
-        }
-        var existing = lookup.apply(key);
-        if (existing.isEmpty()) {
-            return Optional.empty();
-        }
-        if (!compatible.test(existing.get())) {
-            throw new ConflictException(
-                    "Idempotency key reused with a different payload",
-                    IDEMPOTENCY_CONFLICT,
-                    Map.of(FIELD, IDEMPOTENCY_FIELD));
-        }
-        return existing;
     }
 
     // ------------------------------------------------------------------
@@ -495,23 +452,6 @@ public class ResearchProvenanceService {
         return artifact;
     }
 
-    /** True when two nodes carry the same provenance payload (excludes id, status, audit, actor). */
-    private boolean nodesEquivalent(ResearchProvenanceNode a, ResearchProvenanceNode b) {
-        return a.getKind() == b.getKind()
-                && Objects.equals(a.getSubjectKey(), b.getSubjectKey())
-                && a.getStage() == b.getStage()
-                && a.getArtifactType() == b.getArtifactType()
-                && Objects.equals(a.getArtifactId(), b.getArtifactId())
-                && Objects.equals(a.getAttemptNo(), b.getAttemptNo())
-                && Objects.equals(a.getLocator(), b.getLocator())
-                && Objects.equals(a.getContentHash(), b.getContentHash())
-                && Objects.equals(a.getExternalIdentifier(), b.getExternalIdentifier())
-                && Objects.equals(a.getSummary(), b.getSummary())
-                && Objects.equals(a.getToolName(), b.getToolName())
-                && Objects.equals(a.getToolVersion(), b.getToolVersion())
-                && Objects.equals(a.getSourceActionId(), b.getSourceActionId());
-    }
-
     /** True when two edges carry the same provenance payload (excludes id, status, audit, actor). */
     private boolean edgesEquivalent(ResearchProvenanceEdge a, ResearchProvenanceEdge b) {
         return Objects.equals(a.getFromNodeId(), b.getFromNodeId())
@@ -525,13 +465,6 @@ public class ResearchProvenanceService {
         return runRepository
                 .findByIdAndProjectId(runId, projectId)
                 .orElseThrow(() -> new NotFoundException("Research run not found: " + runId));
-    }
-
-    private void requireUnder(String value, int max, String field) {
-        if (value != null && value.length() > max) {
-            throw new DomainValidationException(
-                    "Field " + field + " exceeds max length", INVALID_NODE, Map.of(FIELD, field, "max", max));
-        }
     }
 
     private String emptyToNull(String value) {

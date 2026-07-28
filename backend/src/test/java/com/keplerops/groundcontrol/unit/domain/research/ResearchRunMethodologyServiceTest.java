@@ -13,7 +13,6 @@ import static org.mockito.Mockito.when;
 import com.keplerops.groundcontrol.TestUtil;
 import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
-import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.model.ProjectType;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
@@ -56,14 +55,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
-/**
- * GC-RSCH-F006 — service-layer unit tests for methodology selection and
- * source coverage gate on {@link ResearchRunService}.
- */
+/** Split from ResearchRunMethodologyServiceTest under issue #1467 for the 500-LOC limit
+ * (docs/CODING_STANDARDS.md). Test bodies are unchanged; fixtures are
+ * repeated because JUnit builds a fresh instance per test class. */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 class ResearchRunMethodologyServiceTest {
-
     private static final UUID PROJECT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID RUN_ID = UUID.fromString("00000000-0000-0000-0000-000000000010");
     private static final UUID SELECTION_ID = UUID.fromString("00000000-0000-0000-0000-000000000020");
@@ -190,14 +187,6 @@ class ResearchRunMethodologyServiceTest {
             ResearchRunMethodologySelection sel, MethodologySourceState state) {
         var src = new ResearchRunMethodologySource(sel, "doi:10.1234/example", true, "actor");
         TestUtil.setField(src, "id", SOURCE_ID);
-        TestUtil.setField(src, "state", state);
-        return src;
-    }
-
-    private ResearchRunMethodologySource optionalSource(
-            ResearchRunMethodologySelection sel, MethodologySourceState state) {
-        var src = new ResearchRunMethodologySource(sel, "doi:10.1234/optional", false, "actor");
-        TestUtil.setField(src, "id", UUID.randomUUID());
         TestUtil.setField(src, "state", state);
         return src;
     }
@@ -486,88 +475,5 @@ class ResearchRunMethodologyServiceTest {
                 .isInstanceOf(DomainValidationException.class)
                 .extracting(e -> ((DomainValidationException) e).getErrorCode())
                 .isEqualTo("research_run_methodology_sources_incomplete");
-    }
-
-    @Test
-    void requireMethodologySourceCoverage_optionalSourceNotRead_doesNotBlock() {
-        var run = activeRun();
-        var sel = selection(run);
-        // Required source is READ, optional source is OBTAINED — gate should pass
-        var required = requiredSource(sel, MethodologySourceState.READ);
-        var optional = optionalSource(sel, MethodologySourceState.OBTAINED);
-        when(selectionRepository.findFirstByResearchRunIdAndSupersededAtIsNull(RUN_ID))
-                .thenReturn(Optional.of(sel));
-        when(sourceRepository.findBySelectionId(SELECTION_ID)).thenReturn(List.of(required, optional));
-        // Stub artifact save to succeed
-        when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(any(), any(), any()))
-                .thenReturn(Optional.empty());
-        when(artifactRepository.save(any())).thenAnswer(inv -> {
-            var a = inv.getArgument(0);
-            TestUtil.setField(a, "id", UUID.randomUUID());
-            return a;
-        });
-        when(runRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-
-        // Should NOT throw
-        var result = service.recordArtifact(
-                PROJECT_ID,
-                RUN_ID,
-                new RecordArtifactCommand(
-                        ResearchArtifactType.METHODOLOGY_REQUIREMENTS, null, null, null, null, null, null, null, null));
-
-        assertThat(result).isNotNull();
-    }
-
-    @Test
-    void requireMethodologySourceCoverage_requiredSourceBlocked_throwsConflict() {
-        var run = activeRun();
-        var sel = selection(run);
-        var src = requiredSource(sel, MethodologySourceState.BLOCKED);
-        when(selectionRepository.findFirstByResearchRunIdAndSupersededAtIsNull(RUN_ID))
-                .thenReturn(Optional.of(sel));
-        when(sourceRepository.findBySelectionId(SELECTION_ID)).thenReturn(List.of(src));
-
-        var cmd = new RecordArtifactCommand(
-                ResearchArtifactType.METHODOLOGY_REQUIREMENTS, null, null, null, null, null, null, null, null);
-        assertThatThrownBy(() -> service.recordArtifact(PROJECT_ID, RUN_ID, cmd))
-                .isInstanceOf(ConflictException.class)
-                .extracting(e -> ((ConflictException) e).getErrorCode())
-                .isEqualTo("research_run_methodology_source_blocked");
-    }
-
-    @Test
-    void requireMethodologySourceCoverage_allRequiredRead_passes() {
-        var run = activeRun();
-        var sel = selection(run);
-        var src = requiredSource(sel, MethodologySourceState.READ);
-        when(selectionRepository.findFirstByResearchRunIdAndSupersededAtIsNull(RUN_ID))
-                .thenReturn(Optional.of(sel));
-        when(sourceRepository.findBySelectionId(SELECTION_ID)).thenReturn(List.of(src));
-        when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(any(), any(), any()))
-                .thenReturn(Optional.empty());
-        when(artifactRepository.save(any())).thenAnswer(inv -> {
-            var a = inv.getArgument(0);
-            TestUtil.setField(a, "id", UUID.randomUUID());
-            return a;
-        });
-        when(runRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-
-        var result = service.recordArtifact(
-                PROJECT_ID,
-                RUN_ID,
-                new RecordArtifactCommand(
-                        ResearchArtifactType.METHODOLOGY_REQUIREMENTS, null, null, null, null, null, null, null, null));
-
-        assertThat(result).isNotNull();
-    }
-
-    @Test
-    void crossProjectMiss_throwsNotFound() {
-        var otherProjectId = UUID.fromString("00000000-0000-0000-0000-000000000099");
-        when(runRepository.findByIdAndProjectId(RUN_ID, otherProjectId)).thenReturn(Optional.empty());
-
-        var cmd = new SelectMethodologyCommand("systematic");
-        assertThatThrownBy(() -> service.selectMethodology(otherProjectId, RUN_ID, cmd))
-                .isInstanceOf(NotFoundException.class);
     }
 }

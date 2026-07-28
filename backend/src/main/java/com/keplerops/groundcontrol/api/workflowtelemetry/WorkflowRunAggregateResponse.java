@@ -1,6 +1,6 @@
 package com.keplerops.groundcontrol.api.workflowtelemetry;
 
-import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowTelemetryService.RunAggregate;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.service.RunAggregate;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;

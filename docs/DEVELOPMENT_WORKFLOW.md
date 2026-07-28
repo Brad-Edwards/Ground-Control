@@ -43,6 +43,13 @@ Repo-local Ground Control project context comes from a `.ground-control.yaml` fi
 - treat inputs like `OBS-001`, `DSL-101`, `API-412`, or `GC-J001` as already-complete UIDs
 - avoid guessing a prefix from the repository name
 
+The parser lives in `mcp/ground-control/lib/ground-control-config.js` and is published through the
+`mcp/ground-control/lib.js` barrel. The documentation-coverage gate treats both as the
+`config_parser` surface, so a change to either requires a documentation outcome (ADR-054). Keep the
+parser in that module: the gate anchors on literal paths, and `run_doc_coverage_anchor_contract`
+(`make policy`) fails when an anchor stops naming a real file rather than letting the surface match
+nothing and quietly stop asking.
+
 Recommended `.ground-control.yaml` convention:
 
 ```yaml
@@ -378,7 +385,17 @@ The guard is a pre-execution *lexical* policy control, not an OS sandbox. It pro
   `sonar` job keeps its coverage and quality-gate inputs. A required context
   with no job behind it blocks every pull request forever, which is the failure
   these tests exist to prevent. See `docs/ci/CI_PIPELINE.md`.
-- **Measurement catalogue drift** (`tools/policy/checks.py::run_measurement_catalogue_check`,
+- **Gate outcome measurement** (issue #1355, ADR-090 amendment). Every station attempt now
+  records an explicit verdict alongside its lifecycle event, and the findings it observed are
+  counted by reviewer/detector, category, severity, and disposition. The verdict is stated by the
+  producer and validated against a closed vocabulary, never derived from a tool succeeding, a
+  phase completing, or a pull request merging. A backend outage, parser error, or timeout is
+  `not_evaluable`, so an infrastructure problem can never enter the rework signal as a defect in
+  the change. `bin/policy --json <path>` and `GC_VALE_JSON` make the policy and Vale child gates
+  emit structured artifacts at their own boundary; SpotBugs' XML report serves the same purpose.
+  The `/implement` layer reads those artifacts rather than re-running a gate or parsing combined
+  console output.
+- **Measurement catalogue drift** (`run_measurement_catalogue_check` in `tools/policy/`,
   issue #1438 / ADR-090 / GC-O014) keeps the ADR-090 station catalogue authoritative
   rather than descriptive. `contracts/measurement/gc-station-catalogue-v1.json` owns
   `station_id`; ADR-061 phase strings, ADR-036 routing stages, issue-thread `gc:phase`

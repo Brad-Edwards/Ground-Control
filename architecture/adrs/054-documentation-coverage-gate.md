@@ -42,7 +42,7 @@ accepted
 > `mcp/ground-control/lib.js`. The action called a REST route that
 > `RiskControlAnalysisController` never exposed; it was the last surviving
 > divergent as-of surface (ADR-084 §5: the canonical as-of coordinate is the
-> Envers revision, resolved by the new `AsOfRevisionResolver`—see
+> Envers revision, resolved by the new `AsOfRevisionResolver`; see
 > `docs/architecture/ARCHITECTURE.md` § As-Of Time Semantics). This is a
 > policy-surface removal, not an extension: the documentation-coverage
 > classifier, `outcome_required` mapping, Vale rule set,
@@ -286,6 +286,24 @@ current with the actual classifier surface.
 - errata-ai/Google Vale package: https://github.com/errata-ai/Google
 
 ## Amendments
+
+### Issue #1355 (2026-07-28): the gate's implementation moved out of lib.js
+
+`mcp/ground-control/lib.js` exceeded the repo's 500-LOC limit by a factor of forty, so it
+was split into `mcp/ground-control/lib/*` with `lib.js` retained as a barrel. This gate's
+implementation (`gc_documentation_coverage`, the surface classifier, and the doc-target
+mapping) now lives in `mcp/ground-control/lib/doc-coverage.js`.
+
+Nothing about the gate's behaviour changed: the surface classes, the `outcome_required`
+mapping, and every doc target are identical, and the split is verified behaviour-neutral by
+the unchanged test suite.
+
+The consequence worth recording is for the *checks that read this surface*. Several policy
+checks located the gate by reading `mcp/ground-control/lib.js` as a single file. After the
+split that file holds only re-exports, so those checks would have found no implementation
+and passed silently: a gate reporting green because it was looking at the wrong file.
+`tools/policy/checks.py::read_mcp_library` now returns the barrel plus every extracted
+module, and each content check reads that instead of one path.
 
 **2026-07-13 (env-template orphan-key invariant - issue #1384, GC-P023).** Extended `run_deploy_artifact_consistency` in `tools/policy/checks.py` with a reverse template-to-consumer check (violation code `deploy-env-template-orphan-key`, helpers `_run_env_template_consumer_check`, `_env_template_keys`, `_compose_consumed_names`, `_schema_consumed_names`, `_spring_bound_prefixes`, `_literal_consumed_names`, inventory `ENV_TEMPLATE_CONTRACTS`). The existing check proved that every `${VAR}` the production compose dereferences is declared in `env.schema`; nothing proved the reverse, so a key could outlive the service that read it - which is exactly what the Temporal removal (#1359) left behind in `.env.example` and `deploy/docker/.env.example`. The new check fails `make policy` when an active env template advertises a key with no executable consumer, where the legitimate consumer surfaces are declared per template in `ENV_TEMPLATE_CONTRACTS` (compose interpolation and list-form inherit, `env.schema` directives with the ADR-026 credential/allowlist slots expanded, the deploy validator and script, `application*.yml` placeholders, the MCP client's `process.env` reads, and Spring relaxed binding onto a declared `@ConfigurationProperties` prefix). Two rules are load-bearing: a compose **literal** (`- GC_SERVER_PORT=8000`) pins the value and is not a consumer of the operator's, and the production template does not get the backend-application surface, because an `application.yml` placeholder is irrelevant to `/opt/gc/.env` unless compose forwards the value into the container. Tests, docs, superseded ADRs, and historical migrations are not consumers. This is a repo-native policy-surface addition anchored on GC-P023 clauses (a) and (e); the documentation-coverage classifier (`classifyChangedSurface`), `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new `docs/DOC_STYLE.md` style rule is established.
 
@@ -650,6 +668,17 @@ the ADR-025 backup-policy assertion. The documentation-coverage classifier
 (`classifyChangedSurface`), its `outcome_required` mapping, the Vale rules,
 `tools/install-vale.sh`, and `.vale.ini` are unchanged; no new documentation
 classification or style rule is established.
+
+> **Sync note for issue #1467 (2026-07-28, enforce the 500-LOC file-size limit):**
+> The documentation-coverage classifier, its `outcome_required` mapping, the Vale
+> rule set, `tools/install-vale.sh`, and `.vale.ini` are all unchanged. What moved
+> is where two of this gate's trigger surfaces live: `mcp/ground-control/index.js`
+> kept its bootstrap and now registers tools through `mcp/ground-control/tools/*`,
+> and `tools/policy/checks.py` gained one line wiring in the new file-size gate
+> (`tools/policy/file_size.py`, ADR-092). Recorded here because this ADR names
+> those files as the gate's surfaces: a reader looking for a registration in
+> `index.js` alone would no longer find it. No documentation classification, Vale
+> rule, or style rule is established or altered by that change.
 
 **2026-07-28 (issue #1473 async mechanical jobs).**
 `gc_implement_mechanical` adds bounded `async` and `idempotency_key` inputs for

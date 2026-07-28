@@ -333,6 +333,20 @@ The report contract is derived evidence: each finding carries the DRAFT requirem
   process-local, matching ADR-030's single-backend topology; the identifier-only notification is
   the seam a multi-instance deployment replaces with a broker or outbox.
 
+- Gate outcome and finding measurement (issue #1355, ADR-090 amendment). The station-result
+  axis is now persisted on the ADR-061 write path, and the findings a station observed are
+  subordinate rows on `workflow_gate_finding`, written in the same transaction as the terminal
+  event of their attempt. `WorkflowPhaseEvent` keeps `PhaseEventType` as its lifecycle axis and
+  gains `stationId` + `stationResult`; the two answer different questions, so `COMPLETED` still
+  means the phase finished rather than that its inspection passed. Rows written before the axis
+  existed read `UNOBSERVED` and stay out of every formula denominator instead of being backfilled
+  into passes they never recorded. `GET /api/v1/workflow-runs/measurement` reports per-station
+  first-pass yield, iterations to green, rework, and finding counts by reviewer/detector,
+  category, severity, and disposition, each with its numerator, denominator, and unresolved
+  count. The `spotbugs`, `policy`, and `vale` child gates report their own verdicts from the
+  structured artifacts their own runs write, so no canonical gate is executed twice to be
+  measured and the parent command's duration is never divided among them.
+
 - Production-line measurement contract (issue #1438, ADR-090, ADR-082, GC-O014). The
   ADR-090 measurement model is published as versioned contract artifacts rather than ADR
   prose: `contracts/schemas/measurement/measurement-record.v1.schema.json` is the record
