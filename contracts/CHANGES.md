@@ -1,6 +1,33 @@
 # Contract Changes
 
-Current contract version: 0.9.0
+Current contract version: 0.10.0
+
+## 0.10.0 - 2026-07-28
+
+Gate outcome and finding measurement (issue #1355, ADR-090 amendment, ADR-082
+governance, GC-O014).
+
+- Additive only. No published schema, field, or vocabulary changes, so existing
+  consumers need no migration.
+- Added `gc.measurement.station-catalogue.v2`
+  (`contracts/schemas/measurement/station-catalogue.v2.schema.json`) and its data at
+  `contracts/measurement/gc-station-catalogue-v2.json`. The shape is identical to v1;
+  the version exists because `spotbugs`, `policy`, and `vale` join the station set and
+  a published catalogue is never edited in place. v1 stays on disk unmodified, and v2
+  is a strict superset: no station or marker id is dropped or renamed, so every
+  record already written against v1 still resolves.
+- Added `gc.measurement.gate-finding.v1`
+  (`contracts/schemas/measurement/gate-finding.v1.schema.json`): one finding observed
+  by a station attempt. `additionalProperties: false` with no prose field, so the
+  projection cannot carry titles, bodies, remediation text, paths, line numbers, raw
+  tool output, or stack traces. Category, severity, and classification are optional
+  because a source that cannot attest one must omit it rather than default it.
+- Disposition is a closed vocabulary (`open`, `fixed`, `wontfix`, `not-applicable`)
+  matching ADR-029's decision outcomes exactly. `defer` is absent by construction.
+- `completion_gate` is documented as composite: its child gates report their own
+  verdicts and durations separately rather than being rolled up into it.
+- A breaking station-id or vocabulary change still takes a new schema version; a
+  published version is never edited in place.
 
 ## 0.9.0 - 2026-07-27
 

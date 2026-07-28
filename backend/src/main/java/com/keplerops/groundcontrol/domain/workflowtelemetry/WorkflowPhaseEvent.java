@@ -70,6 +70,37 @@ public class WorkflowPhaseEvent {
     @Column(nullable = false, length = 200)
     private String sourceId;
 
+    /**
+     * Authoritative catalogue station id (issue #1355). {@code phase} stays exactly as written so
+     * history is never rewritten; this is the resolved identity the catalogue declares, with
+     * {@code phase} as one of its aliases. Null on rows written before the catalogue existed.
+     */
+    @Column(length = 100)
+    private String stationId;
+
+    /**
+     * The verdict of what this station inspected (ADR-090 section 3, issue #1355).
+     *
+     * <p>Deliberately separate from {@link #eventType}: {@code COMPLETED} means the phase finished,
+     * not that its inspection passed. Defaults to {@link StationResult#UNOBSERVED} so every row
+     * written before this axis existed reads honestly and stays out of formula denominators, rather
+     * than being backfilled into a pass it never recorded.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 40)
+    private StationResult stationResult = StationResult.UNOBSERVED;
+
+    /**
+     * How many findings the emitter's cap discarded before sending this attempt's batch.
+     *
+     * <p>Zero when nothing was dropped, which is the ordinary case. Persisted rather than logged
+     * because a truncated batch is otherwise indistinguishable from a complete one: the stored count
+     * would read as everything the gate found, and an aggregate built on it would understate the
+     * defect signal by exactly the amount that was hidden.
+     */
+    @Column(nullable = false)
+    private int findingsDropped;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -107,6 +138,23 @@ public class WorkflowPhaseEvent {
 
     public void setSourceId(String sourceId) {
         this.sourceId = sourceId;
+    }
+
+    public void setStationId(String stationId) {
+        this.stationId = stationId;
+    }
+
+    /** Null degrades to {@code UNOBSERVED}: an emitter that states nothing has observed nothing. */
+    public void setFindingsDropped(Integer findingsDropped) {
+        this.findingsDropped = findingsDropped == null || findingsDropped < 0 ? 0 : findingsDropped;
+    }
+
+    public int getFindingsDropped() {
+        return findingsDropped;
+    }
+
+    public void setStationResult(StationResult stationResult) {
+        this.stationResult = stationResult == null ? StationResult.UNOBSERVED : stationResult;
     }
 
     /**
@@ -171,6 +219,14 @@ public class WorkflowPhaseEvent {
 
     public String getSourceId() {
         return sourceId;
+    }
+
+    public String getStationId() {
+        return stationId;
+    }
+
+    public StationResult getStationResult() {
+        return stationResult;
     }
 
     public Instant getCreatedAt() {

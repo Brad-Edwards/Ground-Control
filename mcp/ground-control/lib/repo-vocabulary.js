@@ -1,0 +1,456 @@
+// Extracted from lib.js (issue #1355).
+//
+// lib.js had reached 20,634 lines against the repo's 500-LOC limit
+// (docs/CODING_STANDARDS.md, Sonar S104). It contained no mutual recursion, so it was
+// split along its own dependency layering. lib.js remains the barrel every caller imports.
+
+import { readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { load as parseYaml } from "js-yaml";
+
+const ARCH_VOCABULARY_TOP_KEYS = ["patterns", "canonical_helpers", "boundary_contract", "binding_adrs", "anti_recommendations"];
+const ARCH_PATTERN_KEYS = ["name", "applies_to", "example_path"];
+const ARCH_HELPER_KEYS = ["name", "path", "purpose"];
+const ARCH_BOUNDARY_KEYS = ["description"];
+const ARCH_BINDING_ADR_KEYS = ["id", "one_liner"];
+const ARCH_BINDING_ADR_ID_RE = /^ADR-\d{3}$/;
+function emptyArchitectureVocabularyConfig() {
+  return {
+    patterns: [],
+    canonical_helpers: [],
+    boundary_contract: null,
+    binding_adrs: [],
+    anti_recommendations: [],
+  };
+}
+function normalizeArchitectureVocabularyConfig(raw) {
+  if (raw == null) return { ok: true, value: null };
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    return { ok: false, errors: ["architecture.vocabulary must be a mapping, not a list or scalar"] };
+  }
+  const errors = [];
+  for (const key of Object.keys(raw)) {
+    if (!ARCH_VOCABULARY_TOP_KEYS.includes(key)) {
+      errors.push(`architecture.vocabulary has unknown key '${key}'`);
+    }
+  }
+  const value = emptyArchitectureVocabularyConfig();
+
+  if (raw.patterns != null) {
+    if (!Array.isArray(raw.patterns)) {
+      errors.push("architecture.vocabulary.patterns must be a list when set");
+    } else {
+      raw.patterns.forEach((entry, i) => {
+        const prefix = `architecture.vocabulary.patterns[${i}]`;
+        const before = errors.length;
+        if (entry == null || typeof entry !== "object" || Array.isArray(entry)) {
+          errors.push(`${prefix} must be a mapping`);
+          return;
+        }
+        for (const key of Object.keys(entry)) {
+          if (!ARCH_PATTERN_KEYS.includes(key)) {
+            errors.push(`${prefix} has unknown key '${key}'`);
+          }
+        }
+        if (typeof entry.name !== "string" || entry.name.trim() === "") {
+          errors.push(`${prefix}.name must be a non-empty string`);
+        }
+        if (typeof entry.applies_to !== "string" || entry.applies_to.trim() === "") {
+          errors.push(`${prefix}.applies_to must be a non-empty string`);
+        }
+        if (entry.example_path != null && (typeof entry.example_path !== "string" || entry.example_path.trim() === "")) {
+          errors.push(`${prefix}.example_path must be a non-empty string when set`);
+        }
+        if (errors.length === before) {
+          value.patterns.push({
+            name: entry.name,
+            applies_to: entry.applies_to,
+            example_path: entry.example_path ?? null,
+          });
+        }
+      });
+    }
+  }
+
+  if (raw.canonical_helpers != null) {
+    if (!Array.isArray(raw.canonical_helpers)) {
+      errors.push("architecture.vocabulary.canonical_helpers must be a list when set");
+    } else {
+      raw.canonical_helpers.forEach((entry, i) => {
+        const prefix = `architecture.vocabulary.canonical_helpers[${i}]`;
+        const before = errors.length;
+        if (entry == null || typeof entry !== "object" || Array.isArray(entry)) {
+          errors.push(`${prefix} must be a mapping`);
+          return;
+        }
+        for (const key of Object.keys(entry)) {
+          if (!ARCH_HELPER_KEYS.includes(key)) {
+            errors.push(`${prefix} has unknown key '${key}'`);
+          }
+        }
+        if (typeof entry.name !== "string" || entry.name.trim() === "") {
+          errors.push(`${prefix}.name must be a non-empty string`);
+        }
+        if (typeof entry.purpose !== "string" || entry.purpose.trim() === "") {
+          errors.push(`${prefix}.purpose must be a non-empty string`);
+        }
+        if (entry.path != null && (typeof entry.path !== "string" || entry.path.trim() === "")) {
+          errors.push(`${prefix}.path must be a non-empty string when set`);
+        }
+        if (errors.length === before) {
+          value.canonical_helpers.push({
+            name: entry.name,
+            purpose: entry.purpose,
+            path: entry.path ?? null,
+          });
+        }
+      });
+    }
+  }
+
+  if (raw.boundary_contract != null) {
+    if (typeof raw.boundary_contract !== "object" || Array.isArray(raw.boundary_contract)) {
+      errors.push("architecture.vocabulary.boundary_contract must be a mapping when set");
+    } else {
+      for (const key of Object.keys(raw.boundary_contract)) {
+        if (!ARCH_BOUNDARY_KEYS.includes(key)) {
+          errors.push(`architecture.vocabulary.boundary_contract has unknown key '${key}'`);
+        }
+      }
+      if (typeof raw.boundary_contract.description !== "string" || raw.boundary_contract.description.trim() === "") {
+        errors.push("architecture.vocabulary.boundary_contract.description must be a non-empty string");
+      } else {
+        value.boundary_contract = { description: raw.boundary_contract.description };
+      }
+    }
+  }
+
+  if (raw.binding_adrs != null) {
+    if (!Array.isArray(raw.binding_adrs)) {
+      errors.push("architecture.vocabulary.binding_adrs must be a list when set");
+    } else {
+      raw.binding_adrs.forEach((entry, i) => {
+        const prefix = `architecture.vocabulary.binding_adrs[${i}]`;
+        const before = errors.length;
+        if (entry == null || typeof entry !== "object" || Array.isArray(entry)) {
+          errors.push(`${prefix} must be a mapping`);
+          return;
+        }
+        for (const key of Object.keys(entry)) {
+          if (!ARCH_BINDING_ADR_KEYS.includes(key)) {
+            errors.push(`${prefix} has unknown key '${key}'`);
+          }
+        }
+        if (typeof entry.id !== "string" || !ARCH_BINDING_ADR_ID_RE.test(entry.id)) {
+          errors.push(`${prefix}.id must match ${ARCH_BINDING_ADR_ID_RE.source}`);
+        }
+        if (typeof entry.one_liner !== "string" || entry.one_liner.trim() === "") {
+          errors.push(`${prefix}.one_liner must be a non-empty string`);
+        }
+        if (errors.length === before) {
+          value.binding_adrs.push({ id: entry.id, one_liner: entry.one_liner });
+        }
+      });
+    }
+  }
+
+  if (raw.anti_recommendations != null) {
+    if (!Array.isArray(raw.anti_recommendations)) {
+      errors.push("architecture.vocabulary.anti_recommendations must be a list when set");
+    } else {
+      const before = errors.length;
+      raw.anti_recommendations.forEach((entry, i) => {
+        if (typeof entry !== "string" || entry.trim() === "") {
+          errors.push(`architecture.vocabulary.anti_recommendations[${i}] must be a non-empty string`);
+        }
+      });
+      if (errors.length === before) {
+        value.anti_recommendations = [...raw.anti_recommendations];
+      }
+    }
+  }
+
+  if (errors.length) return { ok: false, errors };
+  return { ok: true, value };
+}
+export function normalizeArchitectureConfig(raw) {
+  if (raw == null) return { ok: true, value: null };
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    return { ok: false, errors: ["architecture must be a mapping, not a list or scalar"] };
+  }
+  const allowed = ["vocabulary"];
+  const errors = [];
+  for (const key of Object.keys(raw)) {
+    if (!allowed.includes(key)) {
+      errors.push(`architecture has unknown key '${key}'`);
+    }
+  }
+  const vocabResult = normalizeArchitectureVocabularyConfig(raw.vocabulary);
+  if (!vocabResult.ok) errors.push(...vocabResult.errors);
+  if (errors.length) return { ok: false, errors };
+  return { ok: true, value: { vocabulary: vocabResult.value } };
+}
+export const DECISION_RECORD_REVIEWERS = Object.freeze(["codex", "refactor", "test-quality", "sonarcloud"]);
+export const DECISION_RECORD_DECISIONS = Object.freeze(["fix", "wontfix", "not-applicable"]);
+export const DECISION_RECORD_CLASSIFICATIONS = Object.freeze(["one-off", "class"]);
+const DECISION_RECORD_MARKER_PREFIX = "<!-- gc:decision-record";
+export const GITHUB_ISSUE_COMMENT_BODY_MAX = 65535;
+export const PR_BODY_SUMMARY_MAX = 1200;
+export const FINAL_REPORT_SUMMARY_MAX = 800;
+export const FINAL_REPORT_PLAIN_ENGLISH_OUTCOME_MAX = 600;
+export const FINAL_REPORT_REVIEW_SUMMARY_MAX = 240;
+const RESERVED_MARKER_PREFIX_RE = /<!--\s*gc:/i;
+export function rejectReservedMarkerSequence(text, fieldName) {
+  if (typeof text !== "string" || text === "") return null;
+  if (RESERVED_MARKER_PREFIX_RE.test(text)) {
+    return `${fieldName}: caller-controlled text carries a reserved marker prefix (<!-- gc:...); reserved by the workflow surface, refused`;
+  }
+  return null;
+}
+export function buildDecisionRecordMarker({ reviewer, cycle, issueNumber }) {
+  return `<!-- gc:decision-record reviewer="${reviewer}" cycle="${cycle}" issue="${issueNumber}" -->`;
+}
+export const SONAR_BASE_URL = "https://sonarcloud.io";
+const SONAR_SEVERITY_RANK = {
+  BLOCKER: 5,
+  CRITICAL: 4,
+  MAJOR: 3,
+  MINOR: 2,
+  INFO: 1,
+};
+const SONAR_HOTSPOT_PROBABILITY_RANK = {
+  HIGH: 3,
+  MEDIUM: 2,
+  LOW: 1,
+};
+export function summarizeSonarIssues(issues, maxTop = 10) {
+  const arr = Array.isArray(issues) ? issues : [];
+  const bySeverity = {};
+  const byType = {};
+  for (const it of arr) {
+    if (!it || typeof it !== "object") continue;
+    const sev = typeof it.severity === "string" ? it.severity : "UNKNOWN";
+    bySeverity[sev] = (bySeverity[sev] ?? 0) + 1;
+    const ty = typeof it.type === "string" ? it.type : "UNKNOWN";
+    byType[ty] = (byType[ty] ?? 0) + 1;
+  }
+  // Sort by severity rank desc; stable-ish tie-break by component+line so
+  // identical inputs produce identical top_issues across runs.
+  const sorted = arr
+    .filter((it) => it && typeof it === "object")
+    .map((it) => ({
+      raw: it,
+      rank: SONAR_SEVERITY_RANK[it.severity] ?? 0,
+    }))
+    .sort((a, b) => {
+      if (b.rank !== a.rank) return b.rank - a.rank;
+      const ac = `${a.raw.component ?? ""}:${a.raw.line ?? ""}`;
+      const bc = `${b.raw.component ?? ""}:${b.raw.line ?? ""}`;
+      return ac.localeCompare(bc);
+    });
+  const topIssues = sorted.slice(0, maxTop).map(({ raw }) => ({
+    key: typeof raw.key === "string" ? raw.key : "",
+    severity: typeof raw.severity === "string" ? raw.severity : "",
+    type: typeof raw.type === "string" ? raw.type : "",
+    message: typeof raw.message === "string" ? raw.message : "",
+    component: typeof raw.component === "string" ? raw.component : "",
+    line: typeof raw.line === "number" ? raw.line : null,
+  }));
+  return {
+    open_count: arr.length,
+    by_severity: bySeverity,
+    by_type: byType,
+    top_issues: topIssues,
+  };
+}
+export function summarizeSonarHotspots(hotspots, maxTop = 10) {
+  const arr = Array.isArray(hotspots) ? hotspots : [];
+  const sorted = arr
+    .filter((h) => h && typeof h === "object")
+    .map((h) => ({
+      raw: h,
+      rank: SONAR_HOTSPOT_PROBABILITY_RANK[h.vulnerabilityProbability] ?? 0,
+    }))
+    .sort((a, b) => {
+      if (b.rank !== a.rank) return b.rank - a.rank;
+      const ac = `${a.raw.component ?? ""}:${a.raw.line ?? ""}`;
+      const bc = `${b.raw.component ?? ""}:${b.raw.line ?? ""}`;
+      return ac.localeCompare(bc);
+    });
+  const topHotspots = sorted.slice(0, maxTop).map(({ raw }) => ({
+    key: typeof raw.key === "string" ? raw.key : "",
+    vulnerability_probability:
+      typeof raw.vulnerabilityProbability === "string" ? raw.vulnerabilityProbability : "",
+    message: typeof raw.message === "string" ? raw.message : "",
+    component: typeof raw.component === "string" ? raw.component : "",
+    line: typeof raw.line === "number" ? raw.line : null,
+  }));
+  return {
+    open_count: arr.length,
+    top_hotspots: topHotspots,
+  };
+}
+export function _readSonarCloudConfigFromRepo(repoRoot) {
+  // Best-effort read of the sonarcloud block. Returns null if the file
+  // is missing, malformed, or has no sonarcloud declaration — all three
+  // are "skip" signals, not errors, by design (mirrors Step 11).
+  let yamlText;
+  try {
+    yamlText = readFileSync(join(repoRoot, ".ground-control.yaml"), "utf8");
+  } catch {
+    return null;
+  }
+  try {
+    const parsed = parseYaml(yamlText);
+    if (!parsed || typeof parsed !== "object") return null;
+    const sc = parsed.sonarcloud;
+    if (!sc || typeof sc !== "object") return null;
+    const projectKey = typeof sc.project_key === "string" ? sc.project_key : null;
+    const organization = typeof sc.organization === "string" ? sc.organization : null;
+    if (!projectKey) return null;
+    return { projectKey, organization };
+  } catch {
+    return null;
+  }
+}
+export function _sonarAuthHeader(token) {
+  // SonarCloud REST: HTTP Basic with token as username, empty password.
+  const b64 = Buffer.from(`${token}:`, "utf8").toString("base64");
+  return `Basic ${b64}`;
+}
+export function shouldRetrySonarStatus(status) {
+  if (typeof status !== "number") return false;
+  if (status === 429) return true;
+  return status >= 500 && status < 600;
+}
+export const SONAR_RETRY_DELAYS_MS = [1000, 2000, 4000]; // 3 retries; total worst-case ~7s
+export const SONAR_EXPORT_RETENTION = 50;
+export function _pruneSonarExports(absSonarDir, retention) {
+  // Best-effort prune. Failure to read the directory or stat individual
+  // files is non-fatal — the export itself is operational, not workflow
+  // state, so a broken prune just leaves more files than intended.
+  try {
+    const entries = readdirSync(absSonarDir)
+      .filter((name) => name.endsWith(".json"))
+      .map((name) => {
+        const abs = join(absSonarDir, name);
+        try {
+          return { name, abs, mtimeMs: statSync(abs).mtimeMs };
+        } catch {
+          return null;
+        }
+      })
+      .filter((e) => e !== null);
+    if (entries.length <= retention) return;
+    entries.sort((a, b) => a.mtimeMs - b.mtimeMs);
+    const toDelete = entries.slice(0, entries.length - retention);
+    for (const entry of toDelete) {
+      try {
+        rmSync(entry.abs, { force: true });
+      } catch {
+        // Best-effort. If a delete fails (permissions, concurrent run),
+        // skip and let the next pass clean up.
+      }
+    }
+  } catch {
+    // Directory doesn't exist yet or unreadable. The mkdirSync below
+    // handles creation; nothing to prune.
+  }
+}
+export const TELEMETRY_SCHEMA_VERSION = "gc.implement.telemetry/v2";
+export const TELEMETRY_TIERS = Object.freeze(["low", "medium", "high"]);
+export const TELEMETRY_OUTCOMES = Object.freeze(["ok", "error", "skipped"]);
+export const ROUTING_TIERS = TELEMETRY_TIERS;
+export const ROUTING_PROVIDERS = Object.freeze(["claude"]);
+export const ROUTING_STAGE_NAME_RE = /^[a-z][a-z0-9_-]*$/;
+export const CLAUDE_MODEL_BY_TIER = Object.freeze({
+  low: "claude-haiku-4-5",
+  medium: "claude-sonnet-5",
+  high: "claude-opus-4-8",
+});
+export const DEFAULT_IMPLEMENT_ROUTING_STAGES = Object.freeze({
+  issue_branch_resolution: { tier: "low" },
+  read_issue_context: { tier: "low" },
+  architecture_preflight: { tier: "low" },
+  codebase_assessment: { tier: "medium" },
+  planning: { tier: "high" },
+  implementation: { tier: "medium" },
+  clause_mapping: { tier: "medium" },
+  precommit: { tier: "low" },
+  completion_gate: { tier: "low" },
+  review_cycle_1_consume: { tier: "high" },
+  review_fix_application: { tier: "medium" },
+  git_publish: { tier: "low" },
+  base_sync: { tier: "low" },
+  pr_body: { tier: "low" },
+  ci_monitor: { tier: "low" },
+  sonarcloud: { tier: "low" },
+  test_quality_review: { tier: "medium" },
+  transition_reconcile: { tier: "medium" },
+  final_report: { tier: "low" },
+  close_issue_after_merge: { tier: "low" },
+});
+const TELEMETRY_SANITIZE_BRANCH_RE = /[^A-Za-z0-9._-]/g;
+const TELEMETRY_BRANCH_MAX_LEN = 60;
+export function sanitizeTelemetryBranch(branch) {
+  if (typeof branch !== "string" || branch.trim() === "") return "unknown";
+  let s = branch.replace(TELEMETRY_SANITIZE_BRANCH_RE, "_");
+  if (s.length > TELEMETRY_BRANCH_MAX_LEN) s = s.slice(0, TELEMETRY_BRANCH_MAX_LEN);
+  // Reject empty or pathological results — would let a branch of all-special
+  // chars produce an empty path segment.
+  if (s.trim() === "") return "unknown";
+  return s;
+}
+export function buildTelemetryRecord(input) {
+  const errors = [];
+  if (input == null || typeof input !== "object") {
+    throw new Error("buildTelemetryRecord: input must be an object");
+  }
+  const { issueNumber, branch, step, tier, model, wallTimeMs, inputTokens = null, outputTokens = null, outcome, ts } = input;
+  if (!Number.isInteger(issueNumber) || issueNumber <= 0) errors.push("issueNumber must be positive integer");
+  if (typeof branch !== "string" || branch.trim() === "") errors.push("branch must be non-empty string");
+  if (typeof step !== "string" || step.trim() === "") errors.push("step must be non-empty string");
+  if (!TELEMETRY_TIERS.includes(tier)) errors.push(`tier must be one of: ${TELEMETRY_TIERS.join(", ")}`);
+  if (typeof model !== "string" || model.trim() === "") errors.push("model must be non-empty string");
+  if (!Number.isInteger(wallTimeMs) || wallTimeMs < 0) errors.push("wallTimeMs must be non-negative integer");
+  if (inputTokens != null && (!Number.isInteger(inputTokens) || inputTokens < 0)) errors.push("inputTokens must be non-negative integer or null");
+  if (outputTokens != null && (!Number.isInteger(outputTokens) || outputTokens < 0)) errors.push("outputTokens must be non-negative integer or null");
+  if (!TELEMETRY_OUTCOMES.includes(outcome)) errors.push(`outcome must be one of: ${TELEMETRY_OUTCOMES.join(", ")}`);
+  if (ts != null && (typeof ts !== "string" || ts.trim() === "")) errors.push("ts must be non-empty ISO-8601 string or null");
+  if (errors.length) {
+    throw new Error(`buildTelemetryRecord input invalid: ${errors.join("; ")}`);
+  }
+  return {
+    schema: TELEMETRY_SCHEMA_VERSION,
+    ts: ts ?? new Date().toISOString(),
+    issue: issueNumber,
+    // Sanitize the branch in the record itself, not just the filename
+    // (ADR-036 § telemetry contract). Codex cycle 1 flagged that the previous
+    // version stored the raw input in the record while the filename used a
+    // normalized token, which is inconsistent and would let a long / arrow-
+    // bearing branch persist into every record.
+    branch: sanitizeTelemetryBranch(branch),
+    step,
+    tier,
+    model,
+    // Config-derived ground truth for the step's tier (issue #1181). `tier` is
+    // validated against TELEMETRY_TIERS above, so this lookup is always defined.
+    // `model_matches_expected` is the tier/model consistency assertion: false
+    // means the reported model diverged from the tier's canonical model — the
+    // signal that routing did not land where the tier intended (or the
+    // orchestrator mis-reported). Never gates; analysis-only.
+    expected_model: CLAUDE_MODEL_BY_TIER[tier],
+    model_matches_expected: model === CLAUDE_MODEL_BY_TIER[tier],
+    wall_time_ms: wallTimeMs,
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    outcome,
+  };
+}
+export function buildTelemetryRelPath({ issueNumber, branch }) {
+  if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
+    throw new Error("buildTelemetryRelPath: issueNumber must be positive integer");
+  }
+  const safe = sanitizeTelemetryBranch(branch);
+  return `.gc/telemetry/${issueNumber}-${safe}.jsonl`;
+}

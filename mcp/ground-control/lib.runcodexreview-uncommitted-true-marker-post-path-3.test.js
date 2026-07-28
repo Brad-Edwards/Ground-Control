@@ -24,6 +24,9 @@ describe("runCodexReview uncommitted=true marker-post path (hermetic codex+gh sh
     writeFileSync(join(repoDir, "README"), "x\n");
     execFileSync("git", ["-C", repoDir, "add", "README"]);
     execFileSync("git", ["-C", repoDir, "commit", "-q", "-m", "init"]);
+    // Real origin so owner/repo resolves from the git remote, as production does. git ignores
+    // GH_REPO; the `gh repo view` fallback honours it.
+    execFileSync("git", ["-C", repoDir, "remote", "add", "origin", "https://github.com/fake/repo.git"]);
 
     const binDir = mkdtempSync(join(tmpdir(), "gc-fullshim-bin-"));
     const ghCfgPath = join(binDir, "gh-config.json");
@@ -148,6 +151,11 @@ process.stdin.on("end", () => {
             stdout: JSON.stringify({ closingIssuesReferences: [{ number: 998 }] }),
           },
           {
+            // Phase markers are believed only from an author with repository permission.
+            argv_prefix: ["api", "--method", "GET", "/repos/fake/repo/collaborators/tester/permission"],
+            stdout: "write\n",
+          },
+          {
             argv_prefix: ["api", "--method", "GET", "--paginate", "--slurp"],
             stdout: JSON.stringify([[{ id: 1, body: planMarker, user: { login: "tester" } }]]),
           },
@@ -215,6 +223,11 @@ process.stdin.on("end", () => {
             stdout: JSON.stringify({ closingIssuesReferences: [{ number: 998 }] }),
           },
           {
+            // Phase markers are believed only from an author with repository permission.
+            argv_prefix: ["api", "--method", "GET", "/repos/fake/repo/collaborators/tester/permission"],
+            stdout: "write\n",
+          },
+          {
             argv_prefix: ["api", "--method", "GET", "--paginate", "--slurp"],
             stdout: JSON.stringify([[{ id: 1, body: planMarker, user: { login: "tester" } }]]),
           },
@@ -272,6 +285,11 @@ process.stdin.on("end", () => {
           {
             argv_prefix: ["pr", "view", "520", "--json", "closingIssuesReferences"],
             stdout: JSON.stringify({ closingIssuesReferences: [{ number: 998 }] }),
+          },
+          {
+            // Phase markers are believed only from an author with repository permission.
+            argv_prefix: ["api", "--method", "GET", "/repos/fake/repo/collaborators/tester/permission"],
+            stdout: "write\n",
           },
           {
             argv_prefix: ["api", "--method", "GET", "--paginate", "--slurp"],
@@ -335,6 +353,11 @@ process.stdin.on("end", () => {
             stdout: JSON.stringify({ closingIssuesReferences: [{ number: 998 }] }),
           },
           {
+            // Phase markers are believed only from an author with repository permission.
+            argv_prefix: ["api", "--method", "GET", "/repos/fake/repo/collaborators/tester/permission"],
+            stdout: "write\n",
+          },
+          {
             argv_prefix: ["api", "--method", "GET", "--paginate", "--slurp"],
             stdout: JSON.stringify([[{ id: 1, body: planMarker, user: { login: "tester" } }]]),
           },
@@ -382,6 +405,11 @@ process.stdin.on("end", () => {
           {
             argv_prefix: ["repo", "view", "--json", "nameWithOwner"],
             stdout: JSON.stringify({ nameWithOwner: "fake/repo" }),
+          },
+          {
+            // Phase markers are believed only from an author with repository permission.
+            argv_prefix: ["api", "--method", "GET", "/repos/fake/repo/collaborators/tester/permission"],
+            stdout: "write\n",
           },
           {
             argv_prefix: ["api", "--method", "GET", "--paginate", "--slurp"],

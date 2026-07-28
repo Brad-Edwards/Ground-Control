@@ -444,4 +444,49 @@ process.exit(2);
       shim.cleanup();
     }
   });
+
+  it("filters the rendered body, not just the finding body (issue #1355)", async () => {
+    // The filter inspected `finding.body` while the posted comment also splices in the title and
+    // the classification note, both equally model-controlled. A key in the title passed the
+    // guardrail and was published under the host identity. Checking a component of what you send
+    // is not checking what you send.
+    const shim = makeGhShim({
+      ghHandler: {
+        routes: [
+          {
+            argv_prefix: ["pr", "view", "520", "--json", "headRefOid"],
+            stdout: JSON.stringify({ headRefOid: "abc1234" }),
+          },
+          {
+            argv_prefix: ["api", "--method", "POST"],
+            stdout: JSON.stringify({ id: 101, html_url: "https://example.test/c/101" }),
+          },
+        ],
+      },
+    });
+    try {
+      await withShimPath(shim.binDir, async () => {
+        const results = await postCodexReviewFindings({
+          repoRoot: shim.repoDir,
+          owner: "fake",
+          name: "repo",
+          prNumber: 520,
+          reviewerLabel: "core",
+          findings: [
+            { path: "src/foo.java", line: 1, title: "AKIAIOSFODNN7EXAMPLE", body: "ordinary note" },
+          ],
+        });
+
+        assert.equal(results[0].ok, false, "a secret in the title must not reach GitHub");
+        assert.match(results[0].error, /sensitive|aws/i);
+        // Nothing was posted: the refusal happens before the POST, not after.
+        assert.equal(
+          shim.readCalls().some((c) => c.argv?.[0] === "api"),
+          false,
+        );
+      });
+    } finally {
+      shim.cleanup();
+    }
+  });
 });

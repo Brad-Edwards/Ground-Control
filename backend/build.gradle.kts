@@ -163,6 +163,14 @@ tasks.processResources {
     filesMatching("application.yml") {
         filter(mapOf("tokens" to mapOf("projectVersion" to project.version.toString())), ReplaceTokens::class.java)
     }
+    // The ADR-090 station catalogue is a published contract, and the backend validates emitted
+    // station ids against it (issue #1355). It is copied from contracts/ at build time rather than
+    // committed a second time under resources/: a mirrored catalogue is a catalogue that can drift,
+    // and a validator disagreeing with the contract it enforces is worse than no validator.
+    from(rootProject.layout.projectDirectory.dir("../contracts/measurement")) {
+        include("gc-station-catalogue-v2.json")
+        into("measurement")
+    }
 }
 
 tasks.register("rapid") {
@@ -289,7 +297,11 @@ spotbugs {
 
 tasks.withType<com.github.spotbugs.snom.SpotBugsTask> {
     reports.create("html") { required = true }
-    reports.create("xml") { required = false }
+    // XML is what the ADR-090 measurement projection reads (issue #1355): the completion command
+    // already runs SpotBugs, so its own report is the structured source. Parsing the combined
+    // Gradle console output instead would guess at per-gate boundaries, and re-running SpotBugs
+    // to measure it would execute a canonical gate twice.
+    reports.create("xml") { required = true }
 }
 
 // Checkstyle

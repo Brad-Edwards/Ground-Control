@@ -10,17 +10,10 @@
     "decomposes it, and doing it twice would destroy one of the two' is."
   ],
   "entries": {
-    "mcp/ground-control/lib.js": "Decomposed on the open #1355 branch (PR #1470) into ./lib/* behind a barrel. Splitting it again here would produce two incompatible decompositions of the same 20k-line file and lose one of them at merge.",
-    "mcp/ground-control/gc-implement-mechanical.js": "Decomposed on the open #1355 branch (PR #1470). Same conflict as lib.js.",
-    "tools/policy/checks.py": "Decomposed on the open #1355 branch (PR #1470). The file-size gate itself was added as a separate module (tools/policy/file_size.py) precisely so this change does not grow it further.",
-    "tools/tests/test_policy.py": "Decomposed on the open #1355 branch (PR #1470). The file-size gate's own tests live in tools/tests/test_file_size_policy.py for the same reason.",
-    "backend/src/main/java/com/keplerops/groundcontrol/domain/workflowtelemetry/service/WorkflowTelemetryService.java": "Decomposed on the open #1355 branch (PR #1470).",
-    "backend/src/test/java/com/keplerops/groundcontrol/unit/domain/workflowtelemetry/WorkflowTelemetryServiceTest.java": "Decomposed on the open #1355 branch (PR #1470).",
-    "backend/src/test/java/com/keplerops/groundcontrol/unit/api/WorkflowRunControllerTest.java": "Decomposed on the open #1355 branch (PR #1470).",
     "backend/src/main/java/com/keplerops/groundcontrol/domain/research/service/ResearchRunService.java": "Not yet decomposed. Its stateless helpers do not account for its size; the remaining bulk is ~80 public transactional methods spanning run lifecycle, artifacts, gates, review comments, rationale, disclosure, methodology and protocol plan. Splitting it means extracting collaborator services and changing the constructor its tests inject into, which is a design change rather than a mechanical move.",
     "backend/src/main/java/com/keplerops/groundcontrol/infrastructure/age/AgeGraphService.java": "Not yet decomposed. Same shape as ResearchRunService: the public Cypher/graph surface, not helper code, is what exceeds the limit.",
     "backend/src/main/java/com/keplerops/groundcontrol/domain/assets/service/AssetService.java": "Not yet decomposed. 68 methods across five aggregates (asset, relation, link, external id, subtype schema); needs collaborator extraction per aggregate rather than a helper move.",
-    "backend/src/main/java/com/keplerops/groundcontrol/domain/testcases/service/TestSuiteService.java": "Partially decomposed — its stateless helpers moved to TestSuiteServiceSupport, leaving it 33 lines over. The remainder is public CRUD plus query-mode resolution and needs a collaborator split.",
+    "backend/src/main/java/com/keplerops/groundcontrol/domain/testcases/service/TestSuiteService.java": "Partially decomposed \u2014 its stateless helpers moved to TestSuiteServiceSupport, leaving it 33 lines over. The remainder is public CRUD plus query-mode resolution and needs a collaborator split.",
     "backend/src/test/java/com/keplerops/groundcontrol/integration/RequirementsE2EIntegrationTest.java": "@TestMethodOrder + @Order + PER_CLASS: its tests are one ordered sequence sharing database state, so test N depends on what test N-1 left behind. Splitting the class breaks that chain (syncGitHubIssues failed in CI when it was split), and the splitter now refuses these outright rather than doing it quietly.",
     "backend/src/test/java/com/keplerops/groundcontrol/integration/AuditHistoryIntegrationTest.java": "Same ordered, state-sharing sequence as RequirementsE2EIntegrationTest. Splitting it would need the shared setup rebuilt per class, which changes what the test exercises."
   }

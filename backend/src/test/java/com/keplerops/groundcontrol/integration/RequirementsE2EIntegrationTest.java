@@ -630,6 +630,8 @@ class RequirementsE2EIntegrationTest extends BaseIntegrationTest {
                         "203", // V203: workflow telemetry audit shadows for graph projection (#1311)
                         "204", // V204: workflow_phase_event.source_id deterministic identity (#1435)
                         "205", // V205: identity/RBAC foundation + compatibility role seed (#1282)
-                        "206"); // V206: identity/RBAC Envers audit shadows (#1282)
+                        "206", // V206: identity/RBAC Envers audit shadows (#1282)
+                        "207", // V207: station-result axis + gate-finding projection (#1355)
+                        "208"); // V208: workflow_gate_finding Envers shadow (#1355)
     }
 }

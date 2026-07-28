@@ -393,7 +393,11 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         // V205-V206 (#1282, GC-P024): identity/RBAC foundation, deterministic
                         // compatibility roles, and matching Envers audit shadows.
                         "205",
-                        "206");
+                        "206",
+                        // V207-V208 (#1355, ADR-090 amendment): the station-result axis and the
+                        // gate-finding projection, with its Envers shadow.
+                        "207",
+                        "208");
     }
 
     @Test

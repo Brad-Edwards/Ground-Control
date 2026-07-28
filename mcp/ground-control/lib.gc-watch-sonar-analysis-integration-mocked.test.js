@@ -23,6 +23,9 @@ describe("gc_watch_sonar_analysis integration (mocked fetch, issue #934 fix-list
     writeFileSync(join(dir, ".ground-control.yaml"), yamlBody);
     execFileSync("git", ["-C", dir, "add", ".ground-control.yaml"]);
     execFileSync("git", ["-C", dir, "commit", "-q", "-m", "init"]);
+    // Real origin so owner/repo resolves from the git remote, as production does. git ignores
+    // GH_REPO; the `gh repo view` fallback honours it.
+    execFileSync("git", ["-C", dir, "remote", "add", "origin", "https://github.com/fake/repo.git"]);
     return dir;
   }
 
