@@ -246,13 +246,14 @@ export async function runMonitor(args, deps) {
       branch: args.branchName,
     });
     const passed = ci.ok && ci.conclusion === "success";
+    const ciFindings = ci.ok ? ciGateFindings(ci) : null;
     return {
       ok: passed,
       error: passed ? undefined : ci.error ?? `ci_${ci.conclusion ?? "unknown"}`,
       // `ci.ok === false` means the watcher could not observe a run at all — no verdict
       // exists to record. Only a run that actually concluded produces pass or fail.
       stationResult: ci.ok ? (passed ? "pass" : "fail") : "not_evaluable",
-      ...(ci.ok ? { findings: ciGateFindings(ci).findings } : {}),
+      ...(ciFindings ? { findings: ciFindings.findings, findingsDropped: ciFindings.dropped } : {}),
     };
   });
   if (!ci.ok || ci.conclusion !== "success") {
@@ -287,7 +288,9 @@ export async function runMonitor(args, deps) {
       // A repo with no sonarcloud block skips the gate: that is coverage, not a pass, and
       // counting it as one would inflate first-pass yield with runs Sonar never inspected.
       stationResult: sonar.ok ? (sonar.skipped === true ? "skipped_station" : sonarPassed ? "pass" : "fail") : "not_evaluable",
-      ...(Array.isArray(sonar.measurement_findings) ? { findings: sonar.measurement_findings } : {}),
+      ...(Array.isArray(sonar.measurement_findings)
+        ? { findings: sonar.measurement_findings, findingsDropped: sonar.measurement_findings_dropped }
+        : {}),
     };
   });
   if (!sonarPassed) {

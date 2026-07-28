@@ -73,12 +73,14 @@ async function _runReviewCycleShared({
   // The cycle was consumed, so this is one station attempt. A capped cycle returned above
   // without reaching here: the cap refused before the reviewer ran, so there is no attempt to
   // record and counting one would report rework that never occurred.
+  const reviewFindings = reviewGateFindings(findings, reviewer);
   await _emitReviewStationAttempt({
     repoPath,
     issueNumber,
     reviewer,
     stationResult: status === "clean" ? "pass" : "fail",
-    findings: reviewGateFindings(findings, reviewer).findings,
+    findings: reviewFindings.findings,
+    findingsDropped: reviewFindings.dropped,
   });
 
   // Otherwise: post the auto-fix decision record. The cycle was

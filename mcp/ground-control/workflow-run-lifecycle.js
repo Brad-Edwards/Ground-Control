@@ -139,6 +139,21 @@ export function createWorkflowRunLifecycleEmitter({
     return queue;
   }
 
+  /**
+   * Report a bounded finding batch.
+   *
+   * A cap that drops findings without saying so makes a truncated count read as a complete
+   * one, which is the same lie as a gate reporting clean because it scanned nothing. Only the
+   * station and the count are logged — never the findings.
+   */
+  function noteDroppedFindings(stationId, dropped) {
+    if (!Number.isInteger(dropped) || dropped <= 0) return;
+    d.log(
+      `[workflow-run-lifecycle] finding batch truncated: project=${project} issue=${issueNumber} ` +
+        `station=${stationId} dropped=${dropped}`,
+    );
+  }
+
   function diagnose(operation, error) {
     d.log(
       `[workflow-run-lifecycle] ${operation} failed: project=${project} issue=${issueNumber} ` +
@@ -339,6 +354,7 @@ export function createWorkflowRunLifecycleEmitter({
         },
         attempt,
       );
+      noteDroppedFindings(phase, result?.findingsDropped);
       return result;
     },
 
@@ -356,7 +372,16 @@ export function createWorkflowRunLifecycleEmitter({
      * a bracketed station does — without it every retry of a child gate would collapse onto
      * attempt 0 and iterations-to-green would be underivable for exactly these stations.
      */
-    recordStationAttempt({ stationId, startedAt, endedAt, durationMs, stationResult, findings, outcome }) {
+    recordStationAttempt({
+      stationId,
+      startedAt,
+      endedAt,
+      durationMs,
+      stationResult,
+      findings,
+      findingsDropped,
+      outcome,
+    }) {
       const attempt = { cycleIndex: undefined };
       const openedAt = startedAt ?? d.now();
       emit({ phase: stationId, event_type: "STARTED", occurred_at: openedAt.toISOString() }, attempt);
@@ -372,6 +397,7 @@ export function createWorkflowRunLifecycleEmitter({
         },
         attempt,
       );
+      noteDroppedFindings(stationId, findingsDropped);
     },
 
     /**

@@ -218,3 +218,57 @@ describe("workflow-run lifecycle emitter — already-executed child gates (issue
     assert.equal(terminal.outcome, "policy_violations");
   });
 });
+
+describe("workflow-run lifecycle emitter — bounded finding batches (issue #1355)", () => {
+  it("reports a truncated batch instead of dropping it silently", async () => {
+    const logged = [];
+    const { deps } = recorder({ log: (line) => logged.push(line) });
+    const emitter = createWorkflowRunLifecycleEmitter({ ...IDENTITY, deps });
+
+    emitter.ensureRun();
+    emitter.recordStationAttempt({
+      stationId: "policy",
+      stationResult: "fail",
+      findings: [],
+      findingsDropped: 7,
+    });
+    await emitter.flush();
+
+    // A cap that drops findings without saying so makes a truncated count read as a
+    // complete one — the same lie as a gate reporting clean because it scanned nothing.
+    const line = logged.find((l) => l.includes("finding batch truncated"));
+    assert.ok(line, `expected a truncation diagnostic, got: ${JSON.stringify(logged)}`);
+    assert.match(line, /station=policy/);
+    assert.match(line, /dropped=7/);
+  });
+
+  it("says nothing when the batch was not truncated", async () => {
+    const logged = [];
+    const { deps } = recorder({ log: (line) => logged.push(line) });
+    const emitter = createWorkflowRunLifecycleEmitter({ ...IDENTITY, deps });
+
+    emitter.ensureRun();
+    emitter.recordStationAttempt({ stationId: "vale", stationResult: "pass", findings: [], findingsDropped: 0 });
+    await emitter.flush();
+
+    assert.deepEqual(logged.filter((l) => l.includes("finding batch truncated")), []);
+  });
+
+  it("logs only the station and the count, never the findings", async () => {
+    const logged = [];
+    const { deps } = recorder({ log: (line) => logged.push(line) });
+    const emitter = createWorkflowRunLifecycleEmitter({ ...IDENTITY, deps });
+
+    emitter.ensureRun();
+    emitter.recordStationAttempt({
+      stationId: "codex_review",
+      stationResult: "fail",
+      findings: [{ findingKey: "k1", sourceKind: "reviewer", sourceId: "core", disposition: "open" }],
+      findingsDropped: 3,
+    });
+    await emitter.flush();
+
+    const line = logged.find((l) => l.includes("finding batch truncated"));
+    assert.doesNotMatch(line, /findingKey|k1|core/);
+  });
+});

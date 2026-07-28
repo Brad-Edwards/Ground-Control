@@ -231,7 +231,7 @@ export async function emitSpotbugsAttempt(emitter, repoRoot, timing) {
     return;
   }
   if (xml === "") return;
-  const { findings } = spotbugsGateFindings(xml);
+  const { findings, dropped } = spotbugsGateFindings(xml);
   await emitter.recordStationAttempt({
     stationId: "spotbugs",
     startedAt: timing.startedAt,
@@ -239,12 +239,13 @@ export async function emitSpotbugsAttempt(emitter, repoRoot, timing) {
     durationMs: timing.durationMs,
     stationResult: findings.length === 0 ? "pass" : "fail",
     findings,
+    findingsDropped: dropped,
   });
 }
 export async function emitPolicyAndValeAttempts(emitter, artifacts, startedAt) {
   const policy = readGateArtifact(artifacts.policy);
   if (policy) {
-    const { findings } = policyGateFindings(policy);
+    const { findings, dropped } = policyGateFindings(policy);
     await emitter.recordStationAttempt({
       stationId: "policy",
       startedAt,
@@ -252,17 +253,19 @@ export async function emitPolicyAndValeAttempts(emitter, artifacts, startedAt) {
       durationMs: Number.isFinite(policy.duration_ms) ? policy.duration_ms : undefined,
       stationResult: findings.length === 0 ? "pass" : "fail",
       findings,
+      findingsDropped: dropped,
     });
   }
   const vale = readGateArtifact(artifacts.vale);
   if (vale) {
-    const { findings } = valeGateFindings(vale);
+    const { findings, dropped } = valeGateFindings(vale);
     await emitter.recordStationAttempt({
       stationId: "vale",
       startedAt,
       endedAt: new Date(),
       stationResult: findings.length === 0 ? "pass" : "fail",
       findings,
+      findingsDropped: dropped,
     });
   }
 }

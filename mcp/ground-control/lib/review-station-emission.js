@@ -12,7 +12,14 @@ export const REVIEW_STATION_BY_REVIEWER = Object.freeze({
   "test-quality": "test_quality_review",
 });
 
-export async function _emitReviewStationAttempt({ repoPath, issueNumber, reviewer, stationResult, findings }) {
+export async function _emitReviewStationAttempt({
+  repoPath,
+  issueNumber,
+  reviewer,
+  stationResult,
+  findings,
+  findingsDropped,
+}) {
   const stationId = REVIEW_STATION_BY_REVIEWER[reviewer];
   if (!stationId) return;
   try {
@@ -31,7 +38,7 @@ export async function _emitReviewStationAttempt({ repoPath, issueNumber, reviewe
       workflowType: "IMPLEMENT",
     });
     emitter.ensureRun();
-    emitter.recordStationAttempt({ stationId, stationResult, findings });
+    emitter.recordStationAttempt({ stationId, stationResult, findings, findingsDropped });
     await emitter.flush();
   } catch {
     // Measurement never becomes a reason a review fails.
