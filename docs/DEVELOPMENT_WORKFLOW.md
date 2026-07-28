@@ -437,6 +437,14 @@ are required, local reproduction commands, and test lane ownership. ADR-091
 carries the rationale. `make ci-timings` reports current wall clock and time to
 first failing check.
 
+`gc_watch_ci_run` and `gc_implement_mechanical action=monitor` watch every
+workflow run triggered by the branch's newest commit, grouped by head SHA, and
+report success only when all of them succeed. Watching a single run reported an
+unrelated fast workflow as the CI gate: a push triggers both `ci.yml` and
+`pr-title.yml`, and the five-second title lint finishes first, so the gate could
+pass while the suite was still running. A failure in the set reports the run
+responsible rather than the newest one.
+
 ### Contract Surface and MCP Write-Contract Gates (ADR-034, ADR-082)
 
 `make contracts` regenerates the committed contract surface: Springdoc OpenAPI

@@ -107,6 +107,14 @@ dependency, that the surviving edges match their documented sets exactly, that
 exists and is not required, and that the `sonar` job keeps its coverage and
 quality-gate inputs. These run in `make policy` and in the CI `policy` job.
 
+**The CI gate watches every run for the head commit.** `gc_watch_ci_run`
+previously watched whichever workflow run was created most recently on the
+branch, which is not reliably the run carrying the required contexts. It now
+groups runs by head SHA and reports success only when all of them succeed. The
+contract lives in the ADR-027 2026-07-28 amendment. Without it, a readiness
+record could attest to a green CI gate on the strength of a five-second title
+lint.
+
 ## Consequences
 
 Whole-run wall clock is bounded by the slowest job rather than the longest

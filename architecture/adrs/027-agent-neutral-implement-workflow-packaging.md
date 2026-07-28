@@ -379,3 +379,24 @@ this amendment does not broaden inherited-secret handling.
 
 `/integrate` runs its completion command under a separate contract with no
 issue-scoped requirement input and is unchanged.
+
+## 2026-07-28 amendment: CI gate watches every run for the head commit
+
+`gc_watch_ci_run` resolved its target with `gh run list --branch <branch>
+--limit 1`, so it watched whichever workflow run was created most recently. A
+single push triggers more than one workflow, and the run it picked was often not
+the one carrying the required check contexts. On issue #1461 the five-second
+`pr-title.yml` lint finished first, and the watcher reported that run's success
+as the CI gate while `ci.yml` was still in progress. That is a false green on a
+required merge check, reached through no fault of the caller.
+
+The watcher now groups runs by the head SHA of the branch's newest run and
+watches the whole set. It polls on the least advanced run, reports success only
+when every run for that commit succeeded, and on failure returns the run
+actually responsible rather than the newest one. An explicit `run_id` still
+watches exactly that run.
+
+This is a correctness fix inside the workflow tool surface. It adds no
+`.ground-control.yaml` key, so the agent-neutral context contract this ADR
+defines is unchanged: the fix needs no repo-specific workflow filename because
+head SHA identifies the triggered set on its own.
