@@ -92,19 +92,24 @@ topology it replaces, which understates the difference.
 
 The before sample covers the 40 most recent `pull_request` runs of `ci.yml` on
 the serial graph. The after sample covers the pull request that introduced the
-flat graph (issue #1461, `--branch 1461-ci-fast-feedback`), so it is 2 runs
+flat graph (issue #1461, `--branch 1461-ci-fast-feedback`), so it is 3 runs
 rather than 40. Re-measure with `make ci-timings` once the flat graph has
 accumulated history on `dev`.
 
-| Metric | Before (serial graph, n=40) | After (flat graph, n=2) |
+| Metric | Before (serial graph, n=40) | After (flat graph, n=3) |
 |---|---|---|
 | Whole-run wall clock, median | 15.0m | 6.2m |
-| Whole-run wall clock, p95 | 23.9m | 6.2m |
+| Whole-run wall clock, p95 | 23.9m | 6.3m |
 | Time to first failing check, median | 4.9m | 1.9m |
 
-The one green run in the after sample finished in 6.1m, with `sonar` the last
-job to complete. Under the serial graph `sonar` alone did not start until
-+12.3m.
+Under the serial graph `sonar` alone did not start until +12.3m. `sonar` is
+still the last job to finish, so it now bounds the run on its own.
+
+Two secondary effects show up in the same sample. `sonar` dropped from 7.6m to
+about 6m once it stopped assembling the boot jar and re-running static analysis
+it does not consume. `policy` dropped from 1m42s to 1m9s once the pre-commit
+hook-environment cache was warm; the first run on a new branch misses that cache
+and pays the full cost.
 
 Per-job medians in the before sample, with start offset from run start:
 
@@ -122,5 +127,4 @@ Per-job medians in the before sample, with start offset from run start:
 
 The critical path was `policy`, `build`, `test`, `sonar`. Under the flat graph
 every job starts within 6 seconds of run start, so the longest job bounds the
-run. `sonar` also dropped from 7.6m to 5.9m once it stopped assembling the boot
-jar and re-running static analysis it does not consume.
+run.
