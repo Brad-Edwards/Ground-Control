@@ -426,12 +426,6 @@ public class AssetService {
      *     this overload, which we are explicitly NOT requiring in this PR.
      */
     @SuppressWarnings({"java:S107", "java:S1133"})
-    /**
-     * @deprecated GC-M011 added the {@code subtype} filter facet. Callers
-     *     should adopt the 9-arg overload so the subtype and knowledgeState
-     *     query parameters are honored. Retained for source compatibility
-     *     with pre-GC-M011 callers.
-     */
     @Deprecated(forRemoval = false)
     @Transactional(readOnly = true)
     public List<OperationalAsset> listByProjectAndFilters(
@@ -447,6 +441,12 @@ public class AssetService {
                 projectId, assetType, owner, steward, environment, criticality, scopeDesignation, subtype);
     }
 
+    /**
+     * @deprecated GC-M011 added the {@code subtype} filter facet. Callers
+     *     should adopt the 9-arg overload so the subtype and knowledgeState
+     *     query parameters are honored. Retained for source compatibility
+     *     with pre-GC-M011 callers.
+     */
     @Deprecated(forRemoval = false)
     @Transactional(readOnly = true)
     public List<OperationalAsset> listByProjectAndFilters(
