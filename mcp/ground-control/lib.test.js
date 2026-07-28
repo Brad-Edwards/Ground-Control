@@ -12000,11 +12000,11 @@ process.exit(2);
         {
           argv_prefix: [
             "--repo", "test-owner/test-repo",
-            "run", "list", "--branch", "feature/x", "--limit", "1",
-            "--json", "status,conclusion,databaseId,url,createdAt",
+            "run", "list", "--branch", "feature/x", "--limit", "20",
+            "--json", "status,conclusion,databaseId,url,createdAt,headSha",
           ],
           stdout: JSON.stringify([
-            { status: "completed", conclusion: "success", databaseId: 789, url: "https://example.test/runs/789", createdAt: "2026-01-01T00:00:00Z" },
+            { status: "completed", conclusion: "success", databaseId: 789, url: "https://example.test/runs/789", createdAt: "2026-01-01T00:00:00Z", headSha: "sha1" },
           ]),
         },
         {
@@ -12033,6 +12033,76 @@ process.exit(2);
         assert.equal(r.ok, true);
         assert.equal(r.run_id, 789);
         assert.equal(r.conclusion, "success");
+      });
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  it("does not report success from a fast sibling workflow while the CI run is still failing (issue #1461)", async () => {
+    // The exact shape of the false green: one commit triggers ci.yml and
+    // pr-title.yml, the 5-second title lint lands first, and watching only the
+    // newest run reported its success as the CI gate.
+    const { runWatchCiRun } = await import("./lib.js");
+    const shim = makeWatchShim({
+      remote: "https://github.com/test-owner/test-repo.git",
+      routes: [
+        {
+          argv_prefix: [
+            "--repo", "test-owner/test-repo",
+            "run", "list", "--branch", "feature/x", "--limit", "20",
+            "--json", "status,conclusion,databaseId,url,createdAt,headSha",
+          ],
+          stdout: JSON.stringify([
+            { status: "completed", conclusion: "success", databaseId: 111, url: "https://example.test/runs/111", createdAt: "2026-01-01T00:00:05Z", headSha: "deadbeef" },
+            { status: "completed", conclusion: "failure", databaseId: 222, url: "https://example.test/runs/222", createdAt: "2026-01-01T00:00:00Z", headSha: "deadbeef" },
+            { status: "completed", conclusion: "success", databaseId: 333, url: "https://example.test/runs/333", createdAt: "2025-12-31T00:00:00Z", headSha: "oldersha" },
+          ]),
+        },
+        {
+          argv_prefix: [
+            "--repo", "test-owner/test-repo",
+            "run", "view", "111",
+            "--json", "status,conclusion,databaseId,url,createdAt,updatedAt,jobs",
+          ],
+          stdout: JSON.stringify({
+            status: "completed", conclusion: "success", databaseId: 111,
+            url: "https://example.test/runs/111", jobs: [],
+          }),
+        },
+        {
+          argv_prefix: [
+            "--repo", "test-owner/test-repo",
+            "run", "view", "222",
+            "--json", "status,conclusion,databaseId,url,createdAt,updatedAt,jobs",
+          ],
+          stdout: JSON.stringify({
+            status: "completed", conclusion: "failure", databaseId: 222,
+            url: "https://example.test/runs/222",
+            jobs: [
+              { name: "policy", conclusion: "failure", steps: [{ name: "Vale prose lint", conclusion: "failure" }] },
+            ],
+          }),
+        },
+        {
+          argv_prefix: ["--repo", "test-owner/test-repo", "run", "view", "222", "--log-failed"],
+          stdout: "policy\tVale prose lint\tsome error\n",
+        },
+      ],
+    });
+    try {
+      await withShimPath(shim.binDir, async () => {
+        const r = await runWatchCiRun({
+          repoPath: shim.repoDir,
+          branch: "feature/x",
+          pollIntervalSeconds: 1,
+        });
+        assert.equal(r.conclusion, "failure");
+        assert.equal(r.run_id, 222, "must point at the run that actually failed");
+        assert.ok(
+          r.failed_steps.some((s) => s.step_name === "Vale prose lint"),
+          "failure detail must come from the failing run",
+        );
       });
     } finally {
       shim.cleanup();
@@ -12602,6 +12672,87 @@ describe("extractFailedStepsFromJobsJson (issue #934)", () => {
     };
     const r = extractFailedStepsFromJobsJson(jobs);
     assert.deepEqual(r, [{ job_name: "j", step_name: "d" }]);
+  });
+});
+
+describe("selectCiRunsForHeadSha (issue #1461)", () => {
+  it("keeps every run for the newest head SHA, not just the newest run", async () => {
+    const { selectCiRunsForHeadSha } = await import("./lib.js");
+
+    const selected = selectCiRunsForHeadSha([
+      { databaseId: 2, headSha: "aaa", status: "completed", conclusion: "success" },
+      { databaseId: 1, headSha: "aaa", status: "in_progress", conclusion: null },
+      { databaseId: 0, headSha: "bbb", status: "completed", conclusion: "failure" },
+    ]);
+
+    assert.deepEqual(
+      selected.map((r) => r.databaseId),
+      [2, 1],
+    );
+  });
+
+  it("returns an empty list for no runs", async () => {
+    const { selectCiRunsForHeadSha } = await import("./lib.js");
+    assert.deepEqual(selectCiRunsForHeadSha([]), []);
+    assert.deepEqual(selectCiRunsForHeadSha(null), []);
+  });
+
+  it("falls back to the newest run alone when head SHAs are absent", async () => {
+    const { selectCiRunsForHeadSha } = await import("./lib.js");
+
+    const selected = selectCiRunsForHeadSha([
+      { databaseId: 9, status: "completed", conclusion: "success" },
+      { databaseId: 8, status: "completed", conclusion: "failure" },
+    ]);
+
+    assert.deepEqual(
+      selected.map((r) => r.databaseId),
+      [9],
+    );
+  });
+});
+
+describe("aggregateCiRunOutcomes (issue #1461)", () => {
+  it("is successful only when every run for the SHA succeeded", async () => {
+    const { aggregateCiRunOutcomes } = await import("./lib.js");
+
+    const r = aggregateCiRunOutcomes([
+      { databaseId: 1, status: "completed", conclusion: "success" },
+      { databaseId: 2, status: "completed", conclusion: "success" },
+    ]);
+
+    assert.equal(r.conclusion, "success");
+    assert.equal(r.failing, null);
+  });
+
+  it("reports the failing run when any run for the SHA failed", async () => {
+    const { aggregateCiRunOutcomes } = await import("./lib.js");
+
+    const r = aggregateCiRunOutcomes([
+      { databaseId: 1, status: "completed", conclusion: "success" },
+      { databaseId: 2, status: "completed", conclusion: "failure" },
+    ]);
+
+    assert.equal(r.conclusion, "failure");
+    assert.equal(r.failing.databaseId, 2);
+  });
+
+  it("prefers a real failure over a cancellation when both are present", async () => {
+    const { aggregateCiRunOutcomes } = await import("./lib.js");
+
+    const r = aggregateCiRunOutcomes([
+      { databaseId: 1, status: "completed", conclusion: "cancelled" },
+      { databaseId: 2, status: "completed", conclusion: "failure" },
+    ]);
+
+    assert.equal(r.conclusion, "failure");
+    assert.equal(r.failing.databaseId, 2);
+  });
+
+  it("treats an empty set as unknown rather than successful", async () => {
+    const { aggregateCiRunOutcomes } = await import("./lib.js");
+
+    assert.notEqual(aggregateCiRunOutcomes([]).conclusion, "success");
   });
 });
 

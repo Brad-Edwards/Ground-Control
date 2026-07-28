@@ -104,10 +104,11 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [084](084-context-graph-concept-authority.md) | Context-Graph Concept Authority and Time Semantics | Accepted |
 | [085](085-identity-model-users-groups-roles.md) | Identity Model - Users, Groups, and Roles as Data | Accepted (amended 2026-07-27, #1282) |
 | [086](086-research-high-risk-operation-authorization.md) | Research High-Risk Operation Authorization | Accepted |
-| [087](087-contract-locked-development-methodology.md) | Contract-Locked Development Methodology | Accepted (amended 2026-07-04, #1293) |
+| [087](087-contract-locked-development-methodology.md) | Contract-Locked Development Methodology | Withdrawn (2026-07-10, #1296) |
 | [088](088-temporal-human-gates.md) | Temporal Human Gates (Merge Observation and Authorized Operator Signals) | Superseded (issue #1359) |
 | [089](089-retire-grc-product-and-next-issue-recommendation.md) | Retire the GRC Product Surface and Next-Issue Recommendation | Accepted |
 | [090](090-production-line-measurement-model.md) | Production-Line Measurement Model | Accepted (amended 2026-07-26, #1435) |
+| [091](091-ci-verification-topology.md) | CI Verification Topology | Accepted |
 
 Prior ADRs from the old project frame are archived in `archive/architecture/adrs/`.
 

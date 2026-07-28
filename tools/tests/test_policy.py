@@ -925,21 +925,6 @@ class PolicyChecksTest(unittest.TestCase):
             self.assertIn("ci-strictness-branch-protection-contexts", codes)
 
 
-    @staticmethod
-    def _copy_mutation_gate_contract_fixture(root: Path) -> None:
-        for rel in [
-            ".github/workflows/ci.yml",
-            ".github/branch-protection-baseline.json",
-            "architecture/registry/mutation-boundaries.json",
-            "tools/mutation/run_boundary_mutation.py",
-        ]:
-            src = REPO_ROOT / rel
-            dst = root / rel
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
-
-
-
     def test_workflow_routing_contract_passes_on_repo(self):
         violations = run_workflow_routing_contract(root=REPO_ROOT)
         self.assertEqual(

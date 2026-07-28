@@ -132,7 +132,6 @@ CI_STRICTNESS_REQUIRED_CONTEXTS = frozenset(
         "SonarCloud Code Analysis",
         "build",
         "integration",
-        "mutation",
         "osv-scanner",
         "policy",
         "sonar",
