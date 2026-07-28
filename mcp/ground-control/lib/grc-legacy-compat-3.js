@@ -81,7 +81,7 @@ export async function postCodexReviewFindings({
     // reviewer asked for in #793 cycle 4. Necessarily incomplete (cat-and-
     // mouse with the attacker), but it catches the obvious well-known
     // markers before they get published under the host identity.
-    const sensitiveError = detectSensitiveBodyContent(finding.body);
+    const sensitiveError = detectSensitiveBodyContent(renderInlineReviewCommentBody(reviewerLabel, finding));
     if (sensitiveError) {
       results.push({ ok: false, finding, error: sensitiveError });
       continue;
@@ -133,6 +133,18 @@ async function getPullRequestHeadSha(repoRoot, prNumber) {
   }
   return data.headRefOid;
 }
+/**
+ * Render the exact comment body that will be published.
+ *
+ * Shared with the sensitive-content filter so the filter inspects the string that is actually sent.
+ * It used to inspect `finding.body` alone while the posted body also spliced in `finding.title` and
+ * the classification note, both equally model-controlled: a key in the title passed the guardrail
+ * and was published under the host identity. Checking a component of what you send is not checking
+ * what you send.
+ */
+function renderInlineReviewCommentBody(reviewerLabel, finding) {
+  return `[${reviewerLabel}] ${finding.title}\n\n${formatFindingClassificationNote(finding)}${finding.body}`;
+}
 async function postSingleReviewComment({
   repoRoot,
   owner,
@@ -142,7 +154,7 @@ async function postSingleReviewComment({
   reviewerLabel,
   finding,
 }) {
-  const body = `[${reviewerLabel}] ${finding.title}\n\n${formatFindingClassificationNote(finding)}${finding.body}`;
+  const body = renderInlineReviewCommentBody(reviewerLabel, finding);
   // GitHub's REST shape for inline review comments. `commit_id` anchors the
   // comment to the PR's current head SHA. `side: RIGHT` anchors to the new
   // (post-change) side of the diff. `line` is always a positive integer here

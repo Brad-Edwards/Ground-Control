@@ -2248,6 +2248,73 @@ describe("getRepoGroundControlContext", () => {
     }
   });
 
+  it("refuses a plan_rules path that escapes the repository root (issue #1355)", async () => {
+    // The field went straight into join() with only a comment claiming containment, and the file it
+    // names is read and returned in the response. Repository content is attacker-controlled whenever
+    // the workflow runs against an untrusted branch, so this was an arbitrary host-file read.
+    const dir = makeTempRepo();
+    try {
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- test-controlled temp dir
+      writeFileSync(
+        join(dir, ".ground-control.yaml"),
+        "schema_version: 1\nproject: test-project\nrules:\n  plan_rules: ../../../../etc/passwd\n",
+      );
+
+      const result = await getRepoGroundControlContext(dir);
+
+      assert.equal(result.status, "invalid_ground_control_yaml");
+      assert.match(result.errors[0], /rules\.plan_rules/);
+      assert.equal(result.rules, undefined);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a plan_rules path that escapes through a symlink", async () => {
+    // Lexical containment alone passes a path that stays inside the tree and then leaves it via a
+    // symlink, which is why the sibling docs fields do both checks.
+    const dir = makeTempRepo();
+    try {
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- test-controlled temp dir
+      mkdirSync(join(dir, ".gc"), { recursive: true });
+      symlinkSync("/etc/passwd", join(dir, ".gc", "plan-rules.md"));
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- test-controlled temp dir
+      writeFileSync(
+        join(dir, ".ground-control.yaml"),
+        "schema_version: 1\nproject: test-project\nrules:\n  plan_rules: .gc/plan-rules.md\n",
+      );
+
+      const result = await getRepoGroundControlContext(dir);
+
+      assert.equal(result.status, "invalid_ground_control_yaml");
+      assert.match(result.errors[0], /rules\.plan_rules/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reads a plan_rules file that stays inside the repository", async () => {
+    const dir = makeTempRepo();
+    try {
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- test-controlled temp dir
+      mkdirSync(join(dir, ".gc"), { recursive: true });
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- test-controlled temp dir
+      writeFileSync(join(dir, ".gc", "plan-rules.md"), "# Plan rules\n");
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- test-controlled temp dir
+      writeFileSync(
+        join(dir, ".ground-control.yaml"),
+        "schema_version: 1\nproject: test-project\nrules:\n  plan_rules: .gc/plan-rules.md\n",
+      );
+
+      const result = await getRepoGroundControlContext(dir);
+
+      assert.equal(result.status, "ok");
+      assert.match(result.rules.plan_rules_content, /Plan rules/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("returns ok for a valid .ground-control.yaml", async () => {
     const dir = makeTempRepo();
     try {
@@ -4557,6 +4624,51 @@ process.exit(2);
           assert.match(results[i].error, /sensitive|secret|private key|aws/i);
         }
         assert.equal(results[3].ok, true);
+      });
+    } finally {
+      shim.cleanup();
+    }
+  });
+
+  it("filters the rendered body, not just the finding body (issue #1355)", async () => {
+    // The filter inspected `finding.body` while the posted comment also splices in the title and
+    // the classification note, both equally model-controlled. A key in the title passed the
+    // guardrail and was published under the host identity. Checking a component of what you send
+    // is not checking what you send.
+    const shim = makeGhShim({
+      ghHandler: {
+        routes: [
+          {
+            argv_prefix: ["pr", "view", "520", "--json", "headRefOid"],
+            stdout: JSON.stringify({ headRefOid: "abc1234" }),
+          },
+          {
+            argv_prefix: ["api", "--method", "POST"],
+            stdout: JSON.stringify({ id: 101, html_url: "https://example.test/c/101" }),
+          },
+        ],
+      },
+    });
+    try {
+      await withShimPath(shim.binDir, async () => {
+        const results = await postCodexReviewFindings({
+          repoRoot: shim.repoDir,
+          owner: "fake",
+          name: "repo",
+          prNumber: 520,
+          reviewerLabel: "core",
+          findings: [
+            { path: "src/foo.java", line: 1, title: "AKIAIOSFODNN7EXAMPLE", body: "ordinary note" },
+          ],
+        });
+
+        assert.equal(results[0].ok, false, "a secret in the title must not reach GitHub");
+        assert.match(results[0].error, /sensitive|aws/i);
+        // Nothing was posted: the refusal happens before the POST, not after.
+        assert.equal(
+          shim.readCalls().some((c) => c.argv?.[0] === "api"),
+          false,
+        );
       });
     } finally {
       shim.cleanup();

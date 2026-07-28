@@ -48,11 +48,48 @@ export async function getRepoGroundControlContext(repoPath) {
     };
   }
 
-  // Resolve the plan_rules file if referenced. Must stay inside the repo root.
+  // Canonical repo root for every containment check below. Resolved before the first path field is
+  // validated, since plan_rules is read here and the docs fields are checked further down.
+  let repoRootRealForDocs;
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- repoRoot from git rev-parse
+    repoRootRealForDocs = realpathSync(repoRoot);
+  } catch (error) {
+    throw new Error(`failed to canonicalize repo root ${repoRoot}: ${error.message}`);
+  }
+
+  // Resolve the plan_rules file if referenced. Must stay inside the repo root — and unlike every
+  // other path field here, that was only ever a comment: the raw value went straight into join(),
+  // so `../../../etc/passwd` escaped and its contents came back in the context response. The file
+  // is read and returned, so this is an arbitrary host-file read driven by repository content, which
+  // is attacker-controlled whenever the workflow runs against an untrusted branch. Both checks the
+  // sibling fields already use apply: lexical containment, then realpath containment for symlinks.
   const { rules } = parseResult.value;
   let planRulesContent = null;
   if (rules.plan_rules_path) {
-    const absRulesPath = join(repoRoot, rules.plan_rules_path);
+    const resolvedRules = resolveRepoRelativePath(repoRoot, rules.plan_rules_path, "rules.plan_rules");
+    if (!resolvedRules.ok) {
+      return {
+        repo_path: repoRoot,
+        config_path: configPath,
+        status: "invalid_ground_control_yaml",
+        project: null,
+        errors: [resolvedRules.error],
+        suggested_ground_control_yaml: buildSuggestedGroundControlYaml(),
+      };
+    }
+    const rulesContainment = assertRealpathInRepo(repoRootRealForDocs, resolvedRules.abs, "rules.plan_rules");
+    if (!rulesContainment.ok) {
+      return {
+        repo_path: repoRoot,
+        config_path: configPath,
+        status: "invalid_ground_control_yaml",
+        project: null,
+        errors: [rulesContainment.error],
+        suggested_ground_control_yaml: buildSuggestedGroundControlYaml(),
+      };
+    }
+    const absRulesPath = resolvedRules.abs;
     try {
       planRulesContent = readAbsoluteTextFile(absRulesPath);
     } catch (error) {
@@ -91,13 +128,6 @@ export async function getRepoGroundControlContext(repoPath) {
   // first (resolveRepoRelativePath), then realpath containment for paths the
   // agent will actually open (the docs.* set; example_paths.* are illustrative
   // strings the skill renders into prose, no on-disk reads).
-  let repoRootRealForDocs;
-  try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- repoRoot from git rev-parse
-    repoRootRealForDocs = realpathSync(repoRoot);
-  } catch (error) {
-    throw new Error(`failed to canonicalize repo root ${repoRoot}: ${error.message}`);
-  }
   const docs = parseResult.value.docs;
   const docsPathErrors = [];
   for (const field of ["adr_dir", "architecture_overview", "coding_standards", "workflow_reference", "knowledge_base"]) {
