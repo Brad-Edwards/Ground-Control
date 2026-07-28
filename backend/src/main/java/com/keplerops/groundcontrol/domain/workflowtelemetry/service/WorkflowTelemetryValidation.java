@@ -96,8 +96,21 @@ final class WorkflowTelemetryValidation {
             PhaseEventType eventType,
             List<GateFindingCommand> findings,
             Integer findingsDropped) {
+        // UNOBSERVED is not a verdict. It states that nothing was measured, which is exactly what a
+        // marker and an opening attempt both honestly report, so it must pass every rule below.
         var hasVerdict = stationResult != null && stationResult != StationResult.UNOBSERVED;
         var hasFindings = findings != null && !findings.isEmpty();
+
+        validateDroppedCount(findingsDropped, hasFindings);
+        if (stationId == null) {
+            validateStagelessMeasurement(hasVerdict, hasFindings);
+            return;
+        }
+        validateStationMeasurement(catalog, stationId, eventType, hasVerdict, hasFindings);
+    }
+
+    /** A truncation count only makes sense alongside the batch it truncated. */
+    private static void validateDroppedCount(Integer findingsDropped, boolean hasFindings) {
         var dropped = findingsDropped == null ? 0 : findingsDropped;
         if (dropped < 0) {
             throw new DomainValidationException("findingsDropped must not be negative");
@@ -109,17 +122,27 @@ final class WorkflowTelemetryValidation {
             throw new DomainValidationException(
                     "findingsDropped requires a delivered findings batch to have truncated");
         }
-        if (stationId == null) {
-            if (hasVerdict) {
-                throw new DomainValidationException(
-                        "stationResult requires a stationId; a stage with no station has nothing to report");
-            }
-            if (hasFindings) {
-                throw new DomainValidationException(
-                        "findings require a stationId; a stage with no station inspected nothing");
-            }
-            return;
+    }
+
+    /** A stage with no station inspected nothing, so it has nothing to report. */
+    private static void validateStagelessMeasurement(boolean hasVerdict, boolean hasFindings) {
+        if (hasVerdict) {
+            throw new DomainValidationException(
+                    "stationResult requires a stationId; a stage with no station has nothing to report");
         }
+        if (hasFindings) {
+            throw new DomainValidationException(
+                    "findings require a stationId; a stage with no station inspected nothing");
+        }
+    }
+
+    /** The station id must be one the catalogue defines, and its facts must fit the lifecycle event. */
+    private static void validateStationMeasurement(
+            StationCatalog catalog,
+            String stationId,
+            PhaseEventType eventType,
+            boolean hasVerdict,
+            boolean hasFindings) {
         if (catalog.isMarker(stationId)) {
             // A marker records that something happened, not that something was inspected. Letting
             // one carry a verdict is the axis conflation this issue exists to remove.
