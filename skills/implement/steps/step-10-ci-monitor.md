@@ -7,25 +7,36 @@ tier: low
 # Step 10: CI Monitor
 
 On the normal path, Steps 10 and 11 are one
-`gc_implement_mechanical action="monitor"` call. The script waits for CI and
-then SonarCloud, advancing without another model turn when both pass. It stops
-before Sonar when CI fails and returns `agent_required: true` with the failed
-stage and bounded diagnostics.
+`gc_implement_mechanical action="monitor"` background job. Call it with
+`async=true` and one bounded `idempotency_key` for this remote-gate attempt,
+then poll the returned `job_id` through `gc_codex_job` until `status="done"` and
+dispatch on `result`. Reuse the same key only when the start response was lost;
+after pushing a repair, create a new key for the new attempt. The job waits for
+CI and then SonarCloud, advancing without another model turn when both pass. It
+stops before Sonar when CI fails and returns `agent_required: true` with the
+failed stage and bounded diagnostics.
 
-Replaces the previous "poll `gh run view` every 15 seconds for up to 45 minutes" inline loop with a single MCP call. The agent makes one tool call; the MCP server holds the connection while polling server-side; the agent's context is not burned by per-poll turns. (Issue #934 item 4.)
+Replaces the previous "poll `gh run view` every 15 seconds for up to 45
+minutes" inline loop with one server-side watcher behind a short start-and-poll
+transport. The agent polls only Ground Control's compact job envelope; CI and
+Sonar polling remains server-side and raw logs remain there. (Issues #934 and
+#1473.)
 
-1. Call the `gc_watch_ci_run` MCP tool with:
-   - `repo_path`: absolute path from Step 1
-   - `branch`: the current feature branch (cached in Step 1)
-   - Defaults are appropriate: queued cap 5 min, total cap 45 min, poll every 15s. Override only when the repo has a non-default CI shape.
+1. Pass the absolute repository path, cached feature branch, and PR number to
+   the mechanical `monitor` action. Its internal `gc_watch_ci_run` boundary
+   applies the configured queued, total, and poll limits; the workflow does not
+   supply caller-selected timing controls.
 
-2. Read the returned envelope:
+2. Read the CI result inside the completed mechanical envelope:
    - `conclusion: "success"` → CI passed. Advance to Step 11.
    - `conclusion: "queued_too_long"` → no runner accepted the job within 5 minutes. Record the runner outage as an open execution obligation. This is a hard external dependency, so escalate it with the run URL and a concrete request to restore/check the runner pool (`gh api /repos/<owner>/<repo>/actions/runners`); resume CI monitoring after restoration.
    - `conclusion: "timed_out"` → record an open execution obligation with the run URL and evidence. Diagnose/retry when safe; escalate only when the timeout is a hard external dependency or requires user authority.
    - `conclusion: "failure"` (or `"cancelled"` / `"action_required"` / `"startup_failure"`) → CI failed. The envelope's `failed_steps[]` and `log_summary` (bounded UTF-8, from the tail of `gh run view --log-failed`) tell you which step + what to look at. Raw logs stay server-side; if you need to drill in, the `run_id` lets a separate `gh run view --log-failed` call retrieve them later.
 
-3. On failure, diagnose and fix, then `git add`, `git commit`, `git push`. After the new commit lands, re-invoke `gc_watch_ci_run` to watch the new run.
+3. On failure, diagnose and fix, then return to the `publish` action so its
+   staging, hook, commit, push, and synchronization guardrails apply. After the
+   new commit lands, call `monitor` with a new idempotency key to watch the new
+   run.
 
 ## Return contract
 

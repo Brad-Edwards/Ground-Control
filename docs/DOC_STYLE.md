@@ -528,3 +528,10 @@ documented in the MCP README and the tool descriptions, while the workflow
 contract is synchronized in ADR-021, ADR-029, ADR-031, ADR-036, ADR-054, and the
 workflow documents. It changes no documentation classification, Vale rule, or
 style rule.
+
+The issue #1473 async mechanical-job change follows the same convention:
+`async`, `idempotency_key`, and bounded `job_id` are documented in the MCP
+README and live tool schemas; start-and-poll behavior is synchronized in
+ADR-036, ADR-054, ADR-090, the implement/quickfix skills, and workflow
+documentation. The existing documentation classifier, Vale configuration, and
+style rules are unchanged.

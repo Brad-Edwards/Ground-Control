@@ -532,11 +532,55 @@ durable evidence, invokes no LLM, and returns `agent_required: true` only with
 a bounded repair reason. Existing routing stages and telemetry's
 operational-only status remain unchanged.
 
+**2026-07-28 (issue #1473, async mechanical execution).**
+The existing in-process review/preflight job registry becomes the shared
+background-job registry; `gc_codex_job` remains the one polling surface.
+`gc_implement_mechanical` gains opt-in background execution for only
+`verify`, `publish`, and `monitor`, the actions whose repository commands or
+remote watchers can outlive one MCP request. `/implement` and `/quickfix` use
+that mode by default for those actions. `bootstrap`, `readiness`, and
+`finalize` remain synchronous.
+
+Each background mechanical start requires a bounded `idempotency_key` for one
+logical attempt. The server fingerprints normalized mechanical input under the
+canonical checkout, issue, and action. Repeating the same key and input reuses
+the running or terminal job; changing input under one key returns
+`job_idempotency_conflict`. Distinct active `verify` and `publish` jobs share a
+single-flight checkout scope, preventing overlapping verification and Git
+mutation after the initiating request returns. The registry has a fixed
+capacity, never evicts running work, and retains terminal results under its
+existing 30-minute TTL.
+
+The job and action envelopes remain separate. `status: "done"` means the
+background function returned; its unchanged `result` may correctly have
+`ok: false` and `agent_required: true` for an expected red gate. Only an
+unexpected rejection produces top-level `status: "failed"`. Stored unexpected
+errors are bounded and sensitive-content scrubbed. Job IDs and idempotency keys
+are bounded at the public schema.
+
+Review and preflight jobs remain cancellable because their child processes
+honor the registry's `AbortSignal`. Mechanical actions do not yet honor abort
+across their entire shell, Git/GitHub, fetch, retry-delay, and polling graph, so
+their job records declare `cancellable: false`; cancel returns
+`job_not_cancellable` and leaves the action running to its ordinary terminal
+result. This is an explicit correctness boundary, not a deferred promise or a
+reason to increase the MCP request timeout. Jobs remain operational,
+process-local waiting state. Existing issue-thread records, synchronization
+attestations, workflow-run lifecycle events, station attempts, routing stages,
+and telemetry retain authority and unchanged semantics.
+
+The test-quality reviewer's child-process ceiling is 30 minutes. A repository-
+scale test cutover exceeded the former ten-minute ceiling while its async job
+was healthy, so the shorter bound incorrectly converted legitimate review work
+into `test_quality_review_engine_failed`. The background job remains
+cancellable through the same `AbortSignal`; the ceiling is only the final
+stuck-child bound and does not replace polling or widen an MCP request timeout.
+
 **2026-07-26 (issue #1414, sliced review inside one async job).** An over-cap
 diff is reviewed as several bounded inline slices, which multiplies the number
 of `codex exec` children a single `gc_codex_review` / `gc_codex_review_cycle`
 call spawns. This stays entirely inside the existing async job model: one
-`startReviewJob` job, one `job_id`, one `gc_codex_job` poll loop, and one
+`startAsyncJob` job, one `job_id`, one `gc_codex_job` poll loop, and one
 abort signal that still kills every child. Slices run sequentially within a
 reviewer so the existing `GC_CODEX_REVIEW_PARALLEL` setting remains the only
 concurrency knob. The deterministic record renderers gain two bounded output

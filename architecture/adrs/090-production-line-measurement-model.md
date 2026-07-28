@@ -476,3 +476,22 @@ station result: a record whose source never captured a verdict stays
 - ADR-082: the shared contract is versioned and compatibility-governed.
 - ADR-089: no retired GRC product surface is revived by boundary/finding
   measurement.
+
+## Amendment (issue #1473, 2026-07-28): background jobs are transport
+
+The shared in-process job registry now also carries long
+`gc_implement_mechanical` actions. A job start, poll, duplicate reuse,
+idempotency conflict, capacity refusal, or non-cancellable response is an MCP
+operation outcome, not a station attempt or lifecycle transition. The
+underlying mechanical action continues to emit its existing workflow-run
+station evidence exactly once. No job id, idempotency key, registry state, or
+poll count enters the station catalogue, yield/rework formula, workflow phase
+vocabulary, or ADR-036 step-telemetry record.
+
+This keeps Decision 3's axes separate: `status: "done"` describes transport
+completion, while the unchanged mechanical `result` carries the action's
+pass/fail or repair outcome. Handler-level MCP usage telemetry may observe each
+start and poll as it already observes every tool call, but those observations
+remain distinct from production-line station facts under ADR-059. No
+measurement schema, station catalogue entry, lifecycle emitter, persistence,
+dashboard, or retention rule changes.

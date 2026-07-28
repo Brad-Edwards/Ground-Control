@@ -81,7 +81,8 @@ import {
   runPrepareImplementBranch, runMarkImplementIssuePickedUp,
   runSynchronizeImplementBranch, runCreateSynchronizedImplementPr,
   runAuthorizeExecutionObligationWontfix, runRecordExecutionObligation,
-  startReviewJob, pollReviewJob, cancelReviewJob,
+  startAsyncJob, pollAsyncJob, cancelAsyncJob,
+  ASYNC_JOB_ID_MAX, ASYNC_JOB_ID_RE,
   runResolveWorkflowRoute,
   DECISION_RECORD_REVIEWERS, DECISION_RECORD_DECISIONS, DECISION_RECORD_CLASSIFICATIONS,
   PR_BODY_CHANGE_CLASSES, EXACT_REQUIREMENT_UID_RE,
@@ -633,7 +634,7 @@ server.tool(
         issueNumber: issue_number ?? null, repo: repo ?? null,
       };
       if (asyncMode) {
-        return ok(JSON.stringify(startReviewJob(
+        return ok(JSON.stringify(startAsyncJob(
           "architecture_preflight",
           (signal) => runCodexArchitecturePreflight({ ...params, signal }),
         ), null, 2));
@@ -762,7 +763,7 @@ server.tool(
         overridePhaseReason: override_phase_reason ?? null,
       };
       if (asyncMode) {
-        return ok(JSON.stringify(startReviewJob(
+        return ok(JSON.stringify(startAsyncJob(
           "codex_review",
           (signal) => runCodexReview({ ...params, signal }),
         ), null, 2));
@@ -817,7 +818,7 @@ server.tool(
         ...(model ? { model } : {}),
       };
       if (asyncMode) {
-        return ok(JSON.stringify(startReviewJob(
+        return ok(JSON.stringify(startAsyncJob(
           "test_quality_review",
           (signal) => runTestQualityReview({ ...params, signal }),
         ), null, 2));
@@ -1192,7 +1193,7 @@ server.tool(
         autoGrant: Boolean(auto_grant),
       };
       if (asyncMode) {
-        return ok(JSON.stringify(startReviewJob(
+        return ok(JSON.stringify(startAsyncJob(
           "codex_review_cycle",
           (signal) => runCodexReviewCycle({ ...params, signal }),
         ), null, 2));
@@ -1227,7 +1228,7 @@ server.tool(
         model,
       };
       if (asyncMode) {
-        return ok(JSON.stringify(startReviewJob(
+        return ok(JSON.stringify(startAsyncJob(
           "test_quality_review_cycle",
           (signal) => runTestQualityReviewCycle({ ...params, signal }),
         ), null, 2));
@@ -1288,7 +1289,7 @@ server.tool(
         findingsSummary: findings_summary ?? null,
       };
       if (asyncMode) {
-        return ok(JSON.stringify(startReviewJob(
+        return ok(JSON.stringify(startAsyncJob(
           "review_cap_disposition",
           (signal) => runReviewCapDisposition({ ...params, signal }),
         ), null, 2));
@@ -1300,21 +1301,22 @@ server.tool(
 
 server.tool(
   "gc_codex_job",
-  "Poll or cancel an async review/preflight job started by gc_codex_review, gc_codex_review_cycle, " +
-    "gc_codex_architecture_preflight, gc_test_quality_review, or gc_test_quality_review_cycle when those " +
-    "tools are called with async=true (issue #937). action='poll' returns {ok:true,status:'running'} while " +
-    "the codex/claude child is still running, and {ok:true,status:'done',result:<review envelope>} once it " +
-    "finishes — dispatch on result.next_action exactly as for the synchronous tool. A failed or cancelled " +
-    "job returns ok=false. action='cancel' aborts a running job and kills its child process (no orphan). " +
+  "Poll or cancel a shared async job started by gc_codex_review, gc_codex_review_cycle, " +
+    "gc_codex_architecture_preflight, gc_test_quality_review, gc_test_quality_review_cycle, or " +
+    "gc_implement_mechanical with async=true. action='poll' returns {ok:true,status:'running'} while " +
+    "work continues, and {ok:true,status:'done',result:<original tool envelope>} once it finishes. " +
+    "Dispatch on result.next_action exactly as for the synchronous originating tool. A failed or cancelled " +
+    "job returns ok=false. action='cancel' aborts only jobs whose complete execution path supports it; " +
+    "mechanical jobs currently return job_not_cancellable and continue to their ordinary terminal result. " +
     "Jobs are reaped 30 minutes after they finish; a poll for an unknown or expired job_id returns " +
-    "error='job_not_found', at which point re-run the review.",
+    "error='job_not_found', at which point re-run the originating tool with the same logical-attempt input.",
   {
     action: z.enum(["poll", "cancel"]),
-    job_id: z.string().min(1),
+    job_id: z.string().min(1).max(ASYNC_JOB_ID_MAX).regex(ASYNC_JOB_ID_RE),
   },
   async ({ action, job_id }) => {
     try {
-      const result = action === "cancel" ? cancelReviewJob(job_id) : pollReviewJob(job_id);
+      const result = action === "cancel" ? cancelAsyncJob(job_id) : pollAsyncJob(job_id);
       return ok(JSON.stringify(result, null, 2));
     } catch (e) { return err(e); }
   },

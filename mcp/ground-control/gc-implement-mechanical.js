@@ -6,9 +6,13 @@
 // preserved state and a bounded reason for an agent to repair.
 
 import { execFile as execFileCb } from "node:child_process";
+import { createHash } from "node:crypto";
+import { realpathSync } from "node:fs";
 import { promisify } from "node:util";
 import { z } from "zod";
 import {
+  ASYNC_JOB_IDEMPOTENCY_KEY_MAX,
+  ASYNC_JOB_IDEMPOTENCY_KEY_RE,
   authorizeImplementMutationCheckout,
   getRepoGroundControlContext,
   getRequirementByUid,
@@ -30,6 +34,7 @@ import {
   runImplementGitCommand,
   runImplementPreCommit,
   resolveWorkflowPolicyCommand,
+  startAsyncJob,
   implementGateEnvironment,
 } from "./lib.js";
 import { createWorkflowRunLifecycleEmitter } from "./workflow-run-lifecycle.js";
@@ -45,6 +50,12 @@ export const IMPLEMENT_MECHANICAL_ACTIONS = Object.freeze([
   "monitor",
   "readiness",
   "finalize",
+]);
+
+export const IMPLEMENT_MECHANICAL_ASYNC_ACTIONS = Object.freeze([
+  "verify",
+  "publish",
+  "monitor",
 ]);
 
 const requirementShape = z.object({
@@ -106,6 +117,19 @@ export const gcImplementMechanicalZodShape = {
   }).optional(),
   pr_number: z.number().int().positive().optional(),
   completion: completionShape.optional(),
+  async: z.boolean().optional().describe(
+    "When true for verify, publish, or monitor, start a background job and return a compact handle. " +
+    "Poll gc_codex_job until status='done', then consume its result as the original mechanical envelope.",
+  ),
+  idempotency_key: z
+    .string()
+    .min(1)
+    .max(ASYNC_JOB_IDEMPOTENCY_KEY_MAX)
+    .regex(ASYNC_JOB_IDEMPOTENCY_KEY_RE)
+    .optional()
+    .describe(
+      "Required with async=true. Reuse for transport retries of one logical attempt; use a new key after repair.",
+    ),
 };
 
 export const GC_IMPLEMENT_MECHANICAL_DESCRIPTION =
@@ -116,11 +140,46 @@ export const GC_IMPLEMENT_MECHANICAL_DESCRIPTION =
   "readiness (pre-merge completion assertion), finalize (post-merge assertion + idempotent issue close). " +
   "Always pass action, repo_path, and issue_number. Depending on action, also pass invocation_root, branch_name, " +
   "base_branch, driver, requested_requirement_uid, requirements, commit_message, synchronization, pr_number, or completion. " +
+  "Long actions verify, publish, and monitor accept async=true plus a required bounded idempotency_key; " +
+  "poll the returned job_id through gc_codex_job and consume the terminal result as this tool's unchanged envelope. " +
+  "Bootstrap, readiness, and finalize remain synchronous. " +
   "requested_requirement_uid names the requirement under test. Every action that can reach a repository gate resolves it " +
   "server-side against the target issue's Requirements section and refuses an unlisted UID; verify and publish then export " +
   "the bound value to every repo-authored gate as ACES_REQUIREMENT_UID, so a governance gate still receives requirement " +
   "identity on an issue branch that carries no UID. " +
   "A phase either completes or returns agent_required=true with a bounded repair reason; it never invokes an agent.";
+
+function normalizedFingerprintValue(value) {
+  if (Array.isArray(value)) {
+    return value.map(normalizedFingerprintValue);
+  }
+  if (value != null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.keys(value)
+        .filter((key) => value[key] !== undefined)
+        .sort()
+        .map((key) => [key, normalizedFingerprintValue(value[key])]),
+    );
+  }
+  return value;
+}
+
+function mechanicalInputFingerprint(args) {
+  return createHash("sha256")
+    .update(JSON.stringify(normalizedFingerprintValue(args)))
+    .digest("hex");
+}
+
+function asyncTransportFailure(action, error, message, nextAction) {
+  return {
+    ok: false,
+    action,
+    error,
+    message,
+    agent_required: false,
+    next_action: nextAction,
+  };
+}
 
 function bounded(value, max = 1200) {
   const text = typeof value === "string" ? value : String(value ?? "");
@@ -1012,7 +1071,7 @@ export async function runImplementMechanical(args, overrides = {}) {
 }
 
 export async function gcImplementMechanicalToolHandler(args, overrides = {}) {
-  return runImplementMechanical({
+  const mechanicalArgs = {
     action: args.action,
     repoPath: args.repo_path,
     invocationRoot: args.invocation_root,
@@ -1026,5 +1085,56 @@ export async function gcImplementMechanicalToolHandler(args, overrides = {}) {
     synchronization: args.synchronization,
     prNumber: args.pr_number,
     completion: args.completion,
-  }, overrides);
+  };
+  if (args.async !== true) {
+    return runImplementMechanical(mechanicalArgs, overrides);
+  }
+  if (!IMPLEMENT_MECHANICAL_ASYNC_ACTIONS.includes(args.action)) {
+    return asyncTransportFailure(
+      args.action,
+      "implement_mechanical_async_action_invalid",
+      `action=${args.action} is intentionally synchronous`,
+      "call_the_short_action_without_async",
+    );
+  }
+  if (typeof args.idempotency_key !== "string" || args.idempotency_key.length === 0) {
+    return asyncTransportFailure(
+      args.action,
+      "implement_mechanical_idempotency_key_required",
+      "idempotency_key is required when async=true",
+      "supply_one_bounded_key_for_this_logical_attempt_and_retry",
+    );
+  }
+
+  const {
+    startJob = startAsyncJob,
+    canonicalizeRepoPath = realpathSync,
+    ...mechanicalOverrides
+  } = overrides;
+  let canonicalRepoPath;
+  try {
+    canonicalRepoPath = canonicalizeRepoPath(args.repo_path);
+  } catch {
+    return asyncTransportFailure(
+      args.action,
+      "implement_mechanical_async_repo_invalid",
+      "repo_path cannot be resolved to a canonical checkout",
+      "supply_the_canonical_invocation_checkout_and_retry",
+    );
+  }
+  const normalizedArgs = { ...mechanicalArgs, repoPath: canonicalRepoPath };
+  const checkoutBound = args.action === "verify" || args.action === "publish";
+  return startJob(
+    `implement_mechanical_${args.action}`,
+    () => runImplementMechanical(normalizedArgs, mechanicalOverrides),
+    {
+      idempotencyKey: args.idempotency_key,
+      idempotencyNamespace:
+        `repo:${canonicalRepoPath}:issue:${args.issue_number}:action:${args.action}`,
+      fingerprint: mechanicalInputFingerprint(normalizedArgs),
+      executionScope: checkoutBound ? `implement_mechanical_checkout:${canonicalRepoPath}` : null,
+      singleFlight: checkoutBound,
+      cancellable: false,
+    },
+  );
 }

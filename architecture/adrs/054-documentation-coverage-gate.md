@@ -650,3 +650,14 @@ the ADR-025 backup-policy assertion. The documentation-coverage classifier
 (`classifyChangedSurface`), its `outcome_required` mapping, the Vale rules,
 `tools/install-vale.sh`, and `.vale.ini` are unchanged; no new documentation
 classification or style rule is established.
+
+**2026-07-28 (issue #1473 async mechanical jobs).**
+`gc_implement_mechanical` adds bounded `async` and `idempotency_key` inputs for
+its long `verify`, `publish`, and `monitor` actions, and the existing
+`gc_codex_job` surface becomes the shared review/preflight/mechanical poller.
+The public shape is synchronized in the live tool-description test and MCP
+README; behavior is synchronized in ADR-036, the implement/quickfix skills, and
+the workflow documents. The documentation-coverage classifier,
+`outcome_required` mapping, Vale rules, installer, and `.vale.ini` are
+unchanged. This amendment records a changed MCP/workflow contract; it adds no
+documentation classification or style rule.
