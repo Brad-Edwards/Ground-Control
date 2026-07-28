@@ -53,7 +53,7 @@ Pass to `gc_assert_completion`:
 - `sonar_status`: `"passed"`, `"failed"`, or `"skipped"` (when `cfg.sonarcloud` is null)
 - `plan_comment_url`: URL cached in Step 4
 - `touched_files` (optional): list of files touched, for the traceability assertion
-- `project` (optional): Ground Control project key
+- `project` (optional): Ground Control project key. When omitted, inferred from `repo_path`'s `.ground-control.yaml`; an explicit value overrides the config.
 - `override` / `override_reason` (optional): traceability override if user-authorized
 - `phase`: `"post_merge"` (default) for the Phase E completion; `"pre_merge"` for the Phase D readiness call.
 

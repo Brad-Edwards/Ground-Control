@@ -1,5 +1,14 @@
 # Documentation style
 
+> **Sync note for issue #1462 (2026-07-28, completion project inference):** The
+> MCP completion assertion now infers `project` from `repo_path`'s
+> `.ground-control.yaml` when omitted and preserves backend `project_required`
+> detail through `gc_assert_completion`. Contract updates live in
+> `skills/implement/steps/step-17-completion.md`, `docs/DEVELOPMENT_WORKFLOW.md`,
+> `docs/WORKFLOW.md`, and ADR-054. The documentation-coverage classifier,
+> `outcome_required` mapping, Vale rules, installer, `.vale.ini`, and this file's
+> style rules are unchanged.
+
 > **Sync note for issue #1282 (2026-07-27, identity administration):** Added
 > the non-secret `gc_identity_admin` MCP surface and extended the authorization
 > path-matrix policy check to distinguish legacy `ROLE_ADMIN` access from

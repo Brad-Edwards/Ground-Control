@@ -15577,6 +15577,60 @@ export async function runPostFinalReport(input) {
   };
 }
 
+// Resolve the Ground Control project for assert/completion tools. An explicit
+// `project` parameter wins; otherwise read `.ground-control.yaml` via
+// getRepoGroundControlContext. When neither yields a project, return null so
+// the backend remains authoritative (single-project auto-resolve or
+// project_required with project_count) — issue #1462 / #1230.
+async function resolveAssertProject({ repoPath, project }) {
+  if (typeof project === "string" && project.trim() !== "") {
+    return project.trim();
+  }
+  try {
+    const context = await getRepoGroundControlContext(repoPath);
+    if (context.status === "ok" && typeof context.project === "string" && context.project.trim() !== "") {
+      return context.project.trim();
+    }
+  } catch {
+    // resolution miss — fall through to backend authority
+  }
+  return null;
+}
+
+function traceabilityLookupEarlyReturn(error, { issueNumber, uid = null, lookupError }) {
+  if (error instanceof RequestError && error.code === "project_required") {
+    return {
+      earlyReturn: {
+        ok: false,
+        error: "project_required",
+        message: error.message,
+        detail: error.detail ?? null,
+        issue_number: issueNumber,
+        ...(uid != null ? { uid } : {}),
+        next_action: "repair_ground_control_yaml_or_pass_explicit_project",
+      },
+    };
+  }
+  const prefix = lookupError === "issue_links"
+    ? "gc_assert_traceability_reconciled could not fetch issue links"
+    : lookupError === "requirement"
+      ? `gc_assert_traceability_reconciled could not resolve requirement ${uid}`
+      : `gc_assert_traceability_reconciled could not fetch links for ${uid}`;
+  return {
+    earlyReturn: {
+      ok: false,
+      error: lookupError === "issue_links"
+        ? "traceability_issue_links_lookup_failed"
+        : lookupError === "requirement"
+          ? "traceability_requirement_lookup_failed"
+          : "traceability_links_lookup_failed",
+      message: `${prefix}: ${error.message}`,
+      issue_number: issueNumber,
+      ...(uid != null ? { uid } : {}),
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // gc_assert_traceability_reconciled (issue #1058)
 //
@@ -15665,15 +15719,11 @@ async function evaluateRequirementTraceability({ item, index, project, issueNumb
   try {
     requirement = await getRequirementByUid(item.uid, project);
   } catch (error) {
-    return {
-      earlyReturn: {
-        ok: false,
-        error: "traceability_requirement_lookup_failed",
-        message: `gc_assert_traceability_reconciled could not resolve requirement ${item.uid}: ${error.message}`,
-        issue_number: issueNumber,
-        uid: item.uid,
-      },
-    };
+    return traceabilityLookupEarlyReturn(error, {
+      issueNumber,
+      uid: item.uid,
+      lookupError: "requirement",
+    });
   }
   const actualStatus = requirement && typeof requirement.status === "string" ? requirement.status : null;
   if (actualStatus !== statusIntent) {
@@ -15691,15 +15741,11 @@ async function evaluateRequirementTraceability({ item, index, project, issueNumb
   try {
     links = await getTraceabilityLinks(requirement.id);
   } catch (error) {
-    return {
-      earlyReturn: {
-        ok: false,
-        error: "traceability_links_lookup_failed",
-        message: `gc_assert_traceability_reconciled could not fetch links for ${item.uid}: ${error.message}`,
-        issue_number: issueNumber,
-        uid: item.uid,
-      },
-    };
+    return traceabilityLookupEarlyReturn(error, {
+      issueNumber,
+      uid: item.uid,
+      lookupError: "links",
+    });
   }
   const linksArray = Array.isArray(links) ? links : [];
   const implementsLinks = linksArray.filter((l) => l?.link_type === "IMPLEMENTS");
@@ -15749,14 +15795,10 @@ async function checkOrphanedIssueLinks(issueNumber, project) {
     }
     return { failures: [] };
   } catch (error) {
-    return {
-      earlyReturn: {
-        ok: false,
-        error: "traceability_issue_links_lookup_failed",
-        message: `gc_assert_traceability_reconciled could not fetch issue links: ${error.message}`,
-        issue_number: issueNumber,
-      },
-    };
+    return traceabilityLookupEarlyReturn(error, {
+      issueNumber,
+      lookupError: "issue_links",
+    });
   }
 }
 
@@ -15795,6 +15837,10 @@ export async function runAssertTraceabilityReconciled({
   }
 
   const repoRoot = await ensureGitRepo(repoPath);
+
+  if (override !== true) {
+    project = await resolveAssertProject({ repoPath, project });
+  }
 
   const checked = [];
   const failures = [];
@@ -20429,6 +20475,7 @@ export async function runAssertCompletion(input) {
       ok: false,
       error: trace.error,
       message: trace.message,
+      detail: trace.detail ?? null,
       issue_number: issueNumber,
       assertions,
       final_report: null,

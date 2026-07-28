@@ -15448,6 +15448,7 @@ describe("runAssertTraceabilityReconciled", () => {
 
   it("requirement lookup error returns traceability_requirement_lookup_failed envelope", async () => {
     const dir = makeTraceabilityTempRepo();
+    writeFileSync(join(dir, ".ground-control.yaml"), "schema_version: 1\nproject: ground-control\n");
     const restore = mockFetchForRequirements([
       ["/api/v1/requirements/uid/GC-X007", async () => ({
         status: 500, body: { error: { code: "GC_X007", message: "backend error" } },
@@ -15462,6 +15463,116 @@ describe("runAssertTraceabilityReconciled", () => {
       assert.equal(r.ok, false);
       assert.equal(r.error, "traceability_requirement_lookup_failed");
       assert.equal(r.uid, "GC-X007");
+    } finally {
+      restore();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("infers project from .ground-control.yaml when project parameter is omitted (issue #1462)", async () => {
+    const shim = makeShimRepoForAssert({ commentId: 9010 });
+    writeFileSync(join(shim.repoDir, ".ground-control.yaml"), "schema_version: 1\nproject: shifter\n");
+    const restore = mockFetchForRequirements([
+      ["/api/v1/requirements/traceability/by-artifact", async (url) => {
+        assert.ok(url.includes("project=shifter"), `expected project=shifter in ${url}`);
+        return { body: [] };
+      }],
+    ]);
+    try {
+      const { runAssertTraceabilityReconciled } = await import("./lib.js");
+      const r = await withShimPath(shim.binDir, () =>
+        runAssertTraceabilityReconciled({
+          repoPath: shim.repoDir, issueNumber: 1058, requirements: [],
+        }),
+      );
+      assert.equal(r.ok, true);
+      assert.equal(r.comment_id, 9010);
+    } finally {
+      restore();
+      shim.cleanup();
+    }
+  });
+
+  it("explicit project overrides .ground-control.yaml inference (issue #1462)", async () => {
+    const shim = makeShimRepoForAssert({ commentId: 9011 });
+    writeFileSync(join(shim.repoDir, ".ground-control.yaml"), "schema_version: 1\nproject: shifter\n");
+    const restore = mockFetchForRequirements([
+      ["/api/v1/requirements/traceability/by-artifact", async (url) => {
+        assert.ok(url.includes("project=ground-control"), `expected project=ground-control in ${url}`);
+        assert.ok(!url.includes("project=shifter"), `explicit project must override config: ${url}`);
+        return { body: [] };
+      }],
+    ]);
+    try {
+      const { runAssertTraceabilityReconciled } = await import("./lib.js");
+      const r = await withShimPath(shim.binDir, () =>
+        runAssertTraceabilityReconciled({
+          repoPath: shim.repoDir, issueNumber: 1058, requirements: [],
+          project: "ground-control",
+        }),
+      );
+      assert.equal(r.ok, true);
+    } finally {
+      restore();
+      shim.cleanup();
+    }
+  });
+
+  it("falls back to backend project_required when config lacks project (issue #1462)", async () => {
+    const dir = makeTraceabilityTempRepo();
+    writeFileSync(join(dir, ".ground-control.yaml"), "schema_version: 1\n");
+    const restore = mockFetchForRequirements([
+      ["/api/v1/requirements/traceability/by-artifact", async () => ({
+        status: 422,
+        body: {
+          error: {
+            code: "project_required",
+            message: "Multiple projects exist. Specify a 'project' parameter.",
+            detail: { project_count: 22 },
+          },
+        },
+      })],
+    ]);
+    try {
+      const { runAssertTraceabilityReconciled } = await import("./lib.js");
+      const r = await runAssertTraceabilityReconciled({
+        repoPath: dir, issueNumber: 1058, requirements: [],
+      });
+      assert.equal(r.ok, false);
+      assert.equal(r.error, "project_required");
+      assert.deepEqual(r.detail, { project_count: 22 });
+    } finally {
+      restore();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("propagates project_required from traceability lookup with detail intact (issue #1462)", async () => {
+    const dir = makeTraceabilityTempRepo();
+    writeFileSync(join(dir, ".ground-control.yaml"), "schema_version: 1\nproject: shifter\n");
+    const restore = mockFetchForRequirements([
+      ["/api/v1/requirements/traceability/by-artifact", async (url) => {
+        assert.ok(url.includes("project=shifter"), `expected resolved project in request: ${url}`);
+        return {
+          status: 422,
+          body: {
+            error: {
+              code: "project_required",
+              message: "Multiple projects exist. Specify a 'project' parameter.",
+              detail: { project_count: 22 },
+            },
+          },
+        };
+      }],
+    ]);
+    try {
+      const { runAssertTraceabilityReconciled } = await import("./lib.js");
+      const r = await runAssertTraceabilityReconciled({
+        repoPath: dir, issueNumber: 1058, requirements: [],
+      });
+      assert.equal(r.ok, false);
+      assert.equal(r.error, "project_required");
+      assert.deepEqual(r.detail, { project_count: 22 });
     } finally {
       restore();
       rmSync(dir, { recursive: true, force: true });

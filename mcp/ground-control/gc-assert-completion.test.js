@@ -244,7 +244,6 @@ process.exit(1);
 
 describe("runAssertCompletion — traceability assertion fails", () => {
   it("returns ok:false, final_report null, assertions has traceability entry with ok:false", async () => {
-    // Use a shim where the GH thread has no traceability markers.
     // Mock REST API 404s for the requirement UID.
     const shim = makeCompletionShimRepo({ comments: [] });
     const restore = mockFetchForGrc([
@@ -270,6 +269,48 @@ describe("runAssertCompletion — traceability assertion fails", () => {
       const traceEntry = r.assertions.find((a) => a.name === "traceability_reconciled");
       assert.ok(traceEntry, `expected traceability_reconciled in assertions; got: ${JSON.stringify(r.assertions)}`);
       assert.equal(traceEntry.ok, false);
+    } finally {
+      restore();
+      shim.cleanup();
+    }
+  });
+
+  it("propagates project_required detail from traceability lookup through completion (issue #1462)", async () => {
+    const shim = makeCompletionShimRepo({ comments: [], prMerged: true });
+    const restore = mockFetchForGrc([
+      ["/api/v1/requirements/traceability/by-artifact", async (url) => {
+        assert.ok(!url.includes("project="), `expected unqualified lookup when config lacks project: ${url}`);
+        return {
+          status: 422,
+          body: {
+            error: {
+              code: "project_required",
+              message: "Multiple projects exist. Specify a 'project' parameter.",
+              detail: { project_count: 22 },
+            },
+          },
+        };
+      }],
+    ]);
+    try {
+      const r = await withShimPath(shim.binDir, () =>
+        runAssertCompletion({
+          repoPath: shim.repoDir,
+          issueNumber: 1103,
+          prNumber: 42,
+          requirements: [],
+          reviews: [{ reviewer: "codex", summary: "1 cycle, clean" }],
+          ciStatus: "green",
+          sonarStatus: "skipped",
+          plainEnglishOutcome: "Phase E completion resolves project from repo config.",
+        }),
+      );
+      assert.equal(r.ok, false);
+      assert.equal(r.error, "project_required");
+      assert.deepEqual(r.detail, { project_count: 22 });
+      assert.equal(r.final_report, null);
+      const traceEntry = r.assertions.find((a) => a.name === "traceability_reconciled");
+      assert.equal(traceEntry?.ok, false);
     } finally {
       restore();
       shim.cleanup();
