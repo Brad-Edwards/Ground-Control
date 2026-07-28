@@ -75,7 +75,7 @@ The extension seam is the workflow DAG plus deterministic shard inventory:
   ad hoc discovery at runtime.
 - Coverage merging must tolerate adding or removing one shard without rewriting
   Sonar or downstream jobs.
-- The early-feedback lane must be conservative and parameterized by changed
+- The early feedback lane must be conservative and parameterized by changed
   paths or surfaces, while the full suite remains the required merge gate.
 - Timing capture should be scriptable from workflow metadata so the next
   before/after comparison does not require editing the CI logic again.
