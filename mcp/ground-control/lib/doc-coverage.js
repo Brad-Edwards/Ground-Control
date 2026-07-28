@@ -234,27 +234,7 @@ export function buildCiWatchGhArgs(repoSlug, runArgs) {
   }
   return ["--repo", repoSlug, ...runArgs];
 }
-export async function _resolveLatestCiRunForBranch(repoRoot, repoSlug, branch) {
-  const { stdout } = await execFile(
-    "gh",
-    buildCiWatchGhArgs(repoSlug, [
-      "run",
-      "list",
-      "--branch",
-      branch,
-      "--limit",
-      "1",
-      "--json",
-      "status,conclusion,databaseId,url,createdAt",
-    ]),
-    { cwd: repoRoot },
-  );
-  const runs = JSON.parse(stdout);
-  if (!Array.isArray(runs) || runs.length === 0) {
-    return null;
-  }
-  return runs[0];
-}
+
 export async function _fetchCiRunSnapshot(repoRoot, repoSlug, runId) {
   const { stdout } = await execFile(
     "gh",

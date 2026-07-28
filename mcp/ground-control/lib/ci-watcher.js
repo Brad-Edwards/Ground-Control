@@ -4,10 +4,12 @@
 // (docs/CODING_STANDARDS.md, Sonar S104). It contained no mutual recursion, so it was
 // split along its own dependency layering. lib.js remains the barrel every caller imports.
 
-import { _fetchCiRunFailedLog, _fetchCiRunSnapshot, _resolveLatestCiRunForBranch, _sleepMs, evaluateCiPollState, extractFailedStepsFromJobsJson, summarizeCiLogFailedOutput } from "./doc-coverage.js";
+import { _fetchCiRunFailedLog, _fetchCiRunSnapshot, _sleepMs, evaluateCiPollState, extractFailedStepsFromJobsJson, summarizeCiLogFailedOutput } from "./doc-coverage.js";
 import { getOwnerRepo } from "./grc-legacy-compat-3.js";
 import { ensureGitRepo } from "./grc-legacy-compat-4.js";
 import { FINDING_CLASSIFICATIONS, FINDING_SWEEP_EVIDENCE_MAX, truncateReviewProse } from "./grc-legacy-compat.js";
+import { buildCiWatchGhArgs } from "./doc-coverage.js";
+import { execFile } from "./runtime-primitives.js";
 
 export const TEST_QUALITY_REVIEW_DEFAULT_MODEL = "claude-sonnet-5";
 export const TEST_QUALITY_REVIEW_TIMEOUT_MS = 600_000;
@@ -23,6 +25,56 @@ export const TEST_QUALITY_FINDING_FIELDS_DESCRIPTION = [
   "    `structural_blocker` — optional boolean. Set on a one-off that warrants verdict=don't-ship.",
 ].join("\n");
 export const TEST_QUALITY_FINDING_EXAMPLE = '{"severity":"critical","location":"backend/src/test/java/com/keplerops/groundcontrol/unit/domain/FooServiceTest.java::FooServiceTest::createFoo_returns_the_new_foo","problem":"Test calls fooService.create(...) but only verifies that the mock fooRepository.save was called. No assertion on the returned Foo.","why_it_matters":"Refactoring FooService.create to return null would still pass this test.","fix":"Assert on the returned Foo (id, name, status) after calling create().","classification":"class","category":{"shape":"@Test method that only verifies a mock interaction without asserting on the SUT\'s return value or state change","instances":["backend/src/test/java/com/keplerops/groundcontrol/unit/domain/FooServiceTest.java:42","backend/src/test/java/com/keplerops/groundcontrol/unit/domain/BarServiceTest.java:55"]}}';
+export async function _resolveCiRunsForBranch(repoRoot, repoSlug, branch) {
+  const { stdout } = await execFile(
+    "gh",
+    buildCiWatchGhArgs(repoSlug, [
+      "run",
+      "list",
+      "--branch",
+      branch,
+      "--limit",
+      "20",
+      "--json",
+      "status,conclusion,databaseId,url,createdAt,headSha",
+    ]),
+    { cwd: repoRoot },
+  );
+  return selectCiRunsForHeadSha(JSON.parse(stdout));
+}
+
+export function aggregateCiRunOutcomes(snapshots) {
+  if (!Array.isArray(snapshots) || snapshots.length === 0) {
+    return { conclusion: "unknown", failing: null };
+  }
+  const nonSuccess = snapshots.filter((snap) => snap?.conclusion !== "success");
+  if (nonSuccess.length === 0) {
+    return { conclusion: "success", failing: null };
+  }
+  const failing =
+    nonSuccess.find((snap) => snap?.conclusion === "failure") ?? nonSuccess[0];
+  return {
+    conclusion:
+      typeof failing?.conclusion === "string" && failing.conclusion.length > 0
+        ? failing.conclusion
+        : "unknown",
+    failing,
+  };
+}
+
+export function selectCiRunsForHeadSha(runs) {
+  if (!Array.isArray(runs) || runs.length === 0) {
+    return [];
+  }
+  const headSha = runs[0]?.headSha;
+  if (typeof headSha !== "string" || headSha.length === 0) {
+    // Older gh versions, or a payload without headSha: fall back to the prior
+    // single-run behavior rather than watching an arbitrary mixed set.
+    return [runs[0]];
+  }
+  return runs.filter((run) => run?.headSha === headSha);
+}
+
 export function validateTestQualityFinding(raw, i) {
   if (raw == null || typeof raw !== "object") {
     throw new Error(`test-quality review blocking[${i}] is not an object`);
@@ -201,12 +253,16 @@ export async function runWatchCiRun({
     };
   }
 
-  // Resolve the run id if the caller didn't supply one.
-  let effectiveRunId = runId ?? null;
-  if (effectiveRunId === null) {
-    let latest;
+  // Resolve the run set. An explicit runId watches exactly that run; otherwise
+  // watch every run the branch's newest commit triggered, so the gate cannot
+  // pass on an unrelated workflow that happened to finish first (issue #1461).
+  let watchedRunIds = [];
+  if (runId !== null && runId !== undefined) {
+    watchedRunIds = [runId];
+  } else {
+    let selected;
     try {
-      latest = await _resolveLatestCiRunForBranch(repoRoot, repoSlug, branch);
+      selected = await _resolveCiRunsForBranch(repoRoot, repoSlug, branch);
     } catch (e) {
       return {
         ok: false,
@@ -215,7 +271,7 @@ export async function runWatchCiRun({
         branch,
       };
     }
-    if (latest === null) {
+    if (selected.length === 0) {
       return {
         ok: false,
         error: "ci_watch_no_run_for_branch",
@@ -223,9 +279,10 @@ export async function runWatchCiRun({
         branch,
       };
     }
-    effectiveRunId =
-      typeof latest.databaseId === "number" ? latest.databaseId : null;
-    if (effectiveRunId === null) {
+    watchedRunIds = selected
+      .map((run) => (typeof run.databaseId === "number" ? run.databaseId : null))
+      .filter((id) => id !== null);
+    if (watchedRunIds.length === 0) {
       return {
         ok: false,
         error: "ci_watch_run_lookup_failed",
@@ -234,12 +291,19 @@ export async function runWatchCiRun({
       };
     }
   }
+  // The newest run identifies the set in envelopes that predate multi-run
+  // watching; a failure below replaces it with the run actually responsible.
+  let effectiveRunId = watchedRunIds[0];
 
   const startMs = Date.now();
   let snapshot = null;
+  let snapshots = [];
   while (true) {
     try {
-      snapshot = await _fetchCiRunSnapshot(repoRoot, repoSlug, effectiveRunId);
+      snapshots = [];
+      for (const id of watchedRunIds) {
+        snapshots.push(await _fetchCiRunSnapshot(repoRoot, repoSlug, id));
+      }
     } catch (e) {
       return {
         ok: false,
@@ -248,6 +312,10 @@ export async function runWatchCiRun({
         run_id: effectiveRunId,
       };
     }
+    // The set is only settled when every run is settled, so poll on the least
+    // advanced status rather than on any single run's.
+    const pending = snapshots.find((snap) => snap?.status !== "completed");
+    snapshot = pending ?? snapshots[0];
     const elapsedSeconds = Math.floor((Date.now() - startMs) / 1000);
     const decision = evaluateCiPollState({
       status: snapshot.status,
@@ -285,7 +353,14 @@ export async function runWatchCiRun({
     await _sleepMs(pollIntervalSeconds * 1000);
   }
 
-  // Terminal state reached. Compute return envelope.
+  // Terminal state reached. Success requires every watched run to have
+  // succeeded; otherwise report the run responsible.
+  const outcome = aggregateCiRunOutcomes(snapshots);
+  if (outcome.failing) {
+    snapshot = outcome.failing;
+    effectiveRunId =
+      typeof snapshot.databaseId === "number" ? snapshot.databaseId : effectiveRunId;
+  }
   const elapsedSeconds = Math.floor((Date.now() - startMs) / 1000);
   const ghConclusion = typeof snapshot.conclusion === "string" ? snapshot.conclusion : "";
   const isFailure =

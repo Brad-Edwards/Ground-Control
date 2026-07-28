@@ -8,6 +8,20 @@ accepted
 
 2026-05-23
 
+> **Sync note for issue #1462 (2026-07-28, completion project inference):** Added
+> `resolveAssertProject` and structured `project_required` propagation in
+> `mcp/ground-control/lib.js` so `gc_assert_traceability_reconciled` and
+> `gc_assert_completion` infer `project` from `repo_path`'s
+> `.ground-control.yaml` when the parameter is omitted, preserve backend
+> `project_required` detail through the composite completion envelope, and
+> updated the Step 17 contract in `skills/implement/steps/step-17-completion.md`
+> plus tool descriptions in `mcp/ground-control/index.js`. This is MCP workflow
+> error-propagation and repo-context reuse under ADR-027: the documentation-coverage
+> classifier (`classifyChangedSurface`), the `outcome_required` mapping, the Vale
+> rule set, `tools/install-vale.sh`, `.vale.ini`, and the `docs/DOC_STYLE.md`
+> style rules are all unchanged, and no new documentation-coverage surface class
+> is introduced.
+
 > **Sync note for issue #1282 (2026-07-27, identity administration):**
 > Registered the non-secret `gc_identity_admin` MCP tool and its identity API
 > client helpers. Extended the authorization path-matrix policy check so it
@@ -84,6 +98,10 @@ accepted
 >
 > **Sync note for issue #1280 (2026-07-11 GC-O009 phase 5 LLM provider boundary):** Changed `ROUTING_PROVIDERS`, added `ROUTING_PROVIDER_ALIASES`/`normalizeProviderId`, and updated `normalizeRoutingConfig`/`normalizeRoutingStageConfig`/`resolveWorkflowRouteFromConfig` in `mcp/ground-control/lib.js` so the canonical LLM provider id `anthropic` is accepted and the legacy label `claude` normalizes to it in every output (ADR-027 amendment). This is the `.ground-control.yaml` routing parser, not the documentation-coverage gate; the documentation-coverage classifier, outcome mapping, Vale rule set, `tools/install-vale.sh`, `.vale.ini`, and `docs/DOC_STYLE.md` style rules are unchanged.
 >
+> **Sync note for issue #1468 (2026-07-28, ADR-091 frontend lane amendment):** `tools/policy/checks.py::CI_STRICTNESS_REQUIRED_CONTEXTS` gained the `frontend` context for the new CI lane that runs Biome lint, the Vitest unit suite, and the frontend build. `frontend` is also added to `.github/branch-protection-baseline.json` and to `docker.needs`, and `tools/tests/test_ci_topology.py` gains frontend-specific invariants covering the job's existence, its read-only permissions, and its lint/test/build steps. Before this the frontend was compiled only inside the Docker image build, which runs after merge and runs neither lint nor tests. This is a policy-surface extension on the CI strictness contract, not the documentation-coverage gate; the classifier, `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new `docs/DOC_STYLE.md` style rule is established.
+
+> **Sync note for issue #1461 (2026-07-28, ADR-091 CI verification topology):** `tools/policy/checks.py::CI_STRICTNESS_REQUIRED_CONTEXTS` dropped the `mutation` context. Commit `bf766bfe` removed the CI `mutation` job and `tools/mutation/` with the Contract-Locked Development track (see the CLD track drop note below), but left the context declared here and in `.github/branch-protection-baseline.json`, so `run_ci_strictness_contract` required a check that no job produced. Applying the baseline as written would have blocked every pull request on `main` and `dev`. The new `tools/tests/test_ci_topology.py` asserts that every required context has a job in `ci.yml` and that the baseline matches this constant, so the drift cannot recur. The same issue fixed a false green in `mcp/ground-control/lib.js::runWatchCiRun`, which watched only the newest workflow run for a branch and so could report an unrelated fast workflow's success as the CI gate; it now groups runs by head SHA and requires all of them to succeed (new `selectCiRunsForHeadSha` / `aggregateCiRunOutcomes` helpers, contract in the ADR-027 2026-07-28 amendment). This is a policy-surface removal that completes an earlier one plus a workflow-tool correctness fix, not a gate relaxation: the documentation-coverage classifier, `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new `docs/DOC_STYLE.md` style rule is established.
+
 > **Sync note for issue #1346 (2026-07-11, ADR-089 GRC retirement):** `tools/policy/checks.py::run_traceability_reconciliation_gate_contract` dropped its `next_issue_recommendation` prose anchors from the Step 20 and SKILL.md requirements (the field is retired), and `ENUM_CONTRACT_INVENTORY` dropped the seven enum-contract entries owned by the retired GRC surface (`ThreatEventKind`, `ThreatSourceRelevance`, `NistLikelihoodBand`, `NistImpactBand`, `NormalizedConcept`, `CrosswalkVocabularySurface`, `MethodologyFamily`); `VerificationStatus` and `AssuranceLevel` are unaffected. This is a policy-surface removal, not an extension: the documentation-coverage classifier, `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new `docs/DOC_STYLE.md` style rule is established.
 
 > **Sync note for issue #1279 (2026-07-10 GC-O009 (b) human gates):** Added `run_gate_set_invariant_check` to `tools/policy/checks.py` so `make policy` pins the operator-gate set to the closed catalog (`cancel` / `retryFrom` / `applyReviewCapDisposition`) across the workflow `@SignalMethod` contract, the `OperatorSignalType` enum, the `implement-signals.v1` schema, and the MCP `WORKFLOW_SIGNAL_TYPES` catalog, and fails if a plan/merge-approval gate is reintroduced (ADR-029). Documentation lives in ADR-088, `docs/API.md`, and the changelog fragment. This is a policy-surface extension; the documentation-coverage classifier, outcome mapping, Vale rule set, `tools/install-vale.sh`, `.vale.ini`, and `docs/DOC_STYLE.md` style rules are unchanged.

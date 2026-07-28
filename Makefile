@@ -1,4 +1,5 @@
-.PHONY: rapid build test test-cov test-quality mutation format lint check integration verify policy policy-tests policy-live \
+.PHONY: rapid build test test-cov test-quality format lint check integration verify policy policy-tests policy-live \
+       ci-timings \
        assert-backup-policy test-backup-restore-local vale-install vale-lint \
        ground-control-mcp-install sync-ground-control-policy scaffold-controller scaffold-audited-entity \
        scaffold-l2-state-machine sync-packs trigger-pack-sync dev clean up down docker-build smoke frontend-install frontend-dev \
@@ -23,9 +24,6 @@ test-cov: ## Run tests with coverage report
 
 test-quality: ## Run Pitest mutation testing (measures test effectiveness; #931)
 	cd backend && ./gradlew pitest
-
-mutation: ## Run scoped CLD mutation gate for changed registry boundaries
-	python3 tools/mutation/run_boundary_mutation.py
 
 format: ## Format code with Spotless
 	cd backend && ./gradlew spotlessApply
@@ -95,6 +93,9 @@ policy: policy-tests assert-backup-policy vale-lint ## Run repo-native policy ch
 
 assert-backup-policy: ## Assert GC-P021 backup cadence / retention / verification defaults are intact
 	bash scripts/assert-backup-policy.sh
+
+ci-timings: ## Measure CI wall clock and time-to-first-failure from recent runs (ADR-091)
+	python3 tools/ci/measure_ci_timings.py
 
 implement-cost-summary: ## Summarize /implement step telemetry — wall time + token counts (when available) per step / per model (ADR-036)
 	python3 tools/summarize_implement_telemetry.py

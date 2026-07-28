@@ -213,18 +213,6 @@ class OntologyBinding3ChecksTest(unittest.TestCase):
             "- [x] `gc_run_sweep` reviewed; findings fixed or recorded with rationale\n"
             "## Traceability\n\n- IMPLEMENTS: foo\n- TESTS: bar\n"
         )
-    @staticmethod
-    def _copy_mutation_gate_contract_fixture(root: Path) -> None:
-        for rel in [
-            ".github/workflows/ci.yml",
-            ".github/branch-protection-baseline.json",
-            "architecture/registry/mutation-boundaries.json",
-            "tools/mutation/run_boundary_mutation.py",
-        ]:
-            src = REPO_ROOT / rel
-            dst = root / rel
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
     def _write_valid_deploy_tree(self, root: Path) -> None:
         """Write a minimal internally-consistent deploy artifact set.
 

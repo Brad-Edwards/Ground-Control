@@ -317,6 +317,7 @@ export async function runAssertCompletion(input) {
       ok: false,
       error: trace.error,
       message: trace.message,
+      detail: trace.detail ?? null,
       issue_number: issueNumber,
       assertions,
       final_report: null,

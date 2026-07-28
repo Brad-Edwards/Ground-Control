@@ -253,7 +253,7 @@ Per ADR-036 the `/implement` skill carries three cost-side optimizations layered
 |--------------|-----------------|-------------|
 | Per-step routing | Each step carries a provider-neutral tier (`low`, `medium`, `high`); `gc_resolve_workflow_route` resolves advisory provider/model/tier metadata from `.ground-control.yaml`. The primary invocation session remains the normal executor for all drivers; Ground Control does not manufacture subagents for routine work. | `.ground-control.yaml` → `routing.enabled` (default `false`) plus optional `routing.stages.<stage>` overrides |
 | Durable-record MCP tools | `gc_post_decision_record` (Step 6.5 cycle decisions), `gc_post_final_report` (Step 17 final report, invoked via `gc_assert_completion`), `gc_render_pr_body` (Step 9 PR body) replace agent free-prose with deterministic structured-input renderers. All three filter sensitive content, post under a structured marker family, and reject `decision: "defer"` server-side. `gc_post_final_report` also requires `/implement` callers to pass `plain_english_outcome`, which renders an Outcome section before the structured evidence. | Always available; SKILL calls them unconditionally once the tools are present |
-| Traceability + post-merge close gates (#1058/#1156/#1103) | `gc_assert_completion` (Step 17) sequences `gc_assert_traceability_reconciled` (posts `traceability_reconciled` marker) and `gc_post_final_report` in one deterministic call. The `traceability_reconciled` marker is posted by the traceability assertion within `gc_assert_completion`; `gc_post_final_report` refuses to publish without it, and `gc_assert_completion` uses `internalVerifiedPhases` to avoid a GitHub read-after-write race on the marker it just posted. `gc_close_issue_after_merge` (Step 20 / Phase E) verifies the linked PR's `merged_at` non-null AND state `MERGED` before closing the issue, idempotent on already-closed issues, and performs only linked-PR resolution, merge-state verification, and closure - no next-issue recommendation (ADR-089). The /quickfix lane is requirement-free and exempt from the traceability and outcome gate. | Always on for `/implement`; `lane: "quickfix"` opts out of the traceability and outcome prerequisites |
+| Traceability + post-merge close gates (#1058/#1156/#1103) | `gc_assert_completion` (Step 17) sequences `gc_assert_traceability_reconciled` (posts `traceability_reconciled` marker) and `gc_post_final_report` in one deterministic call. The `traceability_reconciled` marker is posted by the traceability assertion within `gc_assert_completion`; `gc_post_final_report` refuses to publish without it, and `gc_assert_completion` uses `internalVerifiedPhases` to avoid a GitHub read-after-write race on the marker it just posted. On traceability lookups, `project` is optional: an explicit value overrides, otherwise the MCP layer infers from `repo_path`'s `.ground-control.yaml` via `getRepoGroundControlContext`, and when neither yields a project the backend remains authoritative (`project_required` with `project_count` on multi-project deployments). Structured `project_required` detail is preserved through the composite completion envelope (#1462). `gc_close_issue_after_merge` (Step 20 / Phase E) verifies the linked PR's `merged_at` non-null AND state `MERGED` before closing the issue, idempotent on already-closed issues, and performs only linked-PR resolution, merge-state verification, and closure - no next-issue recommendation (ADR-089). The /quickfix lane is requirement-free and exempt from the traceability and outcome gate. | Always on for `/implement`; `lane: "quickfix"` opts out of the traceability and outcome prerequisites |
 | Per-step telemetry | `gc_log_step_telemetry` writes one JSONL line per routed step to `.gc/telemetry/<issue>-<sanitized-branch>.jsonl` (gitignored, repo-relative, containment-validated). Operational measurement only - never workflow state. The tool refuses with `telemetry_disabled` when the opt-in knob is off; the agent prose is not the gate. Summarizer reports wall time + token counts (when present) per step and per model; dollar-cost translation is future work. Target: `make implement-cost-summary`. | `.ground-control.yaml` → `telemetry.enabled` (default `false`) |
 
 Each new tool is deterministic and structured-input/output, with no LLM call in the tool itself.
@@ -366,16 +366,18 @@ The guard is a pre-execution *lexical* policy control, not an OS sandbox. It pro
 - `python3 bin/policy` enforces ADR/workflow, controller/MCP/docs, migration, and PR-body policy
 - `python3 bin/policy` also pins the #1155 CI strictness baseline:
   selected pre-commit hygiene and secret-scan hooks run in CI, the Sonar job
-  fails on new issues, the CLD mutation gate stays wired, and
+  waits for the quality gate and fails on new issues, and
   `.github/branch-protection-baseline.json` requires strict status checks for
   `main` and `dev` while retaining admin bypass
-- `python3 bin/policy` runs the CLD architecture-registry boundary check
-  (`run_module_graph_boundary_check`): it validates `architecture/registry/module-graph.json`,
-  asserts the registry is covered by a design-authority protected path, and fails
-  any frontend/MCP cross-module import whose edge is not declared in the registry's
-  `allowed_edges`. The backend surface is enforced against the same registry by
-  `RegistryBoundaryArchitectureTest` (ArchUnit, in the `test` job). See
-  `architecture/registry/README.md` for the schema (GC-CLD-2 / ADR-087 §3).
+- **CI topology invariants** (`tools/tests/test_ci_topology.py`, issue #1461 /
+  ADR-091) assert the shape of `.github/workflows/ci.yml`: every required
+  context has a job, the branch-protection baseline matches
+  `CI_STRICTNESS_REQUIRED_CONTEXTS`, no verification job declares a dependency
+  on another, `docker` names every gate before it publishes, the
+  `fast-feedback` lane exists and stays out of the required set, and the
+  `sonar` job keeps its coverage and quality-gate inputs. A required context
+  with no job behind it blocks every pull request forever, which is the failure
+  these tests exist to prevent. See `docs/ci/CI_PIPELINE.md`.
 - **Gate outcome measurement** (issue #1355, ADR-090 amendment). Every station attempt now
   records an explicit verdict alongside its lifecycle event, and the findings it observed are
   counted by reviewer/detector, category, severity, and disposition. The verdict is stated by the
@@ -386,8 +388,7 @@ The guard is a pre-execution *lexical* policy control, not an OS sandbox. It pro
   emit structured artifacts at their own boundary; SpotBugs' XML report serves the same purpose.
   The `/implement` layer reads those artifacts rather than re-running a gate or parsing combined
   console output.
-
-- **Measurement catalogue drift** (`tools/policy/checks.py::run_measurement_catalogue_check`,
+- **Measurement catalogue drift** (`run_measurement_catalogue_check` in `tools/policy/`,
   issue #1438 / ADR-090 / GC-O014) keeps the ADR-090 station catalogue authoritative
   rather than descriptive. `contracts/measurement/gc-station-catalogue-v1.json` owns
   `station_id`; ADR-061 phase strings, ADR-036 routing stages, issue-thread `gc:phase`
@@ -427,6 +428,32 @@ certified, and it was the weakest copy of the four - skippable with
 `files:` patterns, and leaving no result any gate or workflow record could
 attest to. Run `make check` or `make policy` directly to exercise the broad
 gates locally on demand.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs every verification job in parallel: none of them
+consumes another job's artifact, so whole-run wall clock is the duration of the
+slowest job. Three dependencies remain, each guarding a side effect rather than
+ordering work: `policy-live` behind `policy` because it is the only job holding
+a live API token, `docker` behind every verification gate because publishing an
+image is irreversible, and `smoke` behind `docker`.
+
+The `fast-feedback` job reports formatting and compilation errors before any
+full lane finishes. It is advisory and stays out of the required-context set, so
+the complete suite remains the single merge authority.
+
+`docs/ci/CI_PIPELINE.md` is the job-by-job reference, including which contexts
+are required, local reproduction commands, and test lane ownership. ADR-091
+carries the rationale. `make ci-timings` reports current wall clock and time to
+first failing check.
+
+`gc_watch_ci_run` and `gc_implement_mechanical action=monitor` watch every
+workflow run triggered by the branch's newest commit, grouped by head SHA, and
+report success only when all of them succeed. Watching a single run reported an
+unrelated fast workflow as the CI gate: a push triggers both `ci.yml` and
+`pr-title.yml`, and the five-second title lint finishes first, so the gate could
+pass while the suite was still running. A failure in the set reports the run
+responsible rather than the newest one.
 
 ### Contract Surface and MCP Write-Contract Gates (ADR-034, ADR-082)
 
@@ -731,33 +758,17 @@ complementary test-quality signals:
 
 | Signal | Purpose | How to run |
 |--------|---------|-----------|
-| **Mutation testing (CLD gate)** | Directly measures whether registered boundary batteries detect seeded wrongness. Changed registered boundaries run PIT or Stryker against the scoped boundary target and fail below the registry threshold; interior-only changes produce a green no-op check. | `make mutation` or CI job `mutation` |
-| **Mutation testing (legacy PIT advisory)** | Runs the backend PIT task outside the scoped CLD gate. Useful for broader local calibration, not a required PR context. | `make test-quality` |
+| **Mutation testing (PIT, advisory)** | Runs the backend PIT task to score how well the unit suite detects seeded wrongness. Advisory calibration signal, not a required PR context. | `make test-quality` |
 | **Property-based testing (jqwik)** | Already wired on five domain surfaces - cycle detection, finding-status state machine, impact analysis, audit-status state machine, requirement-status transitions. Property tests find edge cases TDD misses by construction. | `make test` (runs alongside the unit suite) |
 | **Dependency / SBOM scanning (OSV + Trivy)** | OSV-scanner runs against `backend/gradle.lockfile` in CI. Findings are advisory, **except**: any new CRITICAL CVE fails the job (added in #931). Trivy scans the built image + IaC and **blocks the merge** on fixable CRITICAL/HIGH vulnerabilities or secrets. When it fires, raise the dependency: the Spring Boot BOM's managed version is overridden by the `extra["...version"]` security-patch block at the top of `backend/build.gradle.kts`, and OS packages are patched by the `apk --no-cache upgrade` in `backend/Dockerfile`. Remove an override once the BOM manages a version at or above it. | `.github/workflows/ci.yml` (`trivy`, `osv-scanner` jobs) |
 
-The CLD mutation gate is registry-driven. Boundary data lives in
-`architecture/registry/mutation-boundaries.json`; baseline scores are recorded
-in `architecture/registry/mutation-baseline.md`. CI invokes
-`tools/mutation/run_boundary_mutation.py` against the PR base ref. The runner
-maps changed files to registry path selectors, uses fixed argv for PIT/Stryker,
-and uploads reports from `backend/build/reports/pitest/` and
-`frontend/build/reports/stryker/`.
+PR CI fetches sanitized issue comments in a token-bearing shell step, then runs
+PR-head policy code without `GH_TOKEN` and passes `--pr-comments-json` plus
+`--pr-number` so the gate can read the PR-thread marker.
 
-The CLD protected-path gate is also registry-driven. `make policy` validates
-`architecture/registry/protected-paths.json`, verifies explicit CODEOWNERS
-routes, classifies PR changed paths from the merge base, detects battery
-weakening, and requires a durable design-authority marker on mixed
-implementation plus protected-path diffs. The marker must match the current
-approval scope, including protected paths, implementation paths, weakening
-findings, and the diff hash when available. PR CI evaluates protected selectors
-and authorized approvers from the base branch once the registry exists there;
-the working-tree registry fallback is only for the bootstrap change that
-introduces the first registry. Local non-PR runs can validate the registry and
-pure design changes; PR CI fetches sanitized issue comments in a token-bearing
-shell step, then runs PR-head policy code without `GH_TOKEN` and passes
-`--pr-comments-json` plus `--pr-number` so the gate can read the PR-thread
-marker.
+Frontend verification runs in the `frontend` CI job: Biome lint, the Vitest unit
+suite, and the production build, reproducible locally with `make frontend-lint`,
+`make frontend-test`, and `make frontend-build`.
 
 ## Rollback
 
