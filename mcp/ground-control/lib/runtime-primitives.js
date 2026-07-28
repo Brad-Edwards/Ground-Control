@@ -10,6 +10,10 @@ import { CLAUDE_MODEL_BY_TIER, DEFAULT_IMPLEMENT_ROUTING_STAGES, ROUTING_STAGE_N
 
 export const execFile = promisify(execFileCb);
 export const GROUND_CONTROL_PROJECT_RE = /^[a-z0-9][a-z0-9-]*$/;
+// Shared with the .ground-control.yaml parser and the repo-identity resolver. It lives beside its
+// sibling rather than privately in whichever module happened to need it first: a second copy is how
+// two validators of the same value drift into disagreeing about what is well-formed.
+export const GITHUB_REPO_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 export function formatCommandFailure(command, error) {
   const details = [];
   if (error.code === "ENOENT") {

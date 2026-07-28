@@ -43,6 +43,13 @@ Repo-local Ground Control project context comes from a `.ground-control.yaml` fi
 - treat inputs like `OBS-001`, `DSL-101`, `API-412`, or `GC-J001` as already-complete UIDs
 - avoid guessing a prefix from the repository name
 
+The parser lives in `mcp/ground-control/lib/ground-control-config.js` and is published through the
+`mcp/ground-control/lib.js` barrel. The documentation-coverage gate treats both as the
+`config_parser` surface, so a change to either requires a documentation outcome (ADR-054). Keep the
+parser in that module: the gate anchors on literal paths, and `run_doc_coverage_anchor_contract`
+(`make policy`) fails when an anchor stops naming a real file rather than letting the surface match
+nothing and quietly stop asking.
+
 Recommended `.ground-control.yaml` convention:
 
 ```yaml

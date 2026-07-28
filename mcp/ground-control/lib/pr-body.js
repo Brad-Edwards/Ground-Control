@@ -7,7 +7,7 @@
 import { appendFileSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { readAbsoluteTextFile } from "./api-requirements.js";
-import { parseGroundControlYaml } from "./codex-workflow-3.js";
+import { parseGroundControlYaml } from "./ground-control-config.js";
 import { renderDocumentationSection, validateDocumentationOutcome } from "./doc-coverage.js";
 import { detectSensitiveBodyContent } from "./grc-legacy-compat-2.js";
 import { ensureGitRepo } from "./grc-legacy-compat-4.js";

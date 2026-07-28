@@ -1,5 +1,6 @@
 
 import ast
+import re
 
 from pathlib import Path
 
@@ -130,5 +131,63 @@ def run_scan_floor_contract(root: Path = REPO_ROOT) -> list[Violation]:
                 "extracted, so it passes identically when the extraction matches nothing."
             ),
             details=sorted(offenders),
+        )
+    ]
+
+
+# The documentation-coverage catalogue maps repository paths to the docs that must move with them
+# (ADR-054). Its anchors are literal paths, so a file that moves takes its coverage requirement with
+# it: the surface keeps matching the old path, matches nothing, and the gate stops asking. It goes
+# green for the reason hardest to notice. Both checks below make that failure loud instead.
+_SURFACE_CATALOGUE = Path("mcp") / "ground-control" / "lib" / "doc-coverage.js"
+_EXACT_PATTERNS_RE = re.compile(r"exact_patterns:\s*\[(.*?)\]", re.DOTALL)
+_PREFIX_PATTERNS_RE = re.compile(r"prefix_patterns:\s*\[(.*?)\]", re.DOTALL)
+_QUOTED_RE = re.compile(r'"([^"]+)"')
+
+
+def run_doc_coverage_anchor_contract(root: Path = REPO_ROOT) -> list[Violation]:
+    """Every documentation-coverage surface anchor must name something that exists."""
+    catalogue = root / _SURFACE_CATALOGUE
+    if not catalogue.is_file():
+        return [
+            Violation(
+                code="doc-coverage-catalogue-missing",
+                message=(
+                    "The documentation-coverage surface catalogue is absent, so no surface can be "
+                    "verified. Update this check to its new home rather than leaving it inert."
+                ),
+                details=[_SURFACE_CATALOGUE.as_posix()],
+            )
+        ]
+
+    source = catalogue.read_text(encoding="utf-8")
+    dangling: list[str] = []
+    anchors = 0
+    for match in _EXACT_PATTERNS_RE.finditer(source):
+        for anchor in _QUOTED_RE.findall(match.group(1)):
+            anchors += 1
+            if not (root / anchor).is_file():
+                dangling.append(f"exact_patterns: {anchor}")
+    for match in _PREFIX_PATTERNS_RE.finditer(source):
+        for anchor in _QUOTED_RE.findall(match.group(1)):
+            anchors += 1
+            target = root / anchor
+            # A prefix names either a directory or a file stem such as `bin/policy`.
+            if not target.is_dir() and not target.is_file():
+                dangling.append(f"prefix_patterns: {anchor}")
+
+    violations = require_scanned("doc-coverage surface anchors", anchors)
+    if violations:
+        return violations
+    if not dangling:
+        return []
+    return [
+        Violation(
+            code="doc-coverage-anchor-dangling",
+            message=(
+                "A documentation-coverage surface anchors on a path that no longer exists, so it "
+                "matches nothing and silently stops requiring documentation for that surface."
+            ),
+            details=sorted(dangling),
         )
     ]

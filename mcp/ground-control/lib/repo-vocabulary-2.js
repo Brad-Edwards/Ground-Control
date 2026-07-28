@@ -7,7 +7,7 @@
 import { realpathSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { readAbsoluteTextFile } from "./api-requirements.js";
-import { parseGroundControlYaml } from "./codex-workflow-3.js";
+import { parseGroundControlYaml } from "./ground-control-config.js";
 import { ensureGitRepo } from "./grc-legacy-compat-4.js";
 import { assertRealpathInRepo } from "./repo-context-2.js";
 import { resolveRepoRelativePath } from "./repo-context.js";

@@ -19,7 +19,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
-from .workflow_contracts import run_scan_floor_contract
+from .workflow_contracts import run_doc_coverage_anchor_contract, run_scan_floor_contract
 from .adr_guard import (
     read_changed_files,
     run_adr_guard,
@@ -119,6 +119,7 @@ def main(argv: list[str] | None = None) -> int:
     violations.extend(run_test_quality_decision_record_contract())
     violations.extend(run_traceability_reconciliation_gate_contract())
     violations.extend(run_scan_floor_contract())
+    violations.extend(run_doc_coverage_anchor_contract())
 
     base_ref, head_ref = _resolve_pr_refs(args)
     if args.skip_pr_body or _is_release_pr(base_ref, head_ref):

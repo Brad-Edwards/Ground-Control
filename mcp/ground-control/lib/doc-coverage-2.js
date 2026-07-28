@@ -6,7 +6,7 @@
 
 import { join } from "node:path";
 import { readAbsoluteTextFile } from "./api-requirements.js";
-import { parseGroundControlYaml } from "./codex-workflow-3.js";
+import { parseGroundControlYaml } from "./ground-control-config.js";
 import { buildFinalReportMarker, renderCiStatus, renderDocumentationSection, renderSonarStatus } from "./doc-coverage.js";
 import { detectSensitiveBodyContent, extractGhErrorMessage } from "./grc-legacy-compat-2.js";
 import { getOwnerRepo } from "./grc-legacy-compat-3.js";

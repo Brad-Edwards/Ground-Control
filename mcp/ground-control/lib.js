@@ -40,6 +40,7 @@ export * from "./lib/field-mapping.js";
 export * from "./lib/close-issue.js";
 export * from "./lib/sonar-watcher.js";
 export * from "./lib/codex-workflow-3.js";
+export * from "./lib/ground-control-config.js";
 export * from "./lib/repo-vocabulary-2.js";
 export * from "./lib/review-cap-disposition-2.js";
 export * from "./lib/plan-posting.js";

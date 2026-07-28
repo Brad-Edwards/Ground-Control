@@ -5,7 +5,7 @@
 // split along its own dependency layering. lib.js remains the barrel every caller imports.
 
 import { validateDevStartPlanGate } from "./close-issue.js";
-import { parseGroundControlYaml } from "./codex-workflow-3.js";
+import { parseGroundControlYaml } from "./ground-control-config.js";
 import { buildFinalReportMarker, renderCiStatus, renderSonarStatus, validateDocumentationOutcome } from "./doc-coverage.js";
 import { detectSensitiveBodyContent } from "./grc-legacy-compat-2.js";
 import { getOwnerRepo, postPhaseMarker } from "./grc-legacy-compat-3.js";

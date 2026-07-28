@@ -55,7 +55,13 @@ const SURFACE_CLASS_MAP = [
   },
   {
     surface_class: "config_parser",
-    exact_patterns: ["mcp/ground-control/lib.js"],
+    // The parser itself, plus the barrel that publishes it. Anchoring only on the barrel meant
+    // that once the parser moved out of it, changing the parser stopped requiring documentation —
+    // the surface kept matching a file the contract had left.
+    exact_patterns: [
+      "mcp/ground-control/lib.js",
+      "mcp/ground-control/lib/ground-control-config.js",
+    ],
     doc_targets: ["docs/DEVELOPMENT_WORKFLOW.md", "architecture/adrs/027-ground-control-yaml-context-contract.md"],
     outcome_required: true,
   },

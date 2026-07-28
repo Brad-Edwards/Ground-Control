@@ -299,6 +299,7 @@ from .authz_matrix import (  # noqa: F401
     run_implement_execution_contract,
 )
 from .workflow_routing import (  # noqa: F401
+    run_doc_coverage_anchor_contract,
     run_scan_floor_contract,
     _is_release_pr,
     _resolve_pr_refs,
