@@ -91,7 +91,7 @@ from .adr_guard import (  # noqa: F401
     run_git,
     test_covers_controller,
 )
-from .controllers import (  # noqa: F401
+from .migration_policy import (  # noqa: F401
     RELEASE_PLEASE_CONFIG,
     RELEASE_PLEASE_MANIFEST,
     RELEASE_PLEASE_ROOT_PACKAGE,
@@ -106,13 +106,13 @@ from .controllers import (  # noqa: F401
     git_diff_for_paths,
     run_migration_policy,
 )
-from .migrations import (  # noqa: F401
+from .version_mirror import (  # noqa: F401
     _DOCUMENTATION_COVERAGE_FIXTURE,
     _DOCUMENTATION_SECTION_RE,
     run_documentation_coverage_check,
     run_version_mirror_consistency_check,
 )
-from .version_mirror import (  # noqa: F401
+from .ci_contract import (  # noqa: F401
     CANONICAL_GHCR_NAMESPACE,
     GHCR_IMAGE_REF_RE,
     GHCR_NAMESPACE_INVENTORY,
@@ -120,7 +120,7 @@ from .version_mirror import (  # noqa: F401
     run_deploy_compose_credential_passthrough,
     run_ghcr_namespace_drift,
 )
-from .ci_contract import (  # noqa: F401
+from .repo_identity import (  # noqa: F401
     BACKEND_JAVA_GLOB,
     CANONICAL_REPO_OWNER,
     CANONICAL_REPO_SLUG,
@@ -165,7 +165,7 @@ from .ci_contract import (  # noqa: F401
     _yaml_placeholder_consumed_names,
     run_repo_identity_drift,
 )
-from .deploy_credentials import (  # noqa: F401
+from .env_templates import (  # noqa: F401
     _binds_within,
     _run_env_template_consumer_check,
     _spring_binding_index,
@@ -195,7 +195,7 @@ from .deploy_artifacts import (  # noqa: F401
     run_deploy_artifact_consistency,
     run_methodology_catalog_drift,
 )
-from .env_templates import (  # noqa: F401
+from .enum_contract import (  # noqa: F401
     ENUM_CONTRACT_INVENTORY,
     EnumContract,
     ONTOLOGY_CONTRACT_PATHS,
@@ -215,7 +215,7 @@ from .env_templates import (  # noqa: F401
     parse_ts_union_literals,
     run_enum_contract_check,
 )
-from .catalog_drift import (  # noqa: F401
+from .ontology_families import (  # noqa: F401
     _contributor_edge_values,
     _contributor_type_identity,
     _edge_enum_selector,
@@ -228,7 +228,7 @@ from .catalog_drift import (  # noqa: F401
     _validate_ontology_families,
     _validate_ontology_terms,
 )
-from .enum_contract import (  # noqa: F401
+from .ontology_binding import (  # noqa: F401
     ONTOLOGY_CROSSWALK_PATH,
     ONTOLOGY_CROSSWALK_SCHEMA_VERSION,
     ONTOLOGY_CROSSWALK_TIME_FAMILY,
@@ -240,7 +240,7 @@ from .enum_contract import (  # noqa: F401
     _safe_ontology_source_path,
     run_ontology_binding_check,
 )
-from .ontology_families import (  # noqa: F401
+from .ontology_crosswalk import (  # noqa: F401
     EMITTER_SOURCE_PATHS,
     IMPLEMENT_MODULE_DIR,
     IMPLEMENT_MECHANICAL_PATH,
@@ -255,7 +255,7 @@ from .ontology_families import (  # noqa: F401
     run_contract_surface_check,
     run_ontology_crosswalk_check,
 )
-from .ontology_binding import (  # noqa: F401
+from .measurement import (  # noqa: F401
     _catalogue_index,
     _check_emitter_station_drift,
     _check_phase_marker_drift,
@@ -264,7 +264,7 @@ from .ontology_binding import (  # noqa: F401
     _resolves,
     run_measurement_catalogue_check,
 )
-from .ontology_crosswalk import (  # noqa: F401
+from .authz_matrix import (  # noqa: F401
     IMPLEMENT_SKILL_PATH,
     IMPLEMENT_STEP_TEST_QUALITY_PATH,
     _STEP_HEADING_RE,
@@ -277,19 +277,19 @@ from .ontology_crosswalk import (  # noqa: F401
     run_contract_invariant_enforcement_check,
     run_pr_body_check,
 )
-from .contract_surface import (  # noqa: F401
+from .decision_records import (  # noqa: F401
     IMPLEMENT_STEP_17_PATH,
     IMPLEMENT_STEP_20_PATH,
     run_test_quality_decision_record_contract,
 )
-from .measurement import (  # noqa: F401
+from .workflow_routing import (  # noqa: F401
     parse_args,
     render_and_exit,
     run_traceability_reconciliation_gate_contract,
     run_workflow_routing_contract,
     write_violations_json,
 )
-from .authz_matrix import (  # noqa: F401
+from .execution_contract import (  # noqa: F401
     RELEASE_PLEASE_PR_HEAD_PREFIX,
     RELEASE_PR_BASE,
     RELEASE_PR_HEAD,
@@ -298,7 +298,7 @@ from .authz_matrix import (  # noqa: F401
     _resolve_pr_body,
     run_implement_execution_contract,
 )
-from .workflow_routing import (  # noqa: F401
+from .cli import (  # noqa: F401
     run_doc_coverage_anchor_contract,
     run_scan_floor_contract,
     _is_release_pr,

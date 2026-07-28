@@ -3,6 +3,9 @@
 Extracted from tools/policy/checks.py (issue #1355), which had reached 5,679 lines against
 the repo's 500-LOC limit. checks.py remains the entry point and re-exports this module, so
 every existing import path and the CLI keep working.
+
+The first cut named each file for the section that began where the previous chunk ended, so
+every name described a neighbour's contents. The modules are named for what they hold.
 """
 
 from __future__ import annotations
@@ -22,373 +25,361 @@ from typing import Any, Iterable
 from .adr_guard import (
     load_json,
 )
-from .catalog_drift import (
-    _contributor_edge_values,
-    _contributor_type_identity,
-    _is_ontology_enum,
-    _java_type_identity,
-    _validate_ontology_families,
-    _validate_ontology_terms,
-)
 from .core import (
     REPO_ROOT,
     Violation,
 )
-from .env_templates import (
-    ONTOLOGY_CONTRACT_PATHS,
-    ONTOLOGY_SOURCE_ROOT,
-    ONTOLOGY_SURFACE_KINDS,
-    _load_ontology_contracts,
-    _ontology_violation,
-    _strip_comments,
-    parse_java_enum_constants,
+from .deploy_artifacts import (
+    FRONTEND_API_TYPES_PATH,
+    MCP_LIB_PATH,
+    _AUDIT_ENUM_STATE_DIR,
+    _BLOCK_COMMENT_RE,
+    _ENUM_CONSTANT_RE,
+    _ENUM_STATE_DIR,
+    _GRAPH_MODEL_DIR,
+    _JAVA_ENUM_BODY_RE,
+    _LINE_COMMENT_RE,
+    _PAREN_GROUP_RE,
+    _STRING_LITERAL_RE,
+    _VERIFICATION_ENUM_STATE_DIR,
+    read_mcp_library,
 )
 
 
-def _discover_ontology_surfaces(
-    root: Path,
-) -> tuple[dict[str, tuple[str, str, set[str]]], dict[str, set[str]], list[Violation]]:
-    java_root = root / ONTOLOGY_SOURCE_ROOT
-    discovered: dict[str, tuple[str, str, set[str]]] = {}
-    dynamic_enum_selectors: dict[str, set[str]] = {}
+def _strip_comments(text: str) -> str:
+    """Remove ``//`` line comments and ``/* ... */`` block comments.
+
+    Java, TypeScript, and JavaScript all use this comment syntax. Block comments
+    are replaced with a space (so adjacent tokens are not glued); line comments
+    are removed up to the newline. Used so a value that exists only inside a
+    comment — or a value that was commented *out* — is not counted as an active
+    enum member by the regex extractors below.
+
+    Line comments are stripped first so that ``/**`` sequences embedded inside a
+    ``//`` comment (e.g. ``// valid for all '/api/v1/**' paths``) are consumed by
+    the line-comment pass and cannot be mistaken for block-comment openers by the
+    subsequent block-comment pass.
+    """
+    text = _LINE_COMMENT_RE.sub("", text)
+    return _BLOCK_COMMENT_RE.sub(" ", text)
+
+
+@dataclass(frozen=True)
+class EnumContract:
+    label: str
+    java_path: str
+    ts_union: str
+    # The api.ts iterated constant array (``export const FOO: T[] = [...]``), or
+    # None for enums the UI does not iterate (only the union type is mirrored).
+    ts_const: str | None
+    # The lib.js constant array, or None for enums with no MCP-side mirror.
+    mcp_const: str | None
+
+
+ENUM_CONTRACT_INVENTORY: tuple[EnumContract, ...] = (
+    EnumContract(
+        "GraphEntityType",
+        f"{_GRAPH_MODEL_DIR}/GraphEntityType.java",
+        "GraphEntityType",
+        "GRAPH_ENTITY_TYPES",
+        None,
+    ),
+    EnumContract("RequirementType", f"{_ENUM_STATE_DIR}/RequirementType.java", "RequirementType", "REQUIREMENT_TYPES", "REQUIREMENT_TYPES"),
+    EnumContract("RelationType", f"{_ENUM_STATE_DIR}/RelationType.java", "RelationType", "RELATION_TYPES", "RELATION_TYPES"),
+    EnumContract("ArtifactType", f"{_ENUM_STATE_DIR}/ArtifactType.java", "ArtifactType", "ARTIFACT_TYPES", "ARTIFACT_TYPES"),
+    EnumContract("LinkType", f"{_ENUM_STATE_DIR}/LinkType.java", "LinkType", "LINK_TYPES", "LINK_TYPES"),
+    EnumContract("Status", f"{_ENUM_STATE_DIR}/Status.java", "Status", "STATUSES", "STATUSES"),
+    EnumContract("Priority", f"{_ENUM_STATE_DIR}/Priority.java", "Priority", "PRIORITIES", "PRIORITIES"),
+    # SyncStatus has no MCP mirror today; only the api.ts union type carries it.
+    EnumContract("SyncStatus", f"{_ENUM_STATE_DIR}/SyncStatus.java", "SyncStatus", None, None),
+    EnumContract("ChangeCategory", f"{_ENUM_STATE_DIR}/ChangeCategory.java", "ChangeCategory", "CHANGE_CATEGORIES", "CHANGE_CATEGORIES"),
+    # GC-U001 / ADR-047 audit entity enums. AuditType and AuditStatus are iterated
+    # by UI and exposed by the MCP gc_audit tool.
+    EnumContract("AuditType", f"{_AUDIT_ENUM_STATE_DIR}/AuditType.java", "AuditType", "AUDIT_TYPES", "AUDIT_TYPES"),
+    EnumContract("AuditStatus", f"{_AUDIT_ENUM_STATE_DIR}/AuditStatus.java", "AuditStatus", "AUDIT_STATUSES", "AUDIT_STATUSES"),
+    # Verification and Assurance enums. VerificationStatus and AssuranceLevel
+    # are domain/verification/state enums used in evidence/control verification
+    # workflows; both are mirrored at the frontend TypeScript boundary and MCP
+    # surfaces. ADR-034. (The domain/riskscenarios/state NIST/crosswalk/
+    # methodology enums this comment used to describe — ThreatEventKind,
+    # ThreatSourceRelevance, NistLikelihoodBand, NistImpactBand,
+    # NormalizedConcept, CrosswalkVocabularySurface, MethodologyFamily — were
+    # retired with the composed GRC product surface; ADR-089, issue #1346.)
+    EnumContract(
+        "VerificationStatus",
+        f"{_VERIFICATION_ENUM_STATE_DIR}/VerificationStatus.java",
+        "VerificationStatus",
+        "VERIFICATION_STATUSES",
+        "VERIFICATION_STATUSES",
+    ),
+    EnumContract(
+        "AssuranceLevel",
+        f"{_VERIFICATION_ENUM_STATE_DIR}/AssuranceLevel.java",
+        "AssuranceLevel",
+        "ASSURANCE_LEVELS",
+        "ASSURANCE_LEVELS",
+    ),
+)
+
+
+def parse_java_enum_constants(text: str) -> list[str]:
+    """Return the ordered enum constants of the (single) ``enum X { ... }`` in ``text``.
+
+    Comments are stripped first. The constant list is the body between the
+    opening ``{`` and the first ``;`` (for enums with methods/fields) or closing
+    ``}`` (constant-only enums); constructor-argument groups (``FOO("x")``) are
+    stripped, then the body is split on commas/whitespace and the
+    ``[A-Z][A-Z0-9_]*`` tokens are returned in declaration order. Returns ``[]``
+    when no enum declaration is found (the caller treats that as a parse error).
+    """
+    without_comments = _strip_comments(text)
+    match = _JAVA_ENUM_BODY_RE.search(without_comments)
+    if not match:
+        return []
+    body = _PAREN_GROUP_RE.sub(" ", match.group(1))
+    tokens: list[str] = []
+    for raw in re.split(r"[,\s]+", body):
+        token = raw.strip()
+        if token and _ENUM_CONSTANT_RE.match(token):
+            tokens.append(token)
+    return tokens
+
+
+def parse_const_string_array(text: str, name: str) -> list[str] | None:
+    """Return the ordered string literals of ``const <name> [: T[]] = [ ... ]``.
+
+    Works for both TypeScript (``export const FOO: FooType[] = [...]``) and
+    plain JS (``export const FOO = [...]``). Comments are stripped first, so a
+    commented-out element is not counted. Returns ``None`` when no such
+    declaration exists, or the (possibly empty) ordered list of string-literal
+    values when it does. The name is matched whole-word so ``LINK_TYPES`` does
+    not match ``ASSET_LINK_TYPES`` and ``ARTIFACT_TYPES`` does not match
+    ``ARTIFACT_TYPES_FOO``.
+    """
+    pattern = re.compile(
+        r"\bconst\s+" + re.escape(name) + r"\b\s*(?::[^=]*)?=\s*\[(.*?)\]",
+        re.DOTALL,
+    )
+    match = pattern.search(_strip_comments(text))
+    if not match:
+        return None
+    return _STRING_LITERAL_RE.findall(match.group(1))
+
+
+def parse_ts_union_literals(text: str, name: str) -> set[str] | None:
+    """Return the set of string-literal members of ``type <name> = "A" | "B" | ...;``.
+
+    Comments are stripped first. Returns ``None`` when no such type alias exists.
+    Union member order is not significant, so a set is returned.
+    """
+    pattern = re.compile(r"\btype\s+" + re.escape(name) + r"\b\s*=([^;]*);", re.DOTALL)
+    match = pattern.search(_strip_comments(text))
+    if not match:
+        return None
+    return set(_STRING_LITERAL_RE.findall(match.group(1)))
+
+
+def run_enum_contract_check(root: Path = REPO_ROOT) -> list[Violation]:
+    """Assert backend Java enums == frontend api.ts == MCP lib.js for the enum inventory.
+
+    A static post-condition (independent of ``changed_files``) so any diff that
+    lets the layers diverge fails ``make policy``. Emits:
+      ``enum-contract-source-missing`` — a required source file is absent.
+      ``enum-contract-parse-error``    — a file exists but the enum/const/union
+                                         could not be parsed out of it.
+      ``enum-contract-drift``          — the values do not match (the message
+                                         names the enum, the layer, and the
+                                         symmetric difference).
+    """
     violations: list[Violation] = []
-    if not java_root.is_dir():
+
+    api_ts_path = root / FRONTEND_API_TYPES_PATH
+    mcp_path = root / MCP_LIB_PATH
+    api_ts_text: str | None = None
+    mcp_text: str | None = None
+    if api_ts_path.exists():
+        api_ts_text = api_ts_path.read_text(encoding="utf-8")
+    else:
         violations.append(
-            _ontology_violation(
-                "ontology-source-root-missing",
-                f"Ontology Java source root is missing: {ONTOLOGY_SOURCE_ROOT.as_posix()}.",
+            Violation(
+                code="enum-contract-source-missing",
+                message="Frontend API types file is missing — enum contract cannot be verified.",
+                details=[f"expected at {FRONTEND_API_TYPES_PATH}"],
             )
         )
-        return discovered, dynamic_enum_selectors, violations
-    for path in sorted(java_root.rglob("*.java")):
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeError) as exc:
-            violations.append(
-                _ontology_violation("ontology-source-unreadable", f"Cannot read ontology source {path}.", str(exc))
-            )
-            continue
-        without_comments = _strip_comments(text)
-        contributor_identity = _contributor_type_identity(text)
-        named_contributor_candidate = (
-            path.name.endswith("GraphProjectionContributor.java")
-            and path.name != "GraphProjectionContributor.java"
-        )
-        if named_contributor_candidate and contributor_identity is None:
-            violations.append(
-                _ontology_violation(
-                    "ontology-contributor-declaration-unresolved",
-                    "Graph contributor candidate does not directly declare GraphProjectionContributor.",
-                    f"file: {path.relative_to(root).as_posix()}",
-                )
-            )
-            continue
-        identity = contributor_identity or _java_type_identity(text)
-        if identity is None:
-            continue
-        surface_id, type_name = identity
-        rel = path.relative_to(root).as_posix()
-        if contributor_identity is not None:
-            values, enum_selectors, unresolved = _contributor_edge_values(text)
-            discovered[surface_id] = ("graph-contributor", rel, values)
-            dynamic_enum_selectors[surface_id] = enum_selectors
-            for expression in unresolved:
-                violations.append(
-                    _ontology_violation(
-                        "ontology-contributor-edge-unresolved",
-                        f"Contributor {surface_id} has an edge expression the ontology inventory cannot resolve.",
-                        f"file: {rel}",
-                        f"expression: {expression}",
-                    )
-                )
-            continue
-        enum_match = re.search(r"\benum\s+(\w+)", _strip_comments(text))
-        if enum_match and _is_ontology_enum(enum_match.group(1)):
-            values = set(parse_java_enum_constants(text))
-            if not values:
-                violations.append(
-                    _ontology_violation(
-                        "ontology-source-parse-error",
-                        f"Could not parse ontology enum values from {rel}.",
-                    )
-                )
-            discovered[surface_id] = ("java-enum", rel, values)
-    return discovered, dynamic_enum_selectors, violations
-
-
-def _safe_ontology_source_path(root: Path, raw_path: Any) -> bool:
-    if not isinstance(raw_path, str) or not raw_path:
-        return False
-    rel = Path(raw_path)
-    if rel.is_absolute() or ".." in rel.parts or rel.as_posix() != raw_path:
-        return False
-    if not rel.is_relative_to(ONTOLOGY_SOURCE_ROOT):
-        return False
-    try:
-        (root / rel).resolve().relative_to(root.resolve())
-    except (OSError, ValueError):
-        return False
-    return True
-
-
-def run_ontology_binding_check(root: Path = REPO_ROOT) -> list[Violation]:
-    """Validate ontology artifacts and their bidirectional Java-source bindings."""
-
-    payloads, violations = _load_ontology_contracts(root)
-    if set(payloads) != set(ONTOLOGY_CONTRACT_PATHS):
-        return violations
-
-    family_ids, family_violations = _validate_ontology_families(payloads["families"])
-    terms, term_violations = _validate_ontology_terms(payloads["terms"], family_ids)
-    violations.extend(family_violations)
-    violations.extend(term_violations)
-
-    discovered, dynamic_enum_selectors, discovery_violations = _discover_ontology_surfaces(root)
-    violations.extend(discovery_violations)
-
-    surfaces = payloads["bindings"].get("surfaces")
-    if not isinstance(surfaces, list):
+    mcp_text = read_mcp_library(root)
+    if mcp_text is None:
         violations.append(
-            _ontology_violation(
-                "ontology-contract-shape-invalid",
-                "gc-artifact-bindings-v1.json must declare a surfaces array.",
+            Violation(
+                code="enum-contract-source-missing",
+                message="MCP library file is missing — enum contract cannot be verified.",
+                details=[f"expected at {MCP_LIB_PATH}"],
             )
         )
-        return violations
 
-    declared_surfaces: set[str] = set()
-    declared_keys: set[tuple[str, str]] = set()
-    for surface in surfaces:
-        if not isinstance(surface, dict):
-            violations.append(_ontology_violation("ontology-surface-invalid", "Every ontology surface must be an object."))
-            continue
-        surface_id = surface.get("id")
-        kind = surface.get("kind")
-        raw_path = surface.get("path")
-        if not isinstance(surface_id, str) or not surface_id:
-            violations.append(_ontology_violation("ontology-surface-invalid", "Every ontology surface must have an id."))
-            continue
-        if surface_id in declared_surfaces:
+    for contract in ENUM_CONTRACT_INVENTORY:
+        java_path = root / contract.java_path
+        if not java_path.exists():
             violations.append(
-                _ontology_violation("ontology-surface-duplicate", f"Ontology surface {surface_id} is declared more than once.")
-            )
-        declared_surfaces.add(surface_id)
-        if kind not in ONTOLOGY_SURFACE_KINDS:
-            violations.append(
-                _ontology_violation(
-                    "ontology-surface-kind-invalid",
-                    f"Ontology surface {surface_id} has unknown kind {kind!r}.",
+                Violation(
+                    code="enum-contract-source-missing",
+                    message=f"Backend enum source for {contract.label} is missing.",
+                    details=[f"expected at {contract.java_path}"],
                 )
-            )
-        if not _safe_ontology_source_path(root, raw_path):
-            violations.append(
-                _ontology_violation(
-                    "ontology-surface-path-invalid",
-                    f"Ontology surface {surface_id} has an unsafe or non-source path {raw_path!r}.",
-                )
-            )
-        actual = discovered.get(surface_id)
-        if actual is not None:
-            actual_kind, actual_path, _ = actual
-            if kind != actual_kind:
-                violations.append(
-                    _ontology_violation(
-                        "ontology-surface-kind-mismatch",
-                        f"Ontology surface {surface_id} is {actual_kind}, not {kind!r}.",
-                    )
-                )
-            if raw_path != actual_path:
-                violations.append(
-                    _ontology_violation(
-                        "ontology-surface-path-mismatch",
-                        f"Ontology surface {surface_id} path does not match discovered source.",
-                        f"declared: {raw_path}",
-                        f"discovered: {actual_path}",
-                    )
-                )
-        configured_enum_sources = surface.get("edge_enum_sources", {})
-        if not isinstance(configured_enum_sources, dict):
-            violations.append(
-                _ontology_violation(
-                    "ontology-edge-enum-source-invalid",
-                    f"Ontology surface {surface_id} must declare edge_enum_sources as an object.",
-                )
-            )
-            configured_enum_sources = {}
-        expected_selectors = dynamic_enum_selectors.get(surface_id, set())
-        configured_selectors = set(configured_enum_sources)
-        for selector in sorted(expected_selectors - configured_selectors):
-            violations.append(
-                _ontology_violation(
-                    "ontology-edge-enum-source-missing",
-                    f"Dynamic edge selector {surface_id}:{selector} has no declared enum source.",
-                )
-            )
-        for selector in sorted(configured_selectors - expected_selectors):
-            violations.append(
-                _ontology_violation(
-                    "ontology-edge-enum-source-stale",
-                    f"Declared edge enum selector {surface_id}:{selector} no longer appears in source.",
-                )
-            )
-        for selector, enum_surface_id in configured_enum_sources.items():
-            enum_surface = discovered.get(enum_surface_id) if isinstance(enum_surface_id, str) else None
-            if enum_surface is None or enum_surface[0] != "java-enum":
-                violations.append(
-                    _ontology_violation(
-                        "ontology-edge-enum-source-missing",
-                        f"Dynamic edge selector {surface_id}:{selector} does not resolve to a discovered enum surface.",
-                        f"declared source: {enum_surface_id!r}",
-                    )
-                )
-                continue
-            enum_name = enum_surface_id.rsplit(".", 1)[-1]
-            selector_matches = (
-                (selector == "getLinkType" and enum_name.endswith("LinkType") and not enum_name.endswith("LinkTargetType"))
-                or (selector == "getRelationType" and enum_name.endswith("RelationType"))
-                or (selector == "getRelation" and enum_name == "ProvenanceEdgeRelation")
-            )
-            if not selector_matches:
-                violations.append(
-                    _ontology_violation(
-                        "ontology-edge-enum-source-invalid",
-                        f"Dynamic edge selector {surface_id}:{selector} is incompatible with {enum_surface_id}.",
-                    )
-                )
-        bindings = surface.get("bindings")
-        if not isinstance(bindings, list):
-            violations.append(
-                _ontology_violation("ontology-surface-invalid", f"Ontology surface {surface_id} must declare bindings.")
             )
             continue
-        for binding in bindings:
-            if not isinstance(binding, dict):
-                violations.append(
-                    _ontology_violation("ontology-binding-invalid", f"Surface {surface_id} has a non-object binding.")
+        java_consts = parse_java_enum_constants(java_path.read_text(encoding="utf-8"))
+        if not java_consts:
+            violations.append(
+                Violation(
+                    code="enum-contract-parse-error",
+                    message=f"Could not parse the {contract.label} enum constants from the Java source.",
+                    details=[f"file: {contract.java_path}"],
                 )
-                continue
-            local_value = binding.get("local_value")
-            term_id = binding.get("term")
-            if not isinstance(local_value, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]*", local_value):
-                violations.append(
-                    _ontology_violation(
-                        "ontology-binding-invalid",
-                        f"Surface {surface_id} has invalid local_value {local_value!r}.",
-                    )
-                )
-                continue
-            key = (surface_id, local_value)
-            if key in declared_keys:
-                violations.append(
-                    _ontology_violation(
-                        "ontology-binding-duplicate",
-                        f"Ontology binding {surface_id}:{local_value} is declared more than once.",
-                    )
-                )
-            declared_keys.add(key)
-            term = terms.get(term_id) if isinstance(term_id, str) else None
-            if term is None:
-                violations.append(
-                    _ontology_violation(
-                        "ontology-term-reference-missing",
-                        f"Binding {surface_id}:{local_value} references unknown term {term_id!r}.",
-                    )
-                )
-            elif actual is not None:
-                expected_term_kind = "classification" if surface_id.endswith(".GraphEntityType") else "edge"
-                if term.get("kind") != expected_term_kind:
+            )
+            continue
+        java_set = set(java_consts)
+
+        if api_ts_text is not None:
+            if contract.ts_const is not None:
+                ts_const = parse_const_string_array(api_ts_text, contract.ts_const)
+                if ts_const is None:
                     violations.append(
-                        _ontology_violation(
-                            "ontology-binding-kind-mismatch",
-                            f"Binding {surface_id}:{local_value} must target a {expected_term_kind} term.",
-                            f"term {term_id} is {term.get('kind')!r}",
+                        Violation(
+                            code="enum-contract-parse-error",
+                            message=f"Frontend constant {contract.ts_const} not found in {FRONTEND_API_TYPES_PATH}.",
+                            details=[f"backend {contract.label} = {java_consts}"],
                         )
                     )
+                elif ts_const != java_consts:
+                    violations.append(_drift_violation(contract.label, f"frontend {contract.ts_const} (api.ts)", java_consts, ts_const))
 
-    discovered_surfaces = set(discovered)
-    for surface_id in sorted(discovered_surfaces - declared_surfaces):
-        kind, path, _ = discovered[surface_id]
-        violations.append(
-            _ontology_violation(
-                "ontology-surface-missing",
-                f"Discovered {kind} surface {surface_id} has no ontology surface declaration.",
-                f"file: {path}",
-            )
-        )
-    for surface_id in sorted(declared_surfaces - discovered_surfaces):
-        violations.append(
-            _ontology_violation(
-                "ontology-surface-stale",
-                f"Ontology surface {surface_id} no longer exists in source inventory.",
-            )
-        )
+            ts_union = parse_ts_union_literals(api_ts_text, contract.ts_union)
+            if ts_union is None:
+                violations.append(
+                    Violation(
+                        code="enum-contract-parse-error",
+                        message=f"Frontend union type {contract.ts_union} not found in {FRONTEND_API_TYPES_PATH}.",
+                        details=[f"backend {contract.label} = {java_consts}"],
+                    )
+                )
+            elif ts_union != java_set:
+                violations.append(_drift_violation(contract.label, f"frontend type {contract.ts_union} (api.ts)", sorted(java_set), sorted(ts_union)))
 
-    discovered_keys = {
-        (surface_id, local_value)
-        for surface_id, (_, _, values) in discovered.items()
-        for local_value in values
-    }
-    for surface_id, local_value in sorted(discovered_keys - declared_keys):
-        violations.append(
-            _ontology_violation(
-                "ontology-binding-missing",
-                f"Source vocabulary is unbound: {surface_id}:{local_value}.",
-            )
-        )
-    for surface_id, local_value in sorted(declared_keys - discovered_keys):
-        violations.append(
-            _ontology_violation(
-                "ontology-binding-stale",
-                f"Ontology binding points to a vanished source value: {surface_id}:{local_value}.",
-            )
-        )
+        if mcp_text is not None and contract.mcp_const is not None:
+            mcp_const = parse_const_string_array(mcp_text, contract.mcp_const)
+            if mcp_const is None:
+                violations.append(
+                    Violation(
+                        code="enum-contract-parse-error",
+                        message=f"MCP constant {contract.mcp_const} not found in {MCP_LIB_PATH}.",
+                        details=[f"backend {contract.label} = {java_consts}"],
+                    )
+                )
+            elif mcp_const != java_consts:
+                violations.append(_drift_violation(contract.label, f"MCP {contract.mcp_const} (lib.js)", java_consts, mcp_const))
+
     return violations
 
 
-ONTOLOGY_CROSSWALK_PATH = Path("contracts/ontology/crosswalks/aces-concept-families-v1.json")
+def _drift_violation(label: str, layer: str, expected: list[str], actual: list[str]) -> Violation:
+    expected_set, actual_set = set(expected), set(actual)
+    missing = sorted(expected_set - actual_set)
+    extra = sorted(actual_set - expected_set)
+    details = [
+        f"backend {label} (source of truth): {expected}",
+        f"{layer}: {actual}",
+    ]
+    if missing:
+        details.append(f"missing from {layer}: {missing}")
+    if extra:
+        details.append(f"not in backend {label}: {extra}")
+    if not missing and not extra:
+        details.append(f"order differs from backend {label} declaration order")
+    return Violation(
+        code="enum-contract-drift",
+        message=f"{label} enum drift between backend and {layer} (issue #433 / ADR-034).",
+        details=details,
+    )
 
 
-ONTOLOGY_CROSSWALK_SCHEMA_VERSION = "aces-concept-families-crosswalk/v1"
+ONTOLOGY_CONTRACT_PATHS = {
+    "families": Path("contracts/ontology/gc-concept-families-v1.json"),
+    "terms": Path("contracts/ontology/gc-controlled-vocabularies-v1.json"),
+    "bindings": Path("contracts/ontology/gc-artifact-bindings-v1.json"),
+}
 
 
-ONTOLOGY_EXTERNAL_SNAPSHOT_ROOT = Path("contracts/ontology/external")
+ONTOLOGY_SCHEMA_VERSIONS = {
+    "families": "gc-concept-families/v1",
+    "terms": "gc-controlled-vocabularies/v1",
+    "bindings": "gc-artifact-bindings/v1",
+}
 
 
-ONTOLOGY_EFFECT_VOCABULARY = frozenset({"annotates", "aligns", "refines", "constrains"})
+ONTOLOGY_PROVENANCE = frozenset({"adopted", "adapted", "native"})
 
 
-# ADR-084 §4/§5: the crosswalk must bind to the canonical GC family catalog, and
-# crosswalk v1 deliberately omits the ACES `time-and-apparatus` family (GC has no
-# time family; time is the Envers spine). Both are contract invariants, not data.
-ONTOLOGY_CROSSWALK_TIME_FAMILY = "time-and-apparatus"
+ONTOLOGY_OWNERS = frozenset({"ground-control"})
 
 
-def _safe_ontology_external_path(root: Path, raw_path: Any) -> bool:
-    if not isinstance(raw_path, str) or not raw_path:
-        return False
-    rel = Path(raw_path)
-    if rel.is_absolute() or ".." in rel.parts or rel.as_posix() != raw_path:
-        return False
-    if not rel.is_relative_to(ONTOLOGY_EXTERNAL_SNAPSHOT_ROOT):
-        return False
-    try:
-        (root / rel).resolve().relative_to(root.resolve())
-    except (OSError, ValueError):
-        return False
-    return True
+ONTOLOGY_TERM_KINDS = frozenset({"edge", "classification"})
 
 
-def _load_ontology_family_ids(path: Path) -> tuple[set[str], Any, str | None]:
-    """Return (family_ids, schema_version, error) for a concept-families catalog,
-    reading only the family keys and version. Full family-shape validation lives
-    in the binding check."""
-    try:
-        payload = load_json(path, reject_duplicate_keys=True)
-    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
-        return set(), None, str(exc)
-    if not isinstance(payload, dict):
-        return set(), None, "catalog is not a JSON object"
-    families = payload.get("families")
-    if not isinstance(families, dict) or not families:
-        return set(), payload.get("schema_version"), "catalog declares no families object"
-    return {fid for fid in families if isinstance(fid, str) and fid}, payload.get("schema_version"), None
+ONTOLOGY_SURFACE_KINDS = frozenset({"java-enum", "graph-contributor"})
+
+
+ONTOLOGY_SOURCE_ROOT = Path("backend/src/main/java")
+
+
+def _ontology_violation(code: str, message: str, *details: str) -> Violation:
+    return Violation(code=code, message=message, details=list(details))
+
+
+def _load_ontology_contracts(root: Path) -> tuple[dict[str, dict[str, Any]], list[Violation]]:
+    payloads: dict[str, dict[str, Any]] = {}
+    violations: list[Violation] = []
+    for label, rel in ONTOLOGY_CONTRACT_PATHS.items():
+        path = root / rel
+        if not path.is_file():
+            violations.append(
+                _ontology_violation(
+                    "ontology-contract-missing",
+                    f"Required ontology contract is missing: {rel.as_posix()}.",
+                )
+            )
+            continue
+        try:
+            payload = load_json(path, reject_duplicate_keys=True)
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+            violations.append(
+                _ontology_violation(
+                    "ontology-contract-invalid-json",
+                    f"Ontology contract is not readable JSON: {rel.as_posix()}.",
+                    str(exc),
+                )
+            )
+            continue
+        if not isinstance(payload, dict):
+            violations.append(
+                _ontology_violation(
+                    "ontology-contract-shape-invalid",
+                    f"Ontology contract must contain a JSON object: {rel.as_posix()}.",
+                )
+            )
+            continue
+        payloads[label] = payload
+        actual_version = payload.get("schema_version")
+        if actual_version != ONTOLOGY_SCHEMA_VERSIONS[label]:
+            violations.append(
+                _ontology_violation(
+                    "ontology-contract-version-invalid",
+                    f"Ontology contract has an unsupported schema version: {rel.as_posix()}.",
+                    f"expected {ONTOLOGY_SCHEMA_VERSIONS[label]}, got {actual_version!r}",
+                )
+            )
+    return payloads, violations
+
+
+def _nonempty_string_list(value: Any) -> bool:
+    return isinstance(value, list) and bool(value) and all(isinstance(item, str) and item.strip() for item in value)

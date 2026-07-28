@@ -1,8 +1,11 @@
-"""Policy checks: ontology crosswalk.
+"""Policy checks: ontology crosswalk and contract surface.
 
 Extracted from tools/policy/checks.py (issue #1355), which had reached 5,679 lines against
 the repo's 500-LOC limit. checks.py remains the entry point and re-exports this module, so
 every existing import path and the CLI keep working.
+
+The first cut named each file for the section that began where the previous chunk ended, so
+every name described a neighbour's contents. The modules are named for what they hold.
 """
 
 from __future__ import annotations
@@ -19,361 +22,381 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
+from .adr_guard import (
+    load_json,
+)
 from .core import (
+    CONTRACT_REQUIRED_PATHS,
+    FRONTEND_CONTRACT_SHIM_PATH,
+    GENERATED_CONTRACT_EXPORT,
     REPO_ROOT,
-    REQUIREMENT_FREE_MARKER_RE,
     Violation,
-    extract_requirement_uid_tokens,
-    extract_requirement_uids_section,
-    run_no_deferral_disposition_check,
+)
+from .ontology_binding import (
+    ONTOLOGY_CROSSWALK_PATH,
+    ONTOLOGY_CROSSWALK_SCHEMA_VERSION,
+    ONTOLOGY_CROSSWALK_TIME_FAMILY,
+    ONTOLOGY_EFFECT_VOCABULARY,
+    ONTOLOGY_EXTERNAL_SNAPSHOT_ROOT,
+    _load_ontology_family_ids,
+    _safe_ontology_external_path,
+)
+from .enum_contract import (
+    ONTOLOGY_CONTRACT_PATHS,
+    ONTOLOGY_SCHEMA_VERSIONS,
+    _ontology_violation,
 )
 
 
-def run_contract_invariant_enforcement_check(root: Path = REPO_ROOT) -> list[Violation]:
+def _validate_crosswalk_pin(
+    root: Path, crosswalk: dict[str, Any]
+) -> tuple[set[str], list[Violation]]:
+    """Validate the external pin and return (aces_family_ids, violations)."""
+    pin = crosswalk.get("external_pin")
+    if not isinstance(pin, dict):
+        return set(), [
+            _ontology_violation("ontology-crosswalk-pin-invalid", "Crosswalk must declare an external_pin object.")
+        ]
     violations: list[Violation] = []
-    schemas_dir = root / "contracts" / "schemas"
-    if not schemas_dir.exists():
+    distribution = pin.get("distribution")
+    release_version = pin.get("release_version")
+    sha256 = pin.get("sha256")
+    snapshot_rel = pin.get("reference_snapshot")
+    for field in ("authority", "distribution", "release_version", "artifact_path", "catalog_schema_version"):
+        if not isinstance(pin.get(field), str) or not pin[field].strip():
+            violations.append(
+                _ontology_violation("ontology-crosswalk-pin-invalid", f"external_pin.{field} must be a non-empty string.")
+            )
+    if not isinstance(sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", sha256):
+        violations.append(
+            _ontology_violation("ontology-crosswalk-pin-invalid", "external_pin.sha256 must be a 64-character lowercase hex digest.")
+        )
+    if not _safe_ontology_external_path(root, snapshot_rel):
+        violations.append(
+            _ontology_violation(
+                "ontology-crosswalk-pin-invalid",
+                f"external_pin.reference_snapshot must be a repo-relative path under {ONTOLOGY_EXTERNAL_SNAPSHOT_ROOT.as_posix()}/.",
+                f"got {snapshot_rel!r}",
+            )
+        )
+        return set(), violations
+    # The snapshot must live under external/<distribution>/<release_version>/ so a
+    # release bump adds a new snapshot instead of mutating a pinned one.
+    if isinstance(distribution, str) and isinstance(release_version, str):
+        expected_prefix = f"{ONTOLOGY_EXTERNAL_SNAPSHOT_ROOT.as_posix()}/{distribution}/{release_version}/"
+        if not snapshot_rel.startswith(expected_prefix):
+            violations.append(
+                _ontology_violation(
+                    "ontology-crosswalk-pin-invalid",
+                    "external_pin.reference_snapshot must live under external/<distribution>/<release_version>/.",
+                    f"expected prefix {expected_prefix}, got {snapshot_rel}",
+                )
+            )
+    snapshot_path = root / Path(snapshot_rel)
+    if not snapshot_path.is_file():
+        violations.append(
+            _ontology_violation("ontology-crosswalk-snapshot-missing", f"Reference snapshot is missing: {snapshot_rel}.")
+        )
+        return set(), violations
+    snapshot_bytes = snapshot_path.read_bytes()
+    if isinstance(sha256, str):
+        actual = hashlib.sha256(snapshot_bytes).hexdigest()
+        if actual != sha256:
+            violations.append(
+                _ontology_violation(
+                    "ontology-crosswalk-hash-drift",
+                    "Reference snapshot bytes do not match external_pin.sha256; re-review the crosswalk against the new release.",
+                    f"pinned {sha256}, actual {actual}",
+                )
+            )
+    # ADR-084 §2/§4: the reference catalog rejects duplicate-key JSON, so a pinned
+    # snapshot cannot carry an ambiguous repeated key while passing hash validation.
+    try:
+        snapshot = load_json(snapshot_path, reject_duplicate_keys=True)
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+        violations.append(
+            _ontology_violation("ontology-crosswalk-snapshot-invalid-json", f"Reference snapshot is not readable JSON: {snapshot_rel}.", str(exc))
+        )
+        return set(), violations
+    if not isinstance(snapshot, dict) or not isinstance(snapshot.get("families"), dict):
+        violations.append(
+            _ontology_violation("ontology-crosswalk-snapshot-invalid-json", f"Reference snapshot must declare a families object: {snapshot_rel}.")
+        )
+        return set(), violations
+    declared_catalog_version = pin.get("catalog_schema_version")
+    snapshot_version = snapshot.get("schema_version")
+    if isinstance(declared_catalog_version, str) and snapshot_version != declared_catalog_version:
+        violations.append(
+            _ontology_violation(
+                "ontology-crosswalk-pin-invalid",
+                "external_pin.catalog_schema_version does not match the snapshot schema_version.",
+                f"pinned {declared_catalog_version!r}, snapshot {snapshot_version!r}",
+            )
+        )
+    aces_family_ids = {fid for fid in snapshot["families"] if isinstance(fid, str) and fid}
+    return aces_family_ids, violations
+
+
+def run_ontology_crosswalk_check(root: Path = REPO_ROOT) -> list[Violation]:
+    """Validate the ACES concept-family crosswalk: pin/hash integrity, both-catalog
+    referential integrity, and the closed effect vocabulary (ADR-084 §4)."""
+
+    crosswalk_path = root / ONTOLOGY_CROSSWALK_PATH
+    if not crosswalk_path.is_file():
         return [
-            Violation(
-                code="contract-schema-dir-missing",
-                message="contracts/schemas/ is missing; GC-O014 schema invariant coverage cannot be checked.",
+            _ontology_violation(
+                "ontology-crosswalk-missing",
+                f"Required crosswalk artifact is missing: {ONTOLOGY_CROSSWALK_PATH.as_posix()}.",
             )
         ]
-
-    for schema_path in sorted(schemas_dir.rglob("*.schema.json")):
-        rel = schema_path.relative_to(root).as_posix()
-        try:
-            schema = json.loads(schema_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            violations.append(
-                Violation(
-                    code="contract-schema-json-invalid",
-                    message=f"{rel} is not valid JSON.",
-                    details=[str(exc)],
-                )
-            )
-            continue
-
-        invariants = schema.get("x-ground-control-invariants")
-        if invariants is None:
-            violations.append(
-                Violation(
-                    code="contract-invariant-inventory-missing",
-                    message=f"{rel} must declare x-ground-control-invariants.",
-                    details=["Use [{\"id\":\"none\", \"rationale\":\"...\"}] only when the schema has no declared invariant."],
-                )
-            )
-            continue
-        if not isinstance(invariants, list) or len(invariants) == 0:
-            violations.append(
-                Violation(
-                    code="contract-invariant-inventory-invalid",
-                    message=f"{rel} has an empty or non-list x-ground-control-invariants value.",
-                )
-            )
-            continue
-
-        for entry in invariants:
-            if not isinstance(entry, dict) or not entry.get("id"):
-                violations.append(
-                    Violation(
-                        code="contract-invariant-entry-invalid",
-                        message=f"{rel} has an invariant entry without an id.",
-                    )
-                )
-                continue
-            if entry["id"] == "none":
-                if not entry.get("rationale"):
-                    violations.append(
-                        Violation(
-                            code="contract-invariant-none-rationale-missing",
-                            message=f"{rel} declares no invariants but omits a rationale.",
-                        )
-                    )
-                continue
-            enforced_by = entry.get("enforcedBy")
-            if not isinstance(enforced_by, list) or len(enforced_by) == 0:
-                violations.append(
-                    Violation(
-                        code="contract-invariant-enforcement-missing",
-                        message=f"{rel} invariant {entry['id']} must name at least one enforcing test or spec file.",
-                    )
-                )
-                continue
-            for target in enforced_by:
-                if not isinstance(target, str):
-                    violations.append(
-                        Violation(
-                            code="contract-invariant-enforcement-invalid",
-                            message=f"{rel} invariant {entry['id']} has an invalid enforcement path.",
-                            details=[str(target)],
-                        )
-                    )
-                    continue
-
-                target_path_text, separator, target_anchor = target.partition("::")
-                target_path = Path(target_path_text)
-                if not separator or not target_anchor:
-                    violations.append(
-                        Violation(
-                            code="contract-invariant-enforcement-anchor-missing",
-                            message=f"{rel} invariant {entry['id']} must name a specific test/spec anchor.",
-                            details=[f"use '<repo-path>::<test-or-rule-id>', got {target}"],
-                        )
-                    )
-                    continue
-                if target_path_text.startswith("/") or ".." in target_path.parts:
-                    violations.append(
-                        Violation(
-                            code="contract-invariant-enforcement-invalid",
-                            message=f"{rel} invariant {entry['id']} has an invalid enforcement path.",
-                            details=[target],
-                        )
-                    )
-                    continue
-
-                resolved = root / target_path
-                if not resolved.exists():
-                    violations.append(
-                        Violation(
-                            code="contract-invariant-enforcement-missing-file",
-                            message=f"{rel} invariant {entry['id']} references a missing enforcement file.",
-                            details=[target_path_text],
-                        )
-                    )
-                elif target_anchor not in resolved.read_text(encoding="utf-8"):
-                    violations.append(
-                        Violation(
-                            code="contract-invariant-enforcement-anchor-missing-file",
-                            message=f"{rel} invariant {entry['id']} references an enforcement anchor that is not present.",
-                            details=[target],
-                        )
-                    )
-
-    return violations
-
-
-def _parse_authz_contract_rows(text: str) -> list[dict[str, str]]:
-    rows: list[dict[str, str]] = []
-    current: dict[str, str] = {}
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if line.startswith("- id:"):
-            if current:
-                rows.append(current)
-            current = {"id": line.split(":", 1)[1].strip().strip('"')}
-        elif current and ":" in line:
-            key, value = line.split(":", 1)
-            current[key.strip()] = value.strip().strip('"')
-    if current:
-        rows.append(current)
-    return rows
-
-
-def _java_matrix_paths_by_access(java_text: str) -> dict[str, set[str]]:
-    constants = {
-        name: value
-        for name, value in re.findall(r'private\s+static\s+final\s+String\s+(\w+)\s*=\s*"([^"]+)"', java_text)
-    }
-    access_methods = {
-        "hasRole(ROLE_ADMIN)": "ROLE_ADMIN",
-        "access(identityAuthorizationManager)": "PERMISSION_IDENTITY_ADMIN",
-    }
-    paths_by_access = {access: set() for access in access_methods.values()}
-    matcher = r"\.requestMatchers\((.*?)\)\s*\.(hasRole\(ROLE_ADMIN\)|access\(identityAuthorizationManager\))"
-    for match in re.finditer(matcher, java_text, re.DOTALL):
-        block = match.group(1)
-        access = access_methods[match.group(2)]
-        paths = paths_by_access[access]
-        paths.update(value for value in re.findall(r'"(/api/v1/[^"]+)"', block))
-        for token in re.findall(r"\b[A-Z][A-Z0-9_]+\b", block):
-            if token in constants and constants[token].startswith("/api/v1/"):
-                paths.add(constants[token])
-    return paths_by_access
-
-
-def _java_admin_matrix_paths(java_text: str) -> set[str]:
-    return _java_matrix_paths_by_access(java_text)["ROLE_ADMIN"]
-
-
-def run_authz_matrix_sync_check(root: Path = REPO_ROOT) -> list[Violation]:
-    matrix_path = root / "contracts" / "authz" / "path-matrix.yaml"
-    java_path = root / "backend" / "src" / "main" / "java" / "com" / "keplerops" / "groundcontrol" / "shared" / "security" / "ApiPathMatrix.java"
-    if not matrix_path.exists() or not java_path.exists():
+    try:
+        crosswalk = load_json(crosswalk_path, reject_duplicate_keys=True)
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
         return [
-            Violation(
-                code="authz-matrix-source-missing",
-                message="Authz matrix sync check needs contracts/authz/path-matrix.yaml and ApiPathMatrix.java.",
+            _ontology_violation(
+                "ontology-crosswalk-invalid-json",
+                f"Crosswalk artifact is not readable JSON: {ONTOLOGY_CROSSWALK_PATH.as_posix()}.",
+                str(exc),
             )
         ]
-
-    rows = _parse_authz_contract_rows(matrix_path.read_text(encoding="utf-8"))
-    contract_paths_by_access = {
-        access: {row.get("path", "") for row in rows if row.get("access") == access}
-        for access in ("ROLE_ADMIN", "PERMISSION_IDENTITY_ADMIN")
-    }
-    for paths in contract_paths_by_access.values():
-        paths.discard("")
-    java_paths_by_access = _java_matrix_paths_by_access(java_path.read_text(encoding="utf-8"))
+    if not isinstance(crosswalk, dict):
+        return [_ontology_violation("ontology-crosswalk-shape-invalid", "Crosswalk artifact must contain a JSON object.")]
 
     violations: list[Violation] = []
-    details: list[str] = []
-    for access in ("ROLE_ADMIN", "PERMISSION_IDENTITY_ADMIN"):
-        contract_paths = contract_paths_by_access[access]
-        java_paths = java_paths_by_access[access]
-        missing_from_contract = sorted(java_paths - contract_paths)
-        missing_from_java = sorted(contract_paths - java_paths)
-        if missing_from_contract:
-            details.append(
-                f"{access} paths in ApiPathMatrix.java but not contracts/authz/path-matrix.yaml: "
-                f"{missing_from_contract}"
-            )
-        if missing_from_java:
-            details.append(
-                f"{access} paths in contracts/authz/path-matrix.yaml but not ApiPathMatrix.java: "
-                f"{missing_from_java}"
-            )
-    if details:
+    if crosswalk.get("schema_version") != ONTOLOGY_CROSSWALK_SCHEMA_VERSION:
         violations.append(
-            Violation(
-                code="authz-matrix-drift",
-                message="contracts/authz/path-matrix.yaml drifted from ApiPathMatrix.java.",
-                details=details,
+            _ontology_violation(
+                "ontology-crosswalk-version-invalid",
+                "Crosswalk artifact has an unsupported schema version.",
+                f"expected {ONTOLOGY_CROSSWALK_SCHEMA_VERSION}, got {crosswalk.get('schema_version')!r}",
             )
         )
+
+    gc_catalog_rel = crosswalk.get("gc_catalog")
+    declared_gc_version = crosswalk.get("gc_catalog_schema_version")
+    canonical_gc_catalog = ONTOLOGY_CONTRACT_PATHS["families"].as_posix()
+    canonical_gc_version = ONTOLOGY_SCHEMA_VERSIONS["families"]
+    gc_family_ids: set[str] = set()
+    if not isinstance(gc_catalog_rel, str) or not gc_catalog_rel:
+        violations.append(_ontology_violation("ontology-crosswalk-shape-invalid", "Crosswalk must declare gc_catalog."))
+    elif gc_catalog_rel != canonical_gc_catalog:
+        # Bind to the canonical GC catalog so a crosswalk cannot point validation
+        # at an alternate file with invented family IDs (ADR-084 §2).
+        violations.append(
+            _ontology_violation(
+                "ontology-crosswalk-gc-catalog-invalid",
+                "Crosswalk gc_catalog must be the canonical Ground Control family catalog.",
+                f"expected {canonical_gc_catalog}, got {gc_catalog_rel}",
+            )
+        )
+    else:
+        gc_family_ids, loaded_gc_version, gc_error = _load_ontology_family_ids(root / Path(gc_catalog_rel))
+        if gc_error is not None or not gc_family_ids:
+            violations.append(
+                _ontology_violation(
+                    "ontology-crosswalk-gc-catalog-unreadable",
+                    f"Crosswalk gc_catalog is missing or unreadable: {gc_catalog_rel}.",
+                    *([gc_error] if isinstance(gc_error, str) else []),
+                )
+            )
+        # The declared version and the loaded catalog's version must both equal the
+        # canonical version, so neither the pin nor the catalog can drift unseen.
+        if declared_gc_version != canonical_gc_version or loaded_gc_version != canonical_gc_version:
+            violations.append(
+                _ontology_violation(
+                    "ontology-crosswalk-gc-catalog-invalid",
+                    "Crosswalk gc_catalog_schema_version and the loaded catalog must both be the canonical GC catalog version.",
+                    f"canonical {canonical_gc_version!r}, declared {declared_gc_version!r}, loaded {loaded_gc_version!r}",
+                )
+            )
+
+    aces_family_ids, pin_violations = _validate_crosswalk_pin(root, crosswalk)
+    violations.extend(pin_violations)
+
+    alignments = crosswalk.get("alignments")
+    if not isinstance(alignments, list) or not alignments:
+        violations.append(_ontology_violation("ontology-crosswalk-shape-invalid", "Crosswalk must declare a non-empty alignments array."))
+        alignments = []
+
+    seen_pairs: set[tuple[str, str]] = set()
+    for row in alignments:
+        if not isinstance(row, dict):
+            violations.append(_ontology_violation("ontology-crosswalk-alignment-invalid", "Every alignment must be an object."))
+            continue
+        gc_family = row.get("gc_family")
+        aces_family = row.get("aces_family")
+        effect = row.get("effect")
+        rationale = row.get("rationale")
+        divergences = row.get("divergences")
+        if isinstance(gc_family, str) and isinstance(aces_family, str):
+            pair = (gc_family, aces_family)
+            if pair in seen_pairs:
+                violations.append(
+                    _ontology_violation("ontology-crosswalk-alignment-duplicate", f"Alignment ({gc_family} -> {aces_family}) is declared more than once.")
+                )
+            seen_pairs.add(pair)
+        if not isinstance(gc_family, str) or gc_family not in gc_family_ids:
+            violations.append(
+                _ontology_violation("ontology-crosswalk-gc-family-missing", f"Alignment references unknown Ground Control family {gc_family!r}.")
+            )
+        if not isinstance(aces_family, str) or aces_family not in aces_family_ids:
+            violations.append(
+                _ontology_violation("ontology-crosswalk-aces-family-missing", f"Alignment references unknown ACES family {aces_family!r}.")
+            )
+        elif aces_family == ONTOLOGY_CROSSWALK_TIME_FAMILY:
+            # ADR-084 §5: time has no GC family and is deliberately omitted from v1;
+            # aligning it requires a GC time family and an ADR amendment first.
+            violations.append(
+                _ontology_violation(
+                    "ontology-crosswalk-time-alignment-forbidden",
+                    f"Alignment to ACES `{ONTOLOGY_CROSSWALK_TIME_FAMILY}` is forbidden in crosswalk v1; time is omitted until a GC time family exists (ADR-084 §5).",
+                )
+            )
+        if effect not in ONTOLOGY_EFFECT_VOCABULARY:
+            violations.append(
+                _ontology_violation(
+                    "ontology-crosswalk-effect-invalid",
+                    f"Alignment effect {effect!r} is not in the closed effect vocabulary.",
+                    f"allowed: {sorted(ONTOLOGY_EFFECT_VOCABULARY)}",
+                )
+            )
+        if not isinstance(rationale, str) or not rationale.strip():
+            violations.append(
+                _ontology_violation("ontology-crosswalk-rationale-missing", f"Alignment ({gc_family} -> {aces_family}) must declare a non-empty rationale.")
+            )
+        if not isinstance(divergences, list) or any(not isinstance(item, str) or not item.strip() for item in divergences):
+            violations.append(
+                _ontology_violation("ontology-crosswalk-alignment-invalid", f"Alignment ({gc_family} -> {aces_family}) divergences must be a list of non-empty strings.")
+            )
+        elif effect == "aligns" and divergences:
+            violations.append(
+                _ontology_violation(
+                    "ontology-crosswalk-effect-divergence-mismatch",
+                    f"Alignment ({gc_family} -> {aces_family}) is `aligns` but records divergences; aligns means equivalent meaning with no divergence.",
+                )
+            )
+        elif effect == "refines" and not divergences:
+            violations.append(
+                _ontology_violation(
+                    "ontology-crosswalk-effect-divergence-mismatch",
+                    f"Alignment ({gc_family} -> {aces_family}) is `refines` but records no divergences; refines must record the narrowing explicitly.",
+                )
+            )
+
+    omissions = crosswalk.get("omissions")
+    time_omission_present = False
+    if not isinstance(omissions, list):
+        violations.append(_ontology_violation("ontology-crosswalk-omission-invalid", "Crosswalk omissions must be an array."))
+        omissions = []
+    for omission in omissions:
+        if not isinstance(omission, dict):
+            violations.append(_ontology_violation("ontology-crosswalk-omission-invalid", "Every omission must be an object."))
+            continue
+        topic = omission.get("topic")
+        reason = omission.get("reason")
+        aces_family = omission.get("aces_family")
+        if not isinstance(topic, str) or not topic.strip() or not isinstance(reason, str) or not reason.strip():
+            violations.append(_ontology_violation("ontology-crosswalk-omission-invalid", "Every omission must declare a non-empty topic and reason."))
+        if not isinstance(aces_family, str) or aces_family not in aces_family_ids:
+            violations.append(
+                _ontology_violation("ontology-crosswalk-omission-family-missing", f"Omission references unknown ACES family {aces_family!r}.")
+            )
+        elif aces_family == ONTOLOGY_CROSSWALK_TIME_FAMILY:
+            time_omission_present = True
+
+    # ADR-084 §5: crosswalk v1 MUST record the time omission explicitly.
+    if not time_omission_present:
+        violations.append(
+            _ontology_violation(
+                "ontology-crosswalk-time-omission-required",
+                f"Crosswalk v1 must record an omission for ACES `{ONTOLOGY_CROSSWALK_TIME_FAMILY}` (ADR-084 §5).",
+            )
+        )
+
     return violations
 
 
-def run_pr_body_check(event_path: Path) -> list[Violation]:
-    """Backwards-compatible wrapper that loads the PR body from a GitHub event payload."""
-    event = json.loads(event_path.read_text(encoding="utf-8"))
-    pull_request = event.get("pull_request") or {}
-    body = pull_request.get("body") or ""
-    return check_pr_body(body)
-
-
-def check_pr_body(body: str) -> list[Violation]:
-    """Validate a PR body against the Ground Control template requirements.
-
-    Pure function over the body string so it can be driven from GitHub event
-    payloads (CI), a local draft file (pre-push hook), or `gh pr view --json
-    body`. The CI path is `run_pr_body_check`; local tooling should call this
-    directly.
-    """
+def run_contract_surface_check(root: Path = REPO_ROOT) -> list[Violation]:
     violations: list[Violation] = []
 
-    required_headers = [
-        "## Requirement UIDs",
-        "## ADR Impact",
-        "## Ground Control Checks",
-        "## Traceability",
-    ]
-    missing_headers = [header for header in required_headers if header not in body]
-    if missing_headers:
-        violations.append(
-            Violation(
-                code="pr-template-sections",
-                message="PR body is missing required Ground Control sections.",
-                details=[f"missing headers: {', '.join(missing_headers)}"],
+    for rel in CONTRACT_REQUIRED_PATHS:
+        if not (root / rel).exists():
+            violations.append(
+                Violation(
+                    code="contract-surface-missing",
+                    message=f"Required contract artifact is missing: {rel}.",
+                    details=["Run `make contracts` and commit the generated contract surface."],
+                )
             )
-        )
-        return violations
 
-    if not extract_requirement_uid_tokens(body) and not REQUIREMENT_FREE_MARKER_RE.search(
-        extract_requirement_uids_section(body)
-    ):
-        violations.append(
-            Violation(
-                code="pr-requirement-uid",
-                message="PR body must name at least one requirement UID.",
-                details=["expected a UID like GC-O007 in the Requirement UIDs section"],
+    shim = root / FRONTEND_CONTRACT_SHIM_PATH
+    if shim.exists():
+        text = shim.read_text(encoding="utf-8")
+        if GENERATED_CONTRACT_EXPORT not in text:
+            violations.append(
+                Violation(
+                    code="contract-frontend-shim",
+                    message="frontend/src/types/api.ts must re-export the generated contract types.",
+                    details=[f"expected line: {GENERATED_CONTRACT_EXPORT}"],
+                )
             )
-        )
-
-    if "No ADR required" not in body and "ADR-" not in body:
-        violations.append(
-            Violation(
-                code="pr-adr-impact",
-                message="PR body must call out ADR impact or say 'No ADR required'.",
-                details=[],
+        hand_mirror = re.search(r"^\s*export\s+(interface|type|const)\s+", text, re.MULTILINE)
+        if hand_mirror:
+            violations.append(
+                Violation(
+                    code="contract-frontend-hand-mirror",
+                    message="frontend/src/types/api.ts must not contain hand-mirrored DTOs or enum constants.",
+                    details=["Keep compatibility aliases in contracts/gen/typescript/api.ts via the generator inventory."],
+                )
             )
-        )
-
-    required_checks = [
-        # The policy gate is named semantically, not by command (issue #1429).
-        # `workflow.policy_command` in `.ground-control.yaml` decides what
-        # actually runs, so the PR body attests that the configured gate
-        # passed rather than asserting a Make target. Mirrors
-        # `PR_BODY_POLICY_CHECK_LINE` in `mcp/ground-control/lib.js`.
-        "- [x] Configured repository policy command passes",
-        "- [x] `gc_evaluate_quality_gates` passes or is unchanged by this repo-only change",
-        "- [x] `gc_run_sweep` reviewed; findings fixed or recorded with rationale",
-    ]
-    missing_checks = [entry for entry in required_checks if entry not in body]
-    if missing_checks:
-        violations.append(
-            Violation(
-                code="pr-ground-control-checks",
-                message="PR body must record the Ground Control verification checklist.",
-                details=missing_checks,
-            )
-        )
-
-    traceability_markers = ["- IMPLEMENTS:", "- TESTS:"]
-    missing_traceability = [marker for marker in traceability_markers if marker not in body]
-    if missing_traceability:
-        violations.append(
-            Violation(
-                code="pr-traceability-summary",
-                message="PR body must summarize IMPLEMENTS and TESTS traceability.",
-                details=missing_traceability,
-            )
-        )
-
-    # The no-deferral check is composed into the PR-body validator so EVERY
-    # PR-body validation route — bin/policy main(), run_pr_body_check (the
-    # GitHub-event-payload path / bin/check-pr-body), and a direct
-    # check_pr_body(body) call — enforces ADR-029's contract, not just main().
-    violations.extend(run_no_deferral_disposition_check(pr_body=body))
 
     return violations
 
 
-IMPLEMENT_SKILL_PATH = "skills/implement/SKILL.md"
+STATION_CATALOGUE_PATH = "contracts/measurement/gc-station-catalogue-v2.json"
 
 
-# After issue #934 the monolithic SKILL.md is a thin orchestrator and the
-# per-step prose lives at `skills/implement/steps/step-NN-<id>.md`. The
-# test-quality contract check reads from the step file when the
-# orchestrator no longer carries the Step 6.6 heading inline.
-IMPLEMENT_STEP_TEST_QUALITY_PATH = (
-    "skills/implement/steps/step-06.6-test-quality-review.md"
+MEASUREMENT_RECORD_SCHEMA_PATH = "contracts/schemas/measurement/measurement-record.v1.schema.json"
+
+
+IMPLEMENT_MECHANICAL_PATH = "mcp/ground-control/gc-implement-mechanical.js"
+
+
+# Every source that names a station id at an emission site. Scanning only the
+# mechanical module left the review stations — emitted from lib.js — invisible to this
+# gate, which is the hole ADR-090 section 8 exists to close: a live emitter the gate
+# does not name is not covered by it.
+EMITTER_SOURCE_PATHS = (
+    IMPLEMENT_MECHANICAL_PATH,
+    "mcp/ground-control/gate-finding-adapters.js",
+)
+
+# The mechanical action modules, split out of gc-implement-mechanical.js under the 500-LOC limit
+# (issue #1355). The station tables live here now, so scanning only the entry module would
+# resolve nothing and let the drift gate pass vacuously.
+IMPLEMENT_MODULE_DIR = "mcp/ground-control/implement"
+
+
+# `bootstrap: "issue_branch_resolution",` inside STATION_BY_ACTION.
+_STATION_BY_ACTION_ENTRY_RE = re.compile(r"^\s*[\"a-z_-]+\s*:\s*\"([a-z0-9_]+)\"\s*,?\s*$", re.MULTILINE)
+
+
+# A station id passed literally, e.g. `emitter.station("ci", ...)`.
+_STATION_CALL_RE = re.compile(r"\.station\(\s*\"([a-z_]+)\"")
+
+
+# A station id named as a field, e.g. `recordStationAttempt({ stationId: "spotbugs" })`.
+_STATION_ID_FIELD_RE = re.compile(r"stationId:\s*\"([a-z0-9_]+)\"")
+
+
+# Any table mapping something to a station or marker id. An emitter that names its stations
+# through a lookup table is naming them just as much as one that inlines the literal, so the
+# gate reads both — otherwise it is guarded only against the style it happens to expect.
+_STATION_TABLE_RE = re.compile(
+    r"(?:STATION_BY_[A-Z_]+|MARKER_BY_[A-Z_]+|[A-Z_]*STATION[A-Z_]*)\s*=\s*Object\.freeze\(\{(.*?)\}\)",
+    re.DOTALL,
 )
 
 
-# Matches a Markdown step heading at any level (`#` through `####`) whose
-# text starts with the given step label (e.g. `Step 13`). Captures the
-# heading line so the splitter knows where the section begins. The H1
-# branch covers per-step files split out of SKILL.md by issue #934 — each
-# step file uses an H1 step heading rather than the H3 used inline in
-# the monolithic SKILL.
-_STEP_HEADING_RE = re.compile(r"^#{1,4}\s+(Step\s+\d+(?:\.\d+)?)\b.*$", re.MULTILINE)
-
-
-def extract_step_section(body: str, step_label: str) -> str | None:
-    """Return the body of a Markdown `### Step N: ...` section, or None.
-
-    The section runs from its heading up to the next step heading of any
-    level (or end of file). Returns None when the step is not present.
-    """
-    headings = list(_STEP_HEADING_RE.finditer(body))
-    target_idx = None
-    for i, match in enumerate(headings):
-        if match.group(1).strip() == step_label:
-            target_idx = i
-            break
-    if target_idx is None:
-        return None
-    start = headings[target_idx].end()
-    end = headings[target_idx + 1].start() if target_idx + 1 < len(headings) else len(body)
-    return body[start:end]
+# `<!-- gc:phase phase="ready_for_review" ...` written by the MCP layer.
+_PHASE_MARKER_LITERAL_RE = re.compile(r"gc:phase\s+phase=\\?\"([a-z_]+)\\?\"|phase:\s*\"([a-z_]+)\"")

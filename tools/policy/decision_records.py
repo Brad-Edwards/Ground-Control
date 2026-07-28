@@ -1,8 +1,11 @@
-"""Policy checks: contract surface.
+"""Policy checks: test-quality decision record contract.
 
 Extracted from tools/policy/checks.py (issue #1355), which had reached 5,679 lines against
 the repo's 500-LOC limit. checks.py remains the entry point and re-exports this module, so
 every existing import path and the CLI keep working.
+
+The first cut named each file for the section that began where the previous chunk ended, so
+every name described a neighbour's contents. The modules are named for what they hold.
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ from .core import (
     REPO_ROOT,
     Violation,
 )
-from .ontology_crosswalk import (
+from .authz_matrix import (
     IMPLEMENT_SKILL_PATH,
     IMPLEMENT_STEP_TEST_QUALITY_PATH,
     extract_step_section,

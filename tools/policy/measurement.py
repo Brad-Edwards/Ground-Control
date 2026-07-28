@@ -1,8 +1,11 @@
-"""Policy checks: measurement.
+"""Policy checks: measurement catalogue.
 
 Extracted from tools/policy/checks.py (issue #1355), which had reached 5,679 lines against
 the repo's 500-LOC limit. checks.py remains the entry point and re-exports this module, so
 every existing import path and the CLI keep working.
+
+The first cut named each file for the section that began where the previous chunk ended, so
+every name described a neighbour's contents. The modules are named for what they hold.
 """
 
 from __future__ import annotations
@@ -19,220 +22,259 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
-from .contract_surface import (
-    IMPLEMENT_STEP_17_PATH,
-    IMPLEMENT_STEP_20_PATH,
-)
 from .core import (
-    GROUND_CONTROL_YAML_PATH,
     REPO_ROOT,
     Violation,
 )
+from .deploy_artifacts import (
+    MCP_LIB_DIR,
+    MCP_LIB_PATH,
+    read_mcp_library,
+)
 from .ontology_crosswalk import (
-    IMPLEMENT_SKILL_PATH,
+    EMITTER_SOURCE_PATHS,
+    IMPLEMENT_MODULE_DIR,
+    STATION_CATALOGUE_PATH,
+    _PHASE_MARKER_LITERAL_RE,
+    _STATION_BY_ACTION_ENTRY_RE,
+    _STATION_CALL_RE,
+    _STATION_ID_FIELD_RE,
+    _STATION_TABLE_RE,
 )
 
 
-def run_traceability_reconciliation_gate_contract(
-    *,
-    root: Path = REPO_ROOT,
-) -> list[Violation]:
-    """Assert the traceability + closeout gate prose surfaces are wired.
-
-    The gate has two MCP-tool surfaces and three prose anchors:
-
-      step-17-completion.md   must mention `gc_assert_completion` and
-                              `traceability_reconciled` and `plain_english_outcome`
-      step-20-close-issue-on-merge.md must exist AND mention
-                              `gc_close_issue_after_merge`
-      SKILL.md                must mention `Phase E` and
-                              `gc_close_issue_after_merge`
-
-    Emits one violation per missing anchor with a stable code so CI surfaces
-    the specific gap. A repo whose policy-tests file isn't yet up to date
-    (e.g., the test fixture path needs a workflow run) flags here rather
-    than going silent.
-    """
-    violations: list[Violation] = []
-
-    requirements = (
-        (
-            IMPLEMENT_STEP_17_PATH,
-            ("gc_assert_completion", "traceability_reconciled", "plain_english_outcome"),
-            "traceability-gate-step17-missing",
-            "Step 17 must use gc_assert_completion with traceability_reconciled and plain_english_outcome (issue #1103).",
-        ),
-        (
-            IMPLEMENT_STEP_20_PATH,
-            ("gc_close_issue_after_merge",),
-            "traceability-gate-step20-missing",
-            "Step 20 (Phase E post-merge close) must exist and mention gc_close_issue_after_merge (issue #1058).",
-        ),
-        (
-            IMPLEMENT_SKILL_PATH,
-            ("Phase E", "gc_close_issue_after_merge"),
-            "traceability-gate-skill-missing",
-            "SKILL.md must document Phase E and the gc_close_issue_after_merge close path (issue #1058).",
-        ),
-    )
-
-    for rel_path, tokens, code, message in requirements:
-        path = root / rel_path
-        if not path.exists():
-            violations.append(
-                Violation(
-                    code=code,
-                    message=f"{rel_path} is missing — required by the issue #1058 traceability gate contract.",
-                    details=[f"expected at {rel_path}", *(f"must mention: {t}" for t in tokens)],
-                )
-            )
-            continue
-        text = path.read_text(encoding="utf-8")
-        missing_tokens = [t for t in tokens if t not in text]
-        if missing_tokens:
-            violations.append(
-                Violation(
-                    code=code,
-                    message=message,
-                    details=[f"in {rel_path}", *(f"missing: '{t}'" for t in missing_tokens)],
-                )
-            )
-
-    return violations
-
-
-def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run repo policy checks.")
-    parser.add_argument("--base", help="Git base ref to diff against.")
-    parser.add_argument(
-        "--files",
-        nargs="*",
-        default=None,
-        help="Explicit repo-relative files to evaluate.",
-    )
-    parser.add_argument(
-        "paths",
-        nargs="*",
-        help="Positional repo-relative files to evaluate. Used by pre-commit.",
-    )
-    parser.add_argument("--files-env", help="Read newline-delimited files from an env var.")
-    parser.add_argument(
-        "--json",
-        dest="json_out",
-        help=(
-            "Write the violations and this run's duration to a JSON file, for the ADR-090 "
-            "measurement projection. Emitted at the gate's own boundary so the measurement layer "
-            "reads a structured artifact instead of re-running the gate or parsing its console "
-            "output. Never changes the exit code."
-        ),
-    )
-    parser.add_argument("--staged", action="store_true", help="Read staged files from git.")
-    parser.add_argument(
-        "--skip-pr-body",
-        action="store_true",
-        help="Do not evaluate the GitHub pull request body.",
-    )
-    parser.add_argument(
-        "--event-path",
-        help="Path to a GitHub event payload. Defaults to GITHUB_EVENT_PATH when present.",
-    )
-    parser.add_argument(
-        "--pr-body-file",
-        help=(
-            "Path to a plain-text PR body draft. Use this in pre-push hooks to "
-            "validate the PR body before push. Mutually exclusive with --event-path / "
-            "--pr-number; --pr-body-file wins when supplied."
-        ),
-    )
-    parser.add_argument(
-        "--pr-number",
-        type=int,
-        help=(
-            "GitHub PR number. When set (and neither --pr-body-file nor "
-            "--event-path is supplied), the body is fetched via "
-            "`gh pr view <n> --json body`."
-        ),
-    )
-    parser.add_argument(
-        "--pr-comments-json",
-        help=(
-            "Path to sanitized PR issue comments as a JSON array or JSONL "
-            "objects with body and author fields. CI uses this so PR-head "
-            "policy code does not receive a GitHub token."
-        ),
-    )
-    return parser.parse_args(argv)
-
-
-def write_violations_json(path: str, violations: list[Violation], duration_ms: int) -> None:
-    """Write this run's violations as structured data (issue #1355, ADR-090).
-
-    Fail-open: measurement must never change whether the policy gate passes, so a write failure
-    is swallowed. The gate's verdict is its exit code, not this file.
-    """
-    try:
-        Path(path).write_text(
-            json.dumps(
-                {
-                    "station_id": "policy",
-                    "duration_ms": duration_ms,
-                    "violations": [
-                        {"code": v.code, "details": list(v.details)} for v in violations
-                    ],
-                },
-                indent=1,
-            ),
-            encoding="utf-8",
-        )
-    except OSError:
-        pass
-
-
-def render_and_exit(violations: list[Violation]) -> int:
-    if not violations:
-        print("Policy checks passed.")
-        return 0
-
-    print("Policy checks failed:")
-    for violation in violations:
-        print(violation.render())
-    return 1
-
-
-def run_workflow_routing_contract(root: Path = REPO_ROOT) -> list[Violation]:
-    """Keep /implement routing advisory and free of executor controls."""
-    violations: list[Violation] = []
-    config_path = root / GROUND_CONTROL_YAML_PATH
-    if not config_path.exists():
-        violations.append(
+def _load_station_catalogue(root: Path) -> tuple[dict | None, list[Violation]]:
+    path = root / STATION_CATALOGUE_PATH
+    if not path.exists():
+        return None, [
             Violation(
-                code="workflow-routing-config-missing",
-                message=".ground-control.yaml is missing — workflow routing cannot be verified.",
-                details=[f"expected at {GROUND_CONTROL_YAML_PATH.as_posix()}"],
+                code="measurement-catalogue-missing",
+                message=f"{STATION_CATALOGUE_PATH} is missing; ADR-090 station identity has no authority.",
             )
-        )
+        ]
+    try:
+        return json.loads(path.read_text(encoding="utf-8")), []
+    except json.JSONDecodeError as exc:
+        return None, [
+            Violation(
+                code="measurement-catalogue-json-invalid",
+                message=f"{STATION_CATALOGUE_PATH} is not valid JSON.",
+                details=[str(exc)],
+            )
+        ]
+
+
+def _catalogue_index(catalogue: dict) -> tuple[dict[str, str], dict[tuple[str, str], list[str]]]:
+    """Map every declared id and every (alias kind, value) pair to its owning entry."""
+    entries: dict[str, str] = {}
+    aliases: dict[tuple[str, str], list[str]] = {}
+
+    def absorb(entry: dict, id_field: str, kind: str) -> None:
+        entry_id = entry.get(id_field)
+        if not isinstance(entry_id, str):
+            return
+        entries[entry_id] = kind
+        for alias_kind, values in (entry.get("aliases") or {}).items():
+            for value in values if isinstance(values, list) else []:
+                aliases.setdefault((alias_kind, value), []).append(entry_id)
+
+    for station in catalogue.get("stations") or []:
+        absorb(station, "station_id", "station")
+    for marker in catalogue.get("lifecycle_markers") or []:
+        absorb(marker, "marker_id", "lifecycle_marker")
+    return entries, aliases
+
+
+def _resolves(value: str, kind: str, entries: dict[str, str], aliases: dict[tuple[str, str], list[str]]) -> bool:
+    return value in entries or (kind, value) in aliases
+
+
+def run_measurement_catalogue_check(root: Path = REPO_ROOT) -> list[Violation]:
+    """ADR-090 / GC-O014: the station catalogue is the authority for station identity.
+
+    A published catalogue that nothing checks is the same divergence ADR-090 exists to
+    close, so this asserts the catalogue is internally coherent AND that every id the
+    running system actually emits resolves against it. Drift is read from the emitter
+    sources themselves, never from a second copy of the vocabulary kept in step.
+    """
+    catalogue, violations = _load_station_catalogue(root)
+    if catalogue is None:
         return violations
 
-    config = config_path.read_text(encoding="utf-8")
-    retired = [
-        token
-        for token in ("default_fallback:", "agent:", "fallback:")
-        if re.search(rf"(?m)^\s+{re.escape(token)}", config)
-    ]
-    if retired:
+    entries, aliases = _catalogue_index(catalogue)
+
+    station_ids = [s.get("station_id") for s in catalogue.get("stations") or []]
+    marker_ids = [m.get("marker_id") for m in catalogue.get("lifecycle_markers") or []]
+
+    duplicates = sorted({i for i in station_ids + marker_ids if (station_ids + marker_ids).count(i) > 1})
+    if duplicates:
         violations.append(
             Violation(
-                code="workflow-routing-execution-control-retired",
-                message="Routing metadata must not select an executor or fallback path.",
-                details=[f"retired field present: {token}" for token in retired],
+                code="measurement-catalogue-duplicate-id",
+                message="Station and lifecycle-marker ids must be unique across both sets.",
+                details=duplicates,
             )
         )
-    if not re.search(r"(?m)^\s{4}base_sync:\s*$", config):
+
+    overlap = sorted(set(station_ids) & set(marker_ids))
+    if overlap:
         violations.append(
             Violation(
-                code="workflow-routing-base-sync-stage-missing",
-                message="The advisory routing table must declare the Step 8.5 base_sync stage.",
-                details=["expected routing.stages.base_sync in .ground-control.yaml"],
+                code="measurement-catalogue-station-marker-overlap",
+                message="An id is declared as both a station and a lifecycle marker; a recorded transition is not a gate.",
+                details=overlap,
             )
         )
+
+    for (alias_kind, value), owners in sorted(aliases.items()):
+        if len(set(owners)) > 1:
+            violations.append(
+                Violation(
+                    code="measurement-catalogue-ambiguous-alias",
+                    message=f"Alias {alias_kind}='{value}' resolves to more than one entry.",
+                    details=sorted(set(owners)),
+                )
+            )
+
+    declared_kinds = set((catalogue.get("alias_kinds") or {}).keys())
+    used_kinds = {kind for kind, _ in aliases}
+    undeclared = sorted(used_kinds - declared_kinds)
+    if undeclared:
+        violations.append(
+            Violation(
+                code="measurement-catalogue-undeclared-alias-kind",
+                message="An alias uses a kind that alias_kinds does not declare.",
+                details=undeclared,
+            )
+        )
+
+    violations.extend(_check_emitter_station_drift(root, entries, aliases))
+    violations.extend(_check_phase_marker_drift(root, entries, aliases))
+    violations.extend(_check_routing_stage_drift(root, catalogue, entries, aliases))
     return violations
+
+
+def _check_emitter_station_drift(
+    root: Path, entries: dict[str, str], aliases: dict[tuple[str, str], list[str]]
+) -> list[Violation]:
+    """Every station id any MCP emitter writes must be a declared entry."""
+    emitted: set[str] = set()
+    scanned = False
+    sources = [(p, (root / p)) for p in EMITTER_SOURCE_PATHS]
+    impl_dir = root / IMPLEMENT_MODULE_DIR
+    if impl_dir.is_dir():
+        sources.extend((str(f.relative_to(root)), f) for f in sorted(impl_dir.glob("*.js")))
+    lib_dir = root / MCP_LIB_DIR
+    if lib_dir.is_dir():
+        # The review stations are emitted from the extracted library modules, not from the
+        # barrel, so the scan follows the implementation rather than one path.
+        sources.extend((str(f.relative_to(root)), f) for f in sorted(lib_dir.glob("*.js")))
+    for _relative_path, source_path in sources:
+        if not source_path.exists():
+            continue
+        scanned = True
+        source = source_path.read_text(encoding="utf-8")
+        emitted.update(_STATION_CALL_RE.findall(source))
+        emitted.update(_STATION_ID_FIELD_RE.findall(source))
+        for block in _STATION_TABLE_RE.findall(source):
+            emitted.update(_STATION_BY_ACTION_ENTRY_RE.findall(block))
+    if not scanned:
+        return []
+
+    unknown = sorted(s for s in emitted if s not in entries)
+    if unknown:
+        return [
+            Violation(
+                code="measurement-catalogue-emitter-drift",
+                message=(
+                    "An MCP emitter writes a station id the catalogue does not declare; "
+                    "add it to the catalogue or resolve it to an existing entry. "
+                    f"Sources scanned: {', '.join(EMITTER_SOURCE_PATHS)}."
+                ),
+                details=unknown,
+            )
+        ]
+    return []
+
+
+def _check_phase_marker_drift(
+    root: Path, entries: dict[str, str], aliases: dict[tuple[str, str], list[str]]
+) -> list[Violation]:
+    """Every issue-thread `gc:phase` marker value must resolve to a declared entry.
+
+    The issue thread is the durable workflow record (ADR-029), so a marker value is a
+    published identity as much as an emitted station id. Without this the catalogue
+    would be authoritative for two of the three surfaces it claims.
+    """
+    source = read_mcp_library(root)
+    if source is None:
+        return []
+
+    written = {
+        value
+        for match in _PHASE_MARKER_LITERAL_RE.findall(source)
+        for value in match
+        if value
+    }
+    unknown = sorted(
+        value
+        for value in written
+        if value not in entries and not _resolves(value, "issue_thread_marker", entries, aliases)
+    )
+    if unknown:
+        return [
+            Violation(
+                code="measurement-catalogue-phase-marker-drift",
+                message=(
+                    f"{MCP_LIB_PATH} writes a gc:phase marker value the catalogue does not declare; "
+                    "add it as a lifecycle marker or as an issue_thread_marker alias."
+                ),
+                details=unknown,
+            )
+        ]
+    return []
+
+
+def _check_routing_stage_drift(
+    root: Path, catalogue: dict, entries: dict[str, str], aliases: dict[tuple[str, str], list[str]]
+) -> list[Violation]:
+    """Every ADR-036 routing stage resolves to an entry or is declared a non-station."""
+    config_path = root / ".ground-control.yaml"
+    if not config_path.exists():
+        return []
+
+    # Stage ids are the keys directly under `routing.stages`. Track the block's own indent
+    # rather than assuming a fixed depth: hardcoding one silently scans nothing the moment
+    # the file is reindented, and a check that scans nothing passes vacuously.
+    stages: list[str] = []
+    stages_indent: int | None = None
+    for line in config_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip())
+        if stages_indent is None:
+            if re.match(r"^\s*stages:\s*$", line):
+                stages_indent = indent
+            continue
+        if indent <= stages_indent:
+            break
+        entry = re.match(r"^\s+([a-z0-9_]+):\s*$", line)
+        if entry and indent == stages_indent + 2:
+            stages.append(entry.group(1))
+
+    excused = {e.get("adr036_stage") for e in catalogue.get("non_station_stages") or []}
+    unresolved = sorted(
+        stage for stage in set(stages) if stage not in excused and not _resolves(stage, "adr036_stage", entries, aliases)
+    )
+    if unresolved:
+        return [
+            Violation(
+                code="measurement-catalogue-routing-stage-drift",
+                message=(
+                    "An ADR-036 routing stage resolves to no station, no lifecycle marker, and no "
+                    "declared non-station stage."
+                ),
+                details=unresolved,
+            )
+        ]
+    return []

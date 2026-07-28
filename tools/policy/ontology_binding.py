@@ -3,6 +3,9 @@
 Extracted from tools/policy/checks.py (issue #1355), which had reached 5,679 lines against
 the repo's 500-LOC limit. checks.py remains the entry point and re-exports this module, so
 every existing import path and the CLI keep working.
+
+The first cut named each file for the section that began where the previous chunk ended, so
+every name described a neighbour's contents. The modules are named for what they hold.
 """
 
 from __future__ import annotations
@@ -19,259 +22,376 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
+from .adr_guard import (
+    load_json,
+)
+from .ontology_families import (
+    _contributor_edge_values,
+    _contributor_type_identity,
+    _is_ontology_enum,
+    _java_type_identity,
+    _validate_ontology_families,
+    _validate_ontology_terms,
+)
 from .core import (
     REPO_ROOT,
     Violation,
 )
-from .deploy_artifacts import (
-    MCP_LIB_DIR,
-    MCP_LIB_PATH,
-    read_mcp_library,
-)
-from .ontology_families import (
-    EMITTER_SOURCE_PATHS,
-    IMPLEMENT_MODULE_DIR,
-    STATION_CATALOGUE_PATH,
-    _PHASE_MARKER_LITERAL_RE,
-    _STATION_BY_ACTION_ENTRY_RE,
-    _STATION_CALL_RE,
-    _STATION_ID_FIELD_RE,
-    _STATION_TABLE_RE,
+from .enum_contract import (
+    ONTOLOGY_CONTRACT_PATHS,
+    ONTOLOGY_SOURCE_ROOT,
+    ONTOLOGY_SURFACE_KINDS,
+    _load_ontology_contracts,
+    _ontology_violation,
+    _strip_comments,
+    parse_java_enum_constants,
 )
 
 
-def _load_station_catalogue(root: Path) -> tuple[dict | None, list[Violation]]:
-    path = root / STATION_CATALOGUE_PATH
-    if not path.exists():
-        return None, [
-            Violation(
-                code="measurement-catalogue-missing",
-                message=f"{STATION_CATALOGUE_PATH} is missing; ADR-090 station identity has no authority.",
-            )
-        ]
-    try:
-        return json.loads(path.read_text(encoding="utf-8")), []
-    except json.JSONDecodeError as exc:
-        return None, [
-            Violation(
-                code="measurement-catalogue-json-invalid",
-                message=f"{STATION_CATALOGUE_PATH} is not valid JSON.",
-                details=[str(exc)],
-            )
-        ]
-
-
-def _catalogue_index(catalogue: dict) -> tuple[dict[str, str], dict[tuple[str, str], list[str]]]:
-    """Map every declared id and every (alias kind, value) pair to its owning entry."""
-    entries: dict[str, str] = {}
-    aliases: dict[tuple[str, str], list[str]] = {}
-
-    def absorb(entry: dict, id_field: str, kind: str) -> None:
-        entry_id = entry.get(id_field)
-        if not isinstance(entry_id, str):
-            return
-        entries[entry_id] = kind
-        for alias_kind, values in (entry.get("aliases") or {}).items():
-            for value in values if isinstance(values, list) else []:
-                aliases.setdefault((alias_kind, value), []).append(entry_id)
-
-    for station in catalogue.get("stations") or []:
-        absorb(station, "station_id", "station")
-    for marker in catalogue.get("lifecycle_markers") or []:
-        absorb(marker, "marker_id", "lifecycle_marker")
-    return entries, aliases
-
-
-def _resolves(value: str, kind: str, entries: dict[str, str], aliases: dict[tuple[str, str], list[str]]) -> bool:
-    return value in entries or (kind, value) in aliases
-
-
-def run_measurement_catalogue_check(root: Path = REPO_ROOT) -> list[Violation]:
-    """ADR-090 / GC-O014: the station catalogue is the authority for station identity.
-
-    A published catalogue that nothing checks is the same divergence ADR-090 exists to
-    close, so this asserts the catalogue is internally coherent AND that every id the
-    running system actually emits resolves against it. Drift is read from the emitter
-    sources themselves, never from a second copy of the vocabulary kept in step.
-    """
-    catalogue, violations = _load_station_catalogue(root)
-    if catalogue is None:
-        return violations
-
-    entries, aliases = _catalogue_index(catalogue)
-
-    station_ids = [s.get("station_id") for s in catalogue.get("stations") or []]
-    marker_ids = [m.get("marker_id") for m in catalogue.get("lifecycle_markers") or []]
-
-    duplicates = sorted({i for i in station_ids + marker_ids if (station_ids + marker_ids).count(i) > 1})
-    if duplicates:
+def _discover_ontology_surfaces(
+    root: Path,
+) -> tuple[dict[str, tuple[str, str, set[str]]], dict[str, set[str]], list[Violation]]:
+    java_root = root / ONTOLOGY_SOURCE_ROOT
+    discovered: dict[str, tuple[str, str, set[str]]] = {}
+    dynamic_enum_selectors: dict[str, set[str]] = {}
+    violations: list[Violation] = []
+    if not java_root.is_dir():
         violations.append(
-            Violation(
-                code="measurement-catalogue-duplicate-id",
-                message="Station and lifecycle-marker ids must be unique across both sets.",
-                details=duplicates,
+            _ontology_violation(
+                "ontology-source-root-missing",
+                f"Ontology Java source root is missing: {ONTOLOGY_SOURCE_ROOT.as_posix()}.",
             )
         )
-
-    overlap = sorted(set(station_ids) & set(marker_ids))
-    if overlap:
-        violations.append(
-            Violation(
-                code="measurement-catalogue-station-marker-overlap",
-                message="An id is declared as both a station and a lifecycle marker; a recorded transition is not a gate.",
-                details=overlap,
-            )
-        )
-
-    for (alias_kind, value), owners in sorted(aliases.items()):
-        if len(set(owners)) > 1:
+        return discovered, dynamic_enum_selectors, violations
+    for path in sorted(java_root.rglob("*.java")):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
             violations.append(
-                Violation(
-                    code="measurement-catalogue-ambiguous-alias",
-                    message=f"Alias {alias_kind}='{value}' resolves to more than one entry.",
-                    details=sorted(set(owners)),
+                _ontology_violation("ontology-source-unreadable", f"Cannot read ontology source {path}.", str(exc))
+            )
+            continue
+        without_comments = _strip_comments(text)
+        contributor_identity = _contributor_type_identity(text)
+        named_contributor_candidate = (
+            path.name.endswith("GraphProjectionContributor.java")
+            and path.name != "GraphProjectionContributor.java"
+        )
+        if named_contributor_candidate and contributor_identity is None:
+            violations.append(
+                _ontology_violation(
+                    "ontology-contributor-declaration-unresolved",
+                    "Graph contributor candidate does not directly declare GraphProjectionContributor.",
+                    f"file: {path.relative_to(root).as_posix()}",
                 )
             )
+            continue
+        identity = contributor_identity or _java_type_identity(text)
+        if identity is None:
+            continue
+        surface_id, type_name = identity
+        rel = path.relative_to(root).as_posix()
+        if contributor_identity is not None:
+            values, enum_selectors, unresolved = _contributor_edge_values(text)
+            discovered[surface_id] = ("graph-contributor", rel, values)
+            dynamic_enum_selectors[surface_id] = enum_selectors
+            for expression in unresolved:
+                violations.append(
+                    _ontology_violation(
+                        "ontology-contributor-edge-unresolved",
+                        f"Contributor {surface_id} has an edge expression the ontology inventory cannot resolve.",
+                        f"file: {rel}",
+                        f"expression: {expression}",
+                    )
+                )
+            continue
+        enum_match = re.search(r"\benum\s+(\w+)", _strip_comments(text))
+        if enum_match and _is_ontology_enum(enum_match.group(1)):
+            values = set(parse_java_enum_constants(text))
+            if not values:
+                violations.append(
+                    _ontology_violation(
+                        "ontology-source-parse-error",
+                        f"Could not parse ontology enum values from {rel}.",
+                    )
+                )
+            discovered[surface_id] = ("java-enum", rel, values)
+    return discovered, dynamic_enum_selectors, violations
 
-    declared_kinds = set((catalogue.get("alias_kinds") or {}).keys())
-    used_kinds = {kind for kind, _ in aliases}
-    undeclared = sorted(used_kinds - declared_kinds)
-    if undeclared:
+
+def _safe_ontology_source_path(root: Path, raw_path: Any) -> bool:
+    if not isinstance(raw_path, str) or not raw_path:
+        return False
+    rel = Path(raw_path)
+    if rel.is_absolute() or ".." in rel.parts or rel.as_posix() != raw_path:
+        return False
+    if not rel.is_relative_to(ONTOLOGY_SOURCE_ROOT):
+        return False
+    try:
+        (root / rel).resolve().relative_to(root.resolve())
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def run_ontology_binding_check(root: Path = REPO_ROOT) -> list[Violation]:
+    """Validate ontology artifacts and their bidirectional Java-source bindings."""
+
+    payloads, violations = _load_ontology_contracts(root)
+    if set(payloads) != set(ONTOLOGY_CONTRACT_PATHS):
+        return violations
+
+    family_ids, family_violations = _validate_ontology_families(payloads["families"])
+    terms, term_violations = _validate_ontology_terms(payloads["terms"], family_ids)
+    violations.extend(family_violations)
+    violations.extend(term_violations)
+
+    discovered, dynamic_enum_selectors, discovery_violations = _discover_ontology_surfaces(root)
+    violations.extend(discovery_violations)
+
+    surfaces = payloads["bindings"].get("surfaces")
+    if not isinstance(surfaces, list):
         violations.append(
-            Violation(
-                code="measurement-catalogue-undeclared-alias-kind",
-                message="An alias uses a kind that alias_kinds does not declare.",
-                details=undeclared,
+            _ontology_violation(
+                "ontology-contract-shape-invalid",
+                "gc-artifact-bindings-v1.json must declare a surfaces array.",
+            )
+        )
+        return violations
+
+    declared_surfaces: set[str] = set()
+    declared_keys: set[tuple[str, str]] = set()
+    for surface in surfaces:
+        if not isinstance(surface, dict):
+            violations.append(_ontology_violation("ontology-surface-invalid", "Every ontology surface must be an object."))
+            continue
+        surface_id = surface.get("id")
+        kind = surface.get("kind")
+        raw_path = surface.get("path")
+        if not isinstance(surface_id, str) or not surface_id:
+            violations.append(_ontology_violation("ontology-surface-invalid", "Every ontology surface must have an id."))
+            continue
+        if surface_id in declared_surfaces:
+            violations.append(
+                _ontology_violation("ontology-surface-duplicate", f"Ontology surface {surface_id} is declared more than once.")
+            )
+        declared_surfaces.add(surface_id)
+        if kind not in ONTOLOGY_SURFACE_KINDS:
+            violations.append(
+                _ontology_violation(
+                    "ontology-surface-kind-invalid",
+                    f"Ontology surface {surface_id} has unknown kind {kind!r}.",
+                )
+            )
+        if not _safe_ontology_source_path(root, raw_path):
+            violations.append(
+                _ontology_violation(
+                    "ontology-surface-path-invalid",
+                    f"Ontology surface {surface_id} has an unsafe or non-source path {raw_path!r}.",
+                )
+            )
+        actual = discovered.get(surface_id)
+        if actual is not None:
+            actual_kind, actual_path, _ = actual
+            if kind != actual_kind:
+                violations.append(
+                    _ontology_violation(
+                        "ontology-surface-kind-mismatch",
+                        f"Ontology surface {surface_id} is {actual_kind}, not {kind!r}.",
+                    )
+                )
+            if raw_path != actual_path:
+                violations.append(
+                    _ontology_violation(
+                        "ontology-surface-path-mismatch",
+                        f"Ontology surface {surface_id} path does not match discovered source.",
+                        f"declared: {raw_path}",
+                        f"discovered: {actual_path}",
+                    )
+                )
+        configured_enum_sources = surface.get("edge_enum_sources", {})
+        if not isinstance(configured_enum_sources, dict):
+            violations.append(
+                _ontology_violation(
+                    "ontology-edge-enum-source-invalid",
+                    f"Ontology surface {surface_id} must declare edge_enum_sources as an object.",
+                )
+            )
+            configured_enum_sources = {}
+        expected_selectors = dynamic_enum_selectors.get(surface_id, set())
+        configured_selectors = set(configured_enum_sources)
+        for selector in sorted(expected_selectors - configured_selectors):
+            violations.append(
+                _ontology_violation(
+                    "ontology-edge-enum-source-missing",
+                    f"Dynamic edge selector {surface_id}:{selector} has no declared enum source.",
+                )
+            )
+        for selector in sorted(configured_selectors - expected_selectors):
+            violations.append(
+                _ontology_violation(
+                    "ontology-edge-enum-source-stale",
+                    f"Declared edge enum selector {surface_id}:{selector} no longer appears in source.",
+                )
+            )
+        for selector, enum_surface_id in configured_enum_sources.items():
+            enum_surface = discovered.get(enum_surface_id) if isinstance(enum_surface_id, str) else None
+            if enum_surface is None or enum_surface[0] != "java-enum":
+                violations.append(
+                    _ontology_violation(
+                        "ontology-edge-enum-source-missing",
+                        f"Dynamic edge selector {surface_id}:{selector} does not resolve to a discovered enum surface.",
+                        f"declared source: {enum_surface_id!r}",
+                    )
+                )
+                continue
+            enum_name = enum_surface_id.rsplit(".", 1)[-1]
+            selector_matches = (
+                (selector == "getLinkType" and enum_name.endswith("LinkType") and not enum_name.endswith("LinkTargetType"))
+                or (selector == "getRelationType" and enum_name.endswith("RelationType"))
+                or (selector == "getRelation" and enum_name == "ProvenanceEdgeRelation")
+            )
+            if not selector_matches:
+                violations.append(
+                    _ontology_violation(
+                        "ontology-edge-enum-source-invalid",
+                        f"Dynamic edge selector {surface_id}:{selector} is incompatible with {enum_surface_id}.",
+                    )
+                )
+        bindings = surface.get("bindings")
+        if not isinstance(bindings, list):
+            violations.append(
+                _ontology_violation("ontology-surface-invalid", f"Ontology surface {surface_id} must declare bindings.")
+            )
+            continue
+        for binding in bindings:
+            if not isinstance(binding, dict):
+                violations.append(
+                    _ontology_violation("ontology-binding-invalid", f"Surface {surface_id} has a non-object binding.")
+                )
+                continue
+            local_value = binding.get("local_value")
+            term_id = binding.get("term")
+            if not isinstance(local_value, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]*", local_value):
+                violations.append(
+                    _ontology_violation(
+                        "ontology-binding-invalid",
+                        f"Surface {surface_id} has invalid local_value {local_value!r}.",
+                    )
+                )
+                continue
+            key = (surface_id, local_value)
+            if key in declared_keys:
+                violations.append(
+                    _ontology_violation(
+                        "ontology-binding-duplicate",
+                        f"Ontology binding {surface_id}:{local_value} is declared more than once.",
+                    )
+                )
+            declared_keys.add(key)
+            term = terms.get(term_id) if isinstance(term_id, str) else None
+            if term is None:
+                violations.append(
+                    _ontology_violation(
+                        "ontology-term-reference-missing",
+                        f"Binding {surface_id}:{local_value} references unknown term {term_id!r}.",
+                    )
+                )
+            elif actual is not None:
+                expected_term_kind = "classification" if surface_id.endswith(".GraphEntityType") else "edge"
+                if term.get("kind") != expected_term_kind:
+                    violations.append(
+                        _ontology_violation(
+                            "ontology-binding-kind-mismatch",
+                            f"Binding {surface_id}:{local_value} must target a {expected_term_kind} term.",
+                            f"term {term_id} is {term.get('kind')!r}",
+                        )
+                    )
+
+    discovered_surfaces = set(discovered)
+    for surface_id in sorted(discovered_surfaces - declared_surfaces):
+        kind, path, _ = discovered[surface_id]
+        violations.append(
+            _ontology_violation(
+                "ontology-surface-missing",
+                f"Discovered {kind} surface {surface_id} has no ontology surface declaration.",
+                f"file: {path}",
+            )
+        )
+    for surface_id in sorted(declared_surfaces - discovered_surfaces):
+        violations.append(
+            _ontology_violation(
+                "ontology-surface-stale",
+                f"Ontology surface {surface_id} no longer exists in source inventory.",
             )
         )
 
-    violations.extend(_check_emitter_station_drift(root, entries, aliases))
-    violations.extend(_check_phase_marker_drift(root, entries, aliases))
-    violations.extend(_check_routing_stage_drift(root, catalogue, entries, aliases))
+    discovered_keys = {
+        (surface_id, local_value)
+        for surface_id, (_, _, values) in discovered.items()
+        for local_value in values
+    }
+    for surface_id, local_value in sorted(discovered_keys - declared_keys):
+        violations.append(
+            _ontology_violation(
+                "ontology-binding-missing",
+                f"Source vocabulary is unbound: {surface_id}:{local_value}.",
+            )
+        )
+    for surface_id, local_value in sorted(declared_keys - discovered_keys):
+        violations.append(
+            _ontology_violation(
+                "ontology-binding-stale",
+                f"Ontology binding points to a vanished source value: {surface_id}:{local_value}.",
+            )
+        )
     return violations
 
 
-def _check_emitter_station_drift(
-    root: Path, entries: dict[str, str], aliases: dict[tuple[str, str], list[str]]
-) -> list[Violation]:
-    """Every station id any MCP emitter writes must be a declared entry."""
-    emitted: set[str] = set()
-    scanned = False
-    sources = [(p, (root / p)) for p in EMITTER_SOURCE_PATHS]
-    impl_dir = root / IMPLEMENT_MODULE_DIR
-    if impl_dir.is_dir():
-        sources.extend((str(f.relative_to(root)), f) for f in sorted(impl_dir.glob("*.js")))
-    lib_dir = root / MCP_LIB_DIR
-    if lib_dir.is_dir():
-        # The review stations are emitted from the extracted library modules, not from the
-        # barrel, so the scan follows the implementation rather than one path.
-        sources.extend((str(f.relative_to(root)), f) for f in sorted(lib_dir.glob("*.js")))
-    for _relative_path, source_path in sources:
-        if not source_path.exists():
-            continue
-        scanned = True
-        source = source_path.read_text(encoding="utf-8")
-        emitted.update(_STATION_CALL_RE.findall(source))
-        emitted.update(_STATION_ID_FIELD_RE.findall(source))
-        for block in _STATION_TABLE_RE.findall(source):
-            emitted.update(_STATION_BY_ACTION_ENTRY_RE.findall(block))
-    if not scanned:
-        return []
-
-    unknown = sorted(s for s in emitted if s not in entries)
-    if unknown:
-        return [
-            Violation(
-                code="measurement-catalogue-emitter-drift",
-                message=(
-                    "An MCP emitter writes a station id the catalogue does not declare; "
-                    "add it to the catalogue or resolve it to an existing entry. "
-                    f"Sources scanned: {', '.join(EMITTER_SOURCE_PATHS)}."
-                ),
-                details=unknown,
-            )
-        ]
-    return []
+ONTOLOGY_CROSSWALK_PATH = Path("contracts/ontology/crosswalks/aces-concept-families-v1.json")
 
 
-def _check_phase_marker_drift(
-    root: Path, entries: dict[str, str], aliases: dict[tuple[str, str], list[str]]
-) -> list[Violation]:
-    """Every issue-thread `gc:phase` marker value must resolve to a declared entry.
-
-    The issue thread is the durable workflow record (ADR-029), so a marker value is a
-    published identity as much as an emitted station id. Without this the catalogue
-    would be authoritative for two of the three surfaces it claims.
-    """
-    source = read_mcp_library(root)
-    if source is None:
-        return []
-
-    written = {
-        value
-        for match in _PHASE_MARKER_LITERAL_RE.findall(source)
-        for value in match
-        if value
-    }
-    unknown = sorted(
-        value
-        for value in written
-        if value not in entries and not _resolves(value, "issue_thread_marker", entries, aliases)
-    )
-    if unknown:
-        return [
-            Violation(
-                code="measurement-catalogue-phase-marker-drift",
-                message=(
-                    f"{MCP_LIB_PATH} writes a gc:phase marker value the catalogue does not declare; "
-                    "add it as a lifecycle marker or as an issue_thread_marker alias."
-                ),
-                details=unknown,
-            )
-        ]
-    return []
+ONTOLOGY_CROSSWALK_SCHEMA_VERSION = "aces-concept-families-crosswalk/v1"
 
 
-def _check_routing_stage_drift(
-    root: Path, catalogue: dict, entries: dict[str, str], aliases: dict[tuple[str, str], list[str]]
-) -> list[Violation]:
-    """Every ADR-036 routing stage resolves to an entry or is declared a non-station."""
-    config_path = root / ".ground-control.yaml"
-    if not config_path.exists():
-        return []
+ONTOLOGY_EXTERNAL_SNAPSHOT_ROOT = Path("contracts/ontology/external")
 
-    # Stage ids are the keys directly under `routing.stages`. Track the block's own indent
-    # rather than assuming a fixed depth: hardcoding one silently scans nothing the moment
-    # the file is reindented, and a check that scans nothing passes vacuously.
-    stages: list[str] = []
-    stages_indent: int | None = None
-    for line in config_path.read_text(encoding="utf-8").splitlines():
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        indent = len(line) - len(line.lstrip())
-        if stages_indent is None:
-            if re.match(r"^\s*stages:\s*$", line):
-                stages_indent = indent
-            continue
-        if indent <= stages_indent:
-            break
-        entry = re.match(r"^\s+([a-z0-9_]+):\s*$", line)
-        if entry and indent == stages_indent + 2:
-            stages.append(entry.group(1))
 
-    excused = {e.get("adr036_stage") for e in catalogue.get("non_station_stages") or []}
-    unresolved = sorted(
-        stage for stage in set(stages) if stage not in excused and not _resolves(stage, "adr036_stage", entries, aliases)
-    )
-    if unresolved:
-        return [
-            Violation(
-                code="measurement-catalogue-routing-stage-drift",
-                message=(
-                    "An ADR-036 routing stage resolves to no station, no lifecycle marker, and no "
-                    "declared non-station stage."
-                ),
-                details=unresolved,
-            )
-        ]
-    return []
+ONTOLOGY_EFFECT_VOCABULARY = frozenset({"annotates", "aligns", "refines", "constrains"})
+
+
+# ADR-084 §4/§5: the crosswalk must bind to the canonical GC family catalog, and
+# crosswalk v1 deliberately omits the ACES `time-and-apparatus` family (GC has no
+# time family; time is the Envers spine). Both are contract invariants, not data.
+ONTOLOGY_CROSSWALK_TIME_FAMILY = "time-and-apparatus"
+
+
+def _safe_ontology_external_path(root: Path, raw_path: Any) -> bool:
+    if not isinstance(raw_path, str) or not raw_path:
+        return False
+    rel = Path(raw_path)
+    if rel.is_absolute() or ".." in rel.parts or rel.as_posix() != raw_path:
+        return False
+    if not rel.is_relative_to(ONTOLOGY_EXTERNAL_SNAPSHOT_ROOT):
+        return False
+    try:
+        (root / rel).resolve().relative_to(root.resolve())
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def _load_ontology_family_ids(path: Path) -> tuple[set[str], Any, str | None]:
+    """Return (family_ids, schema_version, error) for a concept-families catalog,
+    reading only the family keys and version. Full family-shape validation lives
+    in the binding check."""
+    try:
+        payload = load_json(path, reject_duplicate_keys=True)
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+        return set(), None, str(exc)
+    if not isinstance(payload, dict):
+        return set(), None, "catalog is not a JSON object"
+    families = payload.get("families")
+    if not isinstance(families, dict) or not families:
+        return set(), payload.get("schema_version"), "catalog declares no families object"
+    return {fid for fid in families if isinstance(fid, str) and fid}, payload.get("schema_version"), None

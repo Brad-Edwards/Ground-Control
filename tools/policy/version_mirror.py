@@ -1,8 +1,11 @@
-"""Policy checks: version mirror.
+"""Policy checks: version mirror consistency and documentation coverage.
 
 Extracted from tools/policy/checks.py (issue #1355), which had reached 5,679 lines against
 the repo's 500-LOC limit. checks.py remains the entry point and re-exports this module, so
 every existing import path and the CLI keep working.
+
+The first cut named each file for the section that began where the previous chunk ended, so
+every name described a neighbour's contents. The modules are named for what they hold.
 """
 
 from __future__ import annotations
@@ -19,369 +22,263 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
-from .adr_guard import (
-    load_json,
-)
-from .controllers import (
-    _extract_compose_backend_env_entries,
+from .migration_policy import (
+    RELEASE_PLEASE_CONFIG,
+    RELEASE_PLEASE_MANIFEST,
+    RELEASE_PLEASE_ROOT_PACKAGE,
+    _extract_generic_version,
+    _extract_json_version,
 )
 from .core import (
-    require_scanned,
-    BRANCH_PROTECTION_BASELINE_PATH,
-    CI_PRE_COMMIT_HOOKS,
-    CI_STRICTNESS_BRANCHES,
-    CI_STRICTNESS_REQUIRED_CONTEXTS,
-    CI_WORKFLOW_PATH,
-    DEPLOY_COMPOSE_PROD_PATH,
-    PRE_COMMIT_CONFIG_PATH,
     REPO_ROOT,
-    REQUIRED_ADR026_BACKEND_ENV_KEYS,
-    REQUIRED_ADR026_INHERIT_ONLY_KEYS,
-    SONAR_NEW_ISSUE_GATE_PATH,
     Violation,
 )
 
 
-def run_ci_strictness_contract(root: Path = REPO_ROOT) -> list[Violation]:
-    """Assert the repo carries the CI strictness baseline from issue #1155."""
-    violations: list[Violation] = []
-    workflow_path = root / CI_WORKFLOW_PATH
-    pre_commit_path = root / PRE_COMMIT_CONFIG_PATH
-    sonar_gate_path = root / SONAR_NEW_ISSUE_GATE_PATH
-    branch_protection_path = root / BRANCH_PROTECTION_BASELINE_PATH
+def run_version_mirror_consistency_check(root: Path = REPO_ROOT) -> list[Violation]:
+    """Fail when a product-version mirror drifts from the Release Please manifest.
 
-    if not workflow_path.exists():
-        violations.append(
-            Violation(
-                code="ci-strictness-workflow-missing",
-                message="CI workflow is missing, so required merge checks cannot be verified.",
-                details=[f"expected at {CI_WORKFLOW_PATH.as_posix()}"],
-            )
-        )
-        return violations
-
-    workflow_text = workflow_path.read_text(encoding="utf-8")
-    repo_policy_step = re.search(
-        r"(?ms)^\s{6}- name: Repo policy checks\n(?P<body>.*?)(?=^\s{6}- name: |\Z)",
-        workflow_text,
-    )
-    if repo_policy_step is None:
-        violations.append(
-            Violation(
-                code="ci-strictness-repo-policy-step-missing",
-                message="CI policy job must run repo policy checks for pull requests.",
-                details=[f"missing Repo policy checks step in {CI_WORKFLOW_PATH.as_posix()}"],
-            )
-        )
-    else:
-        repo_policy_body = repo_policy_step.group("body")
-        if "GH_TOKEN" in repo_policy_body:
-            violations.append(
-                Violation(
-                    code="ci-strictness-policy-token-exposure",
-                    message="PR-head repo policy code must not receive the GitHub token.",
-                    details=[
-                        "remove GH_TOKEN from the Repo policy checks step",
-                        "fetch sanitized PR comments in a separate shell step and pass --pr-comments-json instead",
-                    ],
-                )
-            )
-        if "--pr-comments-json" not in repo_policy_body:
-            violations.append(
-                Violation(
-                    code="ci-strictness-policy-comments-json",
-                    message="CI repo policy checks must consume sanitized PR comments from a file.",
-                    details=["expected --pr-comments-json in the Repo policy checks step"],
-                )
-            )
-    if "python3 -m pip install --user pre-commit" not in workflow_text:
-        violations.append(
-            Violation(
-                code="ci-strictness-precommit-install",
-                message="CI policy job must install pre-commit before running hygiene and secret-scan hooks.",
-                details=[f"expected install command in {CI_WORKFLOW_PATH.as_posix()}"],
-            )
-        )
-    missing_workflow_hooks = [
-        hook
-        for hook in CI_PRE_COMMIT_HOOKS
-        if hook not in workflow_text or 'pre-commit run "$hook" --all-files' not in workflow_text
-    ]
-    if missing_workflow_hooks:
-        violations.append(
-            Violation(
-                code="ci-strictness-precommit-hooks",
-                message="CI policy job must run the pre-commit file-hygiene and secret-scan hooks.",
-                details=[*(f"missing workflow hook run: {hook}" for hook in missing_workflow_hooks)],
-            )
-        )
-
-    if not pre_commit_path.exists():
-        violations.append(
-            Violation(
-                code="ci-strictness-precommit-config-missing",
-                message="pre-commit config is missing, so local hygiene and secret-scan hooks cannot be verified.",
-                details=[f"expected at {PRE_COMMIT_CONFIG_PATH.as_posix()}"],
-            )
-        )
-    else:
-        pre_commit_text = pre_commit_path.read_text(encoding="utf-8")
-        missing_config_hooks = [hook for hook in CI_PRE_COMMIT_HOOKS if f"id: {hook}" not in pre_commit_text]
-        if missing_config_hooks:
-            violations.append(
-                Violation(
-                    code="ci-strictness-precommit-config-hooks",
-                    message=".pre-commit-config.yaml must define every CI-enforced hygiene and secret-scan hook.",
-                    details=[*(f"missing configured hook: {hook}" for hook in missing_config_hooks)],
-                )
-            )
-
-    if "-Dsonar.qualitygate.wait=true" not in workflow_text:
-        violations.append(
-            Violation(
-                code="ci-strictness-sonar-qualitygate-wait",
-                message="SonarCloud CI must wait for the quality gate result.",
-                details=[f"missing -Dsonar.qualitygate.wait=true in {CI_WORKFLOW_PATH.as_posix()}"],
-            )
-        )
-    if SONAR_NEW_ISSUE_GATE_PATH.as_posix() not in workflow_text:
-        violations.append(
-            Violation(
-                code="ci-strictness-sonar-new-issue-gate",
-                message="SonarCloud CI must fail when Sonar reports any new open issue.",
-                details=[f"missing {SONAR_NEW_ISSUE_GATE_PATH.as_posix()} invocation"],
-            )
-        )
-    if not sonar_gate_path.exists():
-        violations.append(
-            Violation(
-                code="ci-strictness-sonar-gate-script-missing",
-                message="SonarCloud new-issue gate script is missing.",
-                details=[f"expected at {SONAR_NEW_ISSUE_GATE_PATH.as_posix()}"],
-            )
-        )
-
-    if not branch_protection_path.exists():
-        violations.append(
-            Violation(
-                code="ci-strictness-branch-protection-missing",
-                message="Versioned branch-protection baseline is missing.",
-                details=[f"expected at {BRANCH_PROTECTION_BASELINE_PATH.as_posix()}"],
-            )
-        )
-        return violations
-
-    try:
-        baseline = load_json(branch_protection_path)
-    except json.JSONDecodeError as exc:
-        violations.append(
-            Violation(
-                code="ci-strictness-branch-protection-invalid",
-                message="Versioned branch-protection baseline is not valid JSON.",
-                details=[str(exc)],
-            )
-        )
-        return violations
-
-    branches = baseline.get("branches", {})
-    for branch in CI_STRICTNESS_BRANCHES:
-        config = branches.get(branch)
-        if not isinstance(config, dict):
-            violations.append(
-                Violation(
-                    code="ci-strictness-branch-protection-branch",
-                    message=f"{branch} must be present in the branch-protection baseline.",
-                    details=[f"missing branches.{branch}"],
-                )
-            )
-            continue
-        if config.get("changes_land_via_pull_request") is not True:
-            violations.append(
-                Violation(
-                    code="ci-strictness-branch-protection-pr",
-                    message=f"{branch} must require changes to land via pull request.",
-                    details=[f"branches.{branch}.changes_land_via_pull_request must be true"],
-                )
-            )
-        if config.get("admin_bypass_allowed") is not True:
-            violations.append(
-                Violation(
-                    code="ci-strictness-branch-protection-admin-bypass",
-                    message=f"{branch} must retain admin bypass.",
-                    details=[f"branches.{branch}.admin_bypass_allowed must be true"],
-                )
-            )
-        required_status_checks = config.get("required_status_checks", {})
-        if required_status_checks.get("strict") is not True:
-            violations.append(
-                Violation(
-                    code="ci-strictness-branch-protection-strict",
-                    message=f"{branch} required status checks must use strict mode.",
-                    details=[f"branches.{branch}.required_status_checks.strict must be true"],
-                )
-            )
-        contexts = set(required_status_checks.get("contexts", []))
-        missing_contexts = sorted(CI_STRICTNESS_REQUIRED_CONTEXTS - contexts)
-        if missing_contexts:
-            violations.append(
-                Violation(
-                    code="ci-strictness-branch-protection-contexts",
-                    message=f"{branch} branch protection must require all PR CI contexts.",
-                    details=[*(f"missing required context: {context}" for context in missing_contexts)],
-                )
-            )
-
-    return violations
-
-
-def run_deploy_compose_credential_passthrough(root: Path = REPO_ROOT) -> list[Violation]:
-    """Assert the production compose file enumerates ADR-026 credential env vars.
-
-    #828 was triggered because the operator filled `GROUNDCONTROL_SECURITY_*`
-    values into `/opt/gc/.env` but `deploy/docker/docker-compose.prod.yml` did
-    not list them on the backend service's `environment:` block, so docker
-    compose never propagated them into the container. The first deploy of the
-    ADR-026 image therefore 401'd every consumer. The check below is a static
-    post-condition — independent of `changed_files` — so any future diff that
-    silently strips one of the required keys fails `make policy`. All five
-    documented credential slots and all five allowlist slots must remain
-    enumerated; partial removal is itself the regression.
+    The set of mirrors is read from the release-please config's ``extra-files`` for
+    the root package (the declarative inventory), so this check never carries its own
+    hard-coded mirror list.
     """
-    compose_path = root / DEPLOY_COMPOSE_PROD_PATH
-    if not compose_path.exists():
+    config_path = root / RELEASE_PLEASE_CONFIG
+    manifest_path = root / RELEASE_PLEASE_MANIFEST
+
+    # No Release Please adoption in this repo -> nothing to enforce.
+    if not config_path.exists() and not manifest_path.exists():
+        return []
+
+    if not config_path.exists() or not manifest_path.exists():
+        missing = RELEASE_PLEASE_CONFIG if not config_path.exists() else RELEASE_PLEASE_MANIFEST
         return [
             Violation(
-                code="deploy-compose-missing",
+                code="version-mirror-config-missing",
                 message=(
-                    "Canonical production compose file is missing — ADR-026 "
-                    "credential passthrough cannot be verified."
+                    "Release Please version management is partially configured: "
+                    f"{missing} is missing (config and manifest must ship together)."
                 ),
-                details=[f"expected at {DEPLOY_COMPOSE_PROD_PATH.as_posix()}"],
+                details=[],
             )
         ]
 
-    text = compose_path.read_text(encoding="utf-8")
-    entries = _extract_compose_backend_env_entries(text)
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return [
+            Violation(
+                code="version-mirror-config-invalid",
+                message="release-please config/manifest could not be parsed.",
+                details=[str(exc)],
+            )
+        ]
+
+    manifest_version = manifest.get(RELEASE_PLEASE_ROOT_PACKAGE)
+    if not isinstance(manifest_version, str):
+        return [
+            Violation(
+                code="version-mirror-config-invalid",
+                message=(
+                    f"{RELEASE_PLEASE_MANIFEST} has no string version for the root "
+                    f'package "{RELEASE_PLEASE_ROOT_PACKAGE}".'
+                ),
+                details=[],
+            )
+        ]
+
+    package = (config.get("packages") or {}).get(RELEASE_PLEASE_ROOT_PACKAGE) or {}
+    extra_files = package.get("extra-files") or []
 
     violations: list[Violation] = []
+    for entry in extra_files:
+        if isinstance(entry, str):
+            path, jsonpath, kind = entry, None, "generic"
+        elif isinstance(entry, dict):
+            path = entry.get("path")
+            jsonpath = entry.get("jsonpath")
+            kind = entry.get("type", "generic")
+        else:
+            continue
+        if not path:
+            continue
 
-    missing = [key for key in REQUIRED_ADR026_BACKEND_ENV_KEYS if key not in entries]
-    if missing:
-        violations.append(
-            Violation(
-                code="deploy-compose-adr026-passthrough",
-                message=(
-                    "deploy/docker/docker-compose.prod.yml backend service is "
-                    "missing ADR-026 credential env-var passthroughs (GC-P011)."
-                ),
-                details=[f"missing keys: {', '.join(missing)}"],
+        target = root / path
+        if not target.exists():
+            violations.append(
+                Violation(
+                    code="version-mirror-drift",
+                    message=f"Release Please version mirror is missing: {path}",
+                    details=[],
+                )
             )
-        )
+            continue
+        try:
+            text = target.read_text(encoding="utf-8")
+        except OSError as exc:
+            violations.append(
+                Violation(
+                    code="version-mirror-drift",
+                    message=f"cannot read version mirror {path}",
+                    details=[str(exc)],
+                )
+            )
+            continue
 
-    # Indexed credential / allowlist slots MUST use bare list form (- KEY).
-    # Map form with ${VAR:-} or list-with-value form ${VAR:-} both inject the
-    # variable into the container as an empty string when the host variable
-    # is unset, which Spring's SecurityProperties.validate() then rejects —
-    # exactly the brittle path #828 cycle 1 surfaced. Bare list form inherits
-    # only when the host has the variable set.
-    wrong_form = [
-        key
-        for key in REQUIRED_ADR026_INHERIT_ONLY_KEYS
-        if key in entries and entries[key] != "inherit"
-    ]
-    if wrong_form:
-        violations.append(
-            Violation(
-                code="deploy-compose-adr026-inherit-only",
-                message=(
-                    "Optional ADR-026 credential / allowlist slots in "
-                    "deploy/docker/docker-compose.prod.yml must use bare list form "
-                    "(- KEY) so unset host variables are not injected as blank "
-                    "(GC-P011 / SecurityProperties.validate)."
-                ),
-                details=[f"keys not in inherit-only form: {', '.join(wrong_form)}"],
+        if kind == "json":
+            resolved_path = jsonpath or "$.version"
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError as exc:
+                violations.append(
+                    Violation(
+                        code="version-mirror-drift",
+                        message=f"{path} is not valid JSON",
+                        details=[str(exc)],
+                    )
+                )
+                continue
+            found = _extract_json_version(data, resolved_path)
+            label = f"{path} ({resolved_path})"
+        else:
+            found = _extract_generic_version(text)
+            label = f"{path} (x-release-please-version)"
+
+        if found is None:
+            violations.append(
+                Violation(
+                    code="version-mirror-drift",
+                    message=f"could not read a product version from mirror {label}",
+                    details=[f"expected manifest version: {manifest_version}"],
+                )
             )
-        )
+        elif found != manifest_version:
+            violations.append(
+                Violation(
+                    code="version-mirror-drift",
+                    message=(
+                        f"Product-version mirror {label} is {found}, but the Release "
+                        f"Please manifest ({RELEASE_PLEASE_MANIFEST}) says {manifest_version}. "
+                        "Mirrors are updated by the release PR; do not hand-edit them out of sync."
+                    ),
+                    details=[],
+                )
+            )
 
     return violations
 
 
-# ---------------------------------------------------------------------------
-# GHCR image-namespace drift check (issue #953, GC-P022).
-#
-# red-dragon silently served a stale build for ~10 days: the CI publish
-# namespace (`ghcr.io/<owner>/ground-control`) diverged from the deploy-host
-# image pin when the repo moved orgs (KeplerOps -> Brad-Edwards -> autarchy-ai).
-# `docker compose pull` kept resolving a frozen image under the abandoned
-# namespace while the still-healthy old container kept the deploy health check
-# green, so nothing failed. This static post-condition pins every deploy/CI/doc
-# artifact that names the image to the single canonical namespace, so the next
-# diff that reintroduces a stale namespace fails `make policy`. Adding a new
-# artifact that names the image is one inventory row.
-#
-# CHANGELOG.md is intentionally excluded — it records historical namespaces
-# (towncrier-collated release notes) that must NOT be rewritten.
-CANONICAL_GHCR_NAMESPACE = "autarchy-ai"
+_DOCUMENTATION_COVERAGE_FIXTURE = REPO_ROOT / "tools" / "documentation_coverage_fixture.mjs"
 
 
-GHCR_IMAGE_REF_RE = re.compile(r"ghcr\.io/([A-Za-z0-9._-]+)/ground-control")
+_DOCUMENTATION_SECTION_RE = re.compile(r"^##\s+Documentation\b", re.MULTILINE)
 
 
-GHCR_NAMESPACE_INVENTORY: tuple[Path, ...] = (
-    Path("Makefile"),
-    Path(".github/workflows/ci.yml"),
-    Path("deploy/docker/.env.example"),
-    Path("deploy/docker/docker-compose.prod.yml"),
-    Path("deploy/docker/deploy.sh"),
-    Path("deploy/docker/README.md"),
-    Path("scripts/deploy.sh"),
-    Path("docs/deployment/DEPLOYMENT.md"),
-    Path("docs/architecture/ARCHITECTURE.md"),
-    Path("skills/deploy/SKILL.md"),
-    Path("architecture/adrs/030-on-prem-hetzner-deployment.md"),
-)
+def run_documentation_coverage_check(
+    changed_files: list[str],
+    root: Path = REPO_ROOT,
+    pr_body: str | None = None,
+) -> list[Violation]:
+    """Classify the diff and verify the PR body carries a documentation outcome.
 
+    Violation codes:
+    - ``doc-coverage-outcome-missing``: a classified surface requires a
+      documentation outcome but the PR body has no ``## Documentation`` section.
+    - ``doc-coverage-fixture-error``: the Node classifier fixture failed
+      (treat as a drift signal, not a pass).
 
-def run_ghcr_namespace_drift(root: Path = REPO_ROOT) -> list[Violation]:
-    """Assert every inventoried artifact names the canonical GHCR namespace.
-
-    A non-canonical `ghcr.io/<ns>/ground-control` reference in any inventoried
-    deploy/CI/doc file is the drift that froze red-dragon's deploy silently
-    (#953). Absent inventory files are skipped — the gate catches drift in the
-    files that exist, it does not assert their presence (other checks own
-    file-existence post-conditions).
+    The check skips gracefully when ``node`` is unavailable or the PR body
+    cannot be resolved (matches the changelog-fragment check style).
     """
-    offenders: list[str] = []
-    scanned = 0
-    for rel_path in GHCR_NAMESPACE_INVENTORY:
-        file_path = root / rel_path
-        if not file_path.exists():
-            continue
-        scanned += 1
-        text = file_path.read_text(encoding="utf-8")
-        for line_number, line in enumerate(text.splitlines(), start=1):
-            for match in GHCR_IMAGE_REF_RE.finditer(line):
-                namespace = match.group(1)
-                if namespace != CANONICAL_GHCR_NAMESPACE:
-                    offenders.append(
-                        f"{rel_path.as_posix()}:{line_number} references "
-                        f"non-canonical namespace '{namespace}' "
-                        f"(expected '{CANONICAL_GHCR_NAMESPACE}')"
-                    )
-    guard = require_scanned("GHCR namespace inventory", scanned)
-    if guard:
-        return guard
-    if not offenders:
+    import shutil
+
+    if shutil.which("node") is None:
         return []
-    return [
-        Violation(
-            code="ghcr-namespace-drift",
-            message=(
-                "Deploy/CI artifacts must reference the single canonical GHCR "
-                f"namespace 'ghcr.io/{CANONICAL_GHCR_NAMESPACE}/ground-control' "
-                "(GC-P022 / #953). A divergent namespace lets `docker compose "
-                "pull` silently resolve a frozen image."
-            ),
-            details=offenders,
+
+    if not _DOCUMENTATION_COVERAGE_FIXTURE.exists():
+        return [
+            Violation(
+                code="doc-coverage-fixture-error",
+                message=(
+                    "documentation_coverage_fixture.mjs not found — "
+                    "documentation coverage check cannot run."
+                ),
+                details=[f"expected at {_DOCUMENTATION_COVERAGE_FIXTURE}"],
+            )
+        ]
+
+    fixture_input = {
+        "repo_path": str(root),
+        "changed_paths": list(changed_files),
+    }
+    try:
+        proc = subprocess.run(
+            ["node", str(_DOCUMENTATION_COVERAGE_FIXTURE)],
+            input=json.dumps(fixture_input),
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+            timeout=30,
         )
-    ]
+    except Exception as exc:  # noqa: BLE001
+        return [
+            Violation(
+                code="doc-coverage-fixture-error",
+                message=f"documentation_coverage_fixture.mjs failed to execute: {exc}",
+                details=[],
+            )
+        ]
+
+    if proc.returncode != 0:
+        return [
+            Violation(
+                code="doc-coverage-fixture-error",
+                message="documentation_coverage_fixture.mjs exited with non-zero status.",
+                details=[f"stderr: {proc.stderr.strip()[:500]}"] if proc.stderr.strip() else [],
+            )
+        ]
+
+    try:
+        result = json.loads(proc.stdout)
+    except Exception:  # noqa: BLE001
+        return [
+            Violation(
+                code="doc-coverage-fixture-error",
+                message="documentation_coverage_fixture.mjs produced invalid JSON output.",
+                details=[],
+            )
+        ]
+
+    if not result.get("outcome_required"):
+        return []
+
+    # outcome_required is true — check the PR body for a ## Documentation section.
+    if pr_body is None:
+        # No PR body available; skip gracefully (mirrors changelog check style).
+        return []
+
+    if not _DOCUMENTATION_SECTION_RE.search(pr_body):
+        surface_classes = sorted({
+            c["surface_class"]
+            for c in result.get("classifications", [])
+            if c.get("surface_class") not in ("doc", "unclassified")
+        })
+        suggested = result.get("suggested_doc_targets", [])
+        details = []
+        if surface_classes:
+            details.append(f"classified surfaces: {', '.join(surface_classes)}")
+        if suggested:
+            details.append(f"suggested doc targets: {', '.join(suggested)}")
+        return [
+            Violation(
+                code="doc-coverage-outcome-missing",
+                message=(
+                    "Diff touches a documented surface but the PR body has no "
+                    "## Documentation section. Add a documentation_outcome field "
+                    "when calling gc_render_pr_body (ADR-054)."
+                ),
+                details=details,
+            )
+        ]
+
+    return []
