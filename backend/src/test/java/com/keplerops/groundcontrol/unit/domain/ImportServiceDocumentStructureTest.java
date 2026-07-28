@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -157,7 +158,7 @@ class ImportServiceDocumentStructureTest {
 
             var mockDoc = new Document(TEST_PROJECT, "my-doc", "1.0.0", "", "");
             setField(mockDoc, "id", docId);
-            when(documentRepository.findByProjectIdAndTitle(eq(PROJECT_ID), eq("my-doc")))
+            when(documentRepository.findByProjectIdAndTitle(PROJECT_ID, "my-doc"))
                     .thenReturn(Optional.empty());
             when(documentService.create(any(CreateDocumentCommand.class))).thenReturn(mockDoc);
 
@@ -175,7 +176,7 @@ class ImportServiceDocumentStructureTest {
             assertThat(result.sectionContentsCreated()).isEqualTo(2);
             verify(documentService).create(any(CreateDocumentCommand.class));
             verify(sectionService).create(any(CreateSectionCommand.class));
-            verify(sectionContentService, org.mockito.Mockito.times(2)).create(any(CreateSectionContentCommand.class));
+            verify(sectionContentService, times(2)).create(any(CreateSectionContentCommand.class));
         }
 
         @Test
@@ -187,7 +188,7 @@ class ImportServiceDocumentStructureTest {
 
             var mockDoc = new Document(TEST_PROJECT, "my-doc", "1.0.0", "", "");
             setField(mockDoc, "id", docId);
-            when(documentRepository.findByProjectIdAndTitle(eq(PROJECT_ID), eq("my-doc")))
+            when(documentRepository.findByProjectIdAndTitle(PROJECT_ID, "my-doc"))
                     .thenReturn(Optional.of(mockDoc));
 
             var mockSection = new Section(mockDoc, null, "Wave 1 — Foundation", "", 0);
@@ -197,9 +198,9 @@ class ImportServiceDocumentStructureTest {
 
             ImportResult result = service.importStrictdoc(PROJECT_ID, "my-doc.sdoc", sdocWithSection());
 
-            assertThat(result.documentsCreated()).isEqualTo(0);
-            assertThat(result.sectionsCreated()).isEqualTo(0);
-            assertThat(result.sectionContentsCreated()).isEqualTo(0);
+            assertThat(result.documentsCreated()).isZero();
+            assertThat(result.sectionsCreated()).isZero();
+            assertThat(result.sectionContentsCreated()).isZero();
             verify(documentService, never()).create(any(CreateDocumentCommand.class));
             verify(sectionContentService, never()).create(any(CreateSectionContentCommand.class));
         }
@@ -213,7 +214,7 @@ class ImportServiceDocumentStructureTest {
 
             var mockDoc = new Document(TEST_PROJECT, "my-doc", "1.0.0", "", "");
             setField(mockDoc, "id", docId);
-            when(documentRepository.findByProjectIdAndTitle(eq(PROJECT_ID), eq("my-doc")))
+            when(documentRepository.findByProjectIdAndTitle(PROJECT_ID, "my-doc"))
                     .thenReturn(Optional.empty());
             when(documentService.create(any(CreateDocumentCommand.class))).thenReturn(mockDoc);
 

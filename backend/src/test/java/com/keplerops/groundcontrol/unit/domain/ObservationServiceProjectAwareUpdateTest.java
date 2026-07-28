@@ -4,6 +4,7 @@ import static com.keplerops.groundcontrol.TestUtil.setField;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -311,8 +312,7 @@ class ObservationServiceProjectAwareUpdateTest {
             var thrown = org.assertj.core.api.Assertions.catchThrowableOfType(
                     ConflictException.class, () -> observationService.delete(projectId, assetId, obsId));
             assertThat(thrown).isNotNull().extracting("errorCode").isEqualTo("observation_referenced");
-            org.mockito.Mockito.verify(observationRepository, org.mockito.Mockito.never())
-                    .delete(obs);
+            verify(observationRepository, never()).delete(obs);
         }
 
         @Test

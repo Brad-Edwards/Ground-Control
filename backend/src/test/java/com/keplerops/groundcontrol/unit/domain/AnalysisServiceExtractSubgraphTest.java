@@ -3,10 +3,15 @@ package com.keplerops.groundcontrol.unit.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.keplerops.groundcontrol.TestUtil;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
+import com.keplerops.groundcontrol.domain.graph.model.GraphEdge;
+import com.keplerops.groundcontrol.domain.graph.model.GraphNode;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.requirements.model.Requirement;
 import com.keplerops.groundcontrol.domain.requirements.model.RequirementRelation;
@@ -106,11 +111,9 @@ class AnalysisServiceExtractSubgraphTest {
 
             var result = service.extractSubgraph(PROJECT_ID, List.of("REQ-A"));
 
-            assertThat(result.nodes())
-                    .extracting(node -> node.uid())
-                    .containsExactlyInAnyOrder("REQ-A", "REQ-B", "REQ-C");
+            assertThat(result.nodes()).extracting(GraphNode::uid).containsExactlyInAnyOrder("REQ-A", "REQ-B", "REQ-C");
             assertThat(result.edges())
-                    .extracting(edge -> edge.edgeType())
+                    .extracting(GraphEdge::edgeType)
                     .containsExactlyInAnyOrder("DEPENDS_ON", "PARENT");
         }
 
@@ -133,10 +136,8 @@ class AnalysisServiceExtractSubgraphTest {
 
             var result = service.extractSubgraph(PROJECT_ID, List.of("REQ-A", "REQ-C"));
 
-            assertThat(result.nodes())
-                    .extracting(node -> node.uid())
-                    .containsExactlyInAnyOrder("REQ-A", "REQ-B", "REQ-C");
-            assertThat(result.edges()).extracting(edge -> edge.edgeType()).containsExactlyInAnyOrder("DEPENDS_ON");
+            assertThat(result.nodes()).extracting(GraphNode::uid).containsExactlyInAnyOrder("REQ-A", "REQ-B", "REQ-C");
+            assertThat(result.edges()).extracting(GraphEdge::edgeType).containsExactlyInAnyOrder("DEPENDS_ON");
         }
 
         @Test
@@ -228,8 +229,8 @@ class AnalysisServiceExtractSubgraphTest {
             List<RequirementExportRecord> result = service.getRequirementsExportData(PROJECT_ID);
 
             assertThat(result).hasSize(3);
-            Mockito.verify(traceabilityLinkRepository, Mockito.times(1)).findByRequirementIdIn(anyCollection());
-            Mockito.verify(traceabilityLinkRepository, Mockito.never()).findByRequirementId(Mockito.any());
+            verify(traceabilityLinkRepository, times(1)).findByRequirementIdIn(anyCollection());
+            verify(traceabilityLinkRepository, never()).findByRequirementId(Mockito.any());
         }
     }
 }

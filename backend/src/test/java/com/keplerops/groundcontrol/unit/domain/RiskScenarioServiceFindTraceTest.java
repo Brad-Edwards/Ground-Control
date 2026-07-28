@@ -3,6 +3,7 @@ package com.keplerops.groundcontrol.unit.domain;
 import static com.keplerops.groundcontrol.TestUtil.setField;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -282,8 +283,7 @@ class RiskScenarioServiceFindTraceTest {
                     .isEqualTo("risk_scenario_referenced");
             assertThat(thrown.getDetail()).containsEntry("auditCount", 1);
             org.mockito.Mockito.verifyNoInteractions(riskScenarioLinkRepository);
-            org.mockito.Mockito.verify(riskScenarioRepository, org.mockito.Mockito.never())
-                    .delete(rs);
+            verify(riskScenarioRepository, never()).delete(rs);
         }
 
         @Test
@@ -311,8 +311,7 @@ class RiskScenarioServiceFindTraceTest {
             assertThat(thrown.getDetail()).containsEntry("findingCount", 1);
             // Parent + outbound-link cleanup must be skipped when the guard fires.
             org.mockito.Mockito.verifyNoInteractions(riskScenarioLinkRepository);
-            org.mockito.Mockito.verify(riskScenarioRepository, org.mockito.Mockito.never())
-                    .delete(rs);
+            verify(riskScenarioRepository, never()).delete(rs);
         }
 
         @Test

@@ -318,11 +318,12 @@ class ThreatModelServiceFindTraceTest {
             assertThat(thrown).isNotNull().hasMessageContaining("reverse links");
             assertThat(thrown.getErrorCode()).isEqualTo("threat_model_referenced");
             var detail = thrown.getDetail();
-            assertThat(detail).containsEntry("threatModelUid", tm.getUid());
-            assertThat(detail).containsEntry("assetCount", 2);
-            assertThat(detail).containsEntry("scenarioCount", 0);
-            assertThat(detail.get("assetUids")).isEqualTo(List.of("ASSET-001", "ASSET-002"));
-            assertThat(detail.get("scenarioUids")).isEqualTo(List.of());
+            assertThat(detail)
+                    .containsEntry("threatModelUid", tm.getUid())
+                    .containsEntry("assetCount", 2)
+                    .containsEntry("scenarioCount", 0);
+            assertThat(detail).extractingByKey("assetUids").isEqualTo(List.of("ASSET-001", "ASSET-002"));
+            assertThat(detail).extractingByKey("scenarioUids").isEqualTo(List.of());
         }
 
         @Test
@@ -342,11 +343,12 @@ class ThreatModelServiceFindTraceTest {
             assertThat(thrown).isNotNull().hasMessageContaining("reverse links");
             assertThat(thrown.getErrorCode()).isEqualTo("threat_model_referenced");
             var detail = thrown.getDetail();
-            assertThat(detail).containsEntry("threatModelUid", tm.getUid());
-            assertThat(detail).containsEntry("assetCount", 0);
-            assertThat(detail).containsEntry("scenarioCount", 1);
-            assertThat(detail.get("assetUids")).isEqualTo(List.of());
-            assertThat(detail.get("scenarioUids")).isEqualTo(List.of("RS-001"));
+            assertThat(detail)
+                    .containsEntry("threatModelUid", tm.getUid())
+                    .containsEntry("assetCount", 0)
+                    .containsEntry("scenarioCount", 1);
+            assertThat(detail).extractingByKey("assetUids").isEqualTo(List.of());
+            assertThat(detail).extractingByKey("scenarioUids").isEqualTo(List.of("RS-001"));
         }
     }
 }

@@ -23,6 +23,7 @@ import com.keplerops.groundcontrol.domain.riskscenarios.repository.RiskScenarioL
 import com.keplerops.groundcontrol.domain.riskscenarios.state.RiskScenarioLinkTargetType;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.Month;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -70,7 +71,7 @@ class FindingServiceDeleteTest {
     private Project project;
     private UUID projectId;
     private static final Instant NOW = Instant.parse("2026-05-13T12:00:00Z");
-    private static final LocalDate DUE = LocalDate.of(2026, 6, 30);
+    private static final LocalDate DUE = LocalDate.of(2026, Month.JUNE, 30);
 
     @BeforeEach
     void setUp() {

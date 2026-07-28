@@ -6,6 +6,8 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 import com.keplerops.groundcontrol.TestUtil;
+import com.keplerops.groundcontrol.domain.graph.model.GraphEdge;
+import com.keplerops.groundcontrol.domain.graph.model.GraphNode;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.requirements.model.Requirement;
 import com.keplerops.groundcontrol.domain.requirements.model.RequirementRelation;
@@ -478,8 +480,8 @@ class AnalysisServiceAnalyzeCompletenessTest {
 
             var result = service.getGraphVisualization(PROJECT_ID);
 
-            assertThat(result.nodes()).extracting(node -> node.uid()).containsExactly("REQ-A", "REQ-B");
-            assertThat(result.edges()).extracting(edge -> edge.edgeType()).containsExactly("DEPENDS_ON");
+            assertThat(result.nodes()).extracting(GraphNode::uid).containsExactly("REQ-A", "REQ-B");
+            assertThat(result.edges()).extracting(GraphEdge::edgeType).containsExactly("DEPENDS_ON");
         }
 
         @Test

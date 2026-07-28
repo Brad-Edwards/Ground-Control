@@ -1,5 +1,7 @@
 package com.keplerops.groundcontrol.integration;
 
+import static org.assertj.core.api.Assertions.assertThatCode;
+
 import jakarta.persistence.EntityManager;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
@@ -377,11 +379,16 @@ class MigrationSmokeSchemaShapeOfAssetRelationTest extends BaseIntegrationTest {
                 "criteria_text_search",
                 "created_at",
                 "updated_at")) {
-            entityManager
-                    .createNativeQuery("SELECT 1 FROM information_schema.columns"
-                            + " WHERE table_name = 'test_suite_audit'"
-                            + " AND column_name = '" + column + "'")
-                    .getSingleResult();
+            // Stated as an assertion rather than left implicit: getSingleResult()
+            // throws when the column is missing, but a test whose expectation is
+            // "nothing threw" reads as a test with no expectation at all.
+            assertThatCode(() -> entityManager
+                            .createNativeQuery("SELECT 1 FROM information_schema.columns"
+                                    + " WHERE table_name = 'test_suite_audit'"
+                                    + " AND column_name = '" + column + "'")
+                            .getSingleResult())
+                    .as("test_suite_audit.%s should exist", column)
+                    .doesNotThrowAnyException();
         }
     }
 }
