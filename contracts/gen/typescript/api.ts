@@ -920,6 +920,7 @@ export interface GateFindingRequest {
 
 export interface GateFindingResponse {
   [key: string]: any;
+  "authorizationReference": any;
   "category": any;
   "classification": any;
   "disposition": any;
@@ -1830,6 +1831,7 @@ export interface RecordArtifactRequest {
 
 export interface RecordFindingDispositionRequest {
   [key: string]: any;
+  "authorizationReference"?: any;
   "disposition": any;
 }
 

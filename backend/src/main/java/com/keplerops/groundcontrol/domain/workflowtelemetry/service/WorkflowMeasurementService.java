@@ -129,7 +129,7 @@ public class WorkflowMeasurementService {
      */
     @Transactional
     public WorkflowGateFinding recordFindingDisposition(
-            UUID findingId, String project, FindingDisposition disposition) {
+            UUID findingId, String project, FindingDisposition disposition, String authorizationReference) {
         requireText(project, PROJECT_FIELD);
         if (findingId == null) {
             throw new DomainValidationException("findingId must not be null");
@@ -141,7 +141,11 @@ public class WorkflowMeasurementService {
                 .findByIdAndProject(findingId, project)
                 .orElseThrow(() -> new NotFoundException("Workflow gate finding not found: " + findingId));
         try {
-            finding.applyDisposition(disposition);
+            finding.applyDisposition(disposition, authorizationReference);
+        } catch (IllegalArgumentException invalid) {
+            // The entity owns the authorization rule so no caller can bypass it. Surfaced as a
+            // validation failure rather than a 500: the request is refusable, not broken.
+            throw new DomainValidationException(invalid.getMessage());
         } catch (IllegalStateException conflict) {
             throw new ConflictException(conflict.getMessage());
         }

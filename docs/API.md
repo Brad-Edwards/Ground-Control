@@ -1082,6 +1082,15 @@ terminal claim returns 409 rather than being silently overwritten, because two s
 about whether something was fixed is a fact worth surfacing. `project` scopes the lookup, so a
 finding id alone never authorizes the write.
 
+`authorizationReference` (max 500) names where the decision was recorded, normally the ADR-029 issue
+thread comment. It is **required** for `WONTFIX` and `NOT_APPLICABLE` and **refused** for `FIXED`;
+either mismatch returns 400. The asymmetry follows what each claim can be checked against: a fix is
+substantiated by the station's next attempt, which either reproduces the finding or does not, while
+"we accept this" and "this is a false positive" are assertions no gate re-run can confirm and both
+remove the finding from the escape-rate signal. The rule is enforced on the entity rather than at the
+controller, so it holds for every path into the field, and the reference is carried on the audited
+row so the authority behind a retired finding survives with it.
+
 **POST `/workflow-runs/{runId}/events`** additionally accepts the ADR-090 measurement projection
 (issue #1355): `stationId`, `stationResult`, and a bounded `findings` batch persisted atomically
 with the attempt. `stationResult` is separate from `eventType` by construction, since `COMPLETED` means

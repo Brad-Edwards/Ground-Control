@@ -32,4 +32,15 @@ public enum FindingDisposition {
     public boolean isTerminal() {
         return this != OPEN;
     }
+
+    /**
+     * Whether reaching this disposition must name where it was authorized.
+     *
+     * <p>True for the two values that retire a finding without repairing it. Both remove it from the
+     * escape-rate signal on an assertion no gate re-run can check, so the assertion has to be
+     * attributable. {@link #FIXED} is excluded because the station's next attempt is its evidence.
+     */
+    public boolean requiresAuthorization() {
+        return this == WONTFIX || this == NOT_APPLICABLE;
+    }
 }

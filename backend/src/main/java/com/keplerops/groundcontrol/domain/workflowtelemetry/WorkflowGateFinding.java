@@ -93,6 +93,21 @@ public class WorkflowGateFinding {
     @Column(nullable = false, length = 20)
     private FindingDisposition disposition;
 
+    /**
+     * Where the authority to close this finding without fixing it is recorded — the ADR-029 issue
+     * thread comment carrying the decision.
+     *
+     * <p>Required for {@code WONTFIX} and {@code NOT_APPLICABLE}, and refused for {@code FIXED}. The
+     * asymmetry is what each claim can be checked against: a fix is substantiated by the next
+     * attempt at the station, which either reproduces the finding or does not. "We accept this" and
+     * "this is a false positive" are assertions no gate re-run can confirm, and they remove the
+     * finding from the escape-rate signal entirely. Without a recorded authority, any caller that
+     * can reach the endpoint can retire an unfixed finding and leave the measurement claiming the
+     * station came out clean.
+     */
+    @Column(length = 500)
+    private String authorizationReference;
+
     @Column(nullable = false)
     private Instant occurredAt;
 
@@ -147,12 +162,33 @@ public class WorkflowGateFinding {
      * overwritten — two sources disagreeing about whether something was fixed is a fact worth
      * surfacing, not one to resolve by write order.
      *
+     * <p>A disposition that retires the finding without fixing it must name where that was
+     * authorized. The check is here rather than in the service so no caller can reach the field
+     * without it.
+     *
+     * @param authorization ADR-029 decision reference; required for {@code WONTFIX} and
+     *     {@code NOT_APPLICABLE}, refused for {@code FIXED}
      * @return true when this call changed the disposition
      * @throws IllegalStateException when a different terminal disposition is already recorded
+     * @throws IllegalArgumentException when the disposition is not terminal, or the authorization
+     *     reference does not match what the disposition requires
      */
-    public boolean applyDisposition(FindingDisposition next) {
+    public boolean applyDisposition(FindingDisposition next, String authorization) {
         if (next == null || next == FindingDisposition.OPEN) {
             throw new IllegalArgumentException("disposition transition must name a terminal value");
+        }
+        var reference = authorization == null ? null : authorization.strip();
+        var hasReference = reference != null && !reference.isEmpty();
+        if (next.requiresAuthorization() && !hasReference) {
+            throw new IllegalArgumentException(
+                    next + " retires a finding without fixing it and requires an authorization reference");
+        }
+        if (!next.requiresAuthorization() && hasReference) {
+            // A fix is evidenced by the station's next attempt. Accepting a reference here would let
+            // an unfixed finding be closed as FIXED with a justification attached, which reads in
+            // the aggregate as a station that came out clean.
+            throw new IllegalArgumentException(
+                    next + " is evidenced by re-inspection and takes no authorization reference");
         }
         if (this.disposition == next) {
             return false;
@@ -162,7 +198,12 @@ public class WorkflowGateFinding {
                     "finding already resolved as " + this.disposition + "; refusing to overwrite with " + next);
         }
         this.disposition = next;
+        this.authorizationReference = reference;
         return true;
+    }
+
+    public String getAuthorizationReference() {
+        return authorizationReference;
     }
 
     @PrePersist

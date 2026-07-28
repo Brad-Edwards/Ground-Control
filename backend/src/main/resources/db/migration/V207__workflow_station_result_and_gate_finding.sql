@@ -41,6 +41,10 @@ CREATE TABLE workflow_gate_finding (
     severity        VARCHAR(60),
     classification  VARCHAR(20),
     disposition     VARCHAR(20)  NOT NULL DEFAULT 'OPEN',
+    -- Where closing a finding without fixing it was authorized (ADR-029 decision record). Required
+    -- by the domain for WONTFIX and NOT_APPLICABLE and refused for FIXED, which the station's next
+    -- attempt evidences on its own. Nullable here because OPEN and FIXED rows carry none.
+    authorization_reference VARCHAR(500),
     occurred_at     TIMESTAMPTZ  NOT NULL,
     created_at      TIMESTAMPTZ  NOT NULL
 );

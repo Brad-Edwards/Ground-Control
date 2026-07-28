@@ -203,7 +203,9 @@ public class WorkflowRunController {
      * Move one finding to a terminal disposition (issue #1355).
      *
      * <p>Separate from the detection path on purpose: an emitter observing a finding is not evidence
-     * that anything was decided about it, and `wontfix` carries ADR-029's authorization requirement.
+     * that anything was decided about it. A disposition that retires a finding without fixing it
+     * must name where it was authorized; the entity enforces that, so the rule cannot be bypassed by
+     * reaching the field another way.
      */
     @PostMapping("/findings/{findingId}/disposition")
     public GateFindingResponse recordFindingDisposition(
@@ -211,8 +213,8 @@ public class WorkflowRunController {
             @Valid @RequestBody RecordFindingDispositionRequest request,
             @RequestParam(required = false) String project) {
         var projectIdentifier = projectService.requireProjectIdentifier(project);
-        return GateFindingResponse.from(
-                measurementService.recordFindingDisposition(findingId, projectIdentifier, request.disposition()));
+        return GateFindingResponse.from(measurementService.recordFindingDisposition(
+                findingId, projectIdentifier, request.disposition(), request.authorizationReference()));
     }
 
     /**

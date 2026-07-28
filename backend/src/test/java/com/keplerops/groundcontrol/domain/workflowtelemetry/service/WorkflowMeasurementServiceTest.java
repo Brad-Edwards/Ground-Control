@@ -124,8 +124,8 @@ class WorkflowMeasurementServiceTest {
         when(gateFindingRepository.findByIdAndProject(id, "gc")).thenReturn(Optional.of(f));
         when(gateFindingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        service.recordFindingDisposition(id, "gc", FindingDisposition.FIXED);
-        service.recordFindingDisposition(id, "gc", FindingDisposition.FIXED);
+        service.recordFindingDisposition(id, "gc", FindingDisposition.FIXED, null);
+        service.recordFindingDisposition(id, "gc", FindingDisposition.FIXED, null);
 
         assertThat(f.getDisposition()).isEqualTo(FindingDisposition.FIXED);
     }
@@ -136,14 +136,66 @@ class WorkflowMeasurementServiceTest {
                 UUID.randomUUID(), UUID.randomUUID(), "gc", "policy", FindingSourceKind.DETECTOR, "policy", "k1");
         var id = UUID.randomUUID();
         setField(f, "id", id);
-        f.applyDisposition(FindingDisposition.FIXED);
+        f.applyDisposition(FindingDisposition.FIXED, null);
         when(gateFindingRepository.findByIdAndProject(id, "gc")).thenReturn(Optional.of(f));
 
         // Two sources disagreeing about whether something was fixed is a fact worth
         // surfacing, not one to settle by write order.
-        assertThatThrownBy(() -> service.recordFindingDisposition(id, "gc", FindingDisposition.WONTFIX))
+        assertThatThrownBy(() -> service.recordFindingDisposition(
+                        id, "gc", FindingDisposition.WONTFIX, "https://example/issues/1#c1"))
                 .isInstanceOf(ConflictException.class);
         assertThat(f.getDisposition()).isEqualTo(FindingDisposition.FIXED);
+    }
+
+    @Test
+    void retiringAFindingWithoutFixingItRequiresARecordedAuthorization() {
+        // Without this, any caller reaching the endpoint can close an unfixed finding and leave the
+        // aggregate claiming the station came out clean. Neither claim is checkable by re-running
+        // the gate, so the claim has to be attributable.
+        var f = new WorkflowGateFinding(
+                UUID.randomUUID(), UUID.randomUUID(), "gc", "policy", FindingSourceKind.DETECTOR, "policy", "k1");
+        var id = UUID.randomUUID();
+        setField(f, "id", id);
+        when(gateFindingRepository.findByIdAndProject(id, "gc")).thenReturn(Optional.of(f));
+
+        for (var disposition : List.of(FindingDisposition.WONTFIX, FindingDisposition.NOT_APPLICABLE)) {
+            assertThatThrownBy(() -> service.recordFindingDisposition(id, "gc", disposition, null))
+                    .isInstanceOf(DomainValidationException.class);
+            assertThatThrownBy(() -> service.recordFindingDisposition(id, "gc", disposition, "   "))
+                    .isInstanceOf(DomainValidationException.class);
+        }
+        assertThat(f.getDisposition()).isEqualTo(FindingDisposition.OPEN);
+    }
+
+    @Test
+    void anAuthorizedWontfixIsRecordedWithItsReference() {
+        var f = new WorkflowGateFinding(
+                UUID.randomUUID(), UUID.randomUUID(), "gc", "policy", FindingSourceKind.DETECTOR, "policy", "k1");
+        var id = UUID.randomUUID();
+        setField(f, "id", id);
+        when(gateFindingRepository.findByIdAndProject(id, "gc")).thenReturn(Optional.of(f));
+        when(gateFindingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.recordFindingDisposition(id, "gc", FindingDisposition.WONTFIX, "https://example/issues/1355#c9");
+
+        assertThat(f.getDisposition()).isEqualTo(FindingDisposition.WONTFIX);
+        assertThat(f.getAuthorizationReference()).isEqualTo("https://example/issues/1355#c9");
+    }
+
+    @Test
+    void aFixedDispositionTakesNoAuthorizationReference() {
+        // A fix is evidenced by the station's next attempt. Accepting a reference here would let an
+        // unfixed finding be closed as FIXED with a justification attached.
+        var f = new WorkflowGateFinding(
+                UUID.randomUUID(), UUID.randomUUID(), "gc", "policy", FindingSourceKind.DETECTOR, "policy", "k1");
+        var id = UUID.randomUUID();
+        setField(f, "id", id);
+        when(gateFindingRepository.findByIdAndProject(id, "gc")).thenReturn(Optional.of(f));
+
+        assertThatThrownBy(() -> service.recordFindingDisposition(
+                        id, "gc", FindingDisposition.FIXED, "https://example/issues/1"))
+                .isInstanceOf(DomainValidationException.class);
+        assertThat(f.getDisposition()).isEqualTo(FindingDisposition.OPEN);
     }
 
     @Test
@@ -151,7 +203,7 @@ class WorkflowMeasurementServiceTest {
         // This records a decision; "still open" is the absence of one.
         var findingId = UUID.randomUUID();
 
-        assertThatThrownBy(() -> service.recordFindingDisposition(findingId, "gc", FindingDisposition.OPEN))
+        assertThatThrownBy(() -> service.recordFindingDisposition(findingId, "gc", FindingDisposition.OPEN, null))
                 .isInstanceOf(DomainValidationException.class);
     }
 

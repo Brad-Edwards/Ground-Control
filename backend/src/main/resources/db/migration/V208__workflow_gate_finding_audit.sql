@@ -23,6 +23,7 @@ CREATE TABLE workflow_gate_finding_audit (
     severity       VARCHAR(60),
     classification VARCHAR(20),
     disposition    VARCHAR(20),
+    authorization_reference VARCHAR(500),
     occurred_at    TIMESTAMPTZ,
     created_at     TIMESTAMPTZ,
     PRIMARY KEY (id, rev)

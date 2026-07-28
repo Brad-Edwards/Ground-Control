@@ -3511,6 +3511,9 @@
       },
       "GateFindingResponse": {
         "properties": {
+          "authorizationReference": {
+            "type": "string"
+          },
           "category": {
             "type": "string"
           },
@@ -6710,6 +6713,11 @@
       },
       "RecordFindingDispositionRequest": {
         "properties": {
+          "authorizationReference": {
+            "maxLength": 500,
+            "minLength": 0,
+            "type": "string"
+          },
           "disposition": {
             "enum": [
               "OPEN",

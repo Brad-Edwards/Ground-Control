@@ -26,6 +26,8 @@ public record GateFindingResponse(
         String severity,
         String classification,
         FindingDisposition disposition,
+        /** Where closing without a fix was authorized. Null unless the disposition required one. */
+        String authorizationReference,
         Instant occurredAt) {
 
     public static GateFindingResponse from(WorkflowGateFinding f) {
@@ -42,6 +44,7 @@ public record GateFindingResponse(
                 f.getSeverity(),
                 f.getClassification(),
                 f.getDisposition(),
+                f.getAuthorizationReference(),
                 f.getOccurredAt());
     }
 }

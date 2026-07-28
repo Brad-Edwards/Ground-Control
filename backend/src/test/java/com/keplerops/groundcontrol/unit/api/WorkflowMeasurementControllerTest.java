@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -138,10 +139,10 @@ class WorkflowMeasurementControllerTest {
     void recordFindingDispositionReturnsTheUpdatedFinding() throws Exception {
         var finding = new WorkflowGateFinding(
                 UUID.randomUUID(), UUID.randomUUID(), "gc", "policy", FindingSourceKind.DETECTOR, "policy", "k1");
-        finding.applyDisposition(FindingDisposition.FIXED);
+        finding.applyDisposition(FindingDisposition.FIXED, null);
         setField(finding, "id", UUID.randomUUID());
         when(projectService.requireProjectIdentifier(any())).thenReturn("gc");
-        when(measurementService.recordFindingDisposition(any(), eq("gc"), eq(FindingDisposition.FIXED)))
+        when(measurementService.recordFindingDisposition(any(), eq("gc"), eq(FindingDisposition.FIXED), isNull()))
                 .thenReturn(finding);
 
         mockMvc.perform(post("/api/v1/workflow-runs/findings/" + UUID.randomUUID() + "/disposition")
@@ -167,6 +168,6 @@ class WorkflowMeasurementControllerTest {
                 // 422 is this repo's shared envelope for a validation failure, not 400.
                 .andExpect(status().isUnprocessableEntity());
 
-        verify(measurementService, never()).recordFindingDisposition(any(), any(), any());
+        verify(measurementService, never()).recordFindingDisposition(any(), any(), any(), any());
     }
 }
