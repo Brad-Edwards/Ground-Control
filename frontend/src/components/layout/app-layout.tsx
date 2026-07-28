@@ -1,13 +1,7 @@
 import { ProjectSwitcher } from "@/components/project-switcher";
 import { cn } from "@/lib/utils";
 import { LogOut, Rocket } from "lucide-react";
-import {
-  Link,
-  NavLink,
-  Outlet,
-  useLocation,
-  useParams,
-} from "react-router";
+import { Link, NavLink, Outlet, useLocation, useParams } from "react-router";
 
 function NavItem({
   to,

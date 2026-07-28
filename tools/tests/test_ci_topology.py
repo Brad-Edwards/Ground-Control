@@ -151,6 +151,39 @@ class CiTopologyTest(unittest.TestCase):
         self.assertEqual(job_needs(self.jobs["fast-feedback"]), set())
         self.assertNotIn("fast-feedback", CI_STRICTNESS_REQUIRED_CONTEXTS)
 
+    def test_frontend_lane_verifies_lint_tests_and_build(self) -> None:
+        """The frontend lane is the only thing checking `frontend/` (issue #1468).
+
+        The generic assertions above cannot catch its removal: deleting the job,
+        the policy constant, and the baseline entry together leaves them all
+        internally consistent and silent. `frontend/` is otherwise compiled only
+        inside the Docker image build, which runs after merge and runs neither
+        lint nor tests.
+        """
+        self.assertIn("frontend", self.jobs)
+        job = self.jobs["frontend"]
+
+        self.assertEqual(job_needs(job), set(), "frontend must start at t=0")
+        self.assertNotIn("if", job, "a conditional lane cannot be a merge gate")
+
+        commands = " ".join(str(step.get("run", "")) for step in job["steps"])
+        self.assertIn("npm ci", commands)
+        self.assertIn("run lint", commands)
+        self.assertIn("test", commands)
+        self.assertIn("run build", commands)
+
+    def test_frontend_lane_is_a_required_merge_gate(self) -> None:
+        self.assertIn("frontend", CI_STRICTNESS_REQUIRED_CONTEXTS)
+
+    def test_frontend_lane_runs_without_write_permissions(self) -> None:
+        """It installs PR-controlled dependencies and runs npm lifecycle scripts.
+
+        The workflow-level grant includes `packages: write`,
+        `pull-requests: write`, and `id-token: write`; none of that may reach
+        this job.
+        """
+        self.assertEqual(self.jobs["frontend"].get("permissions"), {"contents": "read"})
+
     def test_sonar_job_keeps_its_coverage_and_quality_gate_inputs(self) -> None:
         """Trimming Sonar's redundant build must not drop its actual inputs."""
         sonar_steps = " ".join(

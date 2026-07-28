@@ -131,6 +131,7 @@ CI_STRICTNESS_REQUIRED_CONTEXTS = frozenset(
         "GitGuardian Security Checks",
         "SonarCloud Code Analysis",
         "build",
+        "frontend",
         "integration",
         "osv-scanner",
         "policy",
