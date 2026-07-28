@@ -650,3 +650,14 @@ the ADR-025 backup-policy assertion. The documentation-coverage classifier
 (`classifyChangedSurface`), its `outcome_required` mapping, the Vale rules,
 `tools/install-vale.sh`, and `.vale.ini` are unchanged; no new documentation
 classification or style rule is established.
+
+> **Sync note for issue #1467 (2026-07-28, enforce the 500-LOC file-size limit):**
+> The documentation-coverage classifier, its `outcome_required` mapping, the Vale
+> rule set, `tools/install-vale.sh`, and `.vale.ini` are all unchanged. What moved
+> is where two of this gate's trigger surfaces live: `mcp/ground-control/index.js`
+> kept its bootstrap and now registers tools through `mcp/ground-control/tools/*`,
+> and `tools/policy/checks.py` gained one line wiring in the new file-size gate
+> (`tools/policy/file_size.py`, ADR-092). Recorded here because this ADR names
+> those files as the gate's surfaces: a reader looking for a registration in
+> `index.js` alone would no longer find it. No documentation classification, Vale
+> rule, or style rule is established or altered by that change.

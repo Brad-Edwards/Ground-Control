@@ -12,7 +12,6 @@ import static org.mockito.Mockito.when;
 import com.keplerops.groundcontrol.TestUtil;
 import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
-import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.model.ProjectType;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
@@ -53,16 +52,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
-/**
- * GC-RSCH-R001/R003/F003/F036/N007/N011 — behavioral unit tests for {@link
- * ResearchRunService}. Each test exercises a real lifecycle behavior (gate
- * policy, prerequisite gating, idempotent record, resume-without-duplication,
- * snapshot composition) rather than asserting a tautology.
- */
+/** Split from ResearchRunServiceTest under issue #1467 for the 500-LOC limit
+ * (docs/CODING_STANDARDS.md). Test bodies are unchanged; fixtures are
+ * repeated because JUnit builds a fresh instance per test class. */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 class ResearchRunServiceTest {
-
     private static final UUID PROJECT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID RUN_ID = UUID.fromString("00000000-0000-0000-0000-000000000010");
 
@@ -207,6 +202,14 @@ class ResearchRunServiceTest {
             sources.add(src);
         }
         when(sourceRepository.findBySelectionId(selId)).thenReturn(sources);
+    }
+
+    /** Small builder so the start tests read clearly. */
+    private record StartCmd(String uid, AutonomyLevel autonomy, IntendedOutput intendedOutput) {
+        com.keplerops.groundcontrol.domain.research.service.StartResearchRunCommand toCommand() {
+            return new com.keplerops.groundcontrol.domain.research.service.StartResearchRunCommand(
+                    PROJECT_ID, uid, autonomy, intendedOutput, java.util.Map.of());
+        }
     }
 
     // ---------------------------------------------------------------- start
@@ -467,234 +470,5 @@ class ResearchRunServiceTest {
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("already resolved");
         assertThat(run.getStatus()).isEqualTo(ResearchRunStatus.BLOCKED);
-    }
-
-    @Test
-    void recordArtifact_rework_reopensResolvedGuardingGateAndUnblocksRun() {
-        var run = runAt(ResearchRunStage.METHODOLOGY_SELECTION, ResearchRunStatus.BLOCKED, AutonomyLevel.COPILOT);
-        withPassingCoverageGate(run);
-        var prior = artifact(run, ResearchArtifactType.METHODOLOGY_REQUIREMENTS, ResearchArtifactStatus.ACTIVE);
-        when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
-                        RUN_ID, ResearchArtifactType.METHODOLOGY_REQUIREMENTS, ResearchArtifactStatus.ACTIVE))
-                .thenReturn(Optional.of(prior));
-        var rejectedGate = gate(run, ResearchGatePoint.METHOD_DECISION, ResearchGateBehavior.REQUIRE_HUMAN);
-        rejectedGate.resolve(ResearchGateDecisionOutcome.REJECTED, null, "needs work", "server-actor");
-        when(gateRepository.findByResearchRunIdAndGatePoint(RUN_ID, ResearchGatePoint.METHOD_DECISION))
-                .thenReturn(Optional.of(rejectedGate));
-
-        service.recordArtifact(
-                PROJECT_ID,
-                RUN_ID,
-                new com.keplerops.groundcontrol.domain.research.service.RecordArtifactCommand(
-                        ResearchArtifactType.METHODOLOGY_REQUIREMENTS,
-                        "loc-v2",
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null));
-
-        assertThat(rejectedGate.getStatus())
-                .isEqualTo(com.keplerops.groundcontrol.domain.research.model.ResearchGateStatus.PENDING);
-        assertThat(run.getStatus()).isEqualTo(ResearchRunStatus.IN_PROGRESS);
-    }
-
-    @Test
-    void resolveGate_disabledGate_throwsValidation() {
-        var run =
-                runAt(ResearchRunStage.METHODOLOGY_SELECTION, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
-        when(gateRepository.findByResearchRunIdAndGatePoint(RUN_ID, ResearchGatePoint.METHOD_DECISION))
-                .thenReturn(Optional.of(gate(run, ResearchGatePoint.METHOD_DECISION, ResearchGateBehavior.DISABLED)));
-        var command = new com.keplerops.groundcontrol.domain.research.service.GateDecisionCommand(
-                ResearchGatePoint.METHOD_DECISION,
-                ResearchGateDecisionOutcome.APPROVED,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null);
-        assertThatThrownBy(() -> service.resolveGate(PROJECT_ID, RUN_ID, command))
-                .isInstanceOf(DomainValidationException.class)
-                .hasMessageContaining("disabled");
-    }
-
-    // --------------------------------------------------- stop / fail / resume
-
-    @Test
-    void fail_recordsBoundedErrorAndTransitions() {
-        var run = runAt(ResearchRunStage.SOURCE_SEARCH, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
-        service.fail(
-                PROJECT_ID,
-                RUN_ID,
-                new com.keplerops.groundcontrol.domain.research.service.FailRunCommand(
-                        "provider_timeout", "RETRYABLE", "upstream timed out"));
-        assertThat(run.getStatus()).isEqualTo(ResearchRunStatus.FAILED);
-        assertThat(run.getLastErrorCode()).isEqualTo("provider_timeout");
-        assertThat(run.getLastErrorClass()).isEqualTo("RETRYABLE");
-    }
-
-    @Test
-    void resume_fromFailed_returnsToInProgressWithoutTouchingArtifacts() {
-        runAt(ResearchRunStage.SOURCE_SEARCH, ResearchRunStatus.FAILED, AutonomyLevel.AUTONOMOUS);
-        var resumed = service.resume(PROJECT_ID, RUN_ID);
-        assertThat(resumed.getStatus()).isEqualTo(ResearchRunStatus.IN_PROGRESS);
-        assertThat(resumed.getCurrentStage()).isEqualTo(ResearchRunStage.SOURCE_SEARCH);
-        // AC3: completed work is never duplicated — resume creates/saves no artifacts.
-        verify(artifactRepository, never()).save(any());
-    }
-
-    @Test
-    void resume_notResumable_throwsValidation() {
-        runAt(ResearchRunStage.SOURCE_SEARCH, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
-        assertThatThrownBy(() -> service.resume(PROJECT_ID, RUN_ID))
-                .isInstanceOf(DomainValidationException.class)
-                .hasMessageContaining("not resumable");
-    }
-
-    @Test
-    void recordUsage_accumulatesObservedUsage() {
-        var run = runAt(ResearchRunStage.SOURCE_SEARCH, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
-        service.recordUsage(PROJECT_ID, RUN_ID, 100, 250);
-        service.recordUsage(PROJECT_ID, RUN_ID, 50, 125);
-        assertThat(run.getObservedTokens()).isEqualTo(150);
-        assertThat(run.getObservedCostUsdMicros()).isEqualTo(375);
-    }
-
-    // -------------------------------------------------------------- snapshot
-
-    @Test
-    void getSnapshot_composesReadinessAndPendingGatesFromState() {
-        var run = runAt(ResearchRunStage.PROTOCOL_PLANNING, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.COPILOT);
-        run.setCandidateSources(10);
-        var methodologyArtifact =
-                artifact(run, ResearchArtifactType.METHODOLOGY_REQUIREMENTS, ResearchArtifactStatus.ACTIVE);
-        when(artifactRepository.findByResearchRunIdOrderByCreatedAtAsc(RUN_ID))
-                .thenReturn(List.of(methodologyArtifact));
-        when(gateRepository.findByResearchRunIdOrderByGatePointAsc(RUN_ID))
-                .thenReturn(List.of(
-                        gate(run, ResearchGatePoint.METHOD_DECISION, ResearchGateBehavior.REQUIRE_HUMAN),
-                        gate(run, ResearchGatePoint.PROTOCOL_DECISION, ResearchGateBehavior.REQUIRE_HUMAN)));
-
-        var snapshot = service.getSnapshot(PROJECT_ID, RUN_ID);
-
-        assertThat(snapshot.currentStage()).isEqualTo(ResearchRunStage.PROTOCOL_PLANNING);
-        assertThat(snapshot.sourceCounts().candidateSources()).isEqualTo(10);
-        assertThat(snapshot.artifactReadiness())
-                .filteredOn(r -> r.artifactType() == ResearchArtifactType.METHODOLOGY_REQUIREMENTS)
-                .singleElement()
-                .satisfies(r -> assertThat(r.readiness())
-                        .isEqualTo(com.keplerops.groundcontrol.domain.research.model.ResearchArtifactReadiness.READY));
-        assertThat(snapshot.artifactReadiness())
-                .filteredOn(r -> r.artifactType() == ResearchArtifactType.MANUSCRIPT)
-                .singleElement()
-                .satisfies(r -> assertThat(r.readiness())
-                        .isEqualTo(
-                                com.keplerops.groundcontrol.domain.research.model.ResearchArtifactReadiness.MISSING));
-        assertThat(snapshot.pendingGates()).hasSize(2);
-    }
-
-    // ------------------------------------------------------ project scoping
-
-    @Test
-    void crossProjectRun_isConcealedAsNotFound() {
-        when(runRepository.findByIdAndProjectId(RUN_ID, PROJECT_ID)).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> service.getById(PROJECT_ID, RUN_ID)).isInstanceOf(NotFoundException.class);
-    }
-
-    // ---------------------------------------------------------- stop / complete
-
-    @Test
-    void stop_transitionsToStoppedAndStampsStoppedAt() {
-        runAt(ResearchRunStage.SOURCE_SEARCH, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
-        var stopped = service.stop(PROJECT_ID, RUN_ID);
-        assertThat(stopped.getStatus()).isEqualTo(ResearchRunStatus.STOPPED);
-        assertThat(stopped.getStoppedAt()).isNotNull();
-    }
-
-    @Test
-    void complete_atFinalStageWithActiveManuscript_transitionsToCompleted() {
-        var run = runAt(ResearchRunStage.PROSE_DRAFTING, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
-        var manuscript = artifact(run, ResearchArtifactType.MANUSCRIPT, ResearchArtifactStatus.ACTIVE);
-        when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
-                        RUN_ID, ResearchArtifactType.MANUSCRIPT, ResearchArtifactStatus.ACTIVE))
-                .thenReturn(Optional.of(manuscript));
-        var disclosure = new com.keplerops.groundcontrol.domain.research.model.ResearchRunDisclosure(
-                run, manuscript.getId(), 1, true, true, true, "server-actor");
-        when(disclosureRepository.findFirstByResearchRunIdAndStatus(
-                        RUN_ID, com.keplerops.groundcontrol.domain.research.model.DisclosureStatus.CURRENT))
-                .thenReturn(Optional.of(disclosure));
-        when(disclosureEntryRepository.findByDisclosureId(disclosure.getId())).thenReturn(List.of());
-        var completed = service.complete(PROJECT_ID, RUN_ID);
-        assertThat(completed.getStatus()).isEqualTo(ResearchRunStatus.COMPLETED);
-    }
-
-    @Test
-    void complete_beforeFinalStage_throwsValidation() {
-        runAt(ResearchRunStage.SYNTHESIS, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
-        assertThatThrownBy(() -> service.complete(PROJECT_ID, RUN_ID))
-                .isInstanceOf(DomainValidationException.class)
-                .hasMessageContaining("final stage");
-    }
-
-    @Test
-    void complete_finalStageMissingArtifact_throwsValidation() {
-        runAt(ResearchRunStage.PROSE_DRAFTING, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
-        when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
-                        RUN_ID, ResearchArtifactType.MANUSCRIPT, ResearchArtifactStatus.ACTIVE))
-                .thenReturn(Optional.empty());
-        assertThatThrownBy(() -> service.complete(PROJECT_ID, RUN_ID))
-                .isInstanceOf(DomainValidationException.class)
-                .hasMessageContaining("without an active");
-    }
-
-    // ----------------------------------------------------------------- reads
-
-    @Test
-    void getByUid_returnsRun() {
-        var run = new ResearchRun(project, "RUN-1", AutonomyLevel.COPILOT);
-        TestUtil.setField(run, "id", RUN_ID);
-        when(runRepository.findByProjectIdAndUid(PROJECT_ID, "RUN-1")).thenReturn(Optional.of(run));
-        assertThat(service.getByUid(PROJECT_ID, "RUN-1")).isSameAs(run);
-    }
-
-    @Test
-    void getByUid_missing_throwsNotFound() {
-        when(runRepository.findByProjectIdAndUid(PROJECT_ID, "NOPE")).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> service.getByUid(PROJECT_ID, "NOPE")).isInstanceOf(NotFoundException.class);
-    }
-
-    @Test
-    void listByProject_returnsProjectRuns() {
-        var run = runAt(ResearchRunStage.SOURCE_SEARCH, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
-        when(runRepository.findByProjectIdOrderByCreatedAtDesc(PROJECT_ID)).thenReturn(List.of(run));
-        assertThat(service.listByProject(PROJECT_ID)).containsExactly(run);
-    }
-
-    @Test
-    void listArtifacts_returnsRunArtifacts() {
-        var run = runAt(ResearchRunStage.SOURCE_SEARCH, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.AUTONOMOUS);
-        var a = artifact(run, ResearchArtifactType.SEARCH_LOG, ResearchArtifactStatus.ACTIVE);
-        when(artifactRepository.findByResearchRunIdOrderByCreatedAtAsc(RUN_ID)).thenReturn(List.of(a));
-        assertThat(service.listArtifacts(PROJECT_ID, RUN_ID)).containsExactly(a);
-    }
-
-    @Test
-    void listGates_returnsRunGates() {
-        var run = runAt(ResearchRunStage.METHODOLOGY_SELECTION, ResearchRunStatus.IN_PROGRESS, AutonomyLevel.COPILOT);
-        var g = gate(run, ResearchGatePoint.METHOD_DECISION, ResearchGateBehavior.REQUIRE_HUMAN);
-        when(gateRepository.findByResearchRunIdOrderByGatePointAsc(RUN_ID)).thenReturn(List.of(g));
-        assertThat(service.listGates(PROJECT_ID, RUN_ID)).containsExactly(g);
-    }
-
-    /** Small builder so the start tests read clearly. */
-    private record StartCmd(String uid, AutonomyLevel autonomy, IntendedOutput intendedOutput) {
-        com.keplerops.groundcontrol.domain.research.service.StartResearchRunCommand toCommand() {
-            return new com.keplerops.groundcontrol.domain.research.service.StartResearchRunCommand(
-                    PROJECT_ID, uid, autonomy, intendedOutput, java.util.Map.of());
-        }
     }
 }

@@ -5131,7 +5131,18 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
     completion = paths["completion"].read_text(encoding="utf-8")
     cursor = paths["cursor"].read_text(encoding="utf-8")
     mcp_lib = paths["mcp_lib"].read_text(encoding="utf-8")
-    mcp_index = paths["mcp_index"].read_text(encoding="utf-8")
+    # Tool registrations moved out of index.js into ./tools/* when the entrypoint
+    # was split for the 500-LOC limit (issue #1467). Reading index.js alone would
+    # find no registrations and report the contract satisfied by absence -- the
+    # exact way a gate goes green while looking at the wrong file. Read the
+    # entrypoint together with the modules it registers through.
+    index_path = paths["mcp_index"]
+    mcp_index = index_path.read_text(encoding="utf-8")
+    tools_dir = index_path.parent / "tools"
+    if tools_dir.is_dir():
+        mcp_index += "".join(
+            module.read_text(encoding="utf-8") for module in sorted(tools_dir.glob("*.js"))
+        )
     principles_flat = " ".join(principles.split())
     cursor_flat = " ".join(cursor.split()).lower()
 
@@ -5389,6 +5400,10 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Imported here rather than at module scope: file_size imports names from
+    # this module, and a top-level import would close the cycle at load time.
+    from tools.policy.file_size import run_file_size_limit_check
+
     args = parse_args(argv or sys.argv[1:])
     explicit_files = args.files if args.files is not None else args.paths
     if args.files and args.paths:
@@ -5422,6 +5437,7 @@ def main(argv: list[str] | None = None) -> int:
     violations.extend(run_implement_execution_contract())
     violations.extend(run_test_quality_decision_record_contract())
     violations.extend(run_traceability_reconciliation_gate_contract())
+    violations.extend(run_file_size_limit_check())
 
     base_ref, head_ref = _resolve_pr_refs(args)
     if args.skip_pr_body or _is_release_pr(base_ref, head_ref):

@@ -38,9 +38,11 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+/** Split from EvidenceArtifactServiceTest under issue #1467 for the 500-LOC limit
+ * (docs/CODING_STANDARDS.md). Test bodies are unchanged; fixtures are
+ * repeated because JUnit builds a fresh instance per test class. */
 @ExtendWith(MockitoExtension.class)
 class EvidenceArtifactServiceTest {
-
     @Mock
     private EvidenceArtifactRepository repository;
 
@@ -85,6 +87,17 @@ class EvidenceArtifactServiceTest {
                 "high",
                 null,
                 sources);
+    }
+
+    private EvidenceArtifact buildArtifact(String uid) {
+        return new EvidenceArtifact(
+                project,
+                uid,
+                "title-" + uid,
+                "summary-" + uid,
+                EvidenceType.ATTESTATION,
+                "method-v1",
+                Instant.parse("2026-04-30T17:00:00Z"));
     }
 
     @Nested
@@ -479,27 +492,5 @@ class EvidenceArtifactServiceTest {
             assertThat(rows).hasSize(1);
             verify(repository).findByProjectIdAndEvidenceTypeOrderByDerivedAtDesc(projectId, EvidenceType.ATTESTATION);
         }
-    }
-
-    @Nested
-    class GetById {
-
-        @Test
-        void notFoundForMissingId() {
-            var id = UUID.randomUUID();
-            when(repository.findByIdAndProjectId(id, projectId)).thenReturn(Optional.empty());
-            assertThatThrownBy(() -> service.getById(projectId, id)).isInstanceOf(NotFoundException.class);
-        }
-    }
-
-    private EvidenceArtifact buildArtifact(String uid) {
-        return new EvidenceArtifact(
-                project,
-                uid,
-                "title-" + uid,
-                "summary-" + uid,
-                EvidenceType.ATTESTATION,
-                "method-v1",
-                Instant.parse("2026-04-30T17:00:00Z"));
     }
 }

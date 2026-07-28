@@ -38,14 +38,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-/**
- * Bounds and isolation of the live-stream hub (issue #1436).
- *
- * <p>Delivery runs on a manually pumped executor so overflow, disconnect, and ordering are asserted
- * deterministically rather than raced against a real thread pool.
- */
+/** Split from WorkflowRunStreamHubTest under issue #1467 for the 500-LOC limit
+ * (docs/CODING_STANDARDS.md). Test bodies are unchanged; fixtures are
+ * repeated because JUnit builds a fresh instance per test class. */
 class WorkflowRunStreamHubTest {
-
     private static final String PROJECT = "ground-control";
     private static final String OTHER_PROJECT = "other-project";
     private static final String PRINCIPAL = "operator";
@@ -80,6 +76,174 @@ class WorkflowRunStreamHubTest {
                 .addModule(new JavaTimeModule())
                 .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
                 .build();
+    }
+
+    // ---- helpers -------------------------------------------------------------------------------
+
+    private RecordingEmitter subscribe(String project, String principal) {
+        return (RecordingEmitter) hub.subscribe(project, principal);
+    }
+
+    private static String rendered(SseEmitter.SseEventBuilder builder) {
+        var text = new StringBuilder();
+        builder.build().forEach(part -> text.append(part.getData()));
+        return text.toString();
+    }
+
+    private static WorkflowRun sampleRun() {
+        var run = new WorkflowRun(PROJECT, "implement", TelemetryProvenance.LIVE_EMISSION);
+        setField(run, "id", RUN_ID);
+        run.setIssueNumber(1436);
+        run.setBranch("1436-live-telemetry-sse-stream");
+        run.setStartedAt(OCCURRED_AT);
+        run.setFinalState(WorkflowRunState.READY_FOR_REVIEW);
+        return run;
+    }
+
+    private static WorkflowPhaseEvent sampleEvent() {
+        var event = new WorkflowPhaseEvent(
+                RUN_ID, PROJECT, "ci", PhaseEventType.COMPLETED, OCCURRED_AT, 1000L, TelemetryProvenance.LIVE_EMISSION);
+        event.setCycleIndex(0);
+        event.setSourceId("ci:COMPLETED:0");
+        return event;
+    }
+
+    /** Hub that hands out observable emitters instead of ones bound to a real response. */
+    private static final class TestHub extends WorkflowRunStreamHub {
+
+        private TestHub(
+                WorkflowTelemetryService telemetryService,
+                ObjectMapper objectMapper,
+                WorkflowRunStreamProperties properties,
+                java.util.concurrent.ExecutorService deliveryExecutor,
+                ScheduledExecutorService heartbeatScheduler) {
+            super(telemetryService, objectMapper, properties, deliveryExecutor, heartbeatScheduler);
+        }
+
+        @Override
+        SseEmitter createEmitter(long timeoutMillis) {
+            return new RecordingEmitter(timeoutMillis);
+        }
+    }
+
+    /** {@link SseEmitter} that records writes instead of performing them, and can fail on demand. */
+    private static final class RecordingEmitter extends SseEmitter {
+
+        private final List<SseEventBuilder> sent = new CopyOnWriteArrayList<>();
+        /** Counted down on every successful send so a concurrent test can await delivery. */
+        private final java.util.concurrent.CountDownLatch delivered = new java.util.concurrent.CountDownLatch(1);
+
+        private boolean failNextSend;
+        /** When set, send() blocks on this latch — a client that stopped reading, not one that failed. */
+        private java.util.concurrent.CountDownLatch blockOn;
+
+        private boolean completed;
+        private Runnable completionCallback = () -> {};
+        private Runnable timeoutCallback = () -> {};
+        private java.util.function.Consumer<Throwable> errorCallback = error -> {};
+
+        private RecordingEmitter(long timeout) {
+            super(timeout);
+        }
+
+        @Override
+        public void send(SseEventBuilder builder) throws IOException {
+            if (failNextSend) {
+                throw new IOException("client gone");
+            }
+            if (blockOn != null) {
+                try {
+                    blockOn.await();
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("interrupted while blocked", interrupted);
+                }
+            }
+            sent.add(builder);
+            delivered.countDown();
+        }
+
+        @Override
+        public void complete() {
+            completed = true;
+        }
+
+        @Override
+        public void onCompletion(Runnable callback) {
+            completionCallback = callback;
+        }
+
+        @Override
+        public void onTimeout(Runnable callback) {
+            timeoutCallback = callback;
+        }
+
+        @Override
+        public void onError(java.util.function.Consumer<Throwable> callback) {
+            errorCallback = callback;
+        }
+
+        private void fireCompletion() {
+            completionCallback.run();
+        }
+
+        private void fireTimeout() {
+            timeoutCallback.run();
+        }
+
+        private void fireError() {
+            errorCallback.accept(new IllegalStateException("broken pipe"));
+        }
+    }
+
+    /** Executor that collects tasks until {@link #runAll()} pumps them, so delivery timing is explicit. */
+    private static final class ManualExecutorService extends AbstractExecutorService {
+
+        private final Deque<Runnable> pending = new ArrayDeque<>();
+        private boolean rejectEverything;
+        private boolean shutdown;
+
+        @Override
+        public void execute(Runnable command) {
+            if (rejectEverything) {
+                throw new java.util.concurrent.RejectedExecutionException("saturated");
+            }
+            pending.add(command);
+        }
+
+        private void runAll() {
+            while (!pending.isEmpty()) {
+                pending.poll().run();
+            }
+        }
+
+        @Override
+        public void shutdown() {
+            shutdown = true;
+        }
+
+        @Override
+        public List<Runnable> shutdownNow() {
+            shutdown = true;
+            pending.clear();
+            return Collections.emptyList();
+        }
+
+        @Override
+        public boolean isShutdown() {
+            return shutdown;
+        }
+
+        @Override
+        public boolean isTerminated() {
+            // Shutdown alone is not termination: queued tasks may still be pending.
+            return shutdown && pending.isEmpty();
+        }
+
+        @Override
+        public boolean awaitTermination(long timeout, TimeUnit unit) {
+            return isTerminated();
+        }
     }
 
     // ---- project isolation ---------------------------------------------------------------------
@@ -325,185 +489,5 @@ class WorkflowRunStreamHubTest {
         assertThat(watcher.completed).isTrue();
         assertThat(hub.connectionCount()).isZero();
         verify(scheduler).shutdownNow();
-    }
-
-    @Test
-    void aRenderFailureDoesNotDisturbTheConnection() {
-        var watcher = subscribe(PROJECT, PRINCIPAL);
-        when(telemetryService.getRun(RUN_ID, PROJECT)).thenThrow(new IllegalStateException("projection gone"));
-
-        hub.onTelemetryChange(WorkflowTelemetryChangeEvent.run(PROJECT, RUN_ID));
-        deliveryExecutor.runAll();
-
-        assertThat(hub.connectionCount()).isEqualTo(1);
-        assertThat(watcher.sent).isEmpty();
-    }
-
-    // ---- helpers -------------------------------------------------------------------------------
-
-    private RecordingEmitter subscribe(String project, String principal) {
-        return (RecordingEmitter) hub.subscribe(project, principal);
-    }
-
-    private static String rendered(SseEmitter.SseEventBuilder builder) {
-        var text = new StringBuilder();
-        builder.build().forEach(part -> text.append(part.getData()));
-        return text.toString();
-    }
-
-    private static WorkflowRun sampleRun() {
-        var run = new WorkflowRun(PROJECT, "implement", TelemetryProvenance.LIVE_EMISSION);
-        setField(run, "id", RUN_ID);
-        run.setIssueNumber(1436);
-        run.setBranch("1436-live-telemetry-sse-stream");
-        run.setStartedAt(OCCURRED_AT);
-        run.setFinalState(WorkflowRunState.READY_FOR_REVIEW);
-        return run;
-    }
-
-    private static WorkflowPhaseEvent sampleEvent() {
-        var event = new WorkflowPhaseEvent(
-                RUN_ID, PROJECT, "ci", PhaseEventType.COMPLETED, OCCURRED_AT, 1000L, TelemetryProvenance.LIVE_EMISSION);
-        event.setCycleIndex(0);
-        event.setSourceId("ci:COMPLETED:0");
-        return event;
-    }
-
-    /** Hub that hands out observable emitters instead of ones bound to a real response. */
-    private static final class TestHub extends WorkflowRunStreamHub {
-
-        private TestHub(
-                WorkflowTelemetryService telemetryService,
-                ObjectMapper objectMapper,
-                WorkflowRunStreamProperties properties,
-                java.util.concurrent.ExecutorService deliveryExecutor,
-                ScheduledExecutorService heartbeatScheduler) {
-            super(telemetryService, objectMapper, properties, deliveryExecutor, heartbeatScheduler);
-        }
-
-        @Override
-        SseEmitter createEmitter(long timeoutMillis) {
-            return new RecordingEmitter(timeoutMillis);
-        }
-    }
-
-    /** {@link SseEmitter} that records writes instead of performing them, and can fail on demand. */
-    private static final class RecordingEmitter extends SseEmitter {
-
-        private final List<SseEventBuilder> sent = new CopyOnWriteArrayList<>();
-        /** Counted down on every successful send so a concurrent test can await delivery. */
-        private final java.util.concurrent.CountDownLatch delivered = new java.util.concurrent.CountDownLatch(1);
-
-        private boolean failNextSend;
-        /** When set, send() blocks on this latch — a client that stopped reading, not one that failed. */
-        private java.util.concurrent.CountDownLatch blockOn;
-
-        private boolean completed;
-        private Runnable completionCallback = () -> {};
-        private Runnable timeoutCallback = () -> {};
-        private java.util.function.Consumer<Throwable> errorCallback = error -> {};
-
-        private RecordingEmitter(long timeout) {
-            super(timeout);
-        }
-
-        @Override
-        public void send(SseEventBuilder builder) throws IOException {
-            if (failNextSend) {
-                throw new IOException("client gone");
-            }
-            if (blockOn != null) {
-                try {
-                    blockOn.await();
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    throw new IOException("interrupted while blocked", interrupted);
-                }
-            }
-            sent.add(builder);
-            delivered.countDown();
-        }
-
-        @Override
-        public void complete() {
-            completed = true;
-        }
-
-        @Override
-        public void onCompletion(Runnable callback) {
-            completionCallback = callback;
-        }
-
-        @Override
-        public void onTimeout(Runnable callback) {
-            timeoutCallback = callback;
-        }
-
-        @Override
-        public void onError(java.util.function.Consumer<Throwable> callback) {
-            errorCallback = callback;
-        }
-
-        private void fireCompletion() {
-            completionCallback.run();
-        }
-
-        private void fireTimeout() {
-            timeoutCallback.run();
-        }
-
-        private void fireError() {
-            errorCallback.accept(new IllegalStateException("broken pipe"));
-        }
-    }
-
-    /** Executor that collects tasks until {@link #runAll()} pumps them, so delivery timing is explicit. */
-    private static final class ManualExecutorService extends AbstractExecutorService {
-
-        private final Deque<Runnable> pending = new ArrayDeque<>();
-        private boolean rejectEverything;
-        private boolean shutdown;
-
-        @Override
-        public void execute(Runnable command) {
-            if (rejectEverything) {
-                throw new java.util.concurrent.RejectedExecutionException("saturated");
-            }
-            pending.add(command);
-        }
-
-        private void runAll() {
-            while (!pending.isEmpty()) {
-                pending.poll().run();
-            }
-        }
-
-        @Override
-        public void shutdown() {
-            shutdown = true;
-        }
-
-        @Override
-        public List<Runnable> shutdownNow() {
-            shutdown = true;
-            pending.clear();
-            return Collections.emptyList();
-        }
-
-        @Override
-        public boolean isShutdown() {
-            return shutdown;
-        }
-
-        @Override
-        public boolean isTerminated() {
-            // Shutdown alone is not termination: queued tasks may still be pending.
-            return shutdown && pending.isEmpty();
-        }
-
-        @Override
-        public boolean awaitTermination(long timeout, TimeUnit unit) {
-            return isTerminated();
-        }
     }
 }

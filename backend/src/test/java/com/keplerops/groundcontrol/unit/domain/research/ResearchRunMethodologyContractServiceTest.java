@@ -3,7 +3,6 @@ package com.keplerops.groundcontrol.unit.domain.research;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -65,14 +64,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
-/**
- * GC-RSCH-F007 / GC-RSCH-F008 / GC-RSCH-R002 / ADR-080 — service-layer unit tests
- * for the methodology requirements contract on {@link ResearchRunService}.
- */
+/** Split from ResearchRunMethodologyContractServiceTest under issue #1467 for the 500-LOC limit
+ * (docs/CODING_STANDARDS.md). Test bodies are unchanged; fixtures are
+ * repeated because JUnit builds a fresh instance per test class. */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 class ResearchRunMethodologyContractServiceTest {
-
     private static final UUID PROJECT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID RUN_ID = UUID.fromString("00000000-0000-0000-0000-000000000010");
     private static final UUID SELECTION_ID = UUID.fromString("00000000-0000-0000-0000-000000000020");
@@ -497,61 +494,5 @@ class ResearchRunMethodologyContractServiceTest {
                 .isInstanceOf(DomainValidationException.class)
                 .extracting(e -> ((DomainValidationException) e).getErrorCode())
                 .isEqualTo("research_run_methodology_contract_rejected_alternative_unknown_method");
-    }
-
-    @Test
-    void record_rejectedAlternativeUnknownMethodExternal_accepted() {
-        readyRun();
-        var cmd = new RecordMethodologyRequirementsContractCommand(
-                List.of(requirement("r", READ_SOURCE_ID)),
-                List.of(new RejectedAlternativeCommand("some-external-method", "1", null, true)));
-
-        var result = service.recordMethodologyRequirementsContract(PROJECT_ID, RUN_ID, cmd);
-
-        assertThat(result.rejectedAlternatives()).hasSize(1);
-        verify(contractRejectedAlternativeRepository).save(any());
-    }
-
-    // ---- get --------------------------------------------------------------
-
-    @Test
-    void get_noContract_throwsNotFound() {
-        var run = activeRun();
-        when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
-                        RUN_ID, ResearchArtifactType.METHODOLOGY_REQUIREMENTS, ResearchArtifactStatus.ACTIVE))
-                .thenReturn(Optional.of(activeArtifact(run)));
-        when(contractRepository.findByArtifactId(ARTIFACT_ID)).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> service.getMethodologyRequirementsContract(PROJECT_ID, RUN_ID))
-                .isInstanceOf(NotFoundException.class);
-        verify(contractRepository, never()).save(any());
-    }
-
-    @Test
-    void get_returnsAggregate() {
-        var run = readyRun();
-        var sel = selection(run);
-        var contract = new MethodologyRequirementsContract(run, sel, ARTIFACT_ID, 1, "1", "actor");
-        TestUtil.setField(contract, "id", UUID.randomUUID());
-        when(contractRepository.findByArtifactId(ARTIFACT_ID)).thenReturn(Optional.of(contract));
-        when(contractEntryRepository.findByContractIdOrderByCreatedAtAsc(contract.getId()))
-                .thenReturn(List.of());
-        when(contractEntrySourceLinkRepository.findByEntryContractIdOrderByCreatedAtAsc(contract.getId()))
-                .thenReturn(List.of());
-        when(contractRejectedAlternativeRepository.findByContractIdOrderByCreatedAtAsc(contract.getId()))
-                .thenReturn(List.of());
-
-        var result = service.getMethodologyRequirementsContract(PROJECT_ID, RUN_ID);
-
-        assertThat(result.contract()).isSameAs(contract);
-        // Pin the aggregate assembly: every child collection is populated from its
-        // own repository query. isEmpty() catches a null-field regression; the
-        // verify() calls catch a dropped child query that would return a hollow
-        // contract shell to callers (including the MCP surface).
-        assertThat(result.entries()).isEmpty();
-        assertThat(result.sourceLinks()).isEmpty();
-        assertThat(result.rejectedAlternatives()).isEmpty();
-        verify(contractEntryRepository).findByContractIdOrderByCreatedAtAsc(contract.getId());
-        verify(contractEntrySourceLinkRepository).findByEntryContractIdOrderByCreatedAtAsc(contract.getId());
-        verify(contractRejectedAlternativeRepository).findByContractIdOrderByCreatedAtAsc(contract.getId());
     }
 }

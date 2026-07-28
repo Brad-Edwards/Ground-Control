@@ -1,5 +1,9 @@
 package com.keplerops.groundcontrol.domain.testcases.service;
 
+import static com.keplerops.groundcontrol.domain.testcases.service.TestSuiteServiceSupport.rejectAnyCriteriaPatchOnNonQuerySuite;
+import static com.keplerops.groundcontrol.domain.testcases.service.TestSuiteServiceSupport.resolveNullable;
+import static com.keplerops.groundcontrol.domain.testcases.service.TestSuiteServiceSupport.validateCriteriaForMode;
+
 import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
@@ -482,22 +486,6 @@ public class TestSuiteService {
         return suite;
     }
 
-    private void validateCriteriaForMode(TestSuitePopulationMode mode, TestSuiteCriteriaCommand criteria) {
-        if (mode == TestSuitePopulationMode.QUERY_BASED) {
-            if (!criteria.hasAny()) {
-                throw new DomainValidationException(
-                        "QUERY_BASED test suite must have at least one criterion",
-                        "invalid_test_suite_query",
-                        Map.of());
-            }
-        } else if (criteria.hasAny()) {
-            throw new DomainValidationException(
-                    "criteria fields are only valid for QUERY_BASED suites",
-                    "invalid_test_suite_mode_field",
-                    Map.of("mode", mode.name()));
-        }
-    }
-
     private void applyCriteria(TestSuite suite, TestSuiteCriteriaCommand criteria) {
         if (criteria.folderId() != null) {
             requireFolderInProject(suite.getProject().getId(), criteria.folderId());
@@ -531,26 +519,6 @@ public class TestSuiteService {
                 command.clearCriteriaTextSearch(), command.criteriaTextSearch(), suite.getCriteriaTextSearch()));
     }
 
-    private void rejectAnyCriteriaPatchOnNonQuerySuite(UpdateTestSuiteCommand command, TestSuitePopulationMode mode) {
-        if (command.criteriaStatus() != null
-                || command.criteriaType() != null
-                || command.criteriaPriority() != null
-                || command.criteriaFormat() != null
-                || command.criteriaFolderId() != null
-                || command.criteriaTextSearch() != null
-                || command.clearCriteriaStatus()
-                || command.clearCriteriaType()
-                || command.clearCriteriaPriority()
-                || command.clearCriteriaFormat()
-                || command.clearCriteriaFolderId()
-                || command.clearCriteriaTextSearch()) {
-            throw new DomainValidationException(
-                    "criteria fields are only valid for QUERY_BASED suites",
-                    "invalid_test_suite_mode_field",
-                    Map.of("mode", mode.name()));
-        }
-    }
-
     private TestCaseFolder requireFolderInProject(UUID projectId, UUID folderId) {
         var folder = folderRepository
                 .findById(folderId)
@@ -561,12 +529,5 @@ public class TestSuiteService {
             throw new NotFoundException("Test case folder not found: " + folderId);
         }
         return folder;
-    }
-
-    private static <T> T resolveNullable(boolean clear, T incoming, T current) {
-        if (clear) {
-            return null;
-        }
-        return incoming != null ? incoming : current;
     }
 }
