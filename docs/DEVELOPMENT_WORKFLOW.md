@@ -834,10 +834,10 @@ readiness and post-merge completion while any trusted obligation remains open.
 
 ### Unobserved review stations
 
-A review station that runs but renders no verdict — a timed-out engine, a dead
-child process, an unparseable payload, a diff whose slices did not all return —
-is not a failing gate and not a defect. It is a missing observation, and it is
-kept on its own axis end to end (issue #1476).
+A review station that runs but renders no verdict is not a failing gate and not
+a defect. It is a missing observation, and it is kept on its own axis end to
+end (issue #1476). The cases are a timed-out engine, a dead child process, an
+unparseable payload, and a diff whose slices did not all return.
 
 Each such failure returns before any findings record or cycle marker is
 written, so the review cap is untouched and re-running is free. The station
