@@ -93,6 +93,10 @@
             ".vale.ini",
             "docs/DOC_STYLE.md"
           ],
+          "triggerContent": {
+            "mcp/ground-control/lib.js": "documentation.?[Cc]overage|doc_?[Tt]argets|surface_?[Cc]lass|DOC_STYLE",
+            "tools/policy/checks.py": "documentation_coverage|doc_targets|surface_class|DOC_STYLE"
+          },
           "requireAll": [
             "architecture/adrs/054-documentation-coverage-gate.md",
             "docs/DOC_STYLE.md"
@@ -117,7 +121,10 @@
             "mcp/ground-control/gc-workflow-run-ingest.js",
             "mcp/ground-control/telemetry.js",
             "mcp/ground-control/workflow-run-lifecycle.js",
-            "mcp/ground-control/gc-implement-mechanical.js"
+            "mcp/ground-control/gc-implement-mechanical.js",
+            "mcp/ground-control/gate-finding-adapters.js",
+            "contracts/measurement/**",
+            "contracts/schemas/measurement/**"
           ],
           "requireAll": [
             "architecture/adrs/090-production-line-measurement-model.md"

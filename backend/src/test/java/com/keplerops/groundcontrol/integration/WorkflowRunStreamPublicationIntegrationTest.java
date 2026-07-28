@@ -93,6 +93,9 @@ class WorkflowRunStreamPublicationIntegrationTest extends BaseIntegrationTest {
                 1200L,
                 "clean",
                 TelemetryProvenance.LIVE_EMISSION,
+                null,
+                null,
+                null,
                 null));
 
         assertThat(listener.afterCommit).hasSize(1);
@@ -122,6 +125,9 @@ class WorkflowRunStreamPublicationIntegrationTest extends BaseIntegrationTest {
                 1200L,
                 "clean",
                 TelemetryProvenance.LIVE_EMISSION,
+                null,
+                null,
+                null,
                 null));
 
         var runId = run.getId();

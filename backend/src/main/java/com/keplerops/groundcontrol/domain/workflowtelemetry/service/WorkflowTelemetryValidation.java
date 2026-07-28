@@ -1,0 +1,88 @@
+package com.keplerops.groundcontrol.domain.workflowtelemetry.service;
+
+import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowRun;
+import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.Instant;
+
+/**
+ * Input validation for the workflow-telemetry write and read paths (issue #859).
+ *
+ * <p>Its own type so the rules stay reviewable in one place: every caller-supplied string is
+ * checked for the reserved {@code <!-- gc:} marker sequence, so forged-marker text can never
+ * round-trip into telemetry and back out onto an issue thread as if the server had written it.
+ */
+final class WorkflowTelemetryValidation {
+
+    /** Reserved sequence that opens every {@code gc:} workflow marker; never allowed in stored fields. */
+    private static final String RESERVED_MARKER = "<!-- gc:";
+
+    /** Maximum allowed aggregation window in days. */
+    static final int MAX_WINDOW_DAYS = 366;
+
+    private WorkflowTelemetryValidation() {}
+
+    /**
+     * Chronology invariant checked before any field is applied: a run cannot end before it started.
+     * The start time may come from the stored run or from this observation, whichever is earlier.
+     */
+    static void validateChronology(WorkflowRun existing, RecordWorkflowRunCommand command) {
+        if (command.endedAt() == null) {
+            return;
+        }
+        Instant start = WorkflowRunCommandMapper.earliest(
+                existing == null ? null : existing.getStartedAt(), command.startedAt());
+        if (start != null && command.endedAt().isBefore(start)) {
+            throw new DomainValidationException("endedAt must not be before startedAt");
+        }
+    }
+
+    static void validateEconomics(
+            Integer modelInvocationCount, Integer wallClockMinutes, BigDecimal costProxy, Long tokenUsage) {
+        if (modelInvocationCount != null && modelInvocationCount < 0) {
+            throw new DomainValidationException("modelInvocationCount must not be negative");
+        }
+        if (wallClockMinutes != null && wallClockMinutes < 0) {
+            throw new DomainValidationException("wallClockMinutes must not be negative");
+        }
+        if (costProxy != null && costProxy.signum() < 0) {
+            throw new DomainValidationException("costProxy must not be negative");
+        }
+        if (tokenUsage != null && tokenUsage < 0) {
+            throw new DomainValidationException("tokenUsage must not be negative");
+        }
+    }
+
+    static void validateWindow(Instant from, Instant to) {
+        if (from == null) {
+            throw new DomainValidationException("from must not be null");
+        }
+        if (to == null) {
+            throw new DomainValidationException("to must not be null");
+        }
+        if (!from.isBefore(to)) {
+            throw new DomainValidationException("from must be before to");
+        }
+        long days = Duration.between(from, to).toDays();
+        if (days > MAX_WINDOW_DAYS) {
+            throw new DomainValidationException(
+                    "time window must not exceed " + MAX_WINDOW_DAYS + " days (requested " + days + " days)");
+        }
+    }
+
+    static void requireText(String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new DomainValidationException(field + " must not be blank");
+        }
+    }
+
+    static void rejectReservedMarkers(String... values) {
+        for (String value : values) {
+            if (value != null && value.contains(RESERVED_MARKER)) {
+                throw new DomainValidationException(
+                        "field must not contain a reserved '" + RESERVED_MARKER + "' marker");
+            }
+        }
+    }
+}

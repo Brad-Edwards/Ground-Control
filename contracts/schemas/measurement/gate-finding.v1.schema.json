@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "gc.measurement.gate-finding.v1",
+  "title": "Gate finding",
+  "description": "One finding observed by a station attempt (issue #1355, ADR-090). A finding is a subordinate process observation linked to the terminal event of its attempt — not a product Finding, not compliance evidence, and not a replacement for the ADR-029 issue record. The narrative stays on the issue thread; this carries only the bounded facts a yield/rework aggregate needs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["findingKey", "sourceKind", "sourceId", "disposition"],
+  "properties": {
+    "findingKey": {
+      "description": "Identity of this finding within its attempt. A source-provided stable key when one exists, otherwise an opaque deterministic digest of bounded structural fields. Never derived from prose, array position, or a timestamp, so a retry converges instead of appending a duplicate.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "sourceKind": { "$ref": "#/$defs/SourceKind" },
+    "sourceId": {
+      "description": "Which reviewer or detector produced it: `core`, `security`, `test-quality` for reviewers; `sonarcloud`, `spotbugs`, `vale`, `policy`, `ci` for detectors. A non-review gate is never assigned a fabricated reviewer.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "category": {
+      "description": "Source-native category: Sonar rule key, SpotBugs bug pattern, Vale check name, policy Violation.code, CI job/step name, or a review finding's category.shape. Absent when the source has none — a one-off review finding has no recurring shape, and a synthetic \"uncategorized\" would invent a category that does not exist. High-cardinality event data: never a metric label.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "severity": {
+      "description": "Source-native severity, preserved exactly as the source expressed it. Absent when the source does not carry one — Codex core/security findings do not, and guessing would fabricate a distribution. Cross-station normalization requires separately versioned mapping data, never inference from title or reviewer identity.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60
+    },
+    "classification": { "$ref": "#/$defs/Classification" },
+    "disposition": { "$ref": "#/$defs/Disposition" }
+  },
+  "$defs": {
+    "SourceKind": {
+      "description": "Reviewers exercise judgement; detectors run a rule set. Keeping them distinct stops a scanner from being reported as a reviewer and vice versa.",
+      "type": "string",
+      "enum": ["reviewer", "detector"]
+    },
+    "Classification": {
+      "description": "The review envelope's own axis. Absent for detector findings, which do not classify this way.",
+      "type": "string",
+      "enum": ["one-off", "class"]
+    },
+    "Disposition": {
+      "description": "Detection and disposition are different moments. A newly detected finding is `open`; the terminal values are ADR-029's outcomes expressed as measurement facts. The review wrapper's pre-repair `decision: fix` is intent and must never be projected as `fixed`. A missing disposition is not `not-applicable` and is never counted as fixed.",
+      "type": "string",
+      "enum": ["open", "fixed", "wontfix", "not-applicable"]
+    }
+  },
+  "x-ground-control-invariants": [
+    {
+      "id": "gc.measurement.gate-finding.carries-no-prose",
+      "description": "The schema admits no title, body, remediation text, file path, line number, raw tool output, or stack trace. A measurement projection that carried review prose would become a second durable record competing with ADR-029, and would leak source content into a reporting store.",
+      "enforcedBy": [
+        "tools/tests/test_policy.py::test_gate_finding_schema_admits_no_prose_fields"
+      ]
+    },
+    {
+      "id": "gc.measurement.gate-finding.absence-over-synthesis",
+      "description": "Category, severity, and classification are optional, so a source that cannot attest one omits it rather than defaulting it to a value that would read as a real observation.",
+      "enforcedBy": [
+        "tools/tests/test_policy.py::test_gate_finding_schema_makes_unattestable_dimensions_optional"
+      ]
+    },
+    {
+      "id": "gc.measurement.gate-finding.disposition-is-closed",
+      "description": "Disposition is a closed vocabulary whose terminal values match ADR-029's decision outcomes exactly, so measurement cannot grow a second disposition or deferral vocabulary. `defer` is absent by construction.",
+      "enforcedBy": [
+        "tools/tests/test_policy.py::test_gate_finding_disposition_matches_adr029_outcomes"
+      ]
+    }
+  ]
+}

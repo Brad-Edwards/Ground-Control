@@ -289,7 +289,11 @@ spotbugs {
 
 tasks.withType<com.github.spotbugs.snom.SpotBugsTask> {
     reports.create("html") { required = true }
-    reports.create("xml") { required = false }
+    // XML is what the ADR-090 measurement projection reads (issue #1355): the completion command
+    // already runs SpotBugs, so its own report is the structured source. Parsing the combined
+    // Gradle console output instead would guess at per-gate boundaries, and re-running SpotBugs
+    // to measure it would execute a canonical gate twice.
+    reports.create("xml") { required = true }
 }
 
 // Checkstyle

@@ -1,37 +1,31 @@
 package com.keplerops.groundcontrol.unit.api;
 
-import static com.keplerops.groundcontrol.TestUtil.setField;
+import static com.keplerops.groundcontrol.unit.api.WorkflowRunControllerFixtures.FROM;
+import static com.keplerops.groundcontrol.unit.api.WorkflowRunControllerFixtures.RUN_ID;
+import static com.keplerops.groundcontrol.unit.api.WorkflowRunControllerFixtures.TO;
+import static com.keplerops.groundcontrol.unit.api.WorkflowRunControllerFixtures.sampleAggregate;
+import static com.keplerops.groundcontrol.unit.api.WorkflowRunControllerFixtures.sampleEvent;
+import static com.keplerops.groundcontrol.unit.api.WorkflowRunControllerFixtures.sampleRun;
+import static com.keplerops.groundcontrol.unit.api.WorkflowRunControllerFixtures.startedEvent;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.keplerops.groundcontrol.api.workflowtelemetry.WorkflowRunController;
 import com.keplerops.groundcontrol.api.workflowtelemetry.stream.WorkflowRunStreamHub;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
-import com.keplerops.groundcontrol.domain.exception.ServiceUnavailableException;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
-import com.keplerops.groundcontrol.domain.workflowtelemetry.PhaseEventType;
-import com.keplerops.groundcontrol.domain.workflowtelemetry.TelemetryProvenance;
-import com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowPhaseEvent;
-import com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowRun;
-import com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowRunState;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowMeasurementService;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowTelemetryService;
-import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowTelemetryService.RunAggregate;
-import java.math.BigDecimal;
-import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -45,7 +39,6 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @AutoConfigureMockMvc(addFilters = false)
 @WebMvcTest(WorkflowRunController.class)
@@ -58,14 +51,13 @@ class WorkflowRunControllerTest {
     private WorkflowTelemetryService telemetryService;
 
     @MockitoBean
+    private WorkflowMeasurementService measurementService;
+
+    @MockitoBean
     private ProjectService projectService;
 
     @MockitoBean
     private WorkflowRunStreamHub streamHub;
-
-    private static final Instant FROM = Instant.parse("2026-06-01T00:00:00Z");
-    private static final Instant TO = Instant.parse("2026-06-02T00:00:00Z");
-    private static final UUID RUN_ID = UUID.fromString("10000000-0000-0000-0000-000000000859");
 
     // ---- POST /api/v1/workflow-runs ------------------------------------------------------------
 
@@ -414,103 +406,4 @@ class WorkflowRunControllerTest {
     }
 
     // ---- helpers -------------------------------------------------------------------------------
-
-    // ---- GET /api/v1/workflow-runs/stream (issue #1436) ----------------------------------------
-
-    @Test
-    void streamRegistersTheResolvedProjectAndAnswersAsAnEventStream() throws Exception {
-        when(projectService.requireProjectIdentifier("ground-control")).thenReturn("ground-control");
-        var emitter = new SseEmitter(1000L);
-        when(streamHub.subscribe(eq("ground-control"), any())).thenReturn(emitter);
-
-        // A stream response is an async dispatch: the content type is only observable once the
-        // emitter finishes, so complete it and dispatch rather than asserting on the initial return.
-        var started = mockMvc.perform(get("/api/v1/workflow-runs/stream").param("project", "ground-control"))
-                .andExpect(status().isOk())
-                .andExpect(request().asyncStarted())
-                .andReturn();
-        emitter.complete();
-
-        mockMvc.perform(asyncDispatch(started))
-                .andExpect(status().isOk())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM));
-
-        // The project the hub scopes fan-out to is the one ProjectService resolved, never the raw
-        // query parameter.
-        verify(streamHub).subscribe(eq("ground-control"), any());
-    }
-
-    @Test
-    void streamRefusesAnUnknownProjectBeforeRegisteringAnything() throws Exception {
-        when(projectService.requireProjectIdentifier(any())).thenThrow(new NotFoundException("Project not found"));
-
-        mockMvc.perform(get("/api/v1/workflow-runs/stream").param("project", "nope"))
-                .andExpect(status().isNotFound());
-
-        verify(streamHub, never()).subscribe(any(), any());
-    }
-
-    @Test
-    void streamRendersCapacityRejectionThroughTheStandardErrorEnvelope() throws Exception {
-        // Capacity is refused before the event-stream headers commit, which is the only window in
-        // which an HTTP error envelope is still possible.
-        when(projectService.requireProjectIdentifier(any())).thenReturn("ground-control");
-        when(streamHub.subscribe(any(), any()))
-                .thenThrow(new ServiceUnavailableException("Workflow-run stream connection capacity reached"));
-
-        mockMvc.perform(get("/api/v1/workflow-runs/stream").param("project", "ground-control"))
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.error.code", is("service_unavailable")));
-    }
-
-    private static WorkflowRun sampleRun() {
-        var run = new WorkflowRun("ground-control", "implement", TelemetryProvenance.ISSUE_THREAD);
-        setField(run, "id", RUN_ID);
-        run.setIssueNumber(859);
-        run.setBranch("859-feature");
-        run.setFinalState(WorkflowRunState.READY_FOR_REVIEW);
-        return run;
-    }
-
-    private static WorkflowPhaseEvent sampleEvent(UUID runId) {
-        var event = new WorkflowPhaseEvent(
-                runId, "ground-control", "ci", PhaseEventType.COMPLETED, FROM, 1000L, TelemetryProvenance.ISSUE_THREAD);
-        event.setCycleIndex(1);
-        event.setOutcome("clean");
-        event.setSourceId("ci:COMPLETED:1");
-        return event;
-    }
-
-    private static WorkflowPhaseEvent startedEvent(UUID runId) {
-        var event = new WorkflowPhaseEvent(
-                runId, "ground-control", "ci", PhaseEventType.STARTED, FROM, null, TelemetryProvenance.LIVE_EMISSION);
-        event.setCycleIndex(0);
-        event.setSourceId("ci:STARTED:0");
-        return event;
-    }
-
-    private static RunAggregate sampleAggregate() {
-        return new RunAggregate(
-                FROM,
-                TO,
-                7,
-                3,
-                1,
-                2,
-                0,
-                0,
-                0,
-                12.0,
-                30.0,
-                45.0,
-                new BigDecimal("100.0000"),
-                new BigDecimal("60.0000"),
-                new BigDecimal("10.0000"),
-                new BigDecimal("20.0000"),
-                new BigDecimal("10.0000"),
-                50,
-                600,
-                1_000_000,
-                List.of(new WorkflowTelemetryService.PhaseHotspot("ci", 5, 2, 0, 1000L, 2000L, 3)));
-    }
 }

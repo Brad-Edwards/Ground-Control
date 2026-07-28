@@ -6,6 +6,8 @@
 // preserved state and a bounded reason for an agent to repair.
 
 import { execFile as execFileCb } from "node:child_process";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
 import {
@@ -33,6 +35,12 @@ import {
   implementGateEnvironment,
 } from "./lib.js";
 import { createWorkflowRunLifecycleEmitter } from "./workflow-run-lifecycle.js";
+import {
+  ciGateFindings,
+  policyGateFindings,
+  spotbugsGateFindings,
+  valeGateFindings,
+} from "./gate-finding-adapters.js";
 
 export { extractInScopeRequirementUids };
 
@@ -287,6 +295,90 @@ async function runBootstrap(args, deps) {
   };
 }
 
+
+/**
+ * Where each child gate writes its structured artifact for this verify run.
+ *
+ * Under the repo's build directory rather than a temp dir so the files sit beside the reports
+ * the gates already produce and are cleaned by the same `clean`.
+ */
+function childGateArtifactPaths(repoRoot) {
+  const dir = join(repoRoot, "build", "gc-measurement");
+  return { dir, policy: join(dir, "policy.json"), vale: join(dir, "vale.json") };
+}
+
+/** Read a gate's JSON artifact, or null when it did not produce one. */
+function readGateArtifact(path) {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    // Absent or malformed: the attempt is recorded not_evaluable rather than guessed at.
+    return null;
+  }
+}
+
+/**
+ * Record the SpotBugs attempt from the XML report the completion command already wrote.
+ *
+ * SpotBugs runs inside the completion command, so its duration is not separable from the
+ * parent's; the parent's measured duration is passed rather than fabricating a child-specific
+ * one, and the attempt is skipped entirely when no report exists.
+ */
+async function emitSpotbugsAttempt(emitter, repoRoot, timing) {
+  const reportDir = join(repoRoot, "backend", "build", "reports", "spotbugs");
+  let xml = "";
+  try {
+    for (const entry of readdirSync(reportDir)) {
+      if (entry.endsWith(".xml")) xml += readFileSync(join(reportDir, entry), "utf8");
+    }
+  } catch {
+    return;
+  }
+  if (xml === "") return;
+  const { findings } = spotbugsGateFindings(xml);
+  await emitter.recordStationAttempt({
+    stationId: "spotbugs",
+    startedAt: timing.startedAt,
+    endedAt: new Date(),
+    durationMs: timing.durationMs,
+    stationResult: findings.length === 0 ? "pass" : "fail",
+    findings,
+  });
+}
+
+/**
+ * Record the policy and Vale attempts from the artifacts `make policy` just wrote.
+ *
+ * Each carries its own verdict. Policy also reports its own duration, so the parent command's
+ * duration is never divided between them; Vale reports none and therefore records none rather
+ * than inheriting one.
+ */
+async function emitPolicyAndValeAttempts(emitter, artifacts, startedAt) {
+  const policy = readGateArtifact(artifacts.policy);
+  if (policy) {
+    const { findings } = policyGateFindings(policy);
+    await emitter.recordStationAttempt({
+      stationId: "policy",
+      startedAt,
+      endedAt: new Date(),
+      durationMs: Number.isFinite(policy.duration_ms) ? policy.duration_ms : undefined,
+      stationResult: findings.length === 0 ? "pass" : "fail",
+      findings,
+    });
+  }
+  const vale = readGateArtifact(artifacts.vale);
+  if (vale) {
+    const { findings } = valeGateFindings(vale);
+    await emitter.recordStationAttempt({
+      stationId: "vale",
+      startedAt,
+      endedAt: new Date(),
+      stationResult: findings.length === 0 ? "pass" : "fail",
+      findings,
+    });
+  }
+}
+
 async function runVerify(args, deps) {
   const action = "verify";
   const context = await deps.getContext(args.repoPath);
@@ -332,17 +424,38 @@ async function runVerify(args, deps) {
     return failure(action, authorized.error, authorized.message, authorized.next_action);
   }
   const gateEnv = implementGateEnvironment(authorized.requirementUid);
+  // Child gates write their own structured artifacts so their facts come from the run that
+  // already happened. Nothing is re-executed to be measured, and no combined console transcript
+  // is parsed (issue #1355).
+  const artifacts = childGateArtifactPaths(repoRoot);
+  const childEnv = { ...gateEnv, GC_POLICY_JSON: artifacts.policy, GC_VALE_JSON: artifacts.vale };
   const before = await readStatus(repoRoot, deps.runGit, deps.execFile);
+  const completionStartedAt = new Date();
+  const completionStartedMs = Date.now();
+  let completionError = null;
   try {
-    await deps.execFile("bash", ["-c", command], { cwd: repoRoot, env: gateEnv });
+    await deps.execFile("bash", ["-c", command], { cwd: repoRoot, env: childEnv });
   } catch (error) {
-    return commandFailure(action, "completion_gate", error);
+    completionError = error;
+  }
+  await emitSpotbugsAttempt(deps.emitter, repoRoot, {
+    startedAt: completionStartedAt,
+    durationMs: Date.now() - completionStartedMs,
+  });
+  if (completionError) {
+    return commandFailure(action, "completion_gate", completionError);
   }
   const policyCommand = resolveWorkflowPolicyCommand(context);
+  const policyStartedAt = new Date();
+  let policyError = null;
   try {
-    await deps.execFile("bash", ["-c", policyCommand], { cwd: repoRoot, env: gateEnv });
+    await deps.execFile("bash", ["-c", policyCommand], { cwd: repoRoot, env: childEnv });
   } catch (error) {
-    return commandFailure(action, "policy_gate", error);
+    policyError = error;
+  }
+  await emitPolicyAndValeAttempts(deps.emitter, artifacts, policyStartedAt);
+  if (policyError) {
+    return commandFailure(action, "policy_gate", policyError);
   }
   const after = await readStatus(repoRoot, deps.runGit, deps.execFile);
   if (after !== before) {
@@ -656,9 +769,15 @@ async function runMonitor(args, deps) {
       repoPath: args.repoPath,
       branch: args.branchName,
     });
-    return ci.ok && ci.conclusion === "success"
-      ? { ok: true }
-      : { ok: false, error: ci.error ?? `ci_${ci.conclusion ?? "unknown"}` };
+    const passed = ci.ok && ci.conclusion === "success";
+    return {
+      ok: passed,
+      error: passed ? undefined : ci.error ?? `ci_${ci.conclusion ?? "unknown"}`,
+      // `ci.ok === false` means the watcher could not observe a run at all — no verdict
+      // exists to record. Only a run that actually concluded produces pass or fail.
+      stationResult: ci.ok ? (passed ? "pass" : "fail") : "not_evaluable",
+      ...(ci.ok ? { findings: ciGateFindings(ci).findings } : {}),
+    };
   });
   if (!ci.ok || ci.conclusion !== "success") {
     return failure(
@@ -686,7 +805,14 @@ async function runMonitor(args, deps) {
           && sonar.hotspots_summary?.open_count === 0
         )
       );
-    return sonarPassed ? { ok: true } : { ok: false, error: sonar.error ?? "sonar_findings_open" };
+    return {
+      ok: sonarPassed,
+      error: sonarPassed ? undefined : sonar.error ?? "sonar_findings_open",
+      // A repo with no sonarcloud block skips the gate: that is coverage, not a pass, and
+      // counting it as one would inflate first-pass yield with runs Sonar never inspected.
+      stationResult: sonar.ok ? (sonar.skipped === true ? "skipped_station" : sonarPassed ? "pass" : "fail") : "not_evaluable",
+      ...(Array.isArray(sonar.measurement_findings) ? { findings: sonar.measurement_findings } : {}),
+    };
   });
   if (!sonarPassed) {
     return failure(
@@ -812,9 +938,60 @@ const STATION_BY_ACTION = Object.freeze({
   bootstrap: "issue_branch_resolution",
   verify: "completion_gate",
   publish: "git_publish",
+});
+
+/**
+ * Actions that record a transition rather than inspect anything (issue #1355).
+ *
+ * `readiness` and `post_merge` were previously routed through the station channel, which made
+ * them look like gates whose verdict was permanently unobservable. The catalogue declares them
+ * lifecycle markers; a per-station yield computed over them would have been counting transitions
+ * as inspections.
+ */
+const MARKER_BY_ACTION = Object.freeze({
   readiness: "ready_for_review",
   finalize: "post_merge",
 });
+
+/**
+ * Error codes that are a gate's own verdict rather than a failure to reach one.
+ *
+ * The distinction is the whole point of the separate axis: `make check` exiting non-zero is the
+ * completion gate saying "fail", while an unreadable `.ground-control.yaml` means no gate ran and
+ * nothing can be concluded. Collapsing the second into `fail` would invent defects out of
+ * configuration errors and permanently depress first-pass yield.
+ */
+const GATE_VERDICT_ERRORS = Object.freeze({
+  bootstrap: new Set(["implement_mechanical_branch_prepare_failed"]),
+  verify: new Set([
+    "implement_mechanical_completion_gate_failed",
+    "implement_mechanical_policy_gate_failed",
+    "implement_mechanical_gate_tree_changed",
+  ]),
+  publish: new Set([
+    "implement_mechanical_precommit_failed",
+    "implement_mechanical_sensitive_path_present",
+    "implement_mechanical_commit_message_invalid",
+    "implement_mechanical_branch_mismatch",
+  ]),
+});
+
+/**
+ * State this action's station verdict explicitly.
+ *
+ * Deliberately not `ok ? "pass" : "fail"`: that generic rule is what ADR-090 section 3 forbids,
+ * because it reads every operational failure as a quality defect. Each action names the codes that
+ * are genuinely its gate speaking; everything else is not_evaluable.
+ */
+function classifyStationResult(action, envelope) {
+  if (envelope?.ok) return "pass";
+  const verdictErrors = GATE_VERDICT_ERRORS[action];
+  if (verdictErrors?.has(envelope?.error)) return "fail";
+  // A quality-gate refusal is the gate rendering a verdict, even though it arrives as its own
+  // structured error rather than a command exit code.
+  if (action === "verify" && envelope?.quality && envelope.quality.ok === false) return "fail";
+  return "not_evaluable";
+}
 
 /** No-op lifecycle emitter used whenever the run identity cannot be resolved. */
 const INERT_EMITTER = Object.freeze({
@@ -823,6 +1000,8 @@ const INERT_EMITTER = Object.freeze({
   markState: async () => null,
   closeRun: async () => null,
   recordRequirementUids: async () => null,
+  recordStationAttempt: async () => null,
+  markerTransition: async () => null,
   station: async (_phase, fn) => fn(),
 });
 
@@ -848,6 +1027,8 @@ function guardEmitter(emitter) {
     markState: swallow("markState"),
     closeRun: swallow("closeRun"),
     recordRequirementUids: swallow("recordRequirementUids"),
+    recordStationAttempt: swallow("recordStationAttempt"),
+    markerTransition: swallow("markerTransition"),
     async station(phase, fn) {
       let ran = false;
       let phaseResult;
@@ -1000,9 +1181,29 @@ export async function runImplementMechanical(args, overrides = {}) {
 
   const station = STATION_BY_ACTION[args.action];
   const instrumented = { ...deps, emitter };
-  const result = station
-    ? await emitter.station(station, () => dispatch(args, instrumented))
-    : await dispatch(args, instrumented);
+
+  let result;
+  if (station) {
+    // The emitter is handed an observation of the dispatch, not the dispatch envelope itself:
+    // the station verdict is measurement and must not become a field of the tool's public
+    // contract. The envelope escapes through the closure exactly as it is.
+    await emitter.station(station, async () => {
+      result = await dispatch(args, instrumented);
+      return {
+        ok: result.ok,
+        error: result.error,
+        stationResult: classifyStationResult(args.action, result),
+        ...(Array.isArray(result.measurement_findings) ? { findings: result.measurement_findings } : {}),
+      };
+    });
+  } else {
+    result = await dispatch(args, instrumented);
+  }
+
+  const marker = MARKER_BY_ACTION[args.action];
+  if (marker && result.ok) {
+    await emitter.markerTransition(marker);
+  }
 
   if (args.action === "bootstrap" && result.ok) {
     await emitter.recordRequirementUids(result.requirement_uids);

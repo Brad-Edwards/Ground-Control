@@ -376,6 +376,17 @@ The guard is a pre-execution *lexical* policy control, not an OS sandbox. It pro
   `allowed_edges`. The backend surface is enforced against the same registry by
   `RegistryBoundaryArchitectureTest` (ArchUnit, in the `test` job). See
   `architecture/registry/README.md` for the schema (GC-CLD-2 / ADR-087 §3).
+- **Gate outcome measurement** (issue #1355, ADR-090 amendment). Every station attempt now
+  records an explicit verdict alongside its lifecycle event, and the findings it observed are
+  counted by reviewer/detector, category, severity, and disposition. The verdict is stated by the
+  producer and validated against a closed vocabulary, never derived from a tool succeeding, a
+  phase completing, or a pull request merging. A backend outage, parser error, or timeout is
+  `not_evaluable`, so an infrastructure problem can never enter the rework signal as a defect in
+  the change. `bin/policy --json <path>` and `GC_VALE_JSON` make the policy and Vale child gates
+  emit structured artifacts at their own boundary; SpotBugs' XML report serves the same purpose.
+  The `/implement` layer reads those artifacts rather than re-running a gate or parsing combined
+  console output.
+
 - **Measurement catalogue drift** (`tools/policy/checks.py::run_measurement_catalogue_check`,
   issue #1438 / ADR-090 / GC-O014) keeps the ADR-090 station catalogue authoritative
   rather than descriptive. `contracts/measurement/gc-station-catalogue-v1.json` owns

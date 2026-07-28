@@ -27,6 +27,8 @@ import {
   listWorkflowRunEvents,
   aggregateWorkflowRuns,
   crossProjectAggregateWorkflowRuns,
+  measureWorkflowRuns,
+  recordWorkflowFindingDisposition,
   pick,
   reqArg,
 } from "./lib.js";
@@ -43,6 +45,8 @@ export const GC_WORKFLOW_RUN_ACTIONS = [
   "list_events",
   "aggregate",
   "cross_project_aggregate",
+  "measurement",
+  "record_finding_disposition",
 ];
 
 // ---------------------------------------------------------------------------
@@ -77,6 +81,16 @@ export const WORKFLOW_RUN_PROVENANCES = [
   "TEMPORAL_VISIBILITY",
   "MANUAL_IMPORT",
   "LIVE_EMISSION",
+];
+
+/** ADR-090 station-result vocabulary (issue #1355). Shares no value with the event type. */
+export const WORKFLOW_STATION_RESULTS = [
+  "PASS",
+  "FAIL",
+  "SKIPPED_STATION",
+  "CANCELLED",
+  "NOT_EVALUABLE",
+  "UNOBSERVED",
 ];
 
 export const WORKFLOW_RUN_EVENT_TYPES = [
@@ -114,6 +128,9 @@ export const WORKFLOW_RUN_CREATE_FIELDS = [
 ];
 
 export const WORKFLOW_RUN_EVENT_FIELDS = [
+  "station_id",
+  "station_result",
+  "findings",
   "phase",
   "event_type",
   "cycle_index",
@@ -177,6 +194,45 @@ export const gcWorkflowRunZodShape = {
     .max(200)
     .optional()
     .describe("Deterministic identity of the logical phase fact; derived by the backend when absent"),
+  // ADR-090 measurement projection (issue #1355)
+  station_id: z
+    .string()
+    .max(100)
+    .optional()
+    .describe("Authoritative station id from the catalogue; `phase` remains its alias"),
+  station_result: z
+    .enum(WORKFLOW_STATION_RESULTS)
+    .optional()
+    .describe(
+      "The inspected gate's verdict. Separate from event_type: COMPLETED means the phase finished, "
+        + "not that its inspection passed. Omit when no verdict was observed — the backend records "
+        + "UNOBSERVED rather than inferring one",
+    ),
+  findings: z
+    .array(
+      z.object({
+        finding_key: z.string().max(200),
+        source_kind: z.enum(["REVIEWER", "DETECTOR"]),
+        source_id: z.string().max(100),
+        category: z.string().max(300).optional(),
+        severity: z.string().max(60).optional(),
+        classification: z.string().max(20).optional(),
+      }),
+    )
+    .max(500)
+    .optional()
+    .describe(
+      "Findings this attempt observed. An empty array means the gate ran and found nothing, which "
+        + "is a different fact from omitting the field. Carries no prose: no title, body, path, or line",
+    ),
+  finding_id: z.string().uuid().optional().describe("Gate finding UUID (record_finding_disposition)"),
+  disposition: z
+    .enum(["FIXED", "WONTFIX", "NOT_APPLICABLE"])
+    .optional()
+    .describe(
+      "Terminal disposition. OPEN is absent by construction: this records a decision, and "
+        + "'still open' is the absence of one",
+    ),
   // list/aggregate filters
   limit: z.number().int().positive().optional(),
   runtime: z.string().optional(),
@@ -193,6 +249,8 @@ export const GC_WORKFLOW_RUN_DESCRIPTION =
   `import_cost: attach cost/token metadata; requires run_id and project (project scopes the run lookup). ` +
   `list: list recent runs for a project; accepts project, limit. ` +
   `list_events: phase events for one run, oldest first; requires run_id and project, accepts limit. ` +
+  `measurement: ADR-090 process variables for one project — per-station first-pass yield, iterations to green, rework, and finding counts by reviewer/detector, category, severity, and disposition; requires project, accepts from/to. Every ratio ships with its numerator, denominator, and unresolved count. ` +
+  `record_finding_disposition: move one gate finding to a terminal disposition (FIXED / WONTFIX / NOT_APPLICABLE); requires finding_id, project, disposition. ` +
   `aggregate: project-scoped aggregate statistics; accepts project plus optional filters (repo, runtime, requirement, workflow_type, outcome, from, to). ` +
   `cross_project_aggregate: ADMIN-only cross-project aggregate; accepts the same filters minus project. ` +
   `Reads (list, aggregate) are also reachable via gc_query against /api/v1/workflow-runs.`;
@@ -236,6 +294,21 @@ export async function gcWorkflowRunToolHandler(args, { adminEnabled = false } = 
       reqArg(args, "run_id", "list_events");
       reqArg(args, "project", "list_events");
       return listWorkflowRunEvents(args.run_id, { project: args.project, limit: args.limit });
+    }
+    case "measurement": {
+      // Project-scoped: this reports one project's own production line, so it is not gated
+      // behind the admin boundary the cross-project rollup uses.
+      reqArg(args, "project", "measurement");
+      return measureWorkflowRuns({ project: args.project, from: args.from, to: args.to });
+    }
+    case "record_finding_disposition": {
+      reqArg(args, "finding_id", "record_finding_disposition");
+      reqArg(args, "project", "record_finding_disposition");
+      reqArg(args, "disposition", "record_finding_disposition");
+      return recordWorkflowFindingDisposition(args.finding_id, {
+        project: args.project,
+        disposition: args.disposition,
+      });
     }
     case "aggregate": {
       return aggregateWorkflowRuns({

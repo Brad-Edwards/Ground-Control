@@ -395,8 +395,8 @@ accidentally grow a second measurement model:
   backfilled copy counting as one station attempt, and the transport reuses it
   rather than introducing a delivery-side dedup key.
 - **`RUNNING` still means "no terminal observation recorded."** An open
-  connection is not a lease and a heartbeat is not a workflow liveness signal—
-  the heartbeat proves the socket is open, nothing more. Strict liveness and
+  connection is not a lease and a heartbeat is not a workflow liveness signal.
+  The heartbeat proves the socket is open, nothing more. Strict liveness and
   stale-run reaping still require the separate lease decision both this ADR and
   ADR-061 defer, and the console must not present transport health as process
   health.
@@ -461,6 +461,91 @@ This amendment publishes data and gates only. It adds no aggregate, endpoint,
 MCP tool, dashboard, roll-up, or retention job, and it backfills no legacy
 station result: a record whose source never captured a verdict stays
 `unobserved` and stays out of formula denominators.
+
+## Amendment (issue #1355, 2026-07-28): the station result is persisted and findings are counted
+
+Decision 3 named station result as a separate axis and Decision 4 built every yield
+formula on it, but no emitter could state it and no store could hold it. Issue
+#1355 closes that: the axis becomes a persisted field on the ADR-061 write path,
+and the findings a station observed become subordinate rows linked to the terminal
+event of its attempt.
+
+**No new aggregate.** A station attempt stays a `WorkflowPhaseEvent` owned by
+`WorkflowTelemetryService`. Findings are subordinate process observations, not a
+second workflow state machine and not the product `Finding` aggregate, which models
+retained GRC findings with their own lifecycle, links, and evidence semantics, and a
+review or scanner observation is neither compliance evidence nor a graph-projected
+product record.
+
+**The axes stay disjoint by construction.** `PhaseEventType` remains the lifecycle
+axis and keeps its meaning: `COMPLETED` still means the phase finished. The emitter
+states `station_result` explicitly and validates it against the closed vocabulary;
+a value it does not recognise (including an operation-axis value like `ok`)
+degrades to `unobserved` rather than being coerced to its nearest neighbour. An
+outage, parser error, or timeout is `not_evaluable`, never a failed gate, so a
+backend problem can never enter the rework signal as a defect.
+
+**Legacy rows are honest.** Every row written before this change carried no verdict,
+so it reads `unobserved` and stays out of every formula denominator. No result is
+backfilled from `COMPLETED`, from the free-text `outcome`, from merge state, or from
+the absence of a later failure.
+
+**Markers leave the station channel.** The #1438 amendment recorded that the first
+live emitter routed `ready_for_review` and `post_merge` through `station()`. They
+record a transition and inspect nothing, so they now emit as lifecycle markers. A
+per-station yield computed over them would have been counting transitions as
+inspections.
+
+**Attempt counting.** Iterations to green orders distinct evaluable attempt
+identities and takes the first pass; it never reads `MAX(cycle_index)`, because the
+emitters mix zero-based attempt ordinals with one-based review-cycle labels. A review
+cycle is one attempt per consumed cycle. Reviewer slices, async job polls, transport
+retries, and issue-comment posts are delivery detail and are not rework. A cap
+refusal runs no reviewer and records no attempt.
+
+**Child gates report where they execute.** `completion_gate` is a composite station.
+`spotbugs`, `policy`, and `vale` report their own verdicts from the structured
+artifacts their own runs produce, carrying their own durations. The parent command's
+duration is never divided among them, no combined console transcript is parsed as
+several attempts, and no canonical gate is executed twice to measure it. A child gate
+that cannot attest a duration omits it rather than inheriting the parent's.
+
+**Findings carry facts, not prose.** A finding record holds its attempt identity, a
+detector or reviewer id, source-native category and severity, classification where
+the source has one, and a disposition. Title, body, remediation text, file path, line
+number, raw tool output, and stack traces are excluded by the contract's
+`additionalProperties: false`, so the projection cannot become a rival to the ADR-029
+record or leak source content into a reporting store. Severity is preserved exactly:
+Codex core and security findings carry none, so theirs is absent rather than guessed,
+and cross-station normalization would require separately versioned mapping data.
+
+**Detection is not disposition.** A newly observed finding is `open`. The review
+wrapper's existing `decision: fix` is posted before the agent has repaired anything:
+it is intent, and projecting it as `fixed` would report a repair that never happened.
+`wontfix` and `not-applicable` keep ADR-029's authorization and rationale
+requirements; measurement creates no second disposition or deferral vocabulary, and a
+missing disposition is never counted as fixed.
+
+**Contract.** The v1 station catalogue is a published version and stays on disk
+unmodified. `spotbugs`, `policy`, and `vale` arrive in
+`contracts/measurement/gc-station-catalogue-v2.json` under
+`gc.measurement.station-catalogue.v2`, and the finding shape is published as
+`gc.measurement.gate-finding.v1`. Both are declared in `contracts/CHANGES.md` under
+ADR-082.
+
+**Enforcement.** `_check_emitter_station_drift` previously scanned only
+`gc-implement-mechanical.js`, so every station id emitted from the review path was
+invisible to the gate, and a live emitter the gate does not name is a hole in it. The
+check now scans every emitter source and resolves station ids named through lookup
+tables and `stationId` fields, not only inline `.station("…")` literals; a gate that
+understands one naming style is guarded only against that style.
+`mcp/ground-control/lib.js` is deliberately **not** added to the
+`measurement-model-sync` trigger: it is a 20,000-line module touched by most changes,
+so requiring this ADR in every diff that edits it would make the gate fire constantly
+and train contributors to add the reference reflexively. The record shape lives in
+`gate-finding-adapters.js`, `workflow-run-lifecycle.js`, and `contracts/measurement/`,
+which are on the trigger; lib.js only calls them, and its station identity is already
+covered by the catalogue drift check.
 
 ## Relationship to existing ADRs
 

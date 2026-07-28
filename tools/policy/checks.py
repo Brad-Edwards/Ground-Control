@@ -9,6 +9,7 @@ import posixpath
 import re
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
@@ -601,13 +602,65 @@ def get_repo_relative_files(root: Path, glob_pattern: str) -> list[str]:
     )
 
 
-def run_adr_guard(changed_files: list[str], root: Path = REPO_ROOT) -> list[Violation]:
+def changed_lines_for(path: str, base: str | None, root: Path = REPO_ROOT) -> str | None:
+    """Added and removed lines for one path, or None when the diff cannot be read.
+
+    Returning None rather than an empty string is what keeps a content-scoped trigger
+    fail-closed: "nothing matched" and "I could not look" must not resolve the same
+    way, or an unreadable diff would silently disable a gate.
+    """
+    try:
+        diff_base = merge_base_or(base, root=root) if base else "HEAD"
+        output = run_git(["diff", "--unified=0", diff_base, "--", path], root=root)
+    except (subprocess.CalledProcessError, OSError):
+        return None
+    return "\n".join(
+        line
+        for line in output.splitlines()
+        if (line.startswith("+") or line.startswith("-")) and not line.startswith(("+++", "---"))
+    )
+
+
+def _trigger_is_in_scope(
+    path: str, rule: dict, base: str | None, root: Path
+) -> bool:
+    """Does this changed path actually touch the surface the rule guards?
+
+    A rule may scope a trigger with `triggerContent`, mapping a path glob to a regex.
+    Mega-modules like `lib.js` and `checks.py` hold many unrelated surfaces, so a
+    bare path trigger on them fires on nearly every diff; a gate that fires constantly
+    stops carrying information and trains contributors to satisfy it reflexively.
+
+    Scoping narrows *when the trigger fires*, never what it then requires, and only
+    for paths a rule explicitly scopes. An unreadable diff falls back to firing, so
+    the gate can only ever become quieter when it can prove the surface is untouched.
+    """
+    conditions = rule.get("triggerContent") or {}
+    pattern = next(
+        (regex for glob, regex in conditions.items() if fnmatch.fnmatch(path, glob)),
+        None,
+    )
+    if pattern is None:
+        return True
+    changed = changed_lines_for(path, base, root=root)
+    if changed is None:
+        return True
+    return re.search(pattern, changed) is not None
+
+
+def run_adr_guard(
+    changed_files: list[str], root: Path = REPO_ROOT, base: str | None = None
+) -> list[Violation]:
     policy = load_json(ADR_POLICY_PATH)
     violations: list[Violation] = []
 
     for policy_entry in policy["policies"]:
         for rule in policy_entry.get("rules", []):
-            triggers = filter_matches(changed_files, rule.get("whenAny", []))
+            triggers = [
+                path
+                for path in filter_matches(changed_files, rule.get("whenAny", []))
+                if _trigger_is_in_scope(path, rule, base, root)
+            ]
             if not triggers:
                 continue
 
@@ -2612,6 +2665,27 @@ def run_methodology_catalog_drift(root: Path = REPO_ROOT) -> list[Violation]:
 
 FRONTEND_API_TYPES_PATH = "contracts/gen/typescript/api.ts"
 MCP_LIB_PATH = "mcp/ground-control/lib.js"
+MCP_LIB_DIR = "mcp/ground-control/lib"
+
+
+def read_mcp_library(root: Path = REPO_ROOT) -> str | None:
+    """The MCP shared library's full source, barrel plus every extracted module.
+
+    lib.js was a single 20,634-line file until issue #1355 split it under the repo's
+    500-LOC limit; it is now a barrel of star re-exports. A check that reads only that
+    file sees no implementation at all and silently passes, so every content check reads
+    the whole surface instead of one path.
+    """
+    barrel = root / MCP_LIB_PATH
+    if not barrel.exists():
+        return None
+    parts = [barrel.read_text(encoding="utf-8")]
+    lib_dir = root / MCP_LIB_DIR
+    if lib_dir.is_dir():
+        parts.extend(
+            path.read_text(encoding="utf-8") for path in sorted(lib_dir.glob("*.js"))
+        )
+    return "\n".join(parts)
 _ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/state"
 _AUDIT_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/audits/state"
 _VERIFICATION_ENUM_STATE_DIR = "backend/src/main/java/com/keplerops/groundcontrol/domain/verification/state"
@@ -2790,9 +2864,8 @@ def run_enum_contract_check(root: Path = REPO_ROOT) -> list[Violation]:
                 details=[f"expected at {FRONTEND_API_TYPES_PATH}"],
             )
         )
-    if mcp_path.exists():
-        mcp_text = mcp_path.read_text(encoding="utf-8")
-    else:
+    mcp_text = read_mcp_library(root)
+    if mcp_text is None:
         violations.append(
             Violation(
                 code="enum-contract-source-missing",
@@ -3974,14 +4047,32 @@ def run_contract_surface_check(root: Path = REPO_ROOT) -> list[Violation]:
     return violations
 
 
-STATION_CATALOGUE_PATH = "contracts/measurement/gc-station-catalogue-v1.json"
+STATION_CATALOGUE_PATH = "contracts/measurement/gc-station-catalogue-v2.json"
 MEASUREMENT_RECORD_SCHEMA_PATH = "contracts/schemas/measurement/measurement-record.v1.schema.json"
 IMPLEMENT_MECHANICAL_PATH = "mcp/ground-control/gc-implement-mechanical.js"
 
+# Every source that names a station id at an emission site. Scanning only the
+# mechanical module left the review stations — emitted from lib.js — invisible to this
+# gate, which is the hole ADR-090 section 8 exists to close: a live emitter the gate
+# does not name is not covered by it.
+EMITTER_SOURCE_PATHS = (
+    IMPLEMENT_MECHANICAL_PATH,
+    "mcp/ground-control/gate-finding-adapters.js",
+)
+
 # `bootstrap: "issue_branch_resolution",` inside STATION_BY_ACTION.
-_STATION_BY_ACTION_ENTRY_RE = re.compile(r"^\s*([a-z_]+)\s*:\s*\"([a-z_]+)\"\s*,?\s*$", re.MULTILINE)
+_STATION_BY_ACTION_ENTRY_RE = re.compile(r"^\s*[\"a-z_-]+\s*:\s*\"([a-z0-9_]+)\"\s*,?\s*$", re.MULTILINE)
 # A station id passed literally, e.g. `emitter.station("ci", ...)`.
 _STATION_CALL_RE = re.compile(r"\.station\(\s*\"([a-z_]+)\"")
+# A station id named as a field, e.g. `recordStationAttempt({ stationId: "spotbugs" })`.
+_STATION_ID_FIELD_RE = re.compile(r"stationId:\s*\"([a-z0-9_]+)\"")
+# Any table mapping something to a station or marker id. An emitter that names its stations
+# through a lookup table is naming them just as much as one that inlines the literal, so the
+# gate reads both — otherwise it is guarded only against the style it happens to expect.
+_STATION_TABLE_RE = re.compile(
+    r"(?:STATION_BY_[A-Z_]+|MARKER_BY_[A-Z_]+|[A-Z_]*STATION[A-Z_]*)\s*=\s*Object\.freeze\(\{(.*?)\}\)",
+    re.DOTALL,
+)
 # `<!-- gc:phase phase="ready_for_review" ...` written by the MCP layer.
 _PHASE_MARKER_LITERAL_RE = re.compile(r"gc:phase\s+phase=\\?\"([a-z_]+)\\?\"|phase:\s*\"([a-z_]+)\"")
 
@@ -4100,16 +4191,26 @@ def run_measurement_catalogue_check(root: Path = REPO_ROOT) -> list[Violation]:
 def _check_emitter_station_drift(
     root: Path, entries: dict[str, str], aliases: dict[tuple[str, str], list[str]]
 ) -> list[Violation]:
-    """Every station id the MCP emitter writes must be a declared entry."""
-    source_path = root / IMPLEMENT_MECHANICAL_PATH
-    if not source_path.exists():
+    """Every station id any MCP emitter writes must be a declared entry."""
+    emitted: set[str] = set()
+    scanned = False
+    sources = [(p, (root / p)) for p in EMITTER_SOURCE_PATHS]
+    lib_dir = root / MCP_LIB_DIR
+    if lib_dir.is_dir():
+        # The review stations are emitted from the extracted library modules, not from the
+        # barrel, so the scan follows the implementation rather than one path.
+        sources.extend((str(f.relative_to(root)), f) for f in sorted(lib_dir.glob("*.js")))
+    for _relative_path, source_path in sources:
+        if not source_path.exists():
+            continue
+        scanned = True
+        source = source_path.read_text(encoding="utf-8")
+        emitted.update(_STATION_CALL_RE.findall(source))
+        emitted.update(_STATION_ID_FIELD_RE.findall(source))
+        for block in _STATION_TABLE_RE.findall(source):
+            emitted.update(_STATION_BY_ACTION_ENTRY_RE.findall(block))
+    if not scanned:
         return []
-    source = source_path.read_text(encoding="utf-8")
-
-    emitted: set[str] = set(_STATION_CALL_RE.findall(source))
-    block = re.search(r"STATION_BY_ACTION\s*=\s*Object\.freeze\(\{(.*?)\}\)", source, re.DOTALL)
-    if block:
-        emitted.update(station for _action, station in _STATION_BY_ACTION_ENTRY_RE.findall(block.group(1)))
 
     unknown = sorted(s for s in emitted if s not in entries)
     if unknown:
@@ -4117,8 +4218,9 @@ def _check_emitter_station_drift(
             Violation(
                 code="measurement-catalogue-emitter-drift",
                 message=(
-                    f"{IMPLEMENT_MECHANICAL_PATH} emits a station id the catalogue does not declare; "
-                    "add it to the catalogue or resolve it to an existing entry."
+                    "An MCP emitter writes a station id the catalogue does not declare; "
+                    "add it to the catalogue or resolve it to an existing entry. "
+                    f"Sources scanned: {', '.join(EMITTER_SOURCE_PATHS)}."
                 ),
                 details=unknown,
             )
@@ -4135,10 +4237,9 @@ def _check_phase_marker_drift(
     published identity as much as an emitted station id. Without this the catalogue
     would be authoritative for two of the three surfaces it claims.
     """
-    source_path = root / MCP_LIB_PATH
-    if not source_path.exists():
+    source = read_mcp_library(root)
+    if source is None:
         return []
-    source = source_path.read_text(encoding="utf-8")
 
     written = {
         value
@@ -5009,6 +5110,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Positional repo-relative files to evaluate. Used by pre-commit.",
     )
     parser.add_argument("--files-env", help="Read newline-delimited files from an env var.")
+    parser.add_argument(
+        "--json",
+        dest="json_out",
+        help=(
+            "Write the violations and this run's duration to a JSON file, for the ADR-090 "
+            "measurement projection. Emitted at the gate's own boundary so the measurement layer "
+            "reads a structured artifact instead of re-running the gate or parsing its console "
+            "output. Never changes the exit code."
+        ),
+    )
     parser.add_argument("--staged", action="store_true", help="Read staged files from git.")
     parser.add_argument(
         "--skip-pr-body",
@@ -5047,6 +5158,30 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+
+
+def write_violations_json(path: str, violations: list[Violation], duration_ms: int) -> None:
+    """Write this run's violations as structured data (issue #1355, ADR-090).
+
+    Fail-open: measurement must never change whether the policy gate passes, so a write failure
+    is swallowed. The gate's verdict is its exit code, not this file.
+    """
+    try:
+        Path(path).write_text(
+            json.dumps(
+                {
+                    "station_id": "policy",
+                    "duration_ms": duration_ms,
+                    "violations": [
+                        {"code": v.code, "details": list(v.details)} for v in violations
+                    ],
+                },
+                indent=1,
+            ),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
 
 
 def render_and_exit(violations: list[Violation]) -> int:
@@ -5130,7 +5265,8 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
     step9 = paths["step9"].read_text(encoding="utf-8")
     completion = paths["completion"].read_text(encoding="utf-8")
     cursor = paths["cursor"].read_text(encoding="utf-8")
-    mcp_lib = paths["mcp_lib"].read_text(encoding="utf-8")
+    # Barrel plus every extracted module: lib.js alone holds no implementation since #1355.
+    mcp_lib = read_mcp_library(root) or ""
     mcp_index = paths["mcp_index"].read_text(encoding="utf-8")
     principles_flat = " ".join(principles.split())
     cursor_flat = " ".join(cursor.split()).lower()
@@ -5389,6 +5525,7 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    started = time.monotonic()
     args = parse_args(argv or sys.argv[1:])
     explicit_files = args.files if args.files is not None else args.paths
     if args.files and args.paths:
@@ -5401,7 +5538,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     violations = []
-    violations.extend(run_adr_guard(changed_files))
+    violations.extend(run_adr_guard(changed_files, base=args.base))
     violations.extend(run_controller_contracts(changed_files))
     violations.extend(run_migration_policy(changed_files, base=args.base))
     violations.extend(run_version_mirror_consistency_check())
@@ -5440,6 +5577,10 @@ def main(argv: list[str] | None = None) -> int:
         else:
             violations.extend(run_documentation_coverage_check(changed_files, pr_body=None))
 
+    if args.json_out:
+        write_violations_json(
+            args.json_out, violations, int((time.monotonic() - started) * 1000)
+        )
     return render_and_exit(violations)
 
 

@@ -1007,6 +1007,8 @@ the MCP adapter (not in the `gc_query` allowlist).
 | GET | `/workflow-runs/{runId}/events` | - | 200 | Phase events for one run, oldest first |
 | GET | `/workflow-runs/aggregate` | - | 200 | Project-scoped reporting aggregate |
 | GET | `/workflow-runs/stream` | - | 200 `text/event-stream` (503 at capacity) | Live project-scoped run/phase-event stream |
+| GET | `/workflow-runs/measurement` | - | 200 | ADR-090 station yield, rework, and finding counts |
+| POST | `/workflow-runs/findings/{findingId}/disposition` | RecordFindingDispositionRequest | 200 | Move one gate finding to a terminal disposition |
 | GET | `/workflow-runs/cross-project-aggregate` | - | 200 (ROLE_ADMIN; 403 otherwise) | Cross-project operator rollup |
 
 This is a reporting read-model, not a workflow engine (ADR-061). All
@@ -1053,6 +1055,41 @@ attempt instead of appending a phantom retry. `sourceId` defaults to
 returns the stored event rather than appending a duplicate, which is what lets live emission and
 `gc_workflow_run_ingest` describe the same attempt without double-counting it.
 
+**GET `/workflow-runs/measurement`** (issue #1355, ADR-090): the production-line process
+variables for one project over a window (`from`/`to`, defaulting to the standard look-back and
+bounded by the same maximum as `/aggregate`). Returns per-station first-pass yield, iterations to
+green, rework, and unresolved runs, plus finding counts grouped by station, reviewer/detector,
+category, severity, and disposition.
+
+Three properties of the response matter more than the numbers:
+
+- Every ratio ships with its `firstPassNumerator`, `firstPassDenominator`, and `unresolvedRuns`,
+  and the response carries `measurementVersion`. A percentage without its coverage is not a process
+  fact: a station inspected twice and one inspected two thousand times must not render alike.
+- `firstPassYield` is `null`, not `0`, when nothing evaluable was measured. "Measured zero" and
+  "nothing was measured" are different claims, and only the first means the gate failed.
+- Only `PASS` and `FAIL` attempts reach the denominators. Skipped, cancelled, not-evaluable, and
+  unobserved attempts stay measurable coverage but are excluded, so an unmeasured gate never reads
+  as a failing one. Legacy events written before the station-result axis existed are `UNOBSERVED`
+  and are excluded on the same basis rather than counted as passes.
+
+**POST `/workflow-runs/findings/{findingId}/disposition`** (issue #1355): records a terminal
+disposition (`FIXED`, `WONTFIX`, `NOT_APPLICABLE`) for one finding. Deliberately separate from the
+detection path: an emitter observing a finding is not evidence that anything was decided about it,
+and the review wrapper's pre-repair `decision: fix` is intent rather than proof. The transition is
+monotonic and idempotent, so re-applying the same terminal value is a no-op, while a conflicting
+terminal claim returns 409 rather than being silently overwritten, because two sources disagreeing
+about whether something was fixed is a fact worth surfacing. `project` scopes the lookup, so a
+finding id alone never authorizes the write.
+
+**POST `/workflow-runs/{runId}/events`** additionally accepts the ADR-090 measurement projection
+(issue #1355): `stationId`, `stationResult`, and a bounded `findings` batch persisted atomically
+with the attempt. `stationResult` is separate from `eventType` by construction, since `COMPLETED` means
+the phase finished, not that its inspection passed, and is omitted rather than guessed when no
+verdict was observed. A `findings` array that is absent means nothing was measured; an empty array
+means the gate ran and found nothing. Finding records carry no title, body, remediation text, path,
+or line: the issue thread remains the narrative record per ADR-029.
+
 **GET `/workflow-runs/{runId}/events`:** requires `project` (which scopes the run lookup, so a run id
 alone never authorizes the read) and accepts `limit` (default 200, capped at 500). Events are
 returned oldest first. This is the event-level view of an in-flight run; `/aggregate` only reports
@@ -1061,7 +1098,7 @@ per-phase hot spots across a window.
 **GET `/workflow-runs/stream`** (issue #1436, ADR-061 #1436 amendment): a project-scoped
 Server-Sent Events stream of committed run and phase-event facts, so a dashboard reflects a phase
 transition without a reload. Requires `project`, resolved through `ProjectService` before the
-connection is registered, and inherits the ordinary authenticated `/api/v1/**` rule—a stream is
+connection is registered, and inherits the ordinary authenticated `/api/v1/**` rule. A stream is
 not an access-control exemption, and it grants nothing `GET /workflow-runs` does not.
 
 Named events are `workflow-run` and `phase-event`; their `data` payloads are exactly the
