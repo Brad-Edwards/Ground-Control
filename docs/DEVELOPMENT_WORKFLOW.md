@@ -366,16 +366,18 @@ The guard is a pre-execution *lexical* policy control, not an OS sandbox. It pro
 - `python3 bin/policy` enforces ADR/workflow, controller/MCP/docs, migration, and PR-body policy
 - `python3 bin/policy` also pins the #1155 CI strictness baseline:
   selected pre-commit hygiene and secret-scan hooks run in CI, the Sonar job
-  fails on new issues, the CLD mutation gate stays wired, and
+  waits for the quality gate and fails on new issues, and
   `.github/branch-protection-baseline.json` requires strict status checks for
   `main` and `dev` while retaining admin bypass
-- `python3 bin/policy` runs the CLD architecture-registry boundary check
-  (`run_module_graph_boundary_check`): it validates `architecture/registry/module-graph.json`,
-  asserts the registry is covered by a design-authority protected path, and fails
-  any frontend/MCP cross-module import whose edge is not declared in the registry's
-  `allowed_edges`. The backend surface is enforced against the same registry by
-  `RegistryBoundaryArchitectureTest` (ArchUnit, in the `test` job). See
-  `architecture/registry/README.md` for the schema (GC-CLD-2 / ADR-087 §3).
+- **CI topology invariants** (`tools/tests/test_ci_topology.py`, issue #1461 /
+  ADR-091) assert the shape of `.github/workflows/ci.yml`: every required
+  context has a job, the branch-protection baseline matches
+  `CI_STRICTNESS_REQUIRED_CONTEXTS`, no verification job declares a dependency
+  on another, `docker` names every gate before it publishes, the
+  `fast-feedback` lane exists and stays out of the required set, and the
+  `sonar` job keeps its coverage and quality-gate inputs. A required context
+  with no job behind it blocks every pull request forever, which is the failure
+  these tests exist to prevent. See `docs/ci/CI_PIPELINE.md`.
 - **Measurement catalogue drift** (`tools/policy/checks.py::run_measurement_catalogue_check`,
   issue #1438 / ADR-090 / GC-O014) keeps the ADR-090 station catalogue authoritative
   rather than descriptive. `contracts/measurement/gc-station-catalogue-v1.json` owns
@@ -416,6 +418,24 @@ certified, and it was the weakest copy of the four - skippable with
 `files:` patterns, and leaving no result any gate or workflow record could
 attest to. Run `make check` or `make policy` directly to exercise the broad
 gates locally on demand.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs every verification job in parallel: none of them
+consumes another job's artifact, so whole-run wall clock is the duration of the
+slowest job. Three dependencies remain, each guarding a side effect rather than
+ordering work: `policy-live` behind `policy` because it is the only job holding
+a live API token, `docker` behind every verification gate because publishing an
+image is irreversible, and `smoke` behind `docker`.
+
+The `fast-feedback` job reports formatting and compilation errors before any
+full lane finishes. It is advisory and stays out of the required-context set, so
+the complete suite remains the single merge authority.
+
+`docs/ci/CI_PIPELINE.md` is the job-by-job reference, including which contexts
+are required, local reproduction commands, and test lane ownership. ADR-091
+carries the rationale. `make ci-timings` reports current wall clock and time to
+first failing check.
 
 ### Contract Surface and MCP Write-Contract Gates (ADR-034, ADR-082)
 
