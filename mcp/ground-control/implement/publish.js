@@ -4,6 +4,7 @@
 // (docs/CODING_STANDARDS.md). gc-implement-mechanical.js remains the tool entry point.
 
 import { ciGateFindings } from "../gate-finding-adapters.js";
+import { ciStationResult } from "../lib/ci-conclusion.js";
 import { commandFailure, failure, requireField } from "./gate-helpers.js";
 import { isSensitivePublishPath, readPublishPaths, validateCommitMessage } from "./verify.js";
 
@@ -250,9 +251,11 @@ export async function runMonitor(args, deps) {
     return {
       ok: passed,
       error: passed ? undefined : ci.error ?? `ci_${ci.conclusion ?? "unknown"}`,
-      // `ci.ok === false` means the watcher could not observe a run at all — no verdict
-      // exists to record. Only a run that actually concluded produces pass or fail.
-      stationResult: ci.ok ? (passed ? "pass" : "fail") : "not_evaluable",
+      // `ci.ok === false` means the watcher could not observe a run at all — no verdict exists to
+      // record. When a run did conclude, its conclusion is classified centrally: a timeout or a
+      // runner startup failure is an unobserved gate, not a rejected change, and must not enter
+      // rework as a defect.
+      stationResult: ci.ok ? ciStationResult(ci.conclusion) : "not_evaluable",
       ...(ciFindings ? { findings: ciFindings.findings, findingsDropped: ciFindings.dropped } : {}),
     };
   });

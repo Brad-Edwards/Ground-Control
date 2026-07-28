@@ -68,6 +68,9 @@ export async function runVerify(args, deps) {
   await emitSpotbugsAttempt(deps.emitter, repoRoot, {
     startedAt: completionStartedAt,
     durationMs: Date.now() - completionStartedMs,
+    // Gradle's report tree is not cleared between attempts, so the emitter needs a floor to tell
+    // this attempt's report from the last one's.
+    freshnessFloorMs: artifacts.freshnessFloorMs,
   });
   if (completionError) {
     return commandFailure(action, "completion_gate", completionError);

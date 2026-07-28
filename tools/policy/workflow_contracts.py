@@ -18,7 +18,10 @@ from .core import REPO_ROOT, Violation, require_scanned
 
 SCAN_EXTRACTORS = ("findall", "finditer")
 
-SCAN_FLOOR_ASSERTIONS = ("assertGreaterEqual", "assertGreater", "assertTrue", "assertNotEqual")
+# Only assertions that actually fail on an empty extraction. assertNotEqual is deliberately
+# absent: assertNotEqual(len(found), 5) passes when the scan matched nothing, which is the very
+# hole this contract exists to close.
+SCAN_FLOOR_ASSERTIONS = ("assertGreaterEqual", "assertGreater", "assertTrue")
 
 
 def _reads_repo_source(node: ast.AST) -> bool:

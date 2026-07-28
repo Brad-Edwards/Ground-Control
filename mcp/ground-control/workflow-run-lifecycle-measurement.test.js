@@ -186,7 +186,7 @@ describe("workflow-run lifecycle emitter — already-executed child gates (issue
     emitter.recordStationAttempt({ stationId: "vale", stationResult: "fail", findings: [] });
     await emitter.flush();
 
-    const terminal = events.find((e) => e.phase === "vale" && e.event_type === "FAILED");
+    const terminal = events.find((e) => e.phase === "vale" && e.event_type === "COMPLETED");
     // Substituting the parent command's duration would bill the whole `make policy` run
     // to Vale and make per-gate cost meaningless.
     assert.equal(terminal.duration_ms, undefined);
@@ -205,7 +205,7 @@ describe("workflow-run lifecycle emitter — already-executed child gates (issue
     assert.ok(events.some((e) => e.phase === "policy" && e.event_type === "STARTED"));
   });
 
-  it("marks a failing child gate FAILED on the lifecycle axis too", async () => {
+  it("keeps the lifecycle axis independent of the gate verdict", async () => {
     const { events, deps } = recorder();
     const emitter = createWorkflowRunLifecycleEmitter({ ...IDENTITY, deps });
 
@@ -214,7 +214,11 @@ describe("workflow-run lifecycle emitter — already-executed child gates (issue
     await emitter.flush();
 
     const terminal = events.find((e) => e.phase === "policy" && e.event_type !== "STARTED");
-    assert.equal(terminal.event_type, "FAILED");
+    // The attempt ran to completion; whether its inspection passed is station_result.
+    // Deriving the lifecycle axis from the verdict is the same conflation this issue
+    // separates, only in the other direction.
+    assert.equal(terminal.event_type, "COMPLETED");
+    assert.equal(terminal.station_result, "fail");
     assert.equal(terminal.outcome, "policy_violations");
   });
 });

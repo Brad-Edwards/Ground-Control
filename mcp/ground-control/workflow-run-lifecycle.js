@@ -388,7 +388,10 @@ export function createWorkflowRunLifecycleEmitter({
       emit(
         {
           phase: stationId,
-          event_type: stationResult === "fail" ? "FAILED" : "COMPLETED",
+          // COMPLETED regardless of verdict: the attempt ran to completion, and whether its
+          // inspection passed is the station_result below. Deriving the lifecycle axis from the
+          // verdict is the exact conflation this issue separates — in the other direction.
+          event_type: "COMPLETED",
           occurred_at: (endedAt ?? d.now()).toISOString(),
           ...(Number.isFinite(durationMs) && durationMs >= 0 ? { duration_ms: durationMs } : {}),
           ...(outcome ? { outcome: outcomeCode(outcome) } : {}),

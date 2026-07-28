@@ -16,6 +16,7 @@
 //     only ever arrives from a later tool-layer boundary that can attest it.
 
 import { createHash } from "node:crypto";
+import { ciConclusionIsVerdictFailure } from "./lib/ci-conclusion.js";
 
 /** Newly detected findings are open. `fixed` is never inferred from detection. */
 export const FINDING_DISPOSITION_OPEN = "open";
@@ -279,15 +280,7 @@ export function policyGateFindings(policyJson) {
   );
 }
 
-/** Conclusions that mean the CI run did not pass. `skipped` and `neutral` are not failures. */
-const CI_FAILING_CONCLUSIONS = new Set([
-  "failure",
-  "timed_out",
-  "cancelled",
-  "action_required",
-  "startup_failure",
-  "queued_too_long",
-]);
+// Which conclusions are rejecting verdicts is decided in one place, shared with the station axis.
 
 /**
  * Failed CI steps, from the run envelope's own `failed_steps` export.
@@ -296,9 +289,11 @@ const CI_FAILING_CONCLUSIONS = new Set([
  * only structured verdict it exposes. The log summary is prose and is never parsed: guessing at a
  * failure category from log text would invent a taxonomy CI does not have.
  *
- * A run that failed without extractable steps (startup failure, timeout, queued too long) still
- * rendered a verdict, so its conclusion is recorded as one finding. Otherwise those runs would
- * report a failing gate with zero findings and read as unexplained.
+ * A run that CI rejected without extractable steps still rendered a verdict, so its conclusion is
+ * recorded as one finding — otherwise it would report a failing gate with zero findings and read as
+ * unexplained. A run that timed out, was cancelled, or never started rendered no verdict and gets
+ * no synthesized finding: there is no defect to describe, and inventing one counts rework that
+ * never happened.
  */
 export function ciGateFindings(ciResult) {
   const steps = Array.isArray(ciResult?.failed_steps) ? ciResult.failed_steps : [];
@@ -320,7 +315,7 @@ export function ciGateFindings(ciResult) {
     .filter(Boolean);
 
   const conclusion = bounded(ciResult?.conclusion, MAX_SEVERITY_LENGTH);
-  if (records.length === 0 && conclusion && CI_FAILING_CONCLUSIONS.has(conclusion)) {
+  if (records.length === 0 && conclusion && ciConclusionIsVerdictFailure(conclusion)) {
     records.push(
       findingRecord({
         findingKey: deriveFindingKey("ci-run", conclusion),

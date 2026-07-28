@@ -87,6 +87,7 @@
           "id": "doc-coverage-gate-sync",
           "whenAny": [
             "mcp/ground-control/lib.js",
+            "mcp/ground-control/lib/doc-coverage.js",
             "mcp/ground-control/index.js",
             "tools/policy/checks.py",
             "tools/install-vale.sh",
@@ -95,6 +96,7 @@
           ],
           "triggerContent": {
             "mcp/ground-control/lib.js": "documentation.?[Cc]overage|doc_?[Tt]argets|surface_?[Cc]lass|DOC_STYLE",
+            "mcp/ground-control/lib/doc-coverage.js": "documentation.?[Cc]overage|doc_?[Tt]argets|surface_?[Cc]lass|DOC_STYLE",
             "tools/policy/checks.py": "documentation_coverage|doc_targets|surface_class|DOC_STYLE"
           },
           "requireAll": [

@@ -276,13 +276,21 @@ describe("gate finding adapters — detectors", () => {
     assert.ok(findings.every((f) => f.sourceId === "ci" && f.severity === "failure"));
   });
 
-  it("records the run conclusion when a failure produced no extractable steps", () => {
-    // A startup failure or timeout still rendered a verdict. Without this the gate
-    // would report `fail` with zero findings and read as unexplained.
-    const { findings } = ciGateFindings({ conclusion: "timed_out", failed_steps: [] });
+  it("records the run conclusion when a rejection produced no extractable steps", () => {
+    // A rejected run still rendered a verdict. Without this the gate would report `fail`
+    // with zero findings and read as unexplained.
+    const { findings } = ciGateFindings({ conclusion: "failure", failed_steps: [] });
 
     assert.equal(findings.length, 1);
-    assert.equal(findings[0].category, "timed_out");
+    assert.equal(findings[0].category, "failure");
+  });
+
+  it("synthesizes no finding when the run rendered no verdict at all", () => {
+    // A timeout or a dead runner inspected nothing. Recording a finding for it would put an
+    // infrastructure outcome into the defect rework signal as if the change had been rejected.
+    for (const conclusion of ["timed_out", "cancelled", "startup_failure", "queued_too_long"]) {
+      assert.deepEqual(ciGateFindings({ conclusion, failed_steps: [] }).findings, [], conclusion);
+    }
   });
 
   it("produces no findings for a green run", () => {

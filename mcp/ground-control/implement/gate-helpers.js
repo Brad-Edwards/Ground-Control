@@ -6,7 +6,7 @@
 import { policyGateFindings, spotbugsGateFindings, valeGateFindings } from "../gate-finding-adapters.js";
 import { detectSensitiveBodyContent, extractInScopeRequirementUids, requestedRequirementUidAuthorization } from "../lib.js";
 import { execFile as execFileCb } from "node:child_process";
-import { mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
@@ -218,27 +218,87 @@ export function childGateArtifactPaths(repoRoot) {
   } catch {
     // Best effort: a gate that cannot write its artifact is recorded as unmeasured, never as a pass.
   }
-  return { dir, policy: join(dir, "policy.json"), vale: join(dir, "vale.json") };
-}
-export function readGateArtifact(path) {
+  const paths = {
+    dir,
+    policy: join(dir, "policy.json"),
+    vale: join(dir, "vale.json"),
+    freshnessFloorMs: 0,
+  };
+  // Scope the artifacts to this attempt by clearing the previous one's. The directory outlives a
+  // single verify, so a gate that crashes before writing would otherwise leave the prior attempt's
+  // file in place and have it read as the current result — a stale pass replayed over a run that
+  // was never inspected. Absent is recoverable; a fabricated verdict is not.
+  for (const path of [paths.policy, paths.vale]) {
+    try {
+      rmSync(path, { force: true });
+    } catch {
+      // If the stale file cannot be removed, the reader's freshness floor still rejects it.
+    }
+  }
+  // Reports we do not own (SpotBugs writes into Gradle's tree) can only be aged against a clock.
+  // The floor comes from a file this function writes rather than from `Date.now()`: `new Date()`
+  // rounds to whole milliseconds while `stat` reports fractional ones, so a wall-clock baseline
+  // reads a file written microseconds later as older than the attempt and silently discards a real
+  // measurement. Two mtimes from the same source compare honestly.
+  const marker = join(dir, "attempt.marker");
   try {
-    return JSON.parse(readFileSync(path, "utf8"));
+    writeFileSync(marker, "");
+    paths.freshnessFloorMs = statSync(marker).mtimeMs;
   } catch {
-    // Absent or malformed: the attempt is recorded not_evaluable rather than guessed at.
+    // Without a floor, nothing is aged out: dropping real attempts is worse than the narrow risk
+    // of an unrewritten report, which the shape checks below still have to get past.
+  }
+  return paths;
+}
+/**
+ * Read one child gate's artifact, or null when there is nothing trustworthy to read.
+ *
+ * Null means the station is unmeasured, and the caller records no attempt rather than a pass. The
+ * three ways to get null are deliberately equivalent: absent, unparseable, and present but not
+ * the shape the adapter needs. That last one matters most — a file that parses but carries no
+ * findings container yields zero findings, and zero findings reads as a clean pass. A truncated
+ * write or a changed gate output format would then certify a gate that never ran.
+ *
+ * @param path artifact path
+ * @param floorMs freshness floor in filesystem mtime terms; older artifacts are a previous attempt
+ * @param hasExpectedShape predicate that the parsed value carries the adapter's container
+ */
+export function readGateArtifact(path, floorMs, hasExpectedShape) {
+  let parsed;
+  try {
+    if (Number.isFinite(floorMs) && floorMs > 0 && statSync(path).mtimeMs < floorMs) {
+      return null;
+    }
+    parsed = JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    // Absent or malformed: the attempt is recorded unmeasured rather than guessed at.
     return null;
   }
+  if (typeof hasExpectedShape === "function" && !hasExpectedShape(parsed)) {
+    return null;
+  }
+  return parsed;
 }
 export async function emitSpotbugsAttempt(emitter, repoRoot, timing) {
+  const floorMs = timing.freshnessFloorMs;
   const reportDir = join(repoRoot, "backend", "build", "reports", "spotbugs");
   let xml = "";
   try {
     for (const entry of readdirSync(reportDir)) {
-      if (entry.endsWith(".xml")) xml += readFileSync(join(reportDir, entry), "utf8");
+      if (!entry.endsWith(".xml")) continue;
+      const path = join(reportDir, entry);
+      // Gradle's report directory survives between attempts, and an up-to-date task rewrites
+      // nothing. A report predating this attempt describes an earlier one, so emitting it would
+      // replay a stale verdict as current measurement.
+      if (Number.isFinite(floorMs) && floorMs > 0 && statSync(path).mtimeMs < floorMs) continue;
+      xml += readFileSync(path, "utf8");
     }
   } catch {
     return;
   }
-  if (xml === "") return;
+  // An empty read is no report. A read that is not a SpotBugs report parses to zero findings,
+  // which would otherwise certify the station as passing on a file it never understood.
+  if (xml === "" || !xml.includes("<BugCollection")) return;
   const { findings, dropped } = spotbugsGateFindings(xml);
   await emitter.recordStationAttempt({
     stationId: "spotbugs",
@@ -250,8 +310,16 @@ export async function emitSpotbugsAttempt(emitter, repoRoot, timing) {
     findingsDropped: dropped,
   });
 }
+/** `bin/policy --json` always emits the violations array, empty when the gate is clean. */
+function isPolicyArtifact(value) {
+  return Boolean(value) && typeof value === "object" && Array.isArray(value.violations);
+}
+/** Vale's JSON output is an object keyed by file. An array or a scalar is some other tool's file. */
+function isValeArtifact(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
 export async function emitPolicyAndValeAttempts(emitter, artifacts, startedAt) {
-  const policy = readGateArtifact(artifacts.policy);
+  const policy = readGateArtifact(artifacts.policy, artifacts.freshnessFloorMs, isPolicyArtifact);
   if (policy) {
     const { findings, dropped } = policyGateFindings(policy);
     await emitter.recordStationAttempt({
@@ -264,7 +332,7 @@ export async function emitPolicyAndValeAttempts(emitter, artifacts, startedAt) {
       findingsDropped: dropped,
     });
   }
-  const vale = readGateArtifact(artifacts.vale);
+  const vale = readGateArtifact(artifacts.vale, artifacts.freshnessFloorMs, isValeArtifact);
   if (vale) {
     const { findings, dropped } = valeGateFindings(vale);
     await emitter.recordStationAttempt({
