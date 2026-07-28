@@ -1091,6 +1091,15 @@ remove the finding from the escape-rate signal. The rule is enforced on the enti
 controller, so it holds for every path into the field, and the reference is carried on the audited
 row so the authority behind a retired finding survives with it.
 
+`stationId` must name an entry in the published station catalogue
+(`contracts/measurement/gc-station-catalogue-v2.json`, copied onto the backend classpath at build
+time so the validator cannot disagree with the contract). An unrecognised id returns 400 rather than
+opening a phantom station that would silently take attempts out of the real station's denominator.
+The combination is validated as well: a lifecycle marker carries no `stationResult` and no
+`findings` because it inspects nothing, a `STARTED` event carries neither because the attempt has not
+finished inspecting, and an event with no `stationId` may report neither. `UNOBSERVED` is not a
+verdict and is accepted anywhere, since it states exactly that nothing was measured.
+
 **POST `/workflow-runs/{runId}/events`** additionally accepts the ADR-090 measurement projection
 (issue #1355): `stationId`, `stationResult`, and a bounded `findings` batch persisted atomically
 with the attempt. `stationResult` is separate from `eventType` by construction, since `COMPLETED` means

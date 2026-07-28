@@ -510,6 +510,19 @@ duration is never divided among them, no combined console transcript is parsed a
 several attempts, and no canonical gate is executed twice to measure it. A child gate
 that cannot attest a duration omits it rather than inheriting the parent's.
 
+**Emitted measurement is validated against the catalogue.** The station id is
+checked for membership in the published catalogue, which the backend build copies
+from `contracts/measurement/` rather than mirroring under its own resources, so a
+validator can never disagree with the contract it enforces. An unrecognised id is
+refused: a typo does not fail on its own, it opens a phantom station holding one
+attempt and silently removes that attempt from the real station's denominator, and
+nothing downstream can distinguish it from a station that genuinely ran once. The
+combination is checked too. A lifecycle marker inspects nothing, so it carries no
+station result and no findings; a `STARTED` attempt has not finished inspecting, so
+it carries neither either; and a stage with no station has nothing to report. These
+rows are permanent once written, because the disjointness of the axes means nothing
+downstream re-derives one from another to notice the contradiction later.
+
 **Findings carry facts, not prose.** A finding record holds its attempt identity, a
 detector or reviewer id, source-native category and severity, classification where
 the source has one, and a disposition. Title, body, remediation text, file path, line

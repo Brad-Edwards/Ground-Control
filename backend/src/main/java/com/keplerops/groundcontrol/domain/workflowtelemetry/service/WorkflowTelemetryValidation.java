@@ -1,10 +1,13 @@
 package com.keplerops.groundcontrol.domain.workflowtelemetry.service;
 
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.PhaseEventType;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.StationResult;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowRun;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 
 /**
  * Input validation for the workflow-telemetry write and read paths (issue #859).
@@ -68,6 +71,61 @@ final class WorkflowTelemetryValidation {
         if (days > MAX_WINDOW_DAYS) {
             throw new DomainValidationException(
                     "time window must not exceed " + MAX_WINDOW_DAYS + " days (requested " + days + " days)");
+        }
+    }
+
+    /**
+     * The measurement facts must agree with the lifecycle event carrying them (issue #1355).
+     *
+     * <p>Three axes travel on one row, and the whole point of this change is that they stay
+     * disjoint. Nothing downstream re-derives one from another, which is what makes an
+     * unvalidated combination permanent: a STARTED event carrying {@code PASS} is stored as a
+     * finished, passing attempt at a station that had not finished, and no later query can tell it
+     * from a real one.
+     *
+     * @param catalog the authoritative station catalogue
+     * @param stationId the emitted station id, or null for a non-station stage
+     * @param stationResult the emitted verdict, or null when the emitter states none
+     * @param eventType the lifecycle event the facts arrived on
+     * @param findings the batch the attempt observed, possibly null or empty
+     */
+    static void validateMeasurement(
+            StationCatalog catalog,
+            String stationId,
+            StationResult stationResult,
+            PhaseEventType eventType,
+            List<GateFindingCommand> findings) {
+        var hasVerdict = stationResult != null && stationResult != StationResult.UNOBSERVED;
+        var hasFindings = findings != null && !findings.isEmpty();
+        if (stationId == null) {
+            if (hasVerdict) {
+                throw new DomainValidationException(
+                        "stationResult requires a stationId; a stage with no station has nothing to report");
+            }
+            if (hasFindings) {
+                throw new DomainValidationException(
+                        "findings require a stationId; a stage with no station inspected nothing");
+            }
+            return;
+        }
+        if (catalog.isMarker(stationId)) {
+            // A marker records that something happened, not that something was inspected. Letting
+            // one carry a verdict is the axis conflation this issue exists to remove.
+            if (hasVerdict || hasFindings) {
+                throw new DomainValidationException(stationId
+                        + " is a lifecycle marker: it inspects nothing and can carry no station result or findings");
+            }
+            return;
+        }
+        if (!catalog.isStation(stationId)) {
+            // A typo does not fail loudly on its own: it opens a phantom station holding one
+            // attempt, and silently removes that attempt from the real station's denominator.
+            throw new DomainValidationException(
+                    "unknown stationId '" + stationId + "'; the catalogue defines " + catalog.stationIds());
+        }
+        if (eventType == PhaseEventType.STARTED && (hasVerdict || hasFindings)) {
+            throw new DomainValidationException(
+                    "a STARTED attempt has not finished inspecting and cannot carry a station result or findings");
         }
     }
 

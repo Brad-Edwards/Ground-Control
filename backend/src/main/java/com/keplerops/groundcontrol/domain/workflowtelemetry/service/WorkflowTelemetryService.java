@@ -58,16 +58,19 @@ public class WorkflowTelemetryService {
     private final WorkflowRunRepository runRepository;
     private final WorkflowPhaseEventRepository phaseEventRepository;
     private final WorkflowMeasurementService measurementService;
+    private final StationCatalog stationCatalog;
     private final ApplicationEventPublisher eventPublisher;
 
     public WorkflowTelemetryService(
             WorkflowRunRepository runRepository,
             WorkflowPhaseEventRepository phaseEventRepository,
             WorkflowMeasurementService measurementService,
+            StationCatalog stationCatalog,
             ApplicationEventPublisher eventPublisher) {
         this.runRepository = runRepository;
         this.phaseEventRepository = phaseEventRepository;
         this.measurementService = measurementService;
+        this.stationCatalog = stationCatalog;
         this.eventPublisher = eventPublisher;
     }
 
@@ -197,6 +200,12 @@ public class WorkflowTelemetryService {
             // shared identity exists to prevent.
             return alreadyRecorded.get();
         }
+
+        // Checked before anything is written: the three axes are disjoint by design and nothing
+        // downstream re-derives one from another, so a contradictory combination stored here is
+        // indistinguishable from a real observation forever after.
+        WorkflowTelemetryValidation.validateMeasurement(
+                stationCatalog, command.stationId(), command.stationResult(), command.eventType(), command.findings());
 
         var event = new WorkflowPhaseEvent(
                 command.runId(),
