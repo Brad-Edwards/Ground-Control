@@ -110,8 +110,9 @@ class StationMeasurementValidationTest {
         // A typo does not fail on its own. It opens a phantom station holding one attempt and
         // silently removes that attempt from the real station's denominator, and no later query can
         // tell the phantom from a station that genuinely ran once.
-        assertThatThrownBy(() ->
-                        service.recordPhaseEvent(command("polcy", StationResult.PASS, PhaseEventType.COMPLETED, null)))
+        var typo = command("polcy", StationResult.PASS, PhaseEventType.COMPLETED, null);
+
+        assertThatThrownBy(() -> service.recordPhaseEvent(typo))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("polcy");
         verify(phaseEventRepository, never()).save(any());
@@ -121,16 +122,18 @@ class StationMeasurementValidationTest {
     void aLifecycleMarkerCannotCarryAVerdict() {
         // A marker records that something happened. It inspects nothing, so a pass or fail on one
         // is the axis conflation this change exists to remove.
-        assertThatThrownBy(() ->
-                        service.recordPhaseEvent(command("plan", StationResult.PASS, PhaseEventType.COMPLETED, null)))
+        var markerWithVerdict = command("plan", StationResult.PASS, PhaseEventType.COMPLETED, null);
+
+        assertThatThrownBy(() -> service.recordPhaseEvent(markerWithVerdict))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("lifecycle marker");
     }
 
     @Test
     void aLifecycleMarkerCannotCarryFindings() {
-        assertThatThrownBy(
-                        () -> service.recordPhaseEvent(command("plan", null, PhaseEventType.COMPLETED, oneFinding())))
+        var markerWithFindings = command("plan", null, PhaseEventType.COMPLETED, oneFinding());
+
+        assertThatThrownBy(() -> service.recordPhaseEvent(markerWithFindings))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("lifecycle marker");
     }
@@ -145,8 +148,9 @@ class StationMeasurementValidationTest {
 
     @Test
     void aStartedAttemptHasNotFinishedInspectingAndCarriesNoVerdict() {
-        assertThatThrownBy(
-                        () -> service.recordPhaseEvent(command("ci", StationResult.PASS, PhaseEventType.STARTED, null)))
+        var startedWithVerdict = command("ci", StationResult.PASS, PhaseEventType.STARTED, null);
+
+        assertThatThrownBy(() -> service.recordPhaseEvent(startedWithVerdict))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("STARTED");
         verify(phaseEventRepository, never()).save(any());
@@ -154,7 +158,9 @@ class StationMeasurementValidationTest {
 
     @Test
     void aStartedAttemptCarriesNoFindings() {
-        assertThatThrownBy(() -> service.recordPhaseEvent(command("ci", null, PhaseEventType.STARTED, oneFinding())))
+        var startedWithFindings = command("ci", null, PhaseEventType.STARTED, oneFinding());
+
+        assertThatThrownBy(() -> service.recordPhaseEvent(startedWithFindings))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("STARTED");
     }
@@ -169,11 +175,13 @@ class StationMeasurementValidationTest {
 
     @Test
     void aStageWithNoStationCannotReportAVerdictOrFindings() {
-        assertThatThrownBy(() ->
-                        service.recordPhaseEvent(command(null, StationResult.PASS, PhaseEventType.COMPLETED, null)))
+        var verdictWithoutStation = command(null, StationResult.PASS, PhaseEventType.COMPLETED, null);
+        var findingsWithoutStation = command(null, null, PhaseEventType.COMPLETED, oneFinding());
+
+        assertThatThrownBy(() -> service.recordPhaseEvent(verdictWithoutStation))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("stationId");
-        assertThatThrownBy(() -> service.recordPhaseEvent(command(null, null, PhaseEventType.COMPLETED, oneFinding())))
+        assertThatThrownBy(() -> service.recordPhaseEvent(findingsWithoutStation))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("stationId");
     }

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
@@ -31,6 +32,7 @@ public final class StationCatalog {
     private final Set<String> stationIds;
     private final Set<String> markerIds;
 
+    @Autowired
     public StationCatalog() {
         this(DEFAULT_RESOURCE);
     }
