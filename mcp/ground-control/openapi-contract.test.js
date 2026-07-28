@@ -125,16 +125,32 @@ import { GOVERNANCE_FIELDS } from "./lib.js";
 // Load spec
 // ---------------------------------------------------------------------------
 
-const specPath =
-  process.env.GC_OPENAPI_SPEC ||
-  resolvePath(import.meta.dirname, "../../backend/build/contract/openapi.json");
+// Spec resolution, in preference order: an explicit override, the freshly generated build
+// output, then the committed contract. The committed spec is the last resort rather than an
+// error because this file is discovered by the plain `npm test` lane too, where no Gradle build
+// has run — and asserting the MCP write surfaces against the committed contract there is real
+// coverage. Drift between generated and committed is a different question, owned by
+// `make contracts-check`.
+const specCandidates = [
+  process.env.GC_OPENAPI_SPEC,
+  resolvePath(import.meta.dirname, "../../backend/build/contract/openapi.json"),
+  resolvePath(import.meta.dirname, "../../contracts/openapi/openapi.json"),
+].filter(Boolean);
 
 let spec;
-try {
-  spec = JSON.parse(readFileSync(specPath, "utf-8"));
-} catch {
+let specPath;
+for (const candidate of specCandidates) {
+  try {
+    spec = JSON.parse(readFileSync(candidate, "utf-8"));
+    specPath = candidate;
+    break;
+  } catch {
+    // try the next candidate
+  }
+}
+if (!spec) {
   throw new Error(
-    `OpenAPI spec not found at ${specPath}. ` +
+    `OpenAPI spec not found at any of: ${specCandidates.join(", ")}. ` +
       "Run 'make mcp-openapi-contract' to generate the OpenAPI spec.",
   );
 }

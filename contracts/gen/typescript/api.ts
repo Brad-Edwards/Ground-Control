@@ -815,6 +815,17 @@ export interface FieldChangeResponse {
   "truncated": any;
 }
 
+export interface FindingCountRow {
+  [key: string]: any;
+  "category": any;
+  "count": any;
+  "disposition": any;
+  "severity": any;
+  "sourceId": any;
+  "sourceKind": any;
+  "stationId": any;
+}
+
 export interface FindingLinkRequest {
   [key: string]: any;
   "linkType": any;
@@ -895,6 +906,33 @@ export interface GateDecisionRequest {
   "recommendationSummary"?: any;
   "selectedOptionId"?: any;
   "sourceActionId"?: any;
+}
+
+export interface GateFindingRequest {
+  [key: string]: any;
+  "category"?: any;
+  "classification"?: any;
+  "findingKey": any;
+  "severity"?: any;
+  "sourceId": any;
+  "sourceKind": any;
+}
+
+export interface GateFindingResponse {
+  [key: string]: any;
+  "category": any;
+  "classification": any;
+  "disposition": any;
+  "findingKey": any;
+  "id": any;
+  "occurredAt": any;
+  "phaseEventId": any;
+  "project": any;
+  "runId": any;
+  "severity": any;
+  "sourceId": any;
+  "sourceKind": any;
+  "stationId": any;
 }
 
 export interface GateResultResponse {
@@ -1183,6 +1221,15 @@ export interface McpToolUsageAggregateResponse {
   "from": any;
   "to": any;
   "tools": ToolUsageRow[];
+}
+
+export interface MeasurementAggregateResponse {
+  [key: string]: any;
+  "findingCounts": FindingCountRow[];
+  "from": any;
+  "measurementVersion": any;
+  "stations": StationYieldRow[];
+  "to": any;
 }
 
 export interface MethodologyCatalogMethodResponse {
@@ -1569,6 +1616,8 @@ export interface PhaseEventResponse {
   "provenance": any;
   "runId": any;
   "sourceId": any;
+  "stationId": any;
+  "stationResult": any;
 }
 
 export interface PhaseHotspotResponse {
@@ -1779,6 +1828,11 @@ export interface RecordArtifactRequest {
   "screenedIncluded"?: any;
 }
 
+export interface RecordFindingDispositionRequest {
+  [key: string]: any;
+  "disposition": any;
+}
+
 export interface RecordMcpToolEventRequest {
   [key: string]: any;
   "action"?: any;
@@ -1806,11 +1860,14 @@ export interface RecordPhaseEventRequest {
   "cycleIndex"?: any;
   "durationMs"?: any;
   "eventType": any;
+  "findings"?: GateFindingRequest[];
   "occurredAt": any;
   "outcome"?: any;
   "phase": any;
   "provenance": any;
   "sourceId"?: any;
+  "stationId"?: any;
+  "stationResult"?: any;
 }
 
 export interface RecordProtocolPlanRequest {
@@ -2538,6 +2595,18 @@ export interface SourceLinkResponse {
   "locator": any;
   "sourceId": any;
   "sourceRef": any;
+}
+
+export interface StationYieldRow {
+  [key: string]: any;
+  "evaluableAttempts": any;
+  "firstPassDenominator": any;
+  "firstPassNumerator": any;
+  "firstPassYield": any;
+  "iterationsToGreen": Record<string, any>;
+  "reworkAttempts": any;
+  "stationId": any;
+  "unresolvedRuns": any;
 }
 
 export interface StatusDriftResponse {
