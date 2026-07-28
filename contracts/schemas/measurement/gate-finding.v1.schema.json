@@ -57,21 +57,21 @@
       "id": "gc.measurement.gate-finding.carries-no-prose",
       "description": "The schema admits no title, body, remediation text, file path, line number, raw tool output, or stack trace. A measurement projection that carried review prose would become a second durable record competing with ADR-029, and would leak source content into a reporting store.",
       "enforcedBy": [
-        "tools/tests/test_policy.py::test_gate_finding_schema_admits_no_prose_fields"
+        "tools/tests/test_measurement_catalogue_checks.py::test_gate_finding_schema_admits_no_prose_fields"
       ]
     },
     {
       "id": "gc.measurement.gate-finding.absence-over-synthesis",
       "description": "Category, severity, and classification are optional, so a source that cannot attest one omits it rather than defaulting it to a value that would read as a real observation.",
       "enforcedBy": [
-        "tools/tests/test_policy.py::test_gate_finding_schema_makes_unattestable_dimensions_optional"
+        "tools/tests/test_measurement_catalogue_checks.py::test_gate_finding_schema_makes_unattestable_dimensions_optional"
       ]
     },
     {
       "id": "gc.measurement.gate-finding.disposition-is-closed",
       "description": "Disposition is a closed vocabulary whose terminal values match ADR-029's decision outcomes exactly, so measurement cannot grow a second disposition or deferral vocabulary. `defer` is absent by construction.",
       "enforcedBy": [
-        "tools/tests/test_policy.py::test_gate_finding_disposition_matches_adr029_outcomes"
+        "tools/tests/test_measurement_catalogue_checks.py::test_gate_finding_disposition_matches_adr029_outcomes"
       ]
     }
   ]

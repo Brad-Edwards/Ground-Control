@@ -174,26 +174,26 @@
       "id": "gc.measurement.station-catalogue.identity-is-authoritative",
       "description": "Every station id and marker id is unique across both sets, and no alias (kind, value) pair resolves to two different entries. Without this the catalogue would be a second ambiguous vocabulary rather than the resolution of the existing ones.",
       "enforcedBy": [
-        "tools/tests/test_policy.py::test_station_catalogue_ids_and_aliases_are_unique",
-        "tools/tests/test_policy.py::test_every_catalogue_violation_code_fires_on_its_mutation"
+        "tools/tests/test_measurement_catalogue_checks.py::test_station_catalogue_ids_and_aliases_are_unique",
+        "tools/tests/test_measurement_catalogue_checks.py::test_every_catalogue_violation_code_fires_on_its_mutation"
       ]
     },
     {
       "id": "gc.measurement.station-catalogue.emitters-resolve",
       "description": "Every station id the MCP emitter writes, every gc:phase marker value, and every ADR-036 routing stage resolves to a declared entry. This is what makes the catalogue authoritative rather than decorative.",
       "enforcedBy": [
-        "tools/tests/test_policy.py::test_station_catalogue_covers_live_emitter_station_ids",
-        "tools/tests/test_policy.py::test_station_catalogue_covers_issue_thread_phase_markers",
-        "tools/tests/test_policy.py::test_station_catalogue_covers_routing_stages",
-        "tools/tests/test_policy.py::test_every_catalogue_violation_code_fires_on_its_mutation",
-        "tools/tests/test_policy.py::test_every_declared_violation_code_has_a_mutation_case"
+        "tools/tests/test_measurement_catalogue_checks.py::test_station_catalogue_covers_live_emitter_station_ids",
+        "tools/tests/test_measurement_catalogue_checks.py::test_station_catalogue_covers_issue_thread_phase_markers",
+        "tools/tests/test_measurement_catalogue_checks.py::test_station_catalogue_covers_routing_stages",
+        "tools/tests/test_measurement_catalogue_checks.py::test_every_catalogue_violation_code_fires_on_its_mutation",
+        "tools/tests/test_measurement_catalogue_checks.py::test_every_declared_violation_code_has_a_mutation_case"
       ]
     },
     {
       "id": "gc.measurement.station-catalogue.stations-inspect",
       "description": "A station declares what it inspects; a lifecycle marker declares what it records. The two sets are disjoint, so a recorded transition can never be counted as a gate attempt.",
       "enforcedBy": [
-        "tools/tests/test_policy.py::test_station_catalogue_separates_stations_from_lifecycle_markers"
+        "tools/tests/test_measurement_catalogue_checks.py::test_station_catalogue_separates_stations_from_lifecycle_markers"
       ]
     }
   ]

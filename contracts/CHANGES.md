@@ -14,7 +14,7 @@ governance, GC-O014).
   `contracts/measurement/gc-station-catalogue-v2.json`. The shape is identical to v1;
   the version exists because `spotbugs`, `policy`, and `vale` join the station set and
   a published catalogue is never edited in place. v1 stays on disk unmodified, and v2
-  is a strict superset — no station or marker id is dropped or renamed, so every
+  is a strict superset: no station or marker id is dropped or renamed, so every
   record already written against v1 still resolves.
 - Added `gc.measurement.gate-finding.v1`
   (`contracts/schemas/measurement/gate-finding.v1.schema.json`): one finding observed
@@ -22,7 +22,7 @@ governance, GC-O014).
   projection cannot carry titles, bodies, remediation text, paths, line numbers, raw
   tool output, or stack traces. Category, severity, and classification are optional
   because a source that cannot attest one must omit it rather than default it.
-- Disposition is a closed vocabulary — `open`, `fixed`, `wontfix`, `not-applicable` —
+- Disposition is a closed vocabulary (`open`, `fixed`, `wontfix`, `not-applicable`)
   matching ADR-029's decision outcomes exactly. `defer` is absent by construction.
 - `completion_gate` is documented as composite: its child gates report their own
   verdicts and durations separately rather than being rolled up into it.
