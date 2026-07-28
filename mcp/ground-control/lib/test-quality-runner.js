@@ -9,6 +9,7 @@ import { detectSensitiveBodyContent } from "./grc-legacy-compat-2.js";
 import { readIssueCommentBodies } from "./grc-legacy-compat-3.js";
 import { GITHUB_ISSUE_COMMENT_BODY_MAX } from "./repo-vocabulary.js";
 import { execFile } from "./runtime-primitives.js";
+import { postStationReobservation } from "./station-observation-records.js";
 
 export const TEST_QUALITY_REVIEW_HARD_CAP = 1;
 export class ReviewerCapConfigError extends Error {
@@ -299,6 +300,12 @@ export async function postFindingsRecordAndCycleMarker({
   // to the module constant for callers that don't pass it; issue #906 added
   // the cfg-resolved path through runTestQualityReview.
   hardCap = TEST_QUALITY_REVIEW_HARD_CAP,
+  // Set when an earlier attempt at this logical cycle rendered no verdict and left a
+  // station-observation obligation open (issue #1476). The resolution is written between the
+  // findings record and the cycle marker so the cap is never consumed while the obligation is
+  // still open — that combination is exactly the state that used to require a human to post an
+  // authorization string for a defect nobody ever observed.
+  stationObservation = null,
 }) {
   // Body-size guard. GitHub's REST issue-comment endpoint rejects bodies
   // over 65535 chars; refuse at the boundary so the cycle isn't
@@ -360,6 +367,34 @@ export async function postFindingsRecordAndCycleMarker({
         findings,
       },
     };
+  }
+
+  // Re-observation resolution, bound to the record just posted, BEFORE the cap marker. If this
+  // post fails the cycle stays unconsumed, so a retry is free — the inverse order would spend the
+  // cap and leave the observation obligation open, which is the deadlock this issue removes.
+  if (stationObservation != null) {
+    const resolution = await postStationReobservation({
+      repoRoot, owner, name, issueNumber, recordUrl, stationObservation,
+    });
+    if (!resolution.ok) {
+      return {
+        ok: false,
+        envelope: {
+          ok: false,
+          error: "station_observation_resolution_post_failed",
+          message:
+            `the findings record posted at ${recordUrl} but the station-observation resolution ` +
+            `for '${stationObservation.obligationId}' did not: ${resolution.message}. No cycle ` +
+            `marker was written, so the cap is untouched and re-running is safe.`,
+          issue_number: issueNumber,
+          branch: branchName,
+          findings_comment_url: recordUrl,
+          next_action: "fix_github_posting_and_retry",
+          finding_count: findingCount,
+          findings,
+        },
+      };
+    }
   }
 
   // Marker write — failure here is harder to recover from cleanly: the

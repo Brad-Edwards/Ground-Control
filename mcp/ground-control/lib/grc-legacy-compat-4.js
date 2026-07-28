@@ -10,7 +10,8 @@ import { isAbsolute, join } from "node:path";
 import { parsePhaseMarkers } from "./codex-review.js";
 import { MCP_LAUNCH_CWD, evaluateExecutionObligations, isDefaultImplementHooksPath, parseExecutionObligationMarkers, readGeneratedCodexSummary } from "./codex-workflow.js";
 import { ENRICH_THREAD_PAGE_CAP } from "./grc-legacy-compat-2.js";
-import { getOwnerRepo, hasVerifiedStructuredWontfixAuthorization, readIssueCommentBodies, readIssueCommentsWithAuthors, resolveExecutionObligationTrust } from "./grc-legacy-compat-3.js";
+import { getAuthenticatedGitHubLogin, getOwnerRepo, hasVerifiedStructuredWontfixAuthorization, readIssueCommentBodies, readIssueCommentsWithAuthors, resolveExecutionObligationTrust } from "./grc-legacy-compat-3.js";
+import { STATION_OBSERVATION_DISPOSITION, hasVerifiedStationReobservation } from "./execution-obligation-v2.js";
 import { buildCodexReviewExecArgs } from "./grc-legacy-compat.js";
 import { DEFAULT_CODEX_TIMEOUT_MS, execFile, execFileWithInput, formatCommandFailure } from "./runtime-primitives.js";
 
@@ -183,7 +184,7 @@ export async function readTrustedExecutionObligationState(repoRoot, owner, name,
         "An execution-obligation marker was authored outside the repository's authorized signer set",
     };
   }
-  const trustedEvents = markerComments.flatMap(({ events }) => events);
+  const trustedEvents = await filterAttestedReobservations(repoRoot, markerComments, comments);
   for (const event of trustedEvents) {
     if (event.event !== "resolved" || event.disposition !== "wontfix") continue;
     const authorization = comments.find(
@@ -211,6 +212,40 @@ export async function readTrustedExecutionObligationState(repoRoot, owner, name,
     ok: true,
     ...evaluateExecutionObligations(trustedEvents),
   };
+}
+/**
+ * Drop `reobserved` resolutions that are not attested by the trusted MCP posting identity.
+ *
+ * Dropped rather than raised as an error: an unattested marker leaves its obligation open, which
+ * keeps completion blocked and the problem visible. Failing the whole read instead would let
+ * anyone who can comment on the issue wedge the run by pasting a marker-shaped record.
+ *
+ * The trusted login is resolved only when such a resolution is actually present, so the common
+ * path keeps its current number of GitHub calls.
+ */
+async function filterAttestedReobservations(repoRoot, markerComments, comments) {
+  const events = markerComments.flatMap(({ events: parsed }) => parsed);
+  const hasReobservation = events.some(
+    (event) => event.event === "resolved"
+      && event.disposition === STATION_OBSERVATION_DISPOSITION,
+  );
+  if (!hasReobservation) return events;
+  const trustedLogin = await getAuthenticatedGitHubLogin(repoRoot);
+  const attested = [];
+  for (const { comment, events: parsed } of markerComments) {
+    for (const event of parsed) {
+      const isReobservation = event.event === "resolved"
+        && event.disposition === STATION_OBSERVATION_DISPOSITION;
+      if (
+        isReobservation
+        && !hasVerifiedStationReobservation(event, comment, comments, trustedLogin)
+      ) {
+        continue;
+      }
+      attested.push(event);
+    }
+  }
+  return attested;
 }
 /**
  * Phases whose completion markers were authored by someone with repository permission.

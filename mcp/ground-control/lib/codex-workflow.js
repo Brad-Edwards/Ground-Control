@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { randomBytes } from "node:crypto";
 import { isSafeGitRefName } from "./repo-context.js";
+import { STATION_OBSERVATION_DISPOSITION, canReobservationClose, parseExecutionObligationV2Markers } from "./execution-obligation-v2.js";
 
 const IMPLEMENT_BRANCH_RE = /^[a-z0-9-]+$/;
 const IMPLEMENT_BRANCH_MAX_LENGTH = 50;
@@ -362,10 +363,18 @@ export function parseExecutionObligationMarkers(commentBodies, issueNumber) {
         issue_number: issueNumber,
         obligation_id: match[2],
         event: match[3],
+        schema_version: 1,
+        kind: null,
+        station: null,
+        cycle: null,
         disposition: match[4] ?? null,
+        observation_record_id: null,
         authorization_comment_id: match[5] == null ? null : Number(match[5]),
       });
     }
+    // v2 records (issue #1476) live in their own marker family so an older reader ignores them
+    // rather than misreading a station observation as a problem obligation.
+    events.push(...parseExecutionObligationV2Markers(body, issueNumber));
   }
   return events;
 }
@@ -374,15 +383,28 @@ export function evaluateExecutionObligations(events) {
   for (const event of events || []) {
     const current = states.get(event.obligation_id);
     if (event.event === "opened") {
-      states.set(event.obligation_id, { status: "open", disposition: null });
+      // Re-opening an already-open observation is the same obligation, not a second one: repeated
+      // transport attempts must not strand a record nobody can resolve.
+      states.set(event.obligation_id, {
+        status: "open",
+        disposition: null,
+        schema_version: event.schema_version ?? 1,
+        kind: event.kind ?? null,
+        station: event.station ?? null,
+        cycle: event.cycle ?? null,
+      });
     } else if (event.event === "escalated" && current?.status === "open") {
-      states.set(event.obligation_id, { status: "open", disposition: null });
+      states.set(event.obligation_id, { ...current, status: "open", disposition: null });
     } else if (
       event.event === "resolved"
       && current?.status === "open"
-      && EXECUTION_OBLIGATION_DISPOSITIONS.includes(event.disposition)
+      && isTerminalObligationResolution(current, event)
     ) {
-      states.set(event.obligation_id, { status: "resolved", disposition: event.disposition });
+      states.set(event.obligation_id, {
+        ...current,
+        status: "resolved",
+        disposition: event.disposition,
+      });
     }
   }
   const open = [...states.entries()]
@@ -393,6 +415,27 @@ export function evaluateExecutionObligations(events) {
     open_obligation_ids: open,
     clear: open.length === 0,
   };
+}
+/**
+ * Whether a resolution event terminates the obligation it is replayed against.
+ *
+ * The two obligation families are isolated in both directions, because replay is keyed on the
+ * obligation id and that id is deterministic and therefore guessable:
+ *
+ * - A `station_observation` is closable ONLY by an attested `reobserved`. Admitting the legacy
+ *   `fix` / `wontfix` / `not-applicable` vocabulary here was a completion-gate bypass: a
+ *   repository writer who is not the trusted MCP posting identity could copy the id, station, and
+ *   cycle out of an opened marker and post `disposition="fix"`, clearing an unobserved gate with
+ *   no verdict behind it (codex cycle-1 security finding).
+ * - A problem obligation is closable only by that legacy vocabulary. `reobserved` attests that a
+ *   gate was observed, which says nothing about whether a defect was repaired.
+ */
+function isTerminalObligationResolution(current, event) {
+  if (current.kind === "station_observation") {
+    return event.disposition === STATION_OBSERVATION_DISPOSITION
+      && canReobservationClose(current, event);
+  }
+  return EXECUTION_OBLIGATION_DISPOSITIONS.includes(event.disposition);
 }
 export function validateBoundedText(value, field, errors, { required = true, max = 1200 } = {}) {
   if (value == null || value === "") {

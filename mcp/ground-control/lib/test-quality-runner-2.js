@@ -24,6 +24,10 @@ export async function runTestQualityReview({
   overrideReason = null,
   model = TEST_QUALITY_REVIEW_DEFAULT_MODEL,
   signal = undefined,
+  // Pending station-observation obligation from an earlier non-verdict attempt at this same
+  // logical cycle (issue #1476). Forwarded to the durable writer so the resolution lands between
+  // the findings record and the cycle marker.
+  stationObservation = null,
 }) {
   const repoRoot = await ensureGitRepo(repoPath);
 
@@ -170,6 +174,7 @@ export async function runTestQualityReview({
       overrideReason: decision.override_reason ?? null,
       recordBody,
       hardCap: effectiveCap,
+      stationObservation,
     });
     if (!markerWriteResult.ok) return markerWriteResult.envelope;
     return {
@@ -294,6 +299,7 @@ export async function runTestQualityReview({
     findingCount: findings.length,
     findings,
     hardCap: effectiveCap,
+    stationObservation,
   });
   if (!markerWriteResult.ok) return markerWriteResult.envelope;
 

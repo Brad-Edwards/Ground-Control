@@ -18,6 +18,7 @@ import { runReviewerOverSlices } from "./grc-legacy-compat-6.js";
 import { readVocabularyForReview } from "./plan-posting.js";
 import { evaluateCodexReviewCycleCap } from "./repo-context-2.js";
 import { enforcePostPushReviewGate, enforcePrePushReviewCap } from "./codex-review-cap.js";
+import { guardStationReobservation } from "./station-observation-records.js";
 
 export async function runCodexReview({
   repoPath,
@@ -30,6 +31,8 @@ export async function runCodexReview({
   overridePhaseGate = false,
   overridePhaseReason = null,
   signal = undefined,
+  // Open station-observation obligation from an earlier non-verdict attempt (issue #1476).
+  stationObservation = null,
 }) {
   const repoRoot = await ensureGitRepo(repoPath);
 
@@ -255,6 +258,12 @@ export async function runCodexReview({
   // because there is no record to wait for.
   let findingsCommentUrl = null;
   let recordIssueNumber = null;
+  // One shape for every "the durable record did not land" exit below. Each of them means the same
+  // thing — no cycle marker was written, so the cap is untouched and re-running is safe.
+  const postFailed = (message, postError) => buildReviewCommentPostFailedEnvelope({
+    repoRoot, baseBranch, uncommitted, effectivePr, prePushOwnership, recordIssueNumber,
+    message, postError, cycleSource, comments, postFailures, parseErrors, core, security,
+  });
   if (cycleConsumed && cycleSource != null) {
     recordIssueNumber = await resolveFindingsRecordIssueNumber({
       repoRoot,
@@ -284,26 +293,13 @@ export async function runCodexReview({
       for (const body of findingsBodies) {
         const sensitiveError = detectSensitiveBodyContent(body);
         if (sensitiveError) {
-          return buildReviewCommentPostFailedEnvelope({
-            repoRoot,
-            baseBranch,
-            uncommitted,
-            effectivePr,
-            prePushOwnership,
-            recordIssueNumber,
-            message:
-              `gc_codex_review refused to post the findings record to issue #${recordIssueNumber}: ` +
-              `${sensitiveError}. The reviewer text would have published model-controlled content ` +
-              `that matched the host-side guardrail; no cycle marker has been written, so a retry ` +
-              `is safe once codex emits a clean review.`,
-            postError: sensitiveError,
-            cycleSource,
-            comments,
-            postFailures,
-            parseErrors,
-            core,
-            security,
-          });
+          return postFailed(
+            `gc_codex_review refused to post the findings record to issue #${recordIssueNumber}: ` +
+            `${sensitiveError}. The reviewer text would have published model-controlled content ` +
+            `that matched the host-side guardrail; no cycle marker has been written, so a retry ` +
+            `is safe once codex emits a clean review.`,
+            sensitiveError,
+          );
         }
       }
       // Post all bodies in order: the primary first, then continuations.
@@ -323,29 +319,23 @@ export async function runCodexReview({
           }
         }
       } catch (postError) {
-        return buildReviewCommentPostFailedEnvelope({
-          repoRoot,
-          baseBranch,
-          uncommitted,
-          effectivePr,
-          prePushOwnership,
-          recordIssueNumber,
-          message:
-            `gc_codex_review ran successfully but failed to post the findings record to issue ` +
-            `#${recordIssueNumber}: ${postError.message}. The issue thread is the durable record ` +
-            `per ADR-029; no cycle marker has been written so a retry is safe. Fix the underlying ` +
-            `GitHub issue (network, gh auth, repo permissions) and retry.`,
-          postError: postError.message,
-          cycleSource,
-          comments,
-          postFailures,
-          parseErrors,
-          core,
-          security,
-        });
+        return postFailed(
+          `gc_codex_review ran successfully but failed to post the findings record to issue ` +
+          `#${recordIssueNumber}: ${postError.message}. The issue thread is the durable record ` +
+          `per ADR-029; no cycle marker has been written so a retry is safe. Fix the underlying ` +
+          `GitHub issue (network, gh auth, repo permissions) and retry.`,
+          postError.message,
+        );
       }
     }
   }
+
+  // Re-observation resolution, bound to the record just posted, BEFORE the cap marker (#1476).
+  const failedReobservation = await guardStationReobservation({
+    stationObservation, findingsCommentUrl, repoRoot, issueNumber: recordIssueNumber,
+    owner: cycleSource?.owner, name: cycleSource?.name, buildFailure: postFailed,
+  });
+  if (failedReobservation) return failedReobservation;
 
   // Findings record landed (or was skipped). Now write the cycle marker so
   // the next invocation honors the hard cap. Marker-post failures are
