@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -18,6 +19,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * do not exist, so unlike the rest of that class they read nothing an earlier
  * test wrote and do not belong in its ordered chain.
  */
+@AutoConfigureMockMvc
 class AuditHistoryNotFoundTest extends BaseIntegrationTest {
 
     @Autowired
