@@ -474,3 +474,25 @@ class Violation:
 
 def normalize_path(path: str) -> str:
     return Path(path).as_posix().lstrip("./")
+
+
+def require_scanned(label: str, scanned: int, code: str = "scan-resolved-nothing") -> list[Violation]:
+    """A scan that resolved zero sources must fail, not report clean.
+
+    "Scanned everything and found nothing wrong" and "never looked" are different facts that a
+    check reports identically unless it proves it looked. Every instance of this in issue #1355
+    was a gate reporting green because its subject had moved: an inventory can be renamed, a glob
+    can stop matching, and the resulting empty scan reads as a pass.
+
+    This does not assert that any particular file exists — checks that deliberately skip absent
+    inventory entries keep doing so. It asserts only that the scan as a whole resolved something.
+    """
+    if scanned > 0:
+        return []
+    return [
+        Violation(
+            code=code,
+            message=f"{label} resolved no sources to scan, so its result is not evidence of anything.",
+            details=["A check that scans nothing must fail rather than report clean."],
+        )
+    ]

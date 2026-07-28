@@ -8,6 +8,7 @@ Add a new check to the module that owns its concern, then re-export it here.
 """
 
 from .core import (  # noqa: F401
+    require_scanned,
     ADR_POLICY_PATH,
     BRANCH_PROTECTION_BASELINE_PATH,
     CI_PRE_COMMIT_HOOKS,
@@ -298,6 +299,7 @@ from .authz_matrix import (  # noqa: F401
     run_implement_execution_contract,
 )
 from .workflow_routing import (  # noqa: F401
+    run_scan_floor_contract,
     _is_release_pr,
     _resolve_pr_refs,
     main,

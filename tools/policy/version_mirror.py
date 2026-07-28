@@ -26,6 +26,7 @@ from .controllers import (
     _extract_compose_backend_env_entries,
 )
 from .core import (
+    require_scanned,
     BRANCH_PROTECTION_BASELINE_PATH,
     CI_PRE_COMMIT_HOOKS,
     CI_STRICTNESS_BRANCHES,
@@ -351,10 +352,12 @@ def run_ghcr_namespace_drift(root: Path = REPO_ROOT) -> list[Violation]:
     file-existence post-conditions).
     """
     offenders: list[str] = []
+    scanned = 0
     for rel_path in GHCR_NAMESPACE_INVENTORY:
         file_path = root / rel_path
         if not file_path.exists():
             continue
+        scanned += 1
         text = file_path.read_text(encoding="utf-8")
         for line_number, line in enumerate(text.splitlines(), start=1):
             for match in GHCR_IMAGE_REF_RE.finditer(line):
@@ -365,6 +368,9 @@ def run_ghcr_namespace_drift(root: Path = REPO_ROOT) -> list[Violation]:
                         f"non-canonical namespace '{namespace}' "
                         f"(expected '{CANONICAL_GHCR_NAMESPACE}')"
                     )
+    guard = require_scanned("GHCR namespace inventory", scanned)
+    if guard:
+        return guard
     if not offenders:
         return []
     return [

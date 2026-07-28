@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 from .core import (
+    require_scanned,
     REPO_ROOT,
     Violation,
 )
@@ -131,10 +132,12 @@ def run_repo_identity_drift(root: Path = REPO_ROOT) -> list[Violation]:
     an inaccessible repository (#1383). Absent inventory files are skipped.
     """
     offenders: list[str] = []
+    scanned = 0
     for rel_path in REPO_IDENTITY_INVENTORY:
         file_path = root / rel_path
         if not file_path.exists():
             continue
+        scanned += 1
         text = file_path.read_text(encoding="utf-8")
         for line_number, line in enumerate(text.splitlines(), start=1):
             findings: list[tuple[str, str]] = []
@@ -161,6 +164,10 @@ def run_repo_identity_drift(root: Path = REPO_ROOT) -> list[Violation]:
                     f"{rel_path.as_posix()}:{line_number} {why}: '{token}' "
                     f"(expected '{CANONICAL_REPO_SLUG}')"
                 )
+    guard = require_scanned("repo-identity inventory", scanned)
+    if guard:
+        return guard
+
     if not offenders:
         return []
     return [
