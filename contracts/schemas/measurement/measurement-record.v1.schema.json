@@ -119,22 +119,22 @@
       "id": "gc.measurement.record.outcome-axes-disjoint",
       "description": "Operation outcome, station result, and run state/outcome are separate properties backed by separate closed enums that share no value. ADR-090 section 3's separation is enforced by construction: `pass` cannot appear on the operation axis, and `ok` cannot appear on the station axis, so no aggregate can conflate a tool succeeding with a gate passing.",
       "enforcedBy": [
-        "tools/tests/test_policy.py::test_measurement_record_outcome_axes_share_no_value",
-        "tools/tests/test_policy.py::test_measurement_record_declares_three_separate_outcome_properties"
+        "tools/tests/test_measurement_catalogue_checks.py::test_measurement_record_outcome_axes_share_no_value",
+        "tools/tests/test_measurement_catalogue_checks.py::test_measurement_record_declares_three_separate_outcome_properties"
       ]
     },
     {
       "id": "gc.measurement.record.station-identity-is-catalogued",
       "description": "stationId is a catalogue station id, so an alias can never be persisted as identity. Every station id the record schema admits is declared in the station catalogue.",
       "enforcedBy": [
-        "tools/tests/test_policy.py::test_measurement_record_station_id_resolves_against_catalogue"
+        "tools/tests/test_measurement_catalogue_checks.py::test_measurement_record_station_id_resolves_against_catalogue"
       ]
     },
     {
       "id": "gc.measurement.record.absence-over-synthesis",
       "description": "Only measurementVersion, emitter and observedAt are required. Every correlation and outcome dimension is optional, so an emitter that cannot attest a dimension omits it rather than defaulting it to a value that would read as a real observation.",
       "enforcedBy": [
-        "tools/tests/test_policy.py::test_measurement_record_requires_only_provenance_fields"
+        "tools/tests/test_measurement_catalogue_checks.py::test_measurement_record_requires_only_provenance_fields"
       ]
     }
   ]

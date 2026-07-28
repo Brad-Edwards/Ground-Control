@@ -2,10 +2,14 @@ package com.keplerops.groundcontrol.api.workflowtelemetry;
 
 import com.keplerops.groundcontrol.api.workflowtelemetry.stream.WorkflowRunStreamHub;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.FindingDisposition;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.FindingSourceKind;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowRunOutcome;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.service.GateFindingCommand;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.ImportRunCostCommand;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.RecordPhaseEventCommand;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.RecordWorkflowRunCommand;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowMeasurementService;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowRunFilter;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowTelemetryService;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -43,12 +47,17 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public class WorkflowRunController {
 
     private final WorkflowTelemetryService telemetryService;
+    private final WorkflowMeasurementService measurementService;
     private final ProjectService projectService;
     private final WorkflowRunStreamHub streamHub;
 
     public WorkflowRunController(
-            WorkflowTelemetryService telemetryService, ProjectService projectService, WorkflowRunStreamHub streamHub) {
+            WorkflowTelemetryService telemetryService,
+            WorkflowMeasurementService measurementService,
+            ProjectService projectService,
+            WorkflowRunStreamHub streamHub) {
         this.telemetryService = telemetryService;
+        this.measurementService = measurementService;
         this.projectService = projectService;
         this.streamHub = streamHub;
     }
@@ -141,8 +150,96 @@ public class WorkflowRunController {
                 request.durationMs(),
                 request.outcome(),
                 request.provenance(),
-                request.sourceId());
+                request.sourceId(),
+                request.stationId(),
+                request.stationResult(),
+                toFindingCommands(request.findings()),
+                request.findingsDropped());
         return PhaseEventResponse.from(telemetryService.recordPhaseEvent(command));
+    }
+
+    /**
+     * ADR-090 process variables over a window (issue #1355).
+     *
+     * <p>Project-scoped through {@code ProjectService}, so it falls under the shared authenticated
+     * rule rather than the admin-only cross-project rollup: this reports one project's own line.
+     */
+    @GetMapping("/measurement")
+    public MeasurementAggregateResponse measurement(
+            @RequestParam(required = false) String project,
+            @RequestParam(required = false) Instant from,
+            @RequestParam(required = false) Instant to) {
+        var projectIdentifier = projectService.requireProjectIdentifier(project);
+        var yields = measurementService.aggregateStationYield(projectIdentifier, from, to);
+        var window = measurementService.resolveReportingWindow(from, to);
+
+        var stations = yields.values().stream()
+                .map(y -> new MeasurementAggregateResponse.StationYieldRow(
+                        y.stationId(),
+                        y.firstPassNumerator(),
+                        y.firstPassDenominator(),
+                        y.firstPassYield(),
+                        y.evaluableAttempts(),
+                        y.reworkAttempts(),
+                        y.unresolvedRuns(),
+                        y.iterationsToGreen()))
+                .toList();
+
+        var counts = measurementService.aggregateFindingCounts(projectIdentifier, from, to).stream()
+                .map(r -> new MeasurementAggregateResponse.FindingCountRow(
+                        (String) r[0],
+                        (FindingSourceKind) r[1],
+                        (String) r[2],
+                        (String) r[3],
+                        (String) r[4],
+                        (FindingDisposition) r[5],
+                        (Long) r[6]))
+                .toList();
+
+        return new MeasurementAggregateResponse(
+                window.from(), window.to(), WorkflowMeasurementService.MEASUREMENT_VERSION, stations, counts);
+    }
+
+    /**
+     * Move one finding to a terminal disposition (issue #1355).
+     *
+     * <p>Separate from the detection path on purpose: an emitter observing a finding is not evidence
+     * that anything was decided about it. A disposition that retires a finding without fixing it
+     * must name where it was authorized; the entity enforces that, so the rule cannot be bypassed by
+     * reaching the field another way.
+     */
+    @PostMapping("/findings/{findingId}/disposition")
+    public GateFindingResponse recordFindingDisposition(
+            @PathVariable UUID findingId,
+            @Valid @RequestBody RecordFindingDispositionRequest request,
+            @RequestParam(required = false) String project) {
+        var projectIdentifier = projectService.requireProjectIdentifier(project);
+        return GateFindingResponse.from(measurementService.recordFindingDisposition(
+                findingId, projectIdentifier, request.disposition(), request.authorizationReference()));
+    }
+
+    /**
+     * Map the request's finding batch onto immutable commands.
+     *
+     * <p>Every finding enters as {@code OPEN}: detection and disposition are different moments, and
+     * an emitter observing a finding is not evidence that anything was decided about it. Terminal
+     * dispositions arrive only through the dedicated transition endpoint, which can require the
+     * ADR-029 authorization a {@code wontfix} needs.
+     */
+    private static List<GateFindingCommand> toFindingCommands(List<GateFindingRequest> findings) {
+        if (findings == null) {
+            return null;
+        }
+        return findings.stream()
+                .map(f -> new GateFindingCommand(
+                        f.findingKey(),
+                        f.sourceKind(),
+                        f.sourceId(),
+                        f.category(),
+                        f.severity(),
+                        f.classification(),
+                        FindingDisposition.OPEN))
+                .toList();
     }
 
     /**

@@ -1,6 +1,7 @@
 package com.keplerops.groundcontrol.domain.workflowtelemetry.repository;
 
 import com.keplerops.groundcontrol.domain.workflowtelemetry.PhaseEventType;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.StationResult;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowPhaseEvent;
 import java.time.Instant;
 import java.util.List;
@@ -87,6 +88,33 @@ public interface WorkflowPhaseEventRepository extends JpaRepository<WorkflowPhas
             @Param("workflowType") String workflowType,
             @Param("outcome") String outcome,
             @Param("requirement") String requirement);
+
+    /**
+     * Evaluable station attempts over {@code [from, to)} for the ADR-090 yield formulas.
+     *
+     * <p>Only {@code PASS} and {@code FAIL} are returned: skipped, cancelled, not-evaluable and
+     * unobserved attempts remain measurable coverage but must stay out of the yield and
+     * iterations-to-green denominators, or an unmeasured gate reads as a failing one.
+     *
+     * <p>The rows are the terminal event of each attempt. Ordering and de-duplication happen in
+     * {@code StationYieldCalculator} rather than here, because "first pass wins" is a formula
+     * decision that belongs somewhere it can be tested directly.
+     */
+    @Query(
+            """
+            select e.stationId, e.runId, e.cycleIndex, e.stationResult
+              from WorkflowPhaseEvent e
+             where e.project = :project
+               and e.stationId is not null
+               and e.stationResult in :evaluable
+               and e.occurredAt >= :from
+               and e.occurredAt < :to
+            """)
+    List<Object[]> findEvaluableAttempts(
+            @Param("project") String project,
+            @Param("evaluable") java.util.Collection<StationResult> evaluable,
+            @Param("from") Instant from,
+            @Param("to") Instant to);
 
     /** One already-aggregated row per phase. p50/p95 are null when no event in the phase recorded a duration. */
     interface PhaseHotspotRow {

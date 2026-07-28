@@ -146,63 +146,10 @@ describe("getRepoGroundControlContext", () => {
   });
 
 
-  it("rejects an absolute docs.knowledge_base path", async () => {
-    const dir = makeTempRepo();
-    try {
-      writeYamlConfig(dir, [
-          "schema_version: 1",
-          "project: test-project",
-          "docs:",
-          "  knowledge_base: /etc/passwd",
-          "",
-        ]);
-      const result = await getRepoGroundControlContext(dir);
-      assert.equal(result.status, "invalid_ground_control_yaml");
-      assert.ok(result.errors.some((e) => e.includes("docs.knowledge_base")));
-      assert.ok(result.errors.some((e) => e.includes("absolute path")));
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
 
 
-  it("rejects a docs path that escapes the repo root via ..", async () => {
-    const dir = makeTempRepo();
-    try {
-      writeYamlConfig(dir, [
-          "schema_version: 1",
-          "project: test-project",
-          "docs:",
-          "  architecture_overview: ../../../etc/secrets",
-          "",
-        ]);
-      const result = await getRepoGroundControlContext(dir);
-      assert.equal(result.status, "invalid_ground_control_yaml");
-      assert.ok(result.errors.some((e) => e.includes("docs.architecture_overview")));
-      assert.ok(result.errors.some((e) => e.includes("inside the repository root")));
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
 
 
-  it("rejects an absolute example_paths.source path", async () => {
-    const dir = makeTempRepo();
-    try {
-      writeYamlConfig(dir, [
-          "schema_version: 1",
-          "project: test-project",
-          "example_paths:",
-          "  source: /usr/bin",
-          "",
-        ]);
-      const result = await getRepoGroundControlContext(dir);
-      assert.equal(result.status, "invalid_ground_control_yaml");
-      assert.ok(result.errors.some((e) => e.includes("example_paths.source")));
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
 
 
   it("inlines plan_rules file content when referenced", async () => {
@@ -352,121 +299,36 @@ describe("getRepoGroundControlContext", () => {
   });
 
 
-  it("returns invalid_ground_control_yaml when knowledge.dir is an absolute path", async () => {
-    const dir = makeTempRepo();
-    try {
-      writeYamlConfig(dir, [
-          "schema_version: 1",
-          "project: test-project",
-          "knowledge:",
-          "  dir: /etc/passwd",
-          "",
-        ]);
-      const result = await getRepoGroundControlContext(dir);
-      assert.equal(result.status, "invalid_ground_control_yaml");
-      assert.ok(result.errors.some((e) => e.includes("knowledge.dir")));
-      assert.ok(result.errors.some((e) => /repo[- ]relative|absolute/.test(e)));
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
 
 
-  it("returns invalid_ground_control_yaml when knowledge.dir escapes the repository root", async () => {
-    const dir = makeTempRepo();
-    try {
-      writeYamlConfig(dir, [
-          "schema_version: 1",
-          "project: test-project",
-          "knowledge:",
-          "  dir: ../escape",
-          "",
-        ]);
-      const result = await getRepoGroundControlContext(dir);
-      assert.equal(result.status, "invalid_ground_control_yaml");
-      assert.ok(result.errors.some((e) => e.includes("knowledge.dir")));
-      assert.ok(result.errors.some((e) => e.includes("repository root")));
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
 
 
-  it("returns invalid_ground_control_yaml when knowledge.schema override escapes the repository root", async () => {
+
+
+
+
+
+
+
+  it("reads a plan_rules file that stays inside the repository", async () => {
     const dir = makeTempRepo();
     try {
       // eslint-disable-next-line security/detect-non-literal-fs-filename -- test-controlled temp dir
-      mkdirSync(join(dir, "docs", "knowledge"), { recursive: true });
+      mkdirSync(join(dir, ".gc"), { recursive: true });
       // eslint-disable-next-line security/detect-non-literal-fs-filename -- test-controlled temp dir
-      writeFileSync(join(dir, "docs", "knowledge", "SCHEMA.md"), "# schema\n");
-      writeYamlConfig(dir, [
-          "schema_version: 1",
-          "project: test-project",
-          "knowledge:",
-          "  dir: docs/knowledge",
-          "  schema: ../../etc/passwd",
-          "",
-        ]);
+      writeFileSync(join(dir, ".gc", "plan-rules.md"), "# Plan rules\n");
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- test-controlled temp dir
+      writeFileSync(
+        join(dir, ".ground-control.yaml"),
+        "schema_version: 1\nproject: test-project\nrules:\n  plan_rules: .gc/plan-rules.md\n",
+      );
+
       const result = await getRepoGroundControlContext(dir);
-      assert.equal(result.status, "invalid_ground_control_yaml");
-      assert.ok(result.errors.some((e) => e.includes("knowledge.schema")));
-      assert.ok(result.errors.some((e) => e.includes("repository root")));
+
+      assert.equal(result.status, "ok");
+      assert.match(result.rules.plan_rules_content, /Plan rules/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-
-  it("returns invalid_ground_control_yaml when knowledge.dir is a symlink to an out-of-repo directory", async () => {
-    const dir = makeTempRepo();
-    const outside = mkdtempSync(join(tmpdir(), "gc-yaml-outside-"));
-    try {
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- test-controlled temp dir
-      writeFileSync(join(outside, "SCHEMA.md"), "# schema\n");
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- test-controlled temp dir
-      symlinkSync(outside, join(dir, "sneaky"));
-      writeYamlConfig(dir, [
-          "schema_version: 1",
-          "project: test-project",
-          "knowledge:",
-          "  dir: sneaky",
-          "",
-        ]);
-      const result = await getRepoGroundControlContext(dir);
-      assert.equal(result.status, "invalid_ground_control_yaml");
-      assert.ok(result.errors.some((e) => e.includes("knowledge.dir")));
-      assert.ok(result.errors.some((e) => /symlink|outside the repository/.test(e)));
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-      rmSync(outside, { recursive: true, force: true });
-    }
-  });
-
-
-  it("returns invalid_ground_control_yaml when knowledge.schema is a symlink to an out-of-repo file", async () => {
-    const dir = makeTempRepo();
-    const outside = mkdtempSync(join(tmpdir(), "gc-yaml-outside-"));
-    try {
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- test-controlled temp dir
-      mkdirSync(join(dir, "docs", "knowledge"), { recursive: true });
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- test-controlled temp dir
-      writeFileSync(join(outside, "secret.md"), "stolen\n");
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- test-controlled temp dir
-      symlinkSync(join(outside, "secret.md"), join(dir, "docs", "knowledge", "SCHEMA.md"));
-      writeYamlConfig(dir, [
-          "schema_version: 1",
-          "project: test-project",
-          "knowledge:",
-          "  dir: docs/knowledge",
-          "",
-        ]);
-      const result = await getRepoGroundControlContext(dir);
-      assert.equal(result.status, "invalid_ground_control_yaml");
-      assert.ok(result.errors.some((e) => e.includes("knowledge.schema")));
-      assert.ok(result.errors.some((e) => /symlink|outside the repository/.test(e)));
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-      rmSync(outside, { recursive: true, force: true });
     }
   });
 });

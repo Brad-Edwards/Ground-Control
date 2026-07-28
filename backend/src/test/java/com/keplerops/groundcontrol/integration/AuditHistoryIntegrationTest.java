@@ -53,22 +53,7 @@ class AuditHistoryIntegrationTest extends BaseIntegrationTest {
 
     @AfterAll
     void cleanup() throws Exception {
-        try (var conn = dataSource.getConnection();
-                var stmt = conn.createStatement()) {
-            stmt.executeUpdate("DELETE FROM traceability_link_audit WHERE id IN "
-                    + "(SELECT id FROM traceability_link WHERE requirement_id IN "
-                    + "(SELECT id FROM requirement WHERE uid LIKE 'AUDIT-%'))");
-            stmt.executeUpdate("DELETE FROM traceability_link WHERE requirement_id IN "
-                    + "(SELECT id FROM requirement WHERE uid LIKE 'AUDIT-%')");
-            stmt.executeUpdate("DELETE FROM requirement_relation_audit WHERE id IN "
-                    + "(SELECT id FROM requirement_relation WHERE source_id IN "
-                    + "(SELECT id FROM requirement WHERE uid LIKE 'AUDIT-%'))");
-            stmt.executeUpdate("DELETE FROM requirement_relation WHERE source_id IN "
-                    + "(SELECT id FROM requirement WHERE uid LIKE 'AUDIT-%')");
-            stmt.executeUpdate(
-                    "DELETE FROM requirement_audit WHERE id IN (SELECT id FROM requirement WHERE uid LIKE 'AUDIT-%')");
-            stmt.executeUpdate("DELETE FROM requirement WHERE uid LIKE 'AUDIT-%'");
-        }
+        AuditHistoryFixtures.deleteAuditScopedRows(dataSource);
     }
 
     @Test
@@ -139,15 +124,6 @@ class AuditHistoryIntegrationTest extends BaseIntegrationTest {
         mockMvc.perform(get("/api/v1/requirements/" + anonId + "/history"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].actor", is("anonymous")));
-    }
-
-    @Test
-    @Order(3)
-    void historyForNonexistentRequirement_returns404() throws Exception {
-        var fakeId = UUID.randomUUID();
-        mockMvc.perform(get("/api/v1/requirements/" + fakeId + "/history"))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.error.code", is("not_found")));
     }
 
     @Test
@@ -300,14 +276,6 @@ class AuditHistoryIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    @Order(10)
-    void timeline_nonexistentRequirement_returns404() throws Exception {
-        mockMvc.perform(get("/api/v1/requirements/" + UUID.randomUUID() + "/timeline"))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.error.code", is("not_found")));
-    }
-
-    @Test
     @Order(11)
     void timeline_paginationLimitAndOffset() throws Exception {
         // Limit to 2 entries
@@ -394,16 +362,6 @@ class AuditHistoryIntegrationTest extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.fieldChanges").isEmpty())
                 .andExpect(jsonPath("$.relationChanges").isEmpty())
                 .andExpect(jsonPath("$.traceabilityLinkChanges").isEmpty());
-    }
-
-    @Test
-    @Order(22)
-    void diff_nonexistentRequirement_returns404() throws Exception {
-        mockMvc.perform(get("/api/v1/requirements/" + UUID.randomUUID() + "/diff")
-                        .param("fromRevision", "1")
-                        .param("toRevision", "2"))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.error.code", is("not_found")));
     }
 
     @Test

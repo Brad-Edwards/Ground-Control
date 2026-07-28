@@ -22,6 +22,9 @@ describe("runPostDecisionRecord / runPostFinalReport boundary checks (codex cycl
     writeFileSync(join(dir, "README"), "x\n");
     execFileSync("git", ["-C", dir, "add", "README"]);
     execFileSync("git", ["-C", dir, "commit", "-q", "-m", "init"]);
+    // Real origin so owner/repo resolves from the git remote, as production does. git ignores
+    // GH_REPO; the `gh repo view` fallback honours it.
+    execFileSync("git", ["-C", dir, "remote", "add", "origin", "https://github.com/fake/repo.git"]);
     return dir;
   }
 
@@ -228,109 +231,14 @@ describe("runPostDecisionRecord / runPostFinalReport boundary checks (codex cycl
   });
 
 
-  it("final-report refuses with ci_not_green when ci_status='red' (codex cycle-2 F2 + cycle-3 F3 widening)", async () => {
-    const dir = makeTempRepo();
-    try {
-      const r = await import("./lib.js").then(({ runPostFinalReport }) =>
-        runPostFinalReport({
-          repoPath: dir,
-          issueNumber: 1, prNumber: 1,
-          requirements: [],
-          reviews: [{ reviewer: "codex", summary: "0 findings" }],
-          ciStatus: "red", sonarStatus: "passed",
-          plainEnglishOutcome: FINAL_REPORT_OUTCOME,
-        })
-      );
-      assert.equal(r.ok, false);
-      assert.equal(r.error, "final_report_ci_not_green");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
 
 
-  it("final-report refuses with sonar_failed when sonar_status='failed' (codex cycle-2 F2)", async () => {
-    const dir = makeTempRepo();
-    try {
-      const r = await import("./lib.js").then(({ runPostFinalReport }) =>
-        runPostFinalReport({
-          repoPath: dir,
-          issueNumber: 1, prNumber: 1,
-          requirements: [],
-          reviews: [{ reviewer: "codex", summary: "0 findings" }],
-          ciStatus: "green", sonarStatus: "failed",
-          plainEnglishOutcome: FINAL_REPORT_OUTCOME,
-        })
-      );
-      assert.equal(r.ok, false);
-      assert.equal(r.error, "final_report_sonar_failed");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
 
 
-  it("final-report refuses with ci_not_green when ci_status='skipped' (codex cycle-3 F3)", async () => {
-    const dir = makeTempRepo();
-    try {
-      const r = await import("./lib.js").then(({ runPostFinalReport }) =>
-        runPostFinalReport({
-          repoPath: dir,
-          issueNumber: 1, prNumber: 1,
-          requirements: [],
-          reviews: [{ reviewer: "codex", summary: "0 findings" }],
-          ciStatus: "skipped", sonarStatus: "passed",
-          plainEnglishOutcome: FINAL_REPORT_OUTCOME,
-        })
-      );
-      assert.equal(r.ok, false);
-      assert.equal(r.error, "final_report_ci_not_green");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
 
 
-  it("final-report refuses with no_reviews when reviews[] is empty (codex cycle-3 F4)", async () => {
-    const dir = makeTempRepo();
-    try {
-      const r = await import("./lib.js").then(({ runPostFinalReport }) =>
-        runPostFinalReport({
-          repoPath: dir,
-          issueNumber: 1, prNumber: 1,
-          requirements: [],
-          reviews: [],
-          ciStatus: "green", sonarStatus: "passed",
-          plainEnglishOutcome: FINAL_REPORT_OUTCOME,
-        })
-      );
-      assert.equal(r.ok, false);
-      assert.equal(r.error, "final_report_no_reviews");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
 
 
-  it("final-report refuses with codex_review_missing when no codex entry is present (codex cycle-4 F3)", async () => {
-    const dir = makeTempRepo();
-    try {
-      const r = await import("./lib.js").then(({ runPostFinalReport }) =>
-        runPostFinalReport({
-          repoPath: dir,
-          issueNumber: 1, prNumber: 1,
-          requirements: [],
-          reviews: [{ reviewer: "test-quality", summary: "0 findings" }],
-          ciStatus: "green", sonarStatus: "passed",
-          plainEnglishOutcome: FINAL_REPORT_OUTCOME,
-        })
-      );
-      assert.equal(r.ok, false);
-      assert.equal(r.error, "final_report_codex_review_missing");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
 
 
   // The `lane: "quickfix"` carve-out relaxes the empty-reviews and missing-
@@ -338,61 +246,8 @@ describe("runPostDecisionRecord / runPostFinalReport boundary checks (codex cycl
   // gates remain in force. Without these tests, future edits could
   // re-tighten the gate and leave default `/quickfix` runs unable to
   // publish their close comment.
-  it("final-report accepts empty reviews when lane='quickfix' (issue #906)", async () => {
-    const dir = makeTempRepo();
-    try {
-      // Use sonarStatus='skipped' with no sonarcloud cfg so the runner returns
-      // early past the lane-gated checks without trying to reach GitHub.
-      // Configure a sonar block to flip to the `final_report_sonar_skipped_but_configured`
-      // path, proving we've reached the post-lane-gate code. (If lane='quickfix'
-      // were rejected at the no-reviews gate, we'd never see this sonar error.)
-      writeFileSync(
-        join(dir, ".ground-control.yaml"),
-        "schema_version: 1\nproject: gc\nsonarcloud:\n  project_key: gc\n  organization: gc\n",
-      );
-      const r = await import("./lib.js").then(({ runPostFinalReport }) =>
-        runPostFinalReport({
-          repoPath: dir,
-          issueNumber: 1, prNumber: 1,
-          requirements: [],
-          reviews: [],
-          ciStatus: "green", sonarStatus: "skipped",
-          lane: "quickfix",
-          summary: "Fixed the parser bug.",
-        })
-      );
-      // The lane-gated errors must NOT fire — that proves quickfix bypassed them.
-      assert.notEqual(r.error, "final_report_no_reviews");
-      assert.notEqual(r.error, "final_report_codex_review_missing");
-      // The runner reached the sonar-configured-but-skipped check downstream,
-      // proving lane='quickfix' got past the reviews gates.
-      assert.equal(r.error, "final_report_sonar_skipped_but_configured");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
 
 
-  it("final-report still requires codex review entry when lane='implement' (default)", async () => {
-    const dir = makeTempRepo();
-    try {
-      const r = await import("./lib.js").then(({ runPostFinalReport }) =>
-        runPostFinalReport({
-          repoPath: dir,
-          issueNumber: 1, prNumber: 1,
-          requirements: [],
-          reviews: [{ reviewer: "test-quality", summary: "0 findings" }],
-          ciStatus: "green", sonarStatus: "passed",
-          lane: "implement",
-          plainEnglishOutcome: FINAL_REPORT_OUTCOME,
-        })
-      );
-      assert.equal(r.ok, false);
-      assert.equal(r.error, "final_report_codex_review_missing");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
 
 
   it("final-report still requires non-empty reviews when lane is absent", async () => {

@@ -107,7 +107,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [087](087-contract-locked-development-methodology.md) | Contract-Locked Development Methodology | Withdrawn (2026-07-10, #1296) |
 | [088](088-temporal-human-gates.md) | Temporal Human Gates (Merge Observation and Authorized Operator Signals) | Superseded (issue #1359) |
 | [089](089-retire-grc-product-and-next-issue-recommendation.md) | Retire the GRC Product Surface and Next-Issue Recommendation | Accepted |
-| [090](090-production-line-measurement-model.md) | Production-Line Measurement Model | Accepted (amended 2026-07-26, #1435) |
+| [090](090-production-line-measurement-model.md) | Production-Line Measurement Model | Accepted (amended 2026-07-28, #1355) |
 | [091](091-ci-verification-topology.md) | CI Verification Topology | Accepted |
 | [092](092-file-size-limit-gate.md) | Enforce the 500-LOC File-Size Limit in Repo Policy | Accepted |
 

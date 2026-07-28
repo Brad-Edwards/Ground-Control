@@ -20,7 +20,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tools.policy.checks import REPO_ROOT, Violation, normalize_path, run_git
+from .adr_guard import run_git
+from .core import REPO_ROOT, Violation, normalize_path
 
 MAX_LINES = 500
 

@@ -331,6 +331,9 @@ describe("runCodexReview uncommitted=true input gating", () => {
     writeFileSync(join(dir, "README"), "x\n");
     execFileSync("git", ["-C", dir, "add", "README"]);
     execFileSync("git", ["-C", dir, "commit", "-q", "-m", "init"]);
+    // Real origin so owner/repo resolves from the git remote, as production does. git ignores
+    // GH_REPO; the `gh repo view` fallback honours it.
+    execFileSync("git", ["-C", dir, "remote", "add", "origin", "https://github.com/fake/repo.git"]);
     if (detached) {
       const sha = execFileSync("git", ["-C", dir, "rev-parse", "HEAD"]).toString().trim();
       execFileSync("git", ["-C", dir, "-c", "advice.detachedHead=false", "checkout", "-q", sha]);

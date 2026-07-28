@@ -127,6 +127,9 @@ describe("runPostImplementationPlan dev_start_gate", () => {
     writeFileSync(join(repoDir, "README"), "x\n");
     execFileSync("git", ["-C", repoDir, "add", "."]);
     execFileSync("git", ["-C", repoDir, "commit", "-q", "-m", "init"]);
+    // Real origin so owner/repo resolves from the git remote, as production does. git ignores
+    // GH_REPO; the `gh repo view` fallback honours it.
+    execFileSync("git", ["-C", repoDir, "remote", "add", "origin", "https://github.com/fake/repo.git"]);
     const binDir = mkdtempSync(join(tmpdir(), "gc-plan-gate-bin-"));
     const configPath = join(binDir, "config.json");
     writeFileSync(configPath, JSON.stringify(ghHandler));
@@ -211,7 +214,7 @@ process.exit(2);
 // ---------------------------------------------------------------------------
 
 describe("runPostImplementationPlan preflight prerequisite", () => {
-  function makeShim({ nameWithOwner = "fake/repo", comments = [] }) {
+  function makeShim({ nameWithOwner = "fake/repo", comments = [], authorPermission = "write" }) {
     const repoDir = mkdtempSync(join(tmpdir(), "gc-plan-prereq-"));
     execFileSync("git", ["-C", repoDir, "init", "-q"]);
     execFileSync("git", ["-C", repoDir, "config", "user.email", "t@example.com"]);
@@ -220,14 +223,26 @@ describe("runPostImplementationPlan preflight prerequisite", () => {
     writeFileSync(join(repoDir, "README"), "x\n");
     execFileSync("git", ["-C", repoDir, "add", "."]);
     execFileSync("git", ["-C", repoDir, "commit", "-q", "-m", "init"]);
+    // Real origin so owner/repo resolves from the git remote, as production does. git ignores
+    // GH_REPO; the `gh repo view` fallback honours it.
+    execFileSync("git", ["-C", repoDir, "remote", "add", "origin", "https://github.com/fake/repo.git"]);
     const binDir = mkdtempSync(join(tmpdir(), "gc-plan-prereq-bin-"));
     // `gh api --method GET ... comments --paginate --slurp` returns array-of-arrays.
-    const commentsSlurp = JSON.stringify([comments.map((body) => ({ body }))]);
+    // Comments carry an author because phase markers are believed only from someone with
+    // repository permission, and a fixture without one cannot exercise that rule.
+    const commentsSlurp = JSON.stringify([
+      comments.map((body, i) => ({ id: i + 1, body, user: { login: "maintainer" } })),
+    ]);
     const ghShim = `#!/usr/bin/env node
 const argv = process.argv.slice(2);
 function has(pre) { return pre.every((p, i) => argv[i] === p); }
+function hasAny(sub) { return argv.some((a) => typeof a === "string" && a.includes(sub)); }
 if (has(["repo", "view", "--json", "nameWithOwner"])) {
   process.stdout.write(${JSON.stringify(JSON.stringify({ nameWithOwner }))});
+  process.exit(0);
+}
+if (hasAny("/collaborators/")) {
+  process.stdout.write(${JSON.stringify(authorPermission)} + "\\n");
   process.exit(0);
 }
 if (has(["api", "--method", "GET"])) {
@@ -258,6 +273,27 @@ process.exit(2);
   function phaseBody(phase, issueNumber) {
     return `<!-- gc:phase phase="${phase}" issue="${issueNumber}" -->`;
   }
+
+  it("does not accept a phase marker from an author without repository permission", async () => {
+    // Phase markers gate the plan post, the review cap, and the completion record. They were read
+    // from comment bodies with no regard for who wrote them, so anyone able to comment on the issue
+    // could paste one and satisfy a prerequisite no phase had met. Obligation markers on the same
+    // thread already resolve the author's effective permission; these now do too.
+    const shim = makeShim({ comments: [phaseBody("preflight", 1123)], authorPermission: "none" });
+    try {
+      await withPath(shim.binDir, async () => {
+        const r = await runPostImplementationPlan({
+          repoPath: shim.repoDir,
+          issueNumber: 1123,
+          planBody: "## Plan\n\nWork.",
+        });
+        assert.equal(r.ok, false);
+        assert.equal(r.error, "phase_prerequisite_missing");
+      });
+    } finally {
+      shim.cleanup();
+    }
+  });
 
   it("refuses (non-override) when the preflight prerequisite marker is missing", async () => {
     const shim = makeShim({ comments: [] });

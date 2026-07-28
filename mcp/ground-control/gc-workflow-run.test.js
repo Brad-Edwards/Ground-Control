@@ -114,7 +114,7 @@ describe("gcWorkflowRunZodShape", () => {
 });
 
 describe("GC_WORKFLOW_RUN_ACTIONS constant", () => {
-  it("contains exactly the seven documented actions", () => {
+  it("contains exactly the documented actions", () => {
     assert.deepEqual(
       [...GC_WORKFLOW_RUN_ACTIONS].sort(),
       [
@@ -123,8 +123,10 @@ describe("GC_WORKFLOW_RUN_ACTIONS constant", () => {
         "import_cost",
         "list",
         "list_events",
+        "measurement",
         "record",
         "record_event",
+        "record_finding_disposition",
       ],
     );
   });

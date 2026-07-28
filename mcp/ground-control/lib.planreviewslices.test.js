@@ -312,6 +312,9 @@ describe("computeReviewDiff uncommitted tree coverage (#1414)", () => {
     writeFileSync(join(repoDir, ".gitignore"), "ignored.txt\n");
     execFileSync("git", ["-C", repoDir, "add", "-A"]);
     execFileSync("git", ["-C", repoDir, "commit", "-q", "-m", "init"]);
+    // Real origin so owner/repo resolves from the git remote, as production does. git ignores
+    // GH_REPO; the `gh repo view` fallback honours it.
+    execFileSync("git", ["-C", repoDir, "remote", "add", "origin", "https://github.com/fake/repo.git"]);
     return repoDir;
   }
 

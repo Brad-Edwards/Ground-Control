@@ -1,0 +1,149 @@
+import copy
+import hashlib
+import json
+import re
+import shutil
+import subprocess
+import tempfile
+import unittest
+
+from tools.tests.policy_fixtures import PolicyChecksFixture
+from pathlib import Path
+from unittest import mock
+from unittest.mock import patch
+
+from tools.policy.checks import (
+    DEFERRAL_CASES_PATH,
+    ENUM_CONTRACT_INVENTORY,
+    FRONTEND_API_TYPES_PATH,
+    MCP_LIB_PATH,
+    REPO_ROOT,
+    Violation,
+    _is_release_pr,
+    _jsonpath_keys,
+    _resolve_pr_refs,
+    check_pr_body,
+    classify_deferral_language,
+    extract_step_section,
+    main,
+    parse_args,
+    parse_const_string_array,
+    parse_java_enum_constants,
+    parse_ts_union_literals,
+    read_changed_files,
+    run_adr_guard,
+    _trigger_is_in_scope,
+    run_ci_strictness_contract,
+    run_authz_matrix_sync_check,
+    run_contract_invariant_enforcement_check,
+    run_contract_surface_check,
+    run_controller_contracts,
+    run_deploy_artifact_consistency,
+    run_deploy_compose_credential_passthrough,
+    run_documentation_coverage_check,
+    run_enum_contract_check,
+    run_ghcr_namespace_drift,
+    run_repo_identity_drift,
+    run_measurement_catalogue_check,
+    run_migration_policy,
+    run_no_deferral_disposition_check,
+    run_ontology_binding_check,
+    run_ontology_crosswalk_check,
+    run_pr_body_check,
+    run_test_quality_decision_record_contract,
+    run_traceability_reconciliation_gate_contract,
+    run_version_mirror_consistency_check,
+    run_workflow_routing_contract,
+    run_implement_execution_contract,
+)
+
+if __name__ == "__main__":
+    unittest.main()
+
+class AdrGuard2ChecksTest(PolicyChecksFixture):
+    def test_gc_render_pr_body_doc_only_output_passes_check_pr_body(self):
+        # Same compose test but for change_class='doc-only': integration tests
+        # marked N/A, changelog fragment marked N/A. Per F3 (codex cycle 1),
+        # this invokes the actual renderer rather than a copied fixture, so
+        # the compose contract holds even when the renderer changes.
+        #
+        # Per F1 (codex cycle 2), the renderer no longer fabricates a synthetic
+        # `GC-O007` placeholder for requirement-free runs — honest traceability.
+        # The PR-body policy gate (PR_REQUIREMENT_RE) still requires a UID-
+        # shaped token anywhere in the body; doc-only runs satisfy it by
+        # citing the ADR they document (this PR cites ADR-036). A doc-only
+        # run with NEITHER a requirement nor an ADR ref is refused by
+        # `runRenderPrBody`'s checkPrBodyShape gate (see lib.test.js).
+        body = self._render_pr_body_via_js({
+            "issueNumber": 999,
+            "changeClass": "doc-only",
+            "requirementUids": [],
+            "adrRefs": ["ADR-036"],
+            "summary": "Documentation update only.",
+            "changes": ["Clarified workflow doc wording"],
+            "traceability": {"implements": [], "tests": []},
+        })
+        violations = check_pr_body(body)
+        codes = [v.code for v in violations]
+        self.assertEqual(
+            violations,
+            [],
+            f"buildPrBody (doc-only) output rejected by check_pr_body: {codes}",
+        )
+    def test_workflow_guardrail_sync_keeps_adr_036_reachable(self):
+        # ADR-036 amends ADR-021, so it must stay one of the gate-model records
+        # the rule accepts. Pinned here so a future policy edit that drops
+        # ADR-036 from the rule entirely breaks this test.
+        rule = self._workflow_guardrail_rule()
+        self.assertIsNotNone(rule, "workflow-guardrail-sync rule must exist")
+        self.assertIn(
+            "architecture/adrs/036-per-step-routing-tool-surfaces-telemetry.md",
+            rule.get("requireAll", []) + rule.get("requireAny", []),
+            "ADR-036 must remain a workflow-guardrail-sync required or accepted record",
+        )
+    def test_workflow_guardrail_sync_does_not_force_every_gate_model_adr(self):
+        # The rule's job is to stop guardrail prose drifting away from the gate
+        # record, not to make one topic's change edit every gate ADR. Requiring
+        # all four at once produced contentless amendments in ADRs the diff did
+        # not touch — for example a change to requirement identity in the
+        # mechanical tool had to write into ADR-031, the codex review stopping
+        # model (issue #1434).
+        rule = self._workflow_guardrail_rule()
+        gate_model_adrs = [
+            "architecture/adrs/021-gated-agentic-development-loop.md",
+            "architecture/adrs/029-issue-thread-gate-model.md",
+            "architecture/adrs/031-codex-review-stopping-model.md",
+            "architecture/adrs/036-per-step-routing-tool-surfaces-telemetry.md",
+        ]
+        forced = [adr for adr in gate_model_adrs if adr in rule.get("requireAll", [])]
+        self.assertEqual(
+            forced,
+            [],
+            "no single gate-model ADR may be unconditionally required; "
+            f"still forced: {forced}",
+        )
+    def test_workflow_guardrail_sync_satisfied_by_one_relevant_gate_record(self):
+        violations = run_adr_guard([
+            "skills/implement/steps/step-06-completion-gate.md",
+            "docs/DEVELOPMENT_WORKFLOW.md",
+            "docs/WORKFLOW.md",
+            "architecture/adrs/021-gated-agentic-development-loop.md",
+        ])
+        codes = [v.code for v in violations]
+        self.assertNotIn(
+            "workflow-guardrail-sync",
+            codes,
+            "updating the workflow docs plus one gate-model record must satisfy the rule",
+        )
+    def test_workflow_guardrail_sync_still_fires_without_any_gate_record(self):
+        # Loosening requireAll must not turn the rule into a no-op: guardrail
+        # prose that records the change nowhere in the gate model still fails.
+        violations = run_adr_guard([
+            "skills/implement/steps/step-06-completion-gate.md",
+            "docs/DEVELOPMENT_WORKFLOW.md",
+            "docs/WORKFLOW.md",
+        ])
+        self.assertTrue(
+            any(item.code == "workflow-guardrail-sync" for item in violations),
+            "a guardrail change with no gate-model record must still fail",
+        )

@@ -26,6 +26,9 @@ function initGitRepo(dir) {
   writeFileSync(join(dir, "README"), "x\n");
   execFileSync("git", ["-C", dir, "add", "README"]);
   execFileSync("git", ["-C", dir, "commit", "-q", "-m", "init"]);
+  // Real origin so owner/repo resolves from the git remote, as production does. git ignores
+  // GH_REPO; the `gh repo view` fallback honours it.
+  execFileSync("git", ["-C", dir, "remote", "add", "origin", "https://github.com/fake/repo.git"]);
   return dir;
 }
 
@@ -130,6 +133,8 @@ describe("runPostFinalReport traceability_reconciled prerequisite (issue #1058)"
       ghHandler: {
         routes: [
           { argv_prefix: ["repo", "view", "--json", GH_NAME_WITH_OWNER], stdout: JSON.stringify({ nameWithOwner: "fake/repo" }) },
+          // Phase markers are believed only from an author with repository permission.
+          { argv_prefix: ["api", "--method", "GET", "/repos/fake/repo/collaborators/tester/permission"], stdout: "write\n" },
           { argv_prefix: ["api", "--method", "GET", "--paginate", "--slurp"], stdout: slurpComments([]) },
         ],
       },

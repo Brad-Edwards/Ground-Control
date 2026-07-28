@@ -5,19 +5,9 @@
     "on an oversized file that is not listed AND on a listed file that is no longer",
     "oversized, so an entry cannot outlive the work it covers.",
     "",
-    "Every entry needs a reason naming why the file is not decomposed in the same",
-    "change. 'Out of scope' is not a reason; 'another open change already",
-    "decomposes it, and doing it twice would destroy one of the two' is."
+    "It is empty, which is the finished state: every file in the repo is within the",
+    "limit. Adding an entry needs a reason naming why the file is not decomposed in",
+    "the same change. 'Out of scope' is not a reason."
   ],
-  "entries": {
-    "mcp/ground-control/lib.js": "Decomposed on the open #1355 branch (PR #1470) into ./lib/* behind a barrel. Splitting it again here would produce two incompatible decompositions of the same 20k-line file and lose one of them at merge.",
-    "mcp/ground-control/gc-implement-mechanical.js": "Decomposed on the open #1355 branch (PR #1470). Same conflict as lib.js.",
-    "tools/policy/checks.py": "Decomposed on the open #1355 branch (PR #1470). The file-size gate itself was added as a separate module (tools/policy/file_size.py) precisely so this change does not grow it further.",
-    "tools/tests/test_policy.py": "Decomposed on the open #1355 branch (PR #1470). The file-size gate's own tests live in tools/tests/test_file_size_policy.py for the same reason.",
-    "backend/src/main/java/com/keplerops/groundcontrol/domain/workflowtelemetry/service/WorkflowTelemetryService.java": "Decomposed on the open #1355 branch (PR #1470).",
-    "backend/src/test/java/com/keplerops/groundcontrol/unit/domain/workflowtelemetry/WorkflowTelemetryServiceTest.java": "Decomposed on the open #1355 branch (PR #1470).",
-    "backend/src/test/java/com/keplerops/groundcontrol/unit/api/WorkflowRunControllerTest.java": "Decomposed on the open #1355 branch (PR #1470).",
-    "backend/src/test/java/com/keplerops/groundcontrol/integration/RequirementsE2EIntegrationTest.java": "@TestMethodOrder + @Order + PER_CLASS: its tests are one ordered sequence sharing database state, so test N depends on what test N-1 left behind. Splitting the class breaks that chain (syncGitHubIssues failed in CI when it was split), and the splitter now refuses these outright rather than doing it quietly.",
-    "backend/src/test/java/com/keplerops/groundcontrol/integration/AuditHistoryIntegrationTest.java": "Same ordered, state-sharing sequence as RequirementsE2EIntegrationTest. Splitting it would need the shared setup rebuilt per class, which changes what the test exercises."
-  }
+  "entries": {}
 }

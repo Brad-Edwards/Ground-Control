@@ -27,6 +27,29 @@ import { createWorkflowRun, recordWorkflowRunEvent } from "./lib.js";
  */
 export const LIFECYCLE_PROVENANCE = "LIVE_EMISSION";
 
+/**
+ * Closed station-result vocabulary (ADR-090 section 3, issue #1355).
+ *
+ * This shares no value with the lifecycle event type or the run state, which is what stops an
+ * aggregate reading `COMPLETED` as a gate passing. A value outside this set is not coerced into
+ * the nearest neighbour — it becomes `unobserved`, because a verdict nobody stated is not a
+ * verdict, and the alternative is inventing yield data.
+ */
+export const STATION_RESULTS = Object.freeze([
+  "pass",
+  "fail",
+  "skipped_station",
+  "cancelled",
+  "not_evaluable",
+  "unobserved",
+]);
+
+/** A gate that stated nothing is unobserved, and stays out of every formula denominator. */
+const STATION_RESULT_UNOBSERVED = "unobserved";
+
+/** A gate whose attempt could not produce a verdict at all: outage, parser error, timeout. */
+const STATION_RESULT_NOT_EVALUABLE = "not_evaluable";
+
 /** Per-call bound on a telemetry write, so a hung backend cannot stall a workflow phase. */
 const EMIT_TIMEOUT_MS = 2000;
 
@@ -46,6 +69,17 @@ function failureClass(error) {
 function outcomeCode(value) {
   if (typeof value !== "string" || value === "") return undefined;
   return value.length <= MAX_OUTCOME_LENGTH ? value : value.slice(0, MAX_OUTCOME_LENGTH);
+}
+
+/**
+ * Admit only a declared station result.
+ *
+ * An unrecognised value — including an operation-axis value like `ok` that a caller mixed up —
+ * degrades to `unobserved` rather than being passed through. Forwarding it would let the two
+ * vocabularies the contract keeps disjoint merge at the one place they meet.
+ */
+function stationResultOrUnobserved(value) {
+  return STATION_RESULTS.includes(value) ? value : STATION_RESULT_UNOBSERVED;
 }
 
 const defaultDeps = {
@@ -103,6 +137,21 @@ export function createWorkflowRunLifecycleEmitter({
   function enqueue(task) {
     queue = queue.then(task).catch(() => {});
     return queue;
+  }
+
+  /**
+   * Report a bounded finding batch.
+   *
+   * A cap that drops findings without saying so makes a truncated count read as a complete
+   * one, which is the same lie as a gate reporting clean because it scanned nothing. Only the
+   * station and the count are logged — never the findings.
+   */
+  function noteDroppedFindings(stationId, dropped) {
+    if (!Number.isInteger(dropped) || dropped <= 0) return;
+    d.log(
+      `[workflow-run-lifecycle] finding batch truncated: project=${project} issue=${issueNumber} ` +
+        `station=${stationId} dropped=${dropped}`,
+    );
   }
 
   function diagnose(operation, error) {
@@ -275,6 +324,10 @@ export function createWorkflowRunLifecycleEmitter({
             occurred_at: d.now().toISOString(),
             duration_ms: d.monotonic() - startedAtMs,
             outcome: outcomeCode(failureClass(error)),
+            // The gate never returned a verdict, so there is nothing to call pass or fail.
+            // Recording `fail` here would attribute a defect to a change on the strength of
+            // an outage.
+            station_result: STATION_RESULT_NOT_EVALUABLE,
           },
           attempt,
         );
@@ -282,18 +335,100 @@ export function createWorkflowRunLifecycleEmitter({
       }
 
       // A phase attempt that failed is not a failed run: the caller repairs and retries, and the
-      // run stays open. Only the attempt is recorded as FAILED here.
+      // run stays open. Only the attempt is recorded here.
+      //
+      // `station_result` is read from what the gate stated, never derived from `ok`: the whole
+      // point of the separate axis is that a tool succeeding is not a gate passing. The finding
+      // batch rides the terminal event because that is the moment the verdict exists; an empty
+      // array is meaningful and is forwarded as-is, since "clean" and "unmeasured" are different
+      // facts to a coverage denominator.
+      //
+      // The lifecycle axis runs the other way and must not be derived from the verdict either. A
+      // gate that inspected the change and rejected it *finished* — that is COMPLETED carrying a
+      // `fail`. FAILED is for an operation that produced no verdict at all, which is exactly the
+      // case `ok === false` covers once a real verdict has been ruled out.
+      const verdict = stationResultOrUnobserved(result?.stationResult);
+      const rendered = verdict === "pass" || verdict === "fail";
       emit(
         {
           phase,
-          event_type: result?.ok === false ? "FAILED" : "COMPLETED",
+          event_type: !rendered && result?.ok === false ? "FAILED" : "COMPLETED",
           occurred_at: d.now().toISOString(),
           duration_ms: d.monotonic() - startedAtMs,
           outcome: result?.ok === false ? outcomeCode(result.error) : undefined,
+          station_result: verdict,
+          ...(Array.isArray(result?.findings) ? { findings: result.findings } : {}),
+          ...(Number.isInteger(result?.findingsDropped) && result.findingsDropped > 0
+            ? { findings_dropped: result.findingsDropped }
+            : {}),
         },
         attempt,
       );
+      noteDroppedFindings(phase, result?.findingsDropped);
       return result;
+    },
+
+    /**
+     * Record one attempt of a gate that has already executed elsewhere.
+     *
+     * `station()` brackets a function it runs, so its duration is the duration of that call. A
+     * child gate like SpotBugs, policy, or Vale runs inside a parent command that already
+     * finished, and its report is read afterwards: bracketing the *read* would record the time
+     * taken to parse a file and call it the gate's cost. This takes the gate's own measured
+     * timings instead, and omits `duration_ms` entirely when the source cannot attest one rather
+     * than substituting the parent command's duration across every child.
+     *
+     * STARTED is still emitted so the attempt takes its ordinal from durable history the same way
+     * a bracketed station does — without it every retry of a child gate would collapse onto
+     * attempt 0 and iterations-to-green would be underivable for exactly these stations.
+     */
+    recordStationAttempt({
+      stationId,
+      startedAt,
+      endedAt,
+      durationMs,
+      stationResult,
+      findings,
+      findingsDropped,
+      outcome,
+    }) {
+      const attempt = { cycleIndex: undefined };
+      const openedAt = startedAt ?? d.now();
+      emit({ phase: stationId, event_type: "STARTED", occurred_at: openedAt.toISOString() }, attempt);
+      emit(
+        {
+          phase: stationId,
+          // COMPLETED regardless of verdict: the attempt ran to completion, and whether its
+          // inspection passed is the station_result below. Deriving the lifecycle axis from the
+          // verdict is the exact conflation this issue separates — in the other direction.
+          event_type: "COMPLETED",
+          occurred_at: (endedAt ?? d.now()).toISOString(),
+          ...(Number.isFinite(durationMs) && durationMs >= 0 ? { duration_ms: durationMs } : {}),
+          ...(outcome ? { outcome: outcomeCode(outcome) } : {}),
+          station_result: stationResultOrUnobserved(stationResult),
+          ...(Array.isArray(findings) ? { findings } : {}),
+          // The count travels with the batch it truncated. Logging it alone left the store unable
+          // to tell a truncated batch from a complete one, so the stored count read as everything
+          // the gate found and the defect signal was understated by exactly what was hidden.
+          ...(Number.isInteger(findingsDropped) && findingsDropped > 0
+            ? { findings_dropped: findingsDropped }
+            : {}),
+        },
+        attempt,
+      );
+      noteDroppedFindings(stationId, findingsDropped);
+    },
+
+    /**
+     * Record a lifecycle marker transition.
+     *
+     * A marker records that something happened; it inspects nothing, so it can never carry a
+     * station result. Routing `ready_for_review` and `post_merge` through `station()` — as the
+     * first live emitter did — made them look like gates with permanently unobservable verdicts,
+     * and any per-station yield computed over them would have been counting transitions.
+     */
+    markerTransition(markerId) {
+      emit({ phase: markerId, event_type: "COMPLETED", occurred_at: d.now().toISOString() });
     },
   };
 }
