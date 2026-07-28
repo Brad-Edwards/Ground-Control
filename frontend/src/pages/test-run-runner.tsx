@@ -116,7 +116,15 @@ export function TestRunRunner() {
             onSelect={setActiveCaseResultId}
           />
           {activeCase ? (
-            <ActiveCasePanel run={run} caseResult={activeCase} />
+            // Keyed on the case id so switching cases remounts the panel and
+            // its draft state re-initializes from the new case. Without this an
+            // unsaved note typed against one case would survive a switch to a
+            // case whose persisted notes happen to be identical.
+            <ActiveCasePanel
+              key={activeCase.id}
+              run={run}
+              caseResult={activeCase}
+            />
           ) : (
             <div className="rounded-lg border border-dashed border-muted-foreground/30 py-12 text-center text-muted-foreground">
               Select a case from the sidebar.
@@ -295,6 +303,7 @@ function ActiveCasePanel({
   run: {
     id: string;
     status: TestRunStatus;
+    currentCaseResultId: string | null;
     currentStepResultId: string | null;
   };
   caseResult: TestRunCaseResultResponse;
@@ -309,11 +318,8 @@ function ActiveCasePanel({
   );
   const updateCursor = useUpdateTestRunCursor(run.id);
 
+  // Re-initializes on remount; the parent keys this panel by case id.
   const [notesDraft, setNotesDraft] = useState(caseResult.notes ?? "");
-  useEffect(
-    () => setNotesDraft(caseResult.notes ?? ""),
-    [caseResult.id, caseResult.notes],
-  );
 
   const steps = stepResults ?? [];
   const activeStepIndex = useMemo(() => {
@@ -331,14 +337,15 @@ function ActiveCasePanel({
   // don't block the runner UI. Wait until the step-results query has
   // resolved (isLoading=false) before persisting a step-null cursor, so a
   // mid-fetch render isn't misinterpreted as "no steps".
+  // The cursor fields are read as an equality guard, so they belong in the
+  // dependency list: the mutation settles `run`, this re-runs, the guard
+  // matches, and it returns. Omitting them compared against a `run` captured on
+  // an earlier render, which could re-issue a write that had already landed.
   useEffect(() => {
     if (isLoading) return;
     const desiredStepId = activeStep?.id ?? null;
-    const currentCase = (
-      run as unknown as { currentCaseResultId: string | null }
-    ).currentCaseResultId;
     if (
-      currentCase === caseResult.id &&
+      run.currentCaseResultId === caseResult.id &&
       run.currentStepResultId === desiredStepId
     ) {
       return;
@@ -347,9 +354,14 @@ function ActiveCasePanel({
       currentCaseResultId: caseResult.id,
       currentStepResultId: desiredStepId,
     });
-    // updateCursor.mutate is stable; intentionally excluding to avoid loops.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [caseResult.id, activeStep?.id, isLoading]);
+  }, [
+    caseResult.id,
+    activeStep?.id,
+    isLoading,
+    run.currentCaseResultId,
+    run.currentStepResultId,
+    updateCursor.mutate,
+  ]);
 
   const handleSetCaseStatus = useCallback(
     (status: TestRunCaseResultStatus) => {
@@ -415,7 +427,11 @@ function ActiveCasePanel({
           This case has no authored steps.
         </div>
       ) : (
+        // Keyed on the step id for the same reason as the case panel above: an
+        // unsaved comment must not survive a switch to a step whose persisted
+        // comment is identical.
         <StepViewport
+          key={activeStep.id}
           runId={run.id}
           caseResultId={caseResult.id}
           step={activeStep}
@@ -491,8 +507,8 @@ function StepViewport({
   onSelectStep: (stepResultId: string) => void;
 }) {
   const updateStep = useUpdateTestRunStepResult(runId, caseResultId, step.id);
+  // Re-initializes on remount; the parent keys this viewport by step id.
   const [commentDraft, setCommentDraft] = useState(step.comment ?? "");
-  useEffect(() => setCommentDraft(step.comment ?? ""), [step.id, step.comment]);
 
   const handleSetStatus = useCallback(
     (status: TestRunCaseResultStatus) => {

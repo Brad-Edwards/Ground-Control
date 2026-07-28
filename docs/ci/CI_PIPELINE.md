@@ -8,14 +8,19 @@ Every verification job starts at t=0. None of them consumes another job's
 artifact, so whole-run wall clock is the duration of the slowest job.
 
 ```
-t=0  fast-feedback  policy  build  test  integration  verify  sonar  trivy  osv-scanner  mcp-contract
-                      |                                                                       |
-                      +-- policy-live (main only)                                             |
-                                                                                              |
-     docker (push to main/dev only) <-- policy, build, test, integration, verify, sonar, mcp-contract, trivy, osv-scanner
+t=0  fast-feedback  frontend  policy  build  test  integration  verify  sonar  trivy  osv-scanner  mcp-contract
+                                |                                                                       |
+                                +-- policy-live (main only)                                             |
+                                                                                                        |
+     docker (push to main/dev only) <-- every verification job above except fast-feedback and policy-live
        |
      smoke
 ```
+
+`fast-feedback` is excluded from the `docker` gate because its checks are a
+strict subset of `build` and `test`. `policy-live` is excluded because GitHub
+skips a job whose `needs` entry was skipped, and it is skipped on every ref but
+`main`; gating the publish on it would stop the image publishing at all.
 
 `tools/tests/test_ci_topology.py` enforces this shape. It fails if a
 verification job gains a dependency, if `docker` stops naming a gate, if a
@@ -26,6 +31,7 @@ required context loses its job, or if the fast lane becomes required.
 | Job | Required | What it verifies | Reproduce locally |
 |---|---|---|---|
 | `fast-feedback` | no | Spotless formatting, main and test compilation | `cd backend && ./gradlew spotlessCheck compileJava compileTestJava -Pquick` |
+| `frontend` | yes | Biome lint, Vitest unit tests, production build | `make frontend-lint`, `make frontend-test`, `make frontend-build` |
 | `policy` | yes | Pre-commit hygiene and secret scan, policy tool tests, MCP server tests, repo policy checks, Vale prose lint | `make policy` |
 | `build` | yes | Assembly, Checkstyle, SpotBugs, Spotless | `cd backend && ./gradlew build -x test && ./gradlew spotlessCheck` |
 | `test` | yes | Unit tests, static analysis, 80 percent JaCoCo line coverage | `make check` |

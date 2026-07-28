@@ -1,3 +1,4 @@
+import { GRAPH_ENTITY_TYPES } from "@/types/api";
 /**
  * GC-G008 — Mixed-Entity Graph Traversal and Visualization
  *
@@ -5,7 +6,6 @@
  * member so that the graph tooltip has full entity coverage.
  */
 import { describe, expect, it } from "vitest";
-import { GRAPH_ENTITY_TYPES } from "@/types/api";
 import { getTooltipTags } from "../graph";
 
 type TooltipData = Parameters<typeof getTooltipTags>[0];

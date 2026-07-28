@@ -748,33 +748,17 @@ complementary test-quality signals:
 
 | Signal | Purpose | How to run |
 |--------|---------|-----------|
-| **Mutation testing (CLD gate)** | Directly measures whether registered boundary batteries detect seeded wrongness. Changed registered boundaries run PIT or Stryker against the scoped boundary target and fail below the registry threshold; interior-only changes produce a green no-op check. | `make mutation` or CI job `mutation` |
-| **Mutation testing (legacy PIT advisory)** | Runs the backend PIT task outside the scoped CLD gate. Useful for broader local calibration, not a required PR context. | `make test-quality` |
+| **Mutation testing (PIT, advisory)** | Runs the backend PIT task to score how well the unit suite detects seeded wrongness. Advisory calibration signal, not a required PR context. | `make test-quality` |
 | **Property-based testing (jqwik)** | Already wired on five domain surfaces - cycle detection, finding-status state machine, impact analysis, audit-status state machine, requirement-status transitions. Property tests find edge cases TDD misses by construction. | `make test` (runs alongside the unit suite) |
 | **Dependency / SBOM scanning (OSV + Trivy)** | OSV-scanner runs against `backend/gradle.lockfile` in CI. Findings are advisory, **except**: any new CRITICAL CVE fails the job (added in #931). Trivy scans the built image + IaC and **blocks the merge** on fixable CRITICAL/HIGH vulnerabilities or secrets. When it fires, raise the dependency: the Spring Boot BOM's managed version is overridden by the `extra["...version"]` security-patch block at the top of `backend/build.gradle.kts`, and OS packages are patched by the `apk --no-cache upgrade` in `backend/Dockerfile`. Remove an override once the BOM manages a version at or above it. | `.github/workflows/ci.yml` (`trivy`, `osv-scanner` jobs) |
 
-The CLD mutation gate is registry-driven. Boundary data lives in
-`architecture/registry/mutation-boundaries.json`; baseline scores are recorded
-in `architecture/registry/mutation-baseline.md`. CI invokes
-`tools/mutation/run_boundary_mutation.py` against the PR base ref. The runner
-maps changed files to registry path selectors, uses fixed argv for PIT/Stryker,
-and uploads reports from `backend/build/reports/pitest/` and
-`frontend/build/reports/stryker/`.
+PR CI fetches sanitized issue comments in a token-bearing shell step, then runs
+PR-head policy code without `GH_TOKEN` and passes `--pr-comments-json` plus
+`--pr-number` so the gate can read the PR-thread marker.
 
-The CLD protected-path gate is also registry-driven. `make policy` validates
-`architecture/registry/protected-paths.json`, verifies explicit CODEOWNERS
-routes, classifies PR changed paths from the merge base, detects battery
-weakening, and requires a durable design-authority marker on mixed
-implementation plus protected-path diffs. The marker must match the current
-approval scope, including protected paths, implementation paths, weakening
-findings, and the diff hash when available. PR CI evaluates protected selectors
-and authorized approvers from the base branch once the registry exists there;
-the working-tree registry fallback is only for the bootstrap change that
-introduces the first registry. Local non-PR runs can validate the registry and
-pure design changes; PR CI fetches sanitized issue comments in a token-bearing
-shell step, then runs PR-head policy code without `GH_TOKEN` and passes
-`--pr-comments-json` plus `--pr-number` so the gate can read the PR-thread
-marker.
+Frontend verification runs in the `frontend` CI job: Biome lint, the Vitest unit
+suite, and the production build, reproducible locally with `make frontend-lint`,
+`make frontend-test`, and `make frontend-build`.
 
 ## Rollback
 

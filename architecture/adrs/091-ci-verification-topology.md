@@ -148,12 +148,40 @@ comparison is a measurement rather than a redesign.
 This decision does not change what CI verifies. No job is renamed, removed, or
 made advisory, no severity threshold moves, and no scanner becomes
 non-blocking. It does not introduce a second source of CI truth outside GitHub
-Actions, a reusable-workflow abstraction, or a new Gradle task. It does not add
-frontend verification, which the workflow still lacks.
+Actions, a reusable-workflow abstraction, or a new Gradle task. It did not add
+frontend verification; the 2026-07-28 amendment below supersedes that non-goal.
+
+## 2026-07-28 amendment: frontend verification lane (issue #1468)
+
+The original decision left `frontend/` unverified. It was compiled only inside
+the Docker image build, which runs after merge and runs neither lint nor tests,
+so nothing gated a frontend regression. The cost was already visible: eight
+Biome errors had accumulated on `dev`, including five
+`useExhaustiveDependencies` violations that masked a draft-reset bug.
+
+A `frontend` job now runs Biome lint, the Vitest unit suite, and the production
+build. It follows the flat topology this ADR establishes: no `needs`, starting
+at t=0, well inside the wall clock that `sonar` bounds. It is a required
+context in `CI_STRICTNESS_REQUIRED_CONTEXTS` and in the branch-protection
+baseline, and it gates `docker`, so an image cannot publish past a red frontend.
+
+Two constraints are load-bearing and asserted by `tools/tests/test_ci_topology.py`:
+
+- The job id is exactly `frontend`, with no `name:` override and no matrix. A
+  matrix would report `frontend (node-22)`, and branch protection would wait
+  forever on a context that never arrives.
+- The job holds `permissions: contents: read`. It installs PR-controlled
+  dependencies and executes npm lifecycle scripts, so it must not inherit the
+  workflow-level `packages: write`, `pull-requests: write`, or
+  `id-token: write` grants.
+
+The lane exists because the generic topology assertions cannot catch its
+removal: deleting the job, the policy constant, and the baseline entry together
+leaves them internally consistent. The frontend-specific invariant closes that.
 
 ## Related Issues
 
-Issue #1461.
+Issue #1461, issue #1468.
 
 ## Related ADRs
 

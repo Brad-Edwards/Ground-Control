@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { GRAPH_ENTITY_TYPES } from "@/types/api";
+import { describe, expect, it } from "vitest";
 import {
   ENTITY_TYPE_COLORS,
   PRIORITY_COLORS,

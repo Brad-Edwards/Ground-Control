@@ -41,6 +41,40 @@ jobs:
       - name: Format and compile
         run: cd backend && ./gradlew spotlessCheck compileJava compileTestJava -Pquick --no-daemon
 
+  # ---------------------------------------------------------------------------
+  # Frontend verification (issue #1468, ADR-091). Until this lane existed
+  # `frontend/` was only compiled indirectly by the Docker image build, which
+  # runs after merge and runs neither lint nor tests, so nothing gated a
+  # frontend regression. Node 22 matches the `node:22-alpine` frontend stage in
+  # backend/Dockerfile.
+  #
+  # The job id is the required context name: no `name:` override and no matrix,
+  # because a matrix would report `frontend (node-22)` and branch protection
+  # would wait forever on a context that never arrives.
+  # ---------------------------------------------------------------------------
+  frontend:
+    runs-on: ubuntu-latest
+    # This lane installs PR-controlled dependencies and executes npm lifecycle
+    # scripts, so it must not inherit the workflow-level packages/PR/OIDC write
+    # grants. tools/tests/test_ci_topology.py asserts this stays read-only.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: cd frontend && npm ci
+      - name: Lint
+        run: cd frontend && npm run lint
+      - name: Unit tests
+        run: cd frontend && npm test
+      - name: Build
+        run: cd frontend && npm run build
+
   policy:
     runs-on: ubuntu-latest
     permissions:
@@ -547,6 +581,7 @@ jobs:
         mcp-contract,
         trivy,
         osv-scanner,
+        frontend,
       ]
     # Branch build coordinates only (:main / :dev / :sha / :latest). Versioned release
     # images (X.Y.Z + digest) are published by release-please.yml on release_created; a
