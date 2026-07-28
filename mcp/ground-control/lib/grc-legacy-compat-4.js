@@ -212,9 +212,42 @@ export async function readTrustedExecutionObligationState(repoRoot, owner, name,
     ...evaluateExecutionObligations(trustedEvents),
   };
 }
+/**
+ * Phases whose completion markers were authored by someone with repository permission.
+ *
+ * Every caller uses the result as a prerequisite gate — the plan post, the review cap, and the
+ * completion record all refuse to proceed until the phases they require appear here. The markers
+ * were previously read from comment bodies alone, with no regard for who wrote them, so anyone able
+ * to comment on the issue could paste a `gc:phase` marker and satisfy a prerequisite that no phase
+ * had actually met. Execution-obligation markers on the same thread already resolve their author's
+ * effective repository permission before they are believed; phase markers now use the same trust
+ * model, since they gate the same workflow.
+ *
+ * Fails closed. A marker whose author cannot be established, or a trust lookup that cannot be
+ * completed, yields no phase rather than an assumed one: an unmet prerequisite blocks, and blocking
+ * on an unverifiable marker is the safe direction.
+ */
 export async function readCompletedPhases(repoRoot, owner, name, issueNumber) {
-  const bodies = await readIssueCommentBodies(repoRoot, owner, name, issueNumber);
-  return parsePhaseMarkers(bodies, issueNumber);
+  let comments;
+  try {
+    comments = await readIssueCommentsWithAuthors(repoRoot, owner, name, issueNumber);
+  } catch {
+    return new Set();
+  }
+  const markerComments = comments.filter(
+    (comment) => parsePhaseMarkers([comment.body], issueNumber).size > 0,
+  );
+  if (markerComments.length === 0) {
+    return new Set();
+  }
+  let trust;
+  try {
+    trust = await resolveExecutionObligationTrust(repoRoot, owner, name, comments);
+  } catch {
+    return new Set();
+  }
+  const trustedBodies = markerComments.filter((comment) => trust.isTrusted(comment)).map((c) => c.body);
+  return parsePhaseMarkers(trustedBodies, issueNumber);
 }
 export async function getCurrentBranchName(repoRoot) {
   try {
