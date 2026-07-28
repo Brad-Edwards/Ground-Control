@@ -97,10 +97,6 @@ class WorkflowRunStreamHubARenderFailureDoesNotDisturbTheConnectionTest {
         /** When set, send() blocks on this latch — a client that stopped reading, not one that failed. */
         private java.util.concurrent.CountDownLatch blockOn;
 
-        private Runnable completionCallback = () -> {};
-        private Runnable timeoutCallback = () -> {};
-        private java.util.function.Consumer<Throwable> errorCallback = error -> {};
-
         private RecordingEmitter(long timeout) {
             super(timeout);
         }
@@ -128,19 +124,21 @@ class WorkflowRunStreamHubARenderFailureDoesNotDisturbTheConnectionTest {
             // satisfy the interface.
         }
 
+        // The lifecycle callbacks are accepted and dropped: no test in this class
+        // fires them, and holding a reference nothing reads is what S1068 flags.
         @Override
         public void onCompletion(Runnable callback) {
-            completionCallback = callback;
+            // intentionally not retained
         }
 
         @Override
         public void onTimeout(Runnable callback) {
-            timeoutCallback = callback;
+            // intentionally not retained
         }
 
         @Override
         public void onError(java.util.function.Consumer<Throwable> callback) {
-            errorCallback = callback;
+            // intentionally not retained
         }
     }
 

@@ -202,7 +202,8 @@ class ThreatModelServiceTest {
 
             var command = new UpdateThreatModelCommand("   ", null, null, null, null, null, false, false);
 
-            assertThatThrownBy(() -> threatModelService.update(projectId, tm.getId(), command))
+            var tmId = tm.getId();
+            assertThatThrownBy(() -> threatModelService.update(projectId, tmId, command))
                     .isInstanceOf(DomainValidationException.class)
                     .hasMessageContaining("title");
         }
@@ -215,7 +216,8 @@ class ThreatModelServiceTest {
 
             var command = new UpdateThreatModelCommand(null, null, "", null, null, null, false, false);
 
-            assertThatThrownBy(() -> threatModelService.update(projectId, tm.getId(), command))
+            var tmId = tm.getId();
+            assertThatThrownBy(() -> threatModelService.update(projectId, tmId, command))
                     .isInstanceOf(DomainValidationException.class)
                     .hasMessageContaining("threatEvent");
         }
@@ -325,8 +327,8 @@ class ThreatModelServiceTest {
             when(threatModelRepository.findByIdAndProjectId(tm.getId(), projectId))
                     .thenReturn(Optional.of(tm));
 
-            assertThatThrownBy(
-                            () -> threatModelService.transitionStatus(projectId, tm.getId(), ThreatModelStatus.DRAFT))
+            var tmId = tm.getId();
+            assertThatThrownBy(() -> threatModelService.transitionStatus(projectId, tmId, ThreatModelStatus.DRAFT))
                     .isInstanceOf(DomainValidationException.class);
         }
     }

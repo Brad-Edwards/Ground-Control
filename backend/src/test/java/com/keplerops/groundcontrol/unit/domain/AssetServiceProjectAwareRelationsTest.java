@@ -139,8 +139,10 @@ class AssetServiceProjectAwareRelationsTest {
                             source.getId(), target.getId(), AssetRelationType.DEPENDS_ON))
                     .thenReturn(true);
 
-            assertThatThrownBy(() -> assetService.createRelation(
-                            projectId, source.getId(), target.getId(), AssetRelationType.DEPENDS_ON))
+            var sourceId = source.getId();
+            var targetId = target.getId();
+            assertThatThrownBy(() ->
+                            assetService.createRelation(projectId, sourceId, targetId, AssetRelationType.DEPENDS_ON))
                     .isInstanceOf(ConflictException.class);
         }
 
@@ -207,11 +209,10 @@ class AssetServiceProjectAwareRelationsTest {
             when(relationRepository.findByIdWithEntitiesAndProjectId(relation.getId(), projectId))
                     .thenReturn(Optional.of(relation));
 
-            assertThatThrownBy(() -> assetService.updateRelation(
-                            projectId,
-                            unrelated.getId(),
-                            relation.getId(),
-                            new UpdateAssetRelationCommand("desc", null, null, null, null)))
+            var unrelatedId = unrelated.getId();
+            var relationId = relation.getId();
+            var command = new UpdateAssetRelationCommand("desc", null, null, null, null);
+            assertThatThrownBy(() -> assetService.updateRelation(projectId, unrelatedId, relationId, command))
                     .isInstanceOf(NotFoundException.class)
                     .hasMessageContaining("does not belong");
         }
@@ -260,7 +261,9 @@ class AssetServiceProjectAwareRelationsTest {
             when(relationRepository.findByIdWithEntitiesAndProjectId(relation.getId(), projectId))
                     .thenReturn(Optional.of(relation));
 
-            assertThatThrownBy(() -> assetService.deleteRelation(projectId, unrelated.getId(), relation.getId()))
+            var unrelatedId = unrelated.getId();
+            var relationId = relation.getId();
+            assertThatThrownBy(() -> assetService.deleteRelation(projectId, unrelatedId, relationId))
                     .isInstanceOf(NotFoundException.class)
                     .hasMessageContaining("does not belong");
         }
@@ -340,7 +343,8 @@ class AssetServiceProjectAwareRelationsTest {
             var command = new CreateAssetLinkCommand(
                     AssetLinkTargetType.REQUIREMENT, targetEntityId, "GC-M010", AssetLinkType.IMPLEMENTS, null, null);
 
-            assertThatThrownBy(() -> assetService.createLink(projectId, asset.getId(), command))
+            var assetId = asset.getId();
+            assertThatThrownBy(() -> assetService.createLink(projectId, assetId, command))
                     .isInstanceOf(ConflictException.class);
         }
 
@@ -442,7 +446,9 @@ class AssetServiceProjectAwareRelationsTest {
             when(linkRepository.findByIdWithAssetAndProjectId(link.getId(), projectId))
                     .thenReturn(Optional.of(link));
 
-            assertThatThrownBy(() -> assetService.deleteLink(projectId, other.getId(), link.getId()))
+            var otherId = other.getId();
+            var linkId = link.getId();
+            assertThatThrownBy(() -> assetService.deleteLink(projectId, otherId, linkId))
                     .isInstanceOf(NotFoundException.class)
                     .hasMessageContaining("does not belong");
         }
@@ -453,7 +459,8 @@ class AssetServiceProjectAwareRelationsTest {
             when(linkRepository.findByIdWithAssetAndProjectId(linkId, projectId))
                     .thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> assetService.deleteLink(projectId, UUID.randomUUID(), linkId))
+            var unknownId = UUID.randomUUID();
+            assertThatThrownBy(() -> assetService.deleteLink(projectId, unknownId, linkId))
                     .isInstanceOf(NotFoundException.class);
         }
     }

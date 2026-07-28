@@ -178,8 +178,8 @@ class AssetServiceLinksTest {
             var command = new CreateAssetLinkCommand(
                     AssetLinkTargetType.REQUIREMENT, null, "GC-M010", AssetLinkType.IMPLEMENTS, null, null);
 
-            assertThatThrownBy(() -> assetService.createLink(asset.getId(), command))
-                    .isInstanceOf(ConflictException.class);
+            var assetId = asset.getId();
+            assertThatThrownBy(() -> assetService.createLink(assetId, command)).isInstanceOf(ConflictException.class);
         }
 
         @Test
@@ -222,7 +222,9 @@ class AssetServiceLinksTest {
             var link = makeLink(asset);
             when(linkRepository.findById(link.getId())).thenReturn(Optional.of(link));
 
-            assertThatThrownBy(() -> assetService.deleteLink(other.getId(), link.getId()))
+            var otherId = other.getId();
+            var linkId = link.getId();
+            assertThatThrownBy(() -> assetService.deleteLink(otherId, linkId))
                     .isInstanceOf(NotFoundException.class)
                     .hasMessageContaining("does not belong");
         }
@@ -276,7 +278,8 @@ class AssetServiceLinksTest {
             var command =
                     new CreateAssetExternalIdCommand("AWS", "arn:aws:ec2:us-east-1:123:instance/i-abc", null, null);
 
-            assertThatThrownBy(() -> assetService.createExternalId(asset.getId(), command))
+            var assetId = asset.getId();
+            assertThatThrownBy(() -> assetService.createExternalId(assetId, command))
                     .isInstanceOf(ConflictException.class);
         }
 
@@ -306,7 +309,9 @@ class AssetServiceLinksTest {
 
             when(externalIdRepository.findByIdWithAsset(extId.getId())).thenReturn(Optional.of(extId));
 
-            assertThatThrownBy(() -> assetService.deleteExternalId(other.getId(), extId.getId()))
+            var otherId = other.getId();
+            var extIdId = extId.getId();
+            assertThatThrownBy(() -> assetService.deleteExternalId(otherId, extIdId))
                     .isInstanceOf(NotFoundException.class)
                     .hasMessageContaining("does not belong");
         }

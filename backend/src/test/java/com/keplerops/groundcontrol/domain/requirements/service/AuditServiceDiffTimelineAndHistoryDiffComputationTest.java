@@ -24,11 +24,11 @@ import org.hibernate.envers.AuditReaderFactory;
 import org.hibernate.envers.RevisionType;
 import org.hibernate.envers.query.AuditQuery;
 import org.hibernate.envers.query.AuditQueryCreator;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Answers;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
@@ -56,6 +56,7 @@ class AuditServiceDiffTimelineAndHistoryDiffComputationTest {
     @Mock
     private AuditReader auditReader;
 
+    @InjectMocks
     private AuditService service;
 
     private static void setField(Object obj, String fieldName, Object value) {
@@ -76,12 +77,6 @@ class AuditServiceDiffTimelineAndHistoryDiffComputationTest {
         var req = new Requirement(project, uid, uid, "Statement");
         setField(req, "id", id);
         return req;
-    }
-
-    @BeforeEach
-    void setUp() {
-        service =
-                new AuditService(requirementRepository, relationRepository, traceabilityLinkRepository, entityManager);
     }
 
     @Nested

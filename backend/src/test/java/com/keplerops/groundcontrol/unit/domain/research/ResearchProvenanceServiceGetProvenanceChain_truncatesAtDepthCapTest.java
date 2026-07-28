@@ -28,6 +28,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -54,13 +55,15 @@ class ResearchProvenanceServiceGetProvenanceChain_truncatesAtDepthCapTest {
     @Mock
     private com.keplerops.groundcontrol.domain.research.repository.ResearchRunArtifactRepository artifactRepository;
 
+    @InjectMocks
     private ResearchProvenanceService service;
+
     private Project project;
     private ResearchRun run;
 
     @BeforeEach
     void setUp() {
-        service = new ResearchProvenanceService(runRepository, nodeRepository, edgeRepository, artifactRepository);
+
         project = new Project("research-p", "Research Project", ProjectType.RESEARCH);
         TestUtil.setField(project, "id", PROJECT_ID);
         run = new ResearchRun(project, "RUN-1", AutonomyLevel.COPILOT);

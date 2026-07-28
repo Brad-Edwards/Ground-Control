@@ -201,7 +201,8 @@ class AssetServiceTest {
 
             var command = new UpdateAssetCommand("", null, null);
 
-            assertThatThrownBy(() -> assetService.update(asset.getId(), command))
+            var assetId = asset.getId();
+            assertThatThrownBy(() -> assetService.update(assetId, command))
                     .isInstanceOf(DomainValidationException.class)
                     .hasMessageContaining("must not be blank");
         }

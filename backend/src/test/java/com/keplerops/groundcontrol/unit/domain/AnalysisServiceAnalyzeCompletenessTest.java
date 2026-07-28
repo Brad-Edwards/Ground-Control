@@ -32,10 +32,10 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -56,6 +56,7 @@ class AnalysisServiceAnalyzeCompletenessTest {
     @Mock
     private AuditService auditService;
 
+    @InjectMocks
     private AnalysisService service;
 
     private static final List<RelationType> DAG_TYPES =
@@ -68,12 +69,6 @@ class AnalysisServiceAnalyzeCompletenessTest {
         var project = new Project("test-project", "Test Project");
         TestUtil.setField(project, "id", PROJECT_ID);
         return project;
-    }
-
-    @BeforeEach
-    void setUp() {
-        service = new AnalysisService(
-                requirementRepository, relationRepository, traceabilityLinkRepository, auditService);
     }
 
     private static Requirement makeRequirement(String uid, UUID id) {

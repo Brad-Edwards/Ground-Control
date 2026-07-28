@@ -29,10 +29,10 @@ import com.keplerops.groundcontrol.domain.requirements.service.TraceabilityServi
 import com.keplerops.groundcontrol.domain.requirements.state.RelationType;
 import java.util.Optional;
 import java.util.UUID;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -74,6 +74,7 @@ class ImportServiceReqifCreateRelations2Test {
     @Mock
     private SectionContentService sectionContentService;
 
+    @InjectMocks
     private ImportService service;
 
     private static final UUID PROJECT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
@@ -83,22 +84,6 @@ class ImportServiceReqifCreateRelations2Test {
         var project = new Project("test-project", "Test Project");
         TestUtil.setField(project, "id", PROJECT_ID);
         return project;
-    }
-
-    @BeforeEach
-    void setUp() {
-        service = new ImportService(
-                requirementService,
-                traceabilityService,
-                requirementRepository,
-                relationRepository,
-                traceabilityLinkRepository,
-                importRepository,
-                documentService,
-                documentRepository,
-                sectionService,
-                sectionRepository,
-                sectionContentService);
     }
 
     private static Requirement makeRequirement(String uid, UUID id) {

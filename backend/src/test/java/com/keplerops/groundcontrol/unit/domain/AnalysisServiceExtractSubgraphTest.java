@@ -27,10 +27,10 @@ import com.keplerops.groundcontrol.domain.requirements.state.LinkType;
 import com.keplerops.groundcontrol.domain.requirements.state.RelationType;
 import java.util.List;
 import java.util.UUID;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -52,6 +52,7 @@ class AnalysisServiceExtractSubgraphTest {
     @Mock
     private AuditService auditService;
 
+    @InjectMocks
     private AnalysisService service;
 
     private static final UUID PROJECT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
@@ -61,12 +62,6 @@ class AnalysisServiceExtractSubgraphTest {
         var project = new Project("test-project", "Test Project");
         TestUtil.setField(project, "id", PROJECT_ID);
         return project;
-    }
-
-    @BeforeEach
-    void setUp() {
-        service = new AnalysisService(
-                requirementRepository, relationRepository, traceabilityLinkRepository, auditService);
     }
 
     private static Requirement makeRequirement(String uid, UUID id) {
@@ -147,7 +142,8 @@ class AnalysisServiceExtractSubgraphTest {
             when(relationRepository.findActiveWithSourceAndTargetByProjectId(PROJECT_ID))
                     .thenReturn(List.of());
 
-            assertThatThrownBy(() -> service.extractSubgraph(PROJECT_ID, List.of("REQ-UNKNOWN")))
+            var unknownUids = List.of("REQ-UNKNOWN");
+            assertThatThrownBy(() -> service.extractSubgraph(PROJECT_ID, unknownUids))
                     .isInstanceOf(NotFoundException.class);
         }
     }

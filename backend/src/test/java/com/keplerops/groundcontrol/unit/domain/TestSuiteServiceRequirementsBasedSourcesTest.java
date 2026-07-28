@@ -333,7 +333,8 @@ class TestSuiteServiceRequirementsBasedSourcesTest {
             when(testSuiteRepository.findByIdAndProjectId(s.getId(), projectId)).thenReturn(Optional.of(s));
             when(testRunRepository.existsByTestSuiteId(s.getId())).thenReturn(true);
 
-            assertThatThrownBy(() -> testSuiteService.delete(projectId, s.getId()))
+            var sId = s.getId();
+            assertThatThrownBy(() -> testSuiteService.delete(projectId, sId))
                     .isInstanceOf(com.keplerops.groundcontrol.domain.exception.ConflictException.class)
                     .hasMessageContaining("associated test runs");
             verify(memberRepository, never()).deleteAll(anyList());

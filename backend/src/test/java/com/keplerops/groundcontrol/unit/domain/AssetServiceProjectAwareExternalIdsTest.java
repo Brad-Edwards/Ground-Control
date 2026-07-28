@@ -131,7 +131,8 @@ class AssetServiceProjectAwareExternalIdsTest {
 
             var command = new CreateAssetExternalIdCommand("AWS", "i-abc", null, null);
 
-            assertThatThrownBy(() -> assetService.createExternalId(projectId, asset.getId(), command))
+            var assetId = asset.getId();
+            assertThatThrownBy(() -> assetService.createExternalId(projectId, assetId, command))
                     .isInstanceOf(ConflictException.class);
         }
 
@@ -163,8 +164,10 @@ class AssetServiceProjectAwareExternalIdsTest {
             when(externalIdRepository.findByIdWithAssetAndProjectId(extId.getId(), projectId))
                     .thenReturn(Optional.of(extId));
 
-            assertThatThrownBy(() -> assetService.updateExternalId(
-                            projectId, other.getId(), extId.getId(), new UpdateAssetExternalIdCommand(null, "LOW")))
+            var otherId = other.getId();
+            var extIdId = extId.getId();
+            var command = new UpdateAssetExternalIdCommand(null, "LOW");
+            assertThatThrownBy(() -> assetService.updateExternalId(projectId, otherId, extIdId, command))
                     .isInstanceOf(NotFoundException.class)
                     .hasMessageContaining("does not belong");
         }
@@ -252,7 +255,9 @@ class AssetServiceProjectAwareExternalIdsTest {
             when(externalIdRepository.findByIdWithAssetAndProjectId(extId.getId(), projectId))
                     .thenReturn(Optional.of(extId));
 
-            assertThatThrownBy(() -> assetService.deleteExternalId(projectId, other.getId(), extId.getId()))
+            var otherId = other.getId();
+            var extIdId = extId.getId();
+            assertThatThrownBy(() -> assetService.deleteExternalId(projectId, otherId, extIdId))
                     .isInstanceOf(NotFoundException.class)
                     .hasMessageContaining("does not belong");
         }
@@ -263,7 +268,8 @@ class AssetServiceProjectAwareExternalIdsTest {
             when(externalIdRepository.findByIdWithAssetAndProjectId(extIdId, projectId))
                     .thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> assetService.deleteExternalId(projectId, UUID.randomUUID(), extIdId))
+            var unknownId = UUID.randomUUID();
+            assertThatThrownBy(() -> assetService.deleteExternalId(projectId, unknownId, extIdId))
                     .isInstanceOf(NotFoundException.class);
         }
     }

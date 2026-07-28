@@ -32,10 +32,10 @@ import com.keplerops.groundcontrol.domain.requirements.state.Status;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
@@ -79,19 +79,8 @@ class RequirementServiceCreateRelationTest {
     @Mock
     private RequirementUidAllocator uidAllocator;
 
+    @InjectMocks
     private RequirementService service;
-
-    @BeforeEach
-    void setUp() {
-        service = new RequirementService(
-                requirementRepository,
-                relationRepository,
-                projectRepository,
-                qualityGateRepository,
-                traceabilityLinkRepository,
-                eventPublisher,
-                uidAllocator);
-    }
 
     private static Requirement makeRequirement(String uid) {
         return new Requirement(TEST_PROJECT, uid, "Title for " + uid, "Statement for " + uid);
