@@ -57,5 +57,6 @@ export * from "./lib/api-history.js";
 export * from "./lib/assert-traceability.js";
 export * from "./lib/assert-completion.js";
 export * from "./lib/decision-records.js";
+export * from "./lib/review-station-emission.js";
 export * from "./lib/review-cycle-seam.js";
 export * from "./lib/codex-verify.js";

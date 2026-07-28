@@ -12,7 +12,6 @@ import { renderDocumentationSection, validateDocumentationOutcome } from "./doc-
 import { detectSensitiveBodyContent } from "./grc-legacy-compat-2.js";
 import { ensureGitRepo } from "./grc-legacy-compat-4.js";
 import { devStartFieldValue, extractMarkdownHeadingSection, parseDevStartGateFields } from "./grc-legacy-compat.js";
-import { REVIEW_STATION_BY_REVIEWER } from "./knowledge-capture.js";
 import { assertRealpathInRepo } from "./repo-context-2.js";
 import { DEFAULT_DEV_START_GATE_PLAN_SECTION, resolveRepoRelativePath } from "./repo-context.js";
 import { getRepoGroundControlContext } from "./repo-vocabulary-2.js";
@@ -334,31 +333,6 @@ export async function runRenderPrBody(input) {
     body,
     byte_length: Buffer.byteLength(body, "utf8"),
   };
-}
-export async function _emitReviewStationAttempt({ repoPath, issueNumber, reviewer, stationResult, findings }) {
-  const stationId = REVIEW_STATION_BY_REVIEWER[reviewer];
-  if (!stationId) return;
-  try {
-    const context = await getRepoGroundControlContext(repoPath);
-    if (context?.status !== "ok" || !context.project) return;
-    const { stdout } = await execFile("git", ["-C", repoPath, "branch", "--show-current"]);
-    const branch = stdout.trim();
-    if (branch === "") return;
-
-    const { createWorkflowRunLifecycleEmitter } = await import("./workflow-run-lifecycle.js");
-    const emitter = createWorkflowRunLifecycleEmitter({
-      project: context.project,
-      repo: context.github_repo,
-      issueNumber,
-      branch,
-      workflowType: "IMPLEMENT",
-    });
-    emitter.ensureRun();
-    emitter.recordStationAttempt({ stationId, stationResult, findings });
-    await emitter.flush();
-  } catch {
-    // Measurement never becomes a reason a review fails.
-  }
 }
 export async function appendStepTelemetry({ repoPath, record }) {
   if (record == null || typeof record !== "object") {

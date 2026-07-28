@@ -8,7 +8,7 @@ import { reviewGateFindings } from "../gate-finding-adapters.js";
 import { runCodexReview } from "./codex-review-runner.js";
 import { runPostDecisionRecord } from "./decision-records.js";
 import { _statusForReviewerAction, buildAutoFixDecisionFindings, normalizeReviewCycleNextAction, reviewCycleFindings, summarizeReviewFindings } from "./knowledge-capture.js";
-import { _emitReviewStationAttempt } from "./pr-body.js";
+import { _emitReviewStationAttempt } from "./review-station-emission.js";
 import { verifyAutoDispositionGrant } from "./review-cap-disposition-2.js";
 import { runTestQualityReview } from "./test-quality-runner-2.js";
 

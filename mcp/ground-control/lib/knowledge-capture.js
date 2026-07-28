@@ -257,10 +257,6 @@ export function reviewCycleFindings(reviewResult) {
   if (Array.isArray(reviewResult?.comments)) return reviewResult.comments;
   return [];
 }
-export const REVIEW_STATION_BY_REVIEWER = Object.freeze({
-  codex: "codex_review",
-  "test-quality": "test_quality_review",
-});
 export const KNOWLEDGE_SOURCE_TYPES = Object.freeze([
   "commit",
   "pr",
