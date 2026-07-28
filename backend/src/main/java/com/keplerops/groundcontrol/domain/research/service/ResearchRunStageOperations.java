@@ -60,6 +60,7 @@ final class ResearchRunStageOperations {
     private final ProtocolPlanCoverageRepository protocolPlanCoverageRepository;
     private final ResearchRunService service;
 
+    @SuppressWarnings("java:S107") // aggregates the run repositories from one place on purpose
     ResearchRunStageOperations(
             ResearchRunRepository runRepository,
             ResearchRunArtifactRepository artifactRepository,

@@ -37,7 +37,6 @@ final class AssetRelationOperations {
                 sourceId);
     }
 
-    @Deprecated(forRemoval = false)
     AssetRelation createRelation(UUID sourceId, UUID targetId, AssetRelationType relationType) {
         return createRelation(
                 new CreateAssetRelationCommand(targetId, relationType, null, null, null, null, null, null), sourceId);
@@ -66,7 +65,6 @@ final class AssetRelationOperations {
         return relationRepository.save(relation);
     }
 
-    @Deprecated(forRemoval = false)
     AssetRelation createRelation(CreateAssetRelationCommand command, UUID sourceId) {
         if (sourceId.equals(command.targetId())) {
             throw new DomainValidationException("An asset cannot relate to itself");
@@ -104,7 +102,6 @@ final class AssetRelationOperations {
         return relationRepository.save(relation);
     }
 
-    @Deprecated(forRemoval = false)
     AssetRelation updateRelation(UUID assetId, UUID relationId, UpdateAssetRelationCommand command) {
         var relation = getLegacyRelationBelongingTo(assetId, relationId);
         applyRelationMetadata(
@@ -127,7 +124,6 @@ final class AssetRelationOperations {
         return combined;
     }
 
-    @Deprecated(forRemoval = false)
     List<AssetRelation> getRelations(UUID assetId) {
         service.getById(assetId);
         var outgoing = relationRepository.findBySourceIdWithEntities(assetId);
@@ -141,7 +137,6 @@ final class AssetRelationOperations {
         relationRepository.delete(getRelationBelongingTo(projectId, assetId, relationId));
     }
 
-    @Deprecated(forRemoval = false)
     void deleteRelation(UUID assetId, UUID relationId) {
         relationRepository.delete(getLegacyRelationBelongingTo(assetId, relationId));
     }

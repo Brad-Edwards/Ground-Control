@@ -277,12 +277,6 @@ public class AgeGraphService implements GraphClient, MixedGraphClient {
     static final long GRAPH_PUBLICATION_ADVISORY_LOCK_KEY = 0x6763_6772_6170_68L; // "gcgraph"
 
     private final JdbcTemplate jdbcTemplate;
-    private final AgeProperties ageProperties;
-    private final GraphProjectionRegistryService graphProjectionRegistryService;
-    private final ProjectRepository projectRepository;
-    private final AgeGraphSnapshotRepository snapshotRepository;
-    private final AgeSnapshotCleaner snapshotCleaner;
-    private final AsOfRevisionResolver asOfRevisionResolver;
     private final AgeGraphReadOperations ageGraphReadOperations;
     private final AgeGraphMaterializer ageGraphMaterializer;
 
@@ -295,12 +289,6 @@ public class AgeGraphService implements GraphClient, MixedGraphClient {
             AgeSnapshotCleaner snapshotCleaner,
             AsOfRevisionResolver asOfRevisionResolver) {
         this.jdbcTemplate = jdbcTemplate;
-        this.ageProperties = ageProperties;
-        this.graphProjectionRegistryService = graphProjectionRegistryService;
-        this.projectRepository = projectRepository;
-        this.snapshotRepository = snapshotRepository;
-        this.snapshotCleaner = snapshotCleaner;
-        this.asOfRevisionResolver = asOfRevisionResolver;
 
         this.ageGraphReadOperations = new AgeGraphReadOperations(
                 jdbcTemplate,

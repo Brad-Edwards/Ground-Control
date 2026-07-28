@@ -40,7 +40,6 @@ final class AssetExternalIdOperations {
         return externalIdRepository.save(extId);
     }
 
-    @Deprecated(forRemoval = false)
     AssetExternalId createExternalId(UUID assetId, CreateAssetExternalIdCommand command) {
         var asset = service.getById(assetId);
         if (externalIdRepository.existsByAssetIdAndSourceSystemAndSourceId(
@@ -59,7 +58,6 @@ final class AssetExternalIdOperations {
         return externalIdRepository.save(extId);
     }
 
-    @Deprecated(forRemoval = false)
     AssetExternalId updateExternalId(UUID assetId, UUID extIdId, UpdateAssetExternalIdCommand command) {
         var extId = getLegacyExternalIdBelongingTo(assetId, extIdId);
         applyProvenanceFields(extId, command.collectedAt(), command.confidence());
@@ -71,7 +69,6 @@ final class AssetExternalIdOperations {
         return externalIdRepository.findByAssetId(assetId);
     }
 
-    @Deprecated(forRemoval = false)
     List<AssetExternalId> getExternalIds(UUID assetId) {
         service.getById(assetId);
         return externalIdRepository.findByAssetId(assetId);
@@ -82,7 +79,6 @@ final class AssetExternalIdOperations {
         return externalIdRepository.findByAssetIdAndSourceSystem(assetId, sourceSystem);
     }
 
-    @Deprecated(forRemoval = false)
     List<AssetExternalId> getExternalIdsBySource(UUID assetId, String sourceSystem) {
         service.getById(assetId);
         return externalIdRepository.findByAssetIdAndSourceSystem(assetId, sourceSystem);
@@ -96,7 +92,6 @@ final class AssetExternalIdOperations {
         externalIdRepository.delete(getExternalIdBelongingTo(projectId, assetId, extIdId));
     }
 
-    @Deprecated(forRemoval = false)
     void deleteExternalId(UUID assetId, UUID extIdId) {
         externalIdRepository.delete(getLegacyExternalIdBelongingTo(assetId, extIdId));
     }

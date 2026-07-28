@@ -117,24 +117,6 @@ public class ResearchRunService {
 
     private final ResearchRunRepository runRepository;
     private final ResearchRunArtifactRepository artifactRepository;
-    private final ResearchRunGateRepository gateRepository;
-    private final ResearchRunGateDecisionLogRepository decisionLogRepository;
-    private final ResearchRunReviewCommentRepository reviewCommentRepository;
-    private final ResearchRunRationaleEntryRepository rationaleRepository;
-    private final ResearchRunDisclosureRepository disclosureRepository;
-    private final ResearchRunDisclosureEntryRepository disclosureEntryRepository;
-    private final ResearchIntakeRepository intakeRepository;
-    private final ProjectService projectService;
-    private final ResearchRunMethodologySelectionRepository methodologySelectionRepository;
-    private final ResearchRunMethodologySourceRepository methodologySourceRepository;
-    private final MethodologyCatalog methodologyCatalog;
-    private final MethodologyRequirementsContractRepository contractRepository;
-    private final MethodologyRequirementsContractEntryRepository contractEntryRepository;
-    private final MethodologyRequirementsContractEntrySourceLinkRepository contractEntrySourceLinkRepository;
-    private final MethodologyRequirementsContractRejectedAlternativeRepository contractRejectedAlternativeRepository;
-    private final ProtocolPlanRepository protocolPlanRepository;
-    private final ProtocolPlanCoverageRepository protocolPlanCoverageRepository;
-    private final ProtocolPlanSectionRepository protocolPlanSectionRepository;
     private final ResearchRunProtocolPlanOperations researchRunProtocolPlanOperations;
     private final ResearchRunContractOperations researchRunContractOperations;
     private final ResearchRunMethodologyOperations researchRunMethodologyOperations;
@@ -168,24 +150,6 @@ public class ResearchRunService {
             ProtocolPlanSectionRepository protocolPlanSectionRepository) {
         this.runRepository = runRepository;
         this.artifactRepository = artifactRepository;
-        this.gateRepository = gateRepository;
-        this.decisionLogRepository = decisionLogRepository;
-        this.reviewCommentRepository = reviewCommentRepository;
-        this.rationaleRepository = rationaleRepository;
-        this.disclosureRepository = disclosureRepository;
-        this.disclosureEntryRepository = disclosureEntryRepository;
-        this.intakeRepository = intakeRepository;
-        this.projectService = projectService;
-        this.methodologySelectionRepository = methodologySelectionRepository;
-        this.methodologySourceRepository = methodologySourceRepository;
-        this.methodologyCatalog = methodologyCatalog;
-        this.contractRepository = contractRepository;
-        this.contractEntryRepository = contractEntryRepository;
-        this.contractEntrySourceLinkRepository = contractEntrySourceLinkRepository;
-        this.contractRejectedAlternativeRepository = contractRejectedAlternativeRepository;
-        this.protocolPlanRepository = protocolPlanRepository;
-        this.protocolPlanCoverageRepository = protocolPlanCoverageRepository;
-        this.protocolPlanSectionRepository = protocolPlanSectionRepository;
 
         this.researchRunProtocolPlanOperations = new ResearchRunProtocolPlanOperations(
                 artifactRepository,

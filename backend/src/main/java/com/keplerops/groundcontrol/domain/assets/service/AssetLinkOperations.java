@@ -58,7 +58,6 @@ final class AssetLinkOperations {
         return linkRepository.save(link);
     }
 
-    @Deprecated(forRemoval = false)
     AssetLink createLink(UUID assetId, CreateAssetLinkCommand command) {
         var asset = service.getById(assetId);
         var target = graphTargetResolverService.validateAssetTarget(
@@ -88,7 +87,6 @@ final class AssetLinkOperations {
         return linkRepository.findByAssetId(assetId);
     }
 
-    @Deprecated(forRemoval = false)
     List<AssetLink> getLinksForAsset(UUID assetId) {
         service.getById(assetId);
         return linkRepository.findByAssetId(assetId);
@@ -99,7 +97,6 @@ final class AssetLinkOperations {
         return linkRepository.findByAssetIdAndTargetType(assetId, targetType);
     }
 
-    @Deprecated(forRemoval = false)
     List<AssetLink> getLinksForAssetByTargetType(UUID assetId, AssetLinkTargetType targetType) {
         service.getById(assetId);
         return linkRepository.findByAssetIdAndTargetType(assetId, targetType);
@@ -123,7 +120,6 @@ final class AssetLinkOperations {
         linkRepository.delete(link);
     }
 
-    @Deprecated(forRemoval = false)
     void deleteLink(UUID assetId, UUID linkId) {
         var link =
                 linkRepository.findById(linkId).orElseThrow(() -> new NotFoundException("Link not found: " + linkId));

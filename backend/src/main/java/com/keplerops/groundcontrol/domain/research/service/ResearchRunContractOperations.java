@@ -73,6 +73,7 @@ final class ResearchRunContractOperations {
     private final MethodologyRequirementsContractRejectedAlternativeRepository contractRejectedAlternativeRepository;
     private final ResearchRunService service;
 
+    @SuppressWarnings("java:S107") // aggregates the run repositories from one place on purpose
     ResearchRunContractOperations(
             ResearchRunArtifactRepository artifactRepository,
             ResearchRunRationaleEntryRepository rationaleRepository,

@@ -46,15 +46,9 @@ public class AssetService {
     static final String FIELD_STEWARD = "steward";
 
     private final OperationalAssetRepository assetRepository;
-    private final AssetRelationRepository relationRepository;
     private final AssetLinkRepository linkRepository;
-    private final AssetExternalIdRepository externalIdRepository;
     private final FindingLinkRepository findingLinkRepository;
     private final AuditLinkRepository auditLinkRepository;
-    private final ProjectRepository projectRepository;
-    private final GraphTargetResolverService graphTargetResolverService;
-    private final AssetSubtypeSchemaRepository subtypeSchemaRepository;
-    private final AssetSubtypeValidator subtypeValidator;
     private final AssetSubtypeSchemaOperations assetSubtypeSchemaOperations;
     private final AssetExternalIdOperations assetExternalIdOperations;
     private final AssetLinkOperations assetLinkOperations;
@@ -75,15 +69,9 @@ public class AssetService {
             AssetSubtypeSchemaRepository subtypeSchemaRepository,
             AssetSubtypeValidator subtypeValidator) {
         this.assetRepository = assetRepository;
-        this.relationRepository = relationRepository;
         this.linkRepository = linkRepository;
-        this.externalIdRepository = externalIdRepository;
         this.findingLinkRepository = findingLinkRepository;
         this.auditLinkRepository = auditLinkRepository;
-        this.projectRepository = projectRepository;
-        this.graphTargetResolverService = graphTargetResolverService;
-        this.subtypeSchemaRepository = subtypeSchemaRepository;
-        this.subtypeValidator = subtypeValidator;
 
         this.assetSubtypeSchemaOperations =
                 new AssetSubtypeSchemaOperations(projectRepository, subtypeSchemaRepository, subtypeValidator);
@@ -107,7 +95,12 @@ public class AssetService {
      * service layer so callers cannot bypass the contract by going around
      * Bean Validation (codex cycle-4 finding 1).
      */
+    static final String ASSET_NOT_FOUND = "Asset not found: ";
+
     static final class OperationalAssetBounds {
+
+        private OperationalAssetBounds() {}
+
         static final int UID = 50;
         static final int NAME = 200;
         static final int OWNER = 200;
@@ -119,20 +112,20 @@ public class AssetService {
     public OperationalAsset getById(UUID projectId, UUID id) {
         return assetRepository
                 .findByIdAndProjectId(id, projectId)
-                .orElseThrow(() -> new NotFoundException("Asset not found: " + id));
+                .orElseThrow(() -> new NotFoundException(ASSET_NOT_FOUND + id));
     }
 
     @Deprecated(forRemoval = false)
     @Transactional(readOnly = true)
     public OperationalAsset getById(UUID id) {
-        return assetRepository.findById(id).orElseThrow(() -> new NotFoundException("Asset not found: " + id));
+        return assetRepository.findById(id).orElseThrow(() -> new NotFoundException(ASSET_NOT_FOUND + id));
     }
 
     @Transactional(readOnly = true)
     public OperationalAsset getByUid(UUID projectId, String uid) {
         return assetRepository
                 .findByProjectIdAndUidIgnoreCase(projectId, uid)
-                .orElseThrow(() -> new NotFoundException("Asset not found: " + uid));
+                .orElseThrow(() -> new NotFoundException(ASSET_NOT_FOUND + uid));
     }
 
     public OperationalAsset archive(UUID projectId, UUID id) {
@@ -167,7 +160,7 @@ public class AssetService {
         // Sonar S6809 flags self-invocation of @Transactional methods because the
         // proxy is bypassed and any per-method tx semantics would be lost. Both
         // getById overloads share the class-default tx, so behavior is unchanged.
-        var asset = assetRepository.findById(id).orElseThrow(() -> new NotFoundException("Asset not found: " + id));
+        var asset = assetRepository.findById(id).orElseThrow(() -> new NotFoundException(ASSET_NOT_FOUND + id));
         rejectIfInboundFindingLinksReferenceAsset(asset.getProject().getId(), id, asset.getUid());
         // Mirror the project-scoped overload's link-then-parent ordering so the
         // deprecated path also fires Envers delete revisions for each AssetLink
@@ -425,6 +418,7 @@ public class AssetService {
     }
 
     @Deprecated(forRemoval = false)
+    @SuppressWarnings("java:S107") // mirrors the repository query surface; each filter is explicit
     @Transactional(readOnly = true)
     public List<OperationalAsset> listByProjectAndFilters(
             UUID projectId,

@@ -134,6 +134,7 @@ final class AgeGraphMaterializer {
         // active (e.g. a unit test invoking the method without a surrounding transaction).
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
                 public void afterCommit() {
                     snapshotCleaner.cleanup();
                 }

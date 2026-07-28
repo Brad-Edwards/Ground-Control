@@ -124,7 +124,6 @@ final class AssetWriteOperations {
         return assetRepository.save(asset);
     }
 
-    @Deprecated(forRemoval = false)
     OperationalAsset update(UUID id, UpdateAssetCommand command) {
         var asset = assetRepository.findById(id).orElseThrow(() -> new NotFoundException("Asset not found: " + id));
         applyAssetUpdates(asset, command);
