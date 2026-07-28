@@ -13,7 +13,6 @@ import com.keplerops.groundcontrol.domain.workflowtelemetry.repository.WorkflowR
 import com.keplerops.groundcontrol.domain.workflowtelemetry.repository.WorkflowRunRepository.RunRollupRow;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -470,20 +469,4 @@ public class WorkflowTelemetryService {
     private void publishChange(WorkflowTelemetryChangeEvent change) {
         eventPublisher.publishEvent(change);
     }
-
-    /**
-     * Default an omitted window to the standard look-back and validate the bounds.
-     *
-     * <p>Shared by the measurement aggregates so they inherit the same maximum window as the run
-     * aggregate; an unbounded scan is a denial-of-service surface, not a reporting convenience.
-     */
-    private static Window resolveWindow(Instant from, Instant to) {
-        Instant effectiveTo = to != null ? to : Instant.now();
-        Instant effectiveFrom = from != null ? from : effectiveTo.minus(Duration.ofDays(DEFAULT_WINDOW_DAYS));
-        WorkflowTelemetryValidation.validateWindow(effectiveFrom, effectiveTo);
-        return new Window(effectiveFrom, effectiveTo);
-    }
-
-    /** A validated, bounded reporting window. */
-    public record Window(Instant from, Instant to) {}
 }

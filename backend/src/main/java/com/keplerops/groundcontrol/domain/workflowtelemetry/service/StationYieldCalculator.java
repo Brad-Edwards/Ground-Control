@@ -69,7 +69,13 @@ public final class StationYieldCalculator {
      * @return station id to its yield, for stations that had at least one evaluable attempt
      */
     public static Map<String, StationYield> compute(List<AttemptRow> rows) {
-        // station -> run -> ordered attempts
+        Map<String, StationYield> result = new LinkedHashMap<>();
+        group(rows).forEach((stationId, runs) -> result.put(stationId, yieldFor(stationId, runs)));
+        return result;
+    }
+
+    /** Bucket attempts by station, then by run. Rows missing an identity are not attempts. */
+    private static Map<String, Map<UUID, List<AttemptRow>>> group(List<AttemptRow> rows) {
         Map<String, Map<UUID, List<AttemptRow>>> byStation = new LinkedHashMap<>();
         for (var row : rows) {
             if (row == null || row.stationId() == null || row.runId() == null || row.result() == null) {
@@ -80,50 +86,47 @@ public final class StationYieldCalculator {
                     .computeIfAbsent(row.runId(), unused -> new ArrayList<>())
                     .add(row);
         }
+        return byStation;
+    }
 
-        Map<String, StationYield> result = new LinkedHashMap<>();
-        byStation.forEach((stationId, runs) -> {
-            long firstPassPassed = 0;
-            long runsWithAttempts = 0;
-            long evaluableAttempts = 0;
-            long reworkAttempts = 0;
-            long unresolvedRuns = 0;
-            Map<Integer, Long> iterations = new TreeMap<>();
+    /** Fold one station's runs into its yield, rework, and iteration distribution. */
+    private static StationYield yieldFor(String stationId, Map<UUID, List<AttemptRow>> runs) {
+        long firstPassPassed = 0;
+        long runsWithAttempts = 0;
+        long evaluableAttempts = 0;
+        long reworkAttempts = 0;
+        long unresolvedRuns = 0;
+        Map<Integer, Long> iterations = new TreeMap<>();
 
-            for (var attempts : runs.values()) {
-                var ordered = sequence(attempts);
-                if (ordered.isEmpty()) {
-                    continue;
-                }
-                runsWithAttempts++;
-                evaluableAttempts += ordered.size();
-                if (ordered.get(0).result() == StationResult.PASS) {
-                    firstPassPassed++;
-                }
-                int firstPass = indexOfFirstPass(ordered);
-                if (firstPass < 0) {
-                    // No pass occurred. Recorded as unresolved rather than substituted with a
-                    // maximum, a zero, or a timeout, any of which would put a fabricated value into
-                    // the distribution.
-                    unresolvedRuns++;
-                } else {
-                    iterations.merge(firstPass + 1, 1L, Long::sum);
-                    reworkAttempts += firstPass;
-                }
+        for (var attempts : runs.values()) {
+            var ordered = sequence(attempts);
+            if (ordered.isEmpty()) {
+                continue;
             }
+            runsWithAttempts++;
+            evaluableAttempts += ordered.size();
+            if (ordered.get(0).result() == StationResult.PASS) {
+                firstPassPassed++;
+            }
+            int firstPass = indexOfFirstPass(ordered);
+            if (firstPass < 0) {
+                // No pass occurred. Recorded as unresolved rather than substituted with a maximum,
+                // a zero, or a timeout, any of which would put a fabricated value in the distribution.
+                unresolvedRuns++;
+            } else {
+                iterations.merge(firstPass + 1, 1L, Long::sum);
+                reworkAttempts += firstPass;
+            }
+        }
 
-            result.put(
-                    stationId,
-                    new StationYield(
-                            stationId,
-                            firstPassPassed,
-                            runsWithAttempts,
-                            evaluableAttempts,
-                            reworkAttempts,
-                            unresolvedRuns,
-                            iterations));
-        });
-        return result;
+        return new StationYield(
+                stationId,
+                firstPassPassed,
+                runsWithAttempts,
+                evaluableAttempts,
+                reworkAttempts,
+                unresolvedRuns,
+                iterations);
     }
 
     /**

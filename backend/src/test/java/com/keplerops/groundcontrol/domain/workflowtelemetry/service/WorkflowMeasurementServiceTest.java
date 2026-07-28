@@ -96,8 +96,10 @@ class WorkflowMeasurementServiceTest {
 
     @Test
     void aDuplicateFindingKeyWithinOneBatchIsRejected() {
-        assertThatThrownBy(() ->
-                        service.persistFindings(event(UUID.randomUUID()), List.of(finding("same"), finding("same"))))
+        var attempt = event(UUID.randomUUID());
+        var batch = List.of(finding("same"), finding("same"));
+
+        assertThatThrownBy(() -> service.persistFindings(attempt, batch))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("duplicate findingKey");
     }
@@ -108,8 +110,9 @@ class WorkflowMeasurementServiceTest {
                 .mapToObj(i -> finding("k" + i))
                 .toList();
 
-        assertThatThrownBy(() -> service.persistFindings(event(UUID.randomUUID()), many))
-                .isInstanceOf(DomainValidationException.class);
+        var attempt = event(UUID.randomUUID());
+
+        assertThatThrownBy(() -> service.persistFindings(attempt, many)).isInstanceOf(DomainValidationException.class);
     }
 
     @Test
@@ -146,7 +149,9 @@ class WorkflowMeasurementServiceTest {
     @Test
     void recordingOpenAsADispositionIsRejected() {
         // This records a decision; "still open" is the absence of one.
-        assertThatThrownBy(() -> service.recordFindingDisposition(UUID.randomUUID(), "gc", FindingDisposition.OPEN))
+        var findingId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> service.recordFindingDisposition(findingId, "gc", FindingDisposition.OPEN))
                 .isInstanceOf(DomainValidationException.class);
     }
 
@@ -166,8 +171,10 @@ class WorkflowMeasurementServiceTest {
 
     @Test
     void anUnboundedWindowIsRefused() {
-        assertThatThrownBy(() -> service.aggregateStationYield(
-                        "gc", Instant.parse("2000-01-01T00:00:00Z"), Instant.parse("2026-01-01T00:00:00Z")))
+        var from = Instant.parse("2000-01-01T00:00:00Z");
+        var to = Instant.parse("2026-01-01T00:00:00Z");
+
+        assertThatThrownBy(() -> service.aggregateStationYield("gc", from, to))
                 .isInstanceOf(DomainValidationException.class);
     }
 }

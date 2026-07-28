@@ -22,7 +22,6 @@ import com.keplerops.groundcontrol.domain.workflowtelemetry.repository.WorkflowR
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.RecordPhaseEventCommand;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowMeasurementService;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowTelemetryService;
-import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -52,8 +51,6 @@ class WorkflowPhaseEventRecordingTest {
 
     @InjectMocks
     private WorkflowTelemetryService service;
-
-    private static final Instant TO = Instant.parse("2026-06-02T00:00:00Z");
 
     // ---- recordPhaseEvent ----------------------------------------------------------------------
 

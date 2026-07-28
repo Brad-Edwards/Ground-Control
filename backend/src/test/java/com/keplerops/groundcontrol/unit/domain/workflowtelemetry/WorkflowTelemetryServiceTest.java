@@ -2,7 +2,6 @@ package com.keplerops.groundcontrol.unit.domain.workflowtelemetry;
 
 import static com.keplerops.groundcontrol.TestUtil.setField;
 import static com.keplerops.groundcontrol.unit.domain.workflowtelemetry.WorkflowTelemetryFixtures.FROM;
-import static com.keplerops.groundcontrol.unit.domain.workflowtelemetry.WorkflowTelemetryFixtures.TO;
 import static com.keplerops.groundcontrol.unit.domain.workflowtelemetry.WorkflowTelemetryFixtures.liveCommand;
 import static com.keplerops.groundcontrol.unit.domain.workflowtelemetry.WorkflowTelemetryFixtures.openRun;
 import static com.keplerops.groundcontrol.unit.domain.workflowtelemetry.WorkflowTelemetryFixtures.phaseEvent;

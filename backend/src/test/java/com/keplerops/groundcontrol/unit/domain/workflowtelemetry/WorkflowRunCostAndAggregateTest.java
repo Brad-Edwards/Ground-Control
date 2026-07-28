@@ -128,9 +128,6 @@ class WorkflowRunCostAndAggregateTest {
 
     // ---- helpers -------------------------------------------------------------------------------
 
-    /** A run already open on the canonical (project, issue, branch) identity, started at {@code at}. */
-
-    /** A live-emission observation of the same run identity, varying only the timestamps and state. */
     private static RunRollupRow rollup(
             long total, long merged, long closed, long active, BigDecimal totalCost, BigDecimal mergedCost) {
         return new RunRollupRow() {
