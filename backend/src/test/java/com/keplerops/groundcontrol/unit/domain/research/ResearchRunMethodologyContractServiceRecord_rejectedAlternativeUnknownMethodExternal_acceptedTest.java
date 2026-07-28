@@ -239,10 +239,6 @@ class ResearchRunMethodologyContractServiceRecord_rejectedAlternativeUnknownMeth
                 null);
     }
 
-    private static RecordMethodologyRequirementsContractCommand cmd(List<EntryCommand> entries) {
-        return new RecordMethodologyRequirementsContractCommand(entries, List.of());
-    }
-
     @Test
     void record_rejectedAlternativeUnknownMethodExternal_accepted() {
         readyRun();

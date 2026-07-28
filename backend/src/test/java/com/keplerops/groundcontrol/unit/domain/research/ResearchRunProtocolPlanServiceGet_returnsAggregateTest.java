@@ -45,7 +45,6 @@ import com.keplerops.groundcontrol.domain.research.repository.ResearchRunRationa
 import com.keplerops.groundcontrol.domain.research.repository.ResearchRunRepository;
 import com.keplerops.groundcontrol.domain.research.repository.ResearchRunReviewCommentRepository;
 import com.keplerops.groundcontrol.domain.research.service.MethodologyCatalog;
-import com.keplerops.groundcontrol.domain.research.service.RecordProtocolPlanCommand.SectionCommand;
 import com.keplerops.groundcontrol.domain.research.service.ResearchRunService;
 import java.util.ArrayList;
 import java.util.List;
@@ -209,10 +208,6 @@ class ResearchRunProtocolPlanServiceGet_returnsAggregateTest {
         var e = new MethodologyRequirementsContractEntry(contract, kind, key, "statement " + key, null, "actor");
         TestUtil.setField(e, "id", UUID.randomUUID());
         return e;
-    }
-
-    private static SectionCommand section(String key, ProtocolSectionKind kind) {
-        return new SectionCommand(key, kind, null, "summary for " + key);
     }
 
     /** A run whose protocol/methodology artifacts + contract + selection are all in place, method = systematic. */

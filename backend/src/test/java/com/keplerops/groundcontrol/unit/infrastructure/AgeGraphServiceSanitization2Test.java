@@ -3,9 +3,7 @@ package com.keplerops.groundcontrol.unit.infrastructure;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -23,8 +21,6 @@ import com.keplerops.groundcontrol.infrastructure.age.AgeGraphService;
 import com.keplerops.groundcontrol.infrastructure.age.AgeGraphSnapshotRepository;
 import com.keplerops.groundcontrol.infrastructure.age.AgeProperties;
 import com.keplerops.groundcontrol.infrastructure.age.AgeSnapshotCleaner;
-import java.sql.PreparedStatement;
-import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -36,7 +32,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.postgresql.util.PGobject;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.PreparedStatementSetter;
 import org.springframework.jdbc.core.RowCallbackHandler;
@@ -117,24 +112,6 @@ class AgeGraphServiceSanitization2Test {
             try {
                 return TEST_OBJECT_MAPPER.readValue(json, new TypeReference<Map<String, Object>>() {});
             } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }
-
-        /**
-         * Drive a captured {@link PreparedStatementSetter} against a mock {@link PreparedStatement}
-         * to extract the bound agtype payload. This is how the production code's bind path is
-         * exercised in unit tests without a real database.
-         */
-        private static String capturedAgtypeParam(PreparedStatementSetter pss) {
-            try {
-                PreparedStatement mockPs = mock(PreparedStatement.class);
-                pss.setValues(mockPs);
-                ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
-                verify(mockPs).setObject(eq(1), captor.capture());
-                Object obj = captor.getValue();
-                return obj instanceof PGobject pgo ? pgo.getValue() : (obj == null ? null : obj.toString());
-            } catch (SQLException e) {
                 throw new RuntimeException(e);
             }
         }

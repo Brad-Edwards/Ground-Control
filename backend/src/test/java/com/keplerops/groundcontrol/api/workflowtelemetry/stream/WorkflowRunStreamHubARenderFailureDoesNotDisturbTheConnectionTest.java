@@ -97,7 +97,6 @@ class WorkflowRunStreamHubARenderFailureDoesNotDisturbTheConnectionTest {
         /** When set, send() blocks on this latch — a client that stopped reading, not one that failed. */
         private java.util.concurrent.CountDownLatch blockOn;
 
-        private boolean completed;
         private Runnable completionCallback = () -> {};
         private Runnable timeoutCallback = () -> {};
         private java.util.function.Consumer<Throwable> errorCallback = error -> {};
@@ -125,7 +124,8 @@ class WorkflowRunStreamHubARenderFailureDoesNotDisturbTheConnectionTest {
 
         @Override
         public void complete() {
-            completed = true;
+            // No test in this class observes completion; the override exists to
+            // satisfy the interface.
         }
 
         @Override
@@ -141,18 +141,6 @@ class WorkflowRunStreamHubARenderFailureDoesNotDisturbTheConnectionTest {
         @Override
         public void onError(java.util.function.Consumer<Throwable> callback) {
             errorCallback = callback;
-        }
-
-        private void fireCompletion() {
-            completionCallback.run();
-        }
-
-        private void fireTimeout() {
-            timeoutCallback.run();
-        }
-
-        private void fireError() {
-            errorCallback.accept(new IllegalStateException("broken pipe"));
         }
     }
 
