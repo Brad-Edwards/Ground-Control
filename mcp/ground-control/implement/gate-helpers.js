@@ -6,7 +6,7 @@
 import { policyGateFindings, spotbugsGateFindings, valeGateFindings } from "../gate-finding-adapters.js";
 import { detectSensitiveBodyContent, extractInScopeRequirementUids, requestedRequirementUidAuthorization } from "../lib.js";
 import { execFile as execFileCb } from "node:child_process";
-import { readFileSync, readdirSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
@@ -210,6 +210,14 @@ export async function runBootstrap(args, deps) {
 }
 export function childGateArtifactPaths(repoRoot) {
   const dir = join(repoRoot, "build", "gc-measurement");
+  // Created here rather than left to the gates. Each writes fail-open, so a missing directory
+  // would swallow the write and the policy and vale stations would silently never be recorded —
+  // measurement absent for the reason hardest to notice, because nothing fails.
+  try {
+    mkdirSync(dir, { recursive: true });
+  } catch {
+    // Best effort: a gate that cannot write its artifact is recorded as unmeasured, never as a pass.
+  }
   return { dir, policy: join(dir, "policy.json"), vale: join(dir, "vale.json") };
 }
 export function readGateArtifact(path) {

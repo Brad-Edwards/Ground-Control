@@ -346,3 +346,26 @@ describe("gate finding adapters — child gate verdicts (issue #1355)", () => {
     assert.equal(findings[0].findingKey, "deadbeef");
   });
 });
+
+describe("child gate artifact paths (issue #1355)", () => {
+  it("creates the artifact directory so a gate's write cannot be silently swallowed", async () => {
+    const { mkdtempSync, existsSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { childGateArtifactPaths } = await import("./implement/gate-helpers.js");
+
+    const root = mkdtempSync(join(tmpdir(), "gc-artifacts-"));
+    try {
+      const paths = childGateArtifactPaths(root);
+
+      // bin/policy and the vale target both write fail-open. Without the directory their
+      // writes are swallowed and the policy and vale stations are never recorded at all —
+      // measurement missing in the way that is hardest to notice, because nothing fails.
+      assert.ok(existsSync(paths.dir), "artifact directory should exist after resolution");
+      assert.ok(paths.policy.endsWith("policy.json"));
+      assert.ok(paths.vale.endsWith("vale.json"));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
