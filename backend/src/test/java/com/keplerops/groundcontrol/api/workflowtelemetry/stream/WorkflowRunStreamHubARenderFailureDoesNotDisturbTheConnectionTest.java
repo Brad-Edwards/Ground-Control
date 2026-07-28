@@ -11,7 +11,6 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowTelemetryChangeEvent;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowTelemetryService;
 import java.io.IOException;
-import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.Deque;
@@ -30,10 +29,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  * repeated because JUnit builds a fresh instance per test class. */
 class WorkflowRunStreamHubARenderFailureDoesNotDisturbTheConnectionTest {
     private static final String PROJECT = "ground-control";
-    private static final String OTHER_PROJECT = "other-project";
     private static final String PRINCIPAL = "operator";
     private static final UUID RUN_ID = UUID.fromString("10000000-0000-0000-0000-000000001436");
-    private static final Instant OCCURRED_AT = Instant.parse("2026-07-27T00:00:00Z");
 
     private WorkflowTelemetryService telemetryService;
     private ManualExecutorService deliveryExecutor;

@@ -71,7 +71,6 @@ class ResearchRunMethodologyContractServiceRecord_rejectedAlternativeUnknownMeth
     private static final UUID ARTIFACT_ID = UUID.fromString("00000000-0000-0000-0000-000000000040");
     private static final UUID READ_SOURCE_ID = UUID.fromString("00000000-0000-0000-0000-000000000030");
     private static final UUID OPTIONAL_SOURCE_ID = UUID.fromString("00000000-0000-0000-0000-000000000031");
-    private static final UUID RATIONALE_ID = UUID.fromString("00000000-0000-0000-0000-000000000050");
 
     @Mock
     private ResearchRunRepository runRepository;

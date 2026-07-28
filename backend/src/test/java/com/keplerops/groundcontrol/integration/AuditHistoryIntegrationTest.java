@@ -25,13 +25,18 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-/** Split from AuditHistoryIntegrationTest under issue #1467 for the 500-LOC limit
- * (docs/CODING_STANDARDS.md). Test bodies are unchanged; fixtures are
- * repeated because JUnit builds a fresh instance per test class. */
+/**
+ * Audit-history <em>controller</em> coverage (history / timeline / diff endpoints). Runs under the
+ * security-disabled {@code test} profile, where {@code X-Actor} is the legacy convenience for
+ * setting a readable audit actor (see {@code ActorFilter}). Per ADR-033 §5 this is a controller
+ * slice test and is <em>not</em> the audit-actor-provenance evidence for issue #431 — see
+ * {@link AuditActorProvenanceIntegrationTest} for the security-enabled provenance contracts.
+ */
 @AutoConfigureMockMvc
 @TestMethodOrder(OrderAnnotation.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class AuditHistoryIntegrationTest extends BaseIntegrationTest {
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -475,5 +480,44 @@ class AuditHistoryIntegrationTest extends BaseIntegrationTest {
                 .andExpect(jsonPath("$[0].revisionType", is("MOD")))
                 .andExpect(jsonPath("$[0].changes.status.oldValue", is("DRAFT")))
                 .andExpect(jsonPath("$[0].changes.status.newValue", is("ACTIVE")));
+    }
+
+    @Test
+    @Order(35)
+    void timeline_longStatementTruncatedByDefault() throws Exception {
+        // Create a requirement with a long statement
+        var longStatement = "X".repeat(300);
+        var createBody = Map.of(
+                "uid", "AUDIT-LONG",
+                "title", "Long statement req",
+                "statement", longStatement,
+                "requirementType", "FUNCTIONAL",
+                "priority", "MUST");
+        var createResult = mockMvc.perform(post("/api/v1/requirements")
+                        .header("X-Actor", "test-user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createBody)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        var longReqId = objectMapper
+                .readTree(createResult.getResponse().getContentAsString())
+                .get("id")
+                .asText();
+
+        // Default (no expand) - change value should be truncated to 200 chars, truncated=true
+        mockMvc.perform(get("/api/v1/requirements/" + longReqId + "/timeline").param("changeCategory", "REQUIREMENT"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].changes.statement.newValue", is(longStatement.substring(0, 200))))
+                .andExpect(jsonPath("$[0].changes.statement.truncated", is(true)))
+                .andExpect(jsonPath("$[0].truncated", is(true)));
+
+        // With expand=true - full value, truncated=false
+        mockMvc.perform(get("/api/v1/requirements/" + longReqId + "/timeline")
+                        .param("changeCategory", "REQUIREMENT")
+                        .param("expand", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].changes.statement.newValue", is(longStatement)))
+                .andExpect(jsonPath("$[0].changes.statement.truncated", is(false)))
+                .andExpect(jsonPath("$[0].truncated", is(false)));
     }
 }

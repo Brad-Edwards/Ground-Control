@@ -42,11 +42,8 @@ class TestRunServiceUpdateCursorRejectsStepFromDifferentCaseTest {
     private static final UUID SUITE_ID = UUID.fromString("00000000-0000-0000-0000-000000000200");
     private static final UUID RUN_ID = UUID.fromString("00000000-0000-0000-0000-000000000300");
     private static final UUID TC1_ID = UUID.fromString("00000000-0000-0000-0000-000000000901");
-    private static final UUID TC2_ID = UUID.fromString("00000000-0000-0000-0000-000000000902");
     private static final UUID CASE_RESULT_ID = UUID.fromString("00000000-0000-0000-0000-000000000a01");
     private static final UUID STEP_RESULT_ID = UUID.fromString("00000000-0000-0000-0000-000000000b01");
-    private static final UUID OTHER_RUN_ID = UUID.fromString("00000000-0000-0000-0000-000000000c01");
-    private static final UUID OTHER_CASE_RESULT_ID = UUID.fromString("00000000-0000-0000-0000-000000000c02");
 
     private TestRunRepository testRunRepository;
     private TestRunTesterAssignmentRepository testerAssignmentRepository;

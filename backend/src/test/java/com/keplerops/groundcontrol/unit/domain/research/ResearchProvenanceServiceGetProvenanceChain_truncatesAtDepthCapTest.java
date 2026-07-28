@@ -40,7 +40,6 @@ import org.mockito.quality.Strictness;
 @MockitoSettings(strictness = Strictness.LENIENT)
 class ResearchProvenanceServiceGetProvenanceChain_truncatesAtDepthCapTest {
     private static final UUID PROJECT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
-    private static final UUID OTHER_PROJECT_ID = UUID.fromString("00000000-0000-0000-0000-000000000002");
     private static final UUID RUN_ID = UUID.fromString("00000000-0000-0000-0000-000000000010");
 
     @Mock

@@ -17,7 +17,7 @@ Size was not a cosmetic problem. Decomposing the 20,634-line
 
 - Several policy checks located their subject by reading `lib.js` as a single
   file. Once it became a barrel, those checks found no implementation and would
-  have **passed silently** — a gate reporting green because it was looking at the
+  have **passed silently**: a gate reporting green because it was looking at the
   wrong file.
 - The measurement catalogue drift scan understood only inline `.station("x")`
   literals, so station ids named through a lookup table were invisible to it.
@@ -26,7 +26,7 @@ Both were possible because one file held so many unrelated surfaces that no
 reviewer could hold its contents in mind. This work reproduced the same class of
 failure twice more: splitting `mcp/ground-control/index.js` broke
 `run_implement_execution_contract`, which read `index.js` alone to confirm two
-MCP tools were registered — it would have reported the contract satisfied by
+MCP tools were registered, and it would have reported the contract satisfied by
 absence. And `node --test` was found to exit **0** when a `describe()` callback
 throws, so a suite broken by a bad import passed CI while printing `not ok`.
 
@@ -52,7 +52,7 @@ Add a repo-native gate, `tools/policy/file_size.py`, run from
 3. **Every entry states a reason.** Entries are `{path: reason}`, and an entry
    without a real reason is itself a violation. The legitimate reason is that
    another in-flight change already decomposes the file and doing it twice would
-   destroy one of the two decompositions — not that a split was inconvenient.
+   destroy one of the two decompositions, not that a split was inconvenient.
 
 4. **The gate lives in its own module.** `tools/policy/checks.py` is itself over
    the limit and is being decomposed on another branch. Putting the new check in

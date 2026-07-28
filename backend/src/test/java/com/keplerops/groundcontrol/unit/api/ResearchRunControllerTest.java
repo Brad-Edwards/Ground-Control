@@ -66,8 +66,6 @@ class ResearchRunControllerTest {
     private static final UUID PROJECT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID RUN_ID = UUID.fromString("00000000-0000-0000-0000-000000000010");
     private static final UUID COMMENT_ID = UUID.fromString("00000000-0000-0000-0000-000000000020");
-    private static final UUID DISCLOSURE_ID = UUID.fromString("00000000-0000-0000-0000-000000000030");
-    private static final UUID ARTIFACT_ID = UUID.fromString("00000000-0000-0000-0000-000000000040");
     private static final Instant NOW = Instant.parse("2026-06-25T00:00:00Z");
 
     private ResearchRun makeRun(ResearchRunStage stage, ResearchRunStatus status) {

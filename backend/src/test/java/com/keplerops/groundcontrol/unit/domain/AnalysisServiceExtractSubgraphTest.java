@@ -49,9 +49,6 @@ class AnalysisServiceExtractSubgraphTest {
 
     private AnalysisService service;
 
-    private static final List<RelationType> DAG_TYPES =
-            List.of(RelationType.PARENT, RelationType.DEPENDS_ON, RelationType.REFINES);
-
     private static final UUID PROJECT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final Project TEST_PROJECT = createTestProject();
 
