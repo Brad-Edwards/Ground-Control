@@ -379,6 +379,42 @@ listed are the canonical reference for Java and Python.
 
 When porting these to a new analyzer, prefer the nearest concept (file LOC,
 function length, nesting, cognitive complexity) over a perfect rule-ID match.
+
+### The file-size limit is enforced in policy
+
+`make policy` fails on any tracked source file over 500 lines
+(`tools/policy/file_size.py`, issue #1467). Before it existed, 60 files had
+drifted past the limit and the largest were the ones edited most often, and
+size was not a cosmetic problem: decomposing a 20,634-line module turned up
+policy checks that located their subject by reading one file and would have
+**passed silently** once that file became a barrel.
+
+The gate applies to `.java`, `.js`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.py` and
+`.kts`. Generated trees (`contracts/gen/`) are excluded, since only their
+generator can change them.
+
+Files still over the limit are listed with a reason in
+`tools/policy/file_size_grandfather.json`. That list is **shrink-only**: the gate
+also fails when a listed file is no longer oversized or no longer exists, so an
+entry cannot outlive the work it covers. Add an entry only when the file is
+already being decomposed elsewhere and doing it twice would conflict. Never add one to
+park a file you did not want to split.
+
+When you do split one:
+
+- Split along real seams: the dependency graph, not section comments. Grouping
+  a module by its own headings closed a 20-group import cycle; packing
+  declaration-level SCCs in topological order made the module graph acyclic by
+  construction.
+- Keep the public surface. Leaving the original path as a barrel that re-exports
+  the modules means callers and tests are untouched, which is what makes a split
+  verifiable as behaviour-neutral by the existing suite.
+- Export a name only if it was public before, or a sibling now needs it.
+- If a single declaration is over the limit on its own, decompose the
+  declaration; a file-level split alone cannot fix it.
+- Use a comment-aware scanner. Splitting on `;` or on line matches breaks on
+  delimiters inside comments and string literals, and the rejoin does not
+  compile.
 The intent is to bound module and method size; the specific rule is the
 mechanism.
 
