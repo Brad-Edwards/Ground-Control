@@ -29,7 +29,9 @@ public record PhaseEventResponse(
         TelemetryProvenance provenance,
         String sourceId,
         String stationId,
-        StationResult stationResult) {
+        StationResult stationResult,
+        /** Findings the emitter's cap discarded; without it a truncated batch reads as complete. */
+        int findingsDropped) {
 
     public static PhaseEventResponse from(WorkflowPhaseEvent event) {
         return new PhaseEventResponse(
@@ -45,6 +47,7 @@ public record PhaseEventResponse(
                 event.getProvenance(),
                 event.getSourceId(),
                 event.getStationId(),
-                event.getStationResult());
+                event.getStationResult(),
+                event.getFindingsDropped());
     }
 }

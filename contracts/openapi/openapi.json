@@ -5863,6 +5863,10 @@
             ],
             "type": "string"
           },
+          "findingsDropped": {
+            "format": "int32",
+            "type": "integer"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -6837,6 +6841,10 @@
             "maxItems": 500,
             "minItems": 0,
             "type": "array"
+          },
+          "findingsDropped": {
+            "format": "int32",
+            "type": "integer"
           },
           "occurredAt": {
             "format": "date-time",

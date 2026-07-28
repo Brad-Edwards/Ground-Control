@@ -335,22 +335,32 @@ export function createWorkflowRunLifecycleEmitter({
       }
 
       // A phase attempt that failed is not a failed run: the caller repairs and retries, and the
-      // run stays open. Only the attempt is recorded as FAILED here.
+      // run stays open. Only the attempt is recorded here.
       //
       // `station_result` is read from what the gate stated, never derived from `ok`: the whole
       // point of the separate axis is that a tool succeeding is not a gate passing. The finding
       // batch rides the terminal event because that is the moment the verdict exists; an empty
       // array is meaningful and is forwarded as-is, since "clean" and "unmeasured" are different
       // facts to a coverage denominator.
+      //
+      // The lifecycle axis runs the other way and must not be derived from the verdict either. A
+      // gate that inspected the change and rejected it *finished* — that is COMPLETED carrying a
+      // `fail`. FAILED is for an operation that produced no verdict at all, which is exactly the
+      // case `ok === false` covers once a real verdict has been ruled out.
+      const verdict = stationResultOrUnobserved(result?.stationResult);
+      const rendered = verdict === "pass" || verdict === "fail";
       emit(
         {
           phase,
-          event_type: result?.ok === false ? "FAILED" : "COMPLETED",
+          event_type: !rendered && result?.ok === false ? "FAILED" : "COMPLETED",
           occurred_at: d.now().toISOString(),
           duration_ms: d.monotonic() - startedAtMs,
           outcome: result?.ok === false ? outcomeCode(result.error) : undefined,
-          station_result: stationResultOrUnobserved(result?.stationResult),
+          station_result: verdict,
           ...(Array.isArray(result?.findings) ? { findings: result.findings } : {}),
+          ...(Number.isInteger(result?.findingsDropped) && result.findingsDropped > 0
+            ? { findings_dropped: result.findingsDropped }
+            : {}),
         },
         attempt,
       );
@@ -397,6 +407,12 @@ export function createWorkflowRunLifecycleEmitter({
           ...(outcome ? { outcome: outcomeCode(outcome) } : {}),
           station_result: stationResultOrUnobserved(stationResult),
           ...(Array.isArray(findings) ? { findings } : {}),
+          // The count travels with the batch it truncated. Logging it alone left the store unable
+          // to tell a truncated batch from a complete one, so the stored count read as everything
+          // the gate found and the defect signal was understated by exactly what was hidden.
+          ...(Number.isInteger(findingsDropped) && findingsDropped > 0
+            ? { findings_dropped: findingsDropped }
+            : {}),
         },
         attempt,
       );

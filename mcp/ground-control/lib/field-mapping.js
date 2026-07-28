@@ -388,6 +388,7 @@ export const TO_CAMEL = {
   // is fail-open — vanish without a trace.
   station_id: "stationId",
   station_result: "stationResult",
+  findings_dropped: "findingsDropped",
   finding_key: "findingKey",
   source_kind: "sourceKind",
   total_runs: "totalRuns",

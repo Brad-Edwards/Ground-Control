@@ -90,6 +90,17 @@ public class WorkflowPhaseEvent {
     @Column(nullable = false, length = 40)
     private StationResult stationResult = StationResult.UNOBSERVED;
 
+    /**
+     * How many findings the emitter's cap discarded before sending this attempt's batch.
+     *
+     * <p>Zero when nothing was dropped, which is the ordinary case. Persisted rather than logged
+     * because a truncated batch is otherwise indistinguishable from a complete one: the stored count
+     * would read as everything the gate found, and an aggregate built on it would understate the
+     * defect signal by exactly the amount that was hidden.
+     */
+    @Column(nullable = false)
+    private int findingsDropped;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -134,6 +145,14 @@ public class WorkflowPhaseEvent {
     }
 
     /** Null degrades to {@code UNOBSERVED}: an emitter that states nothing has observed nothing. */
+    public void setFindingsDropped(Integer findingsDropped) {
+        this.findingsDropped = findingsDropped == null || findingsDropped < 0 ? 0 : findingsDropped;
+    }
+
+    public int getFindingsDropped() {
+        return findingsDropped;
+    }
+
     public void setStationResult(StationResult stationResult) {
         this.stationResult = stationResult == null ? StationResult.UNOBSERVED : stationResult;
     }

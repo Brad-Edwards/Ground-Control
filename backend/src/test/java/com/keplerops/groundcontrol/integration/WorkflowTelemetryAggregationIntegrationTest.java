@@ -277,6 +277,7 @@ class WorkflowTelemetryAggregationIntegrationTest extends BaseIntegrationTest {
                 null,
                 null,
                 null,
+                null,
                 null);
         assertThatThrownBy(() -> service.recordPhaseEvent(foreignEvent)).isInstanceOf(NotFoundException.class);
         var foreignCost = new ImportRunCostCommand(
@@ -295,6 +296,7 @@ class WorkflowTelemetryAggregationIntegrationTest extends BaseIntegrationTest {
                 100L,
                 "x",
                 TelemetryProvenance.ISSUE_THREAD,
+                null,
                 null,
                 null,
                 null,
@@ -342,6 +344,7 @@ class WorkflowTelemetryAggregationIntegrationTest extends BaseIntegrationTest {
                 null,
                 null,
                 null,
+                null,
                 null);
         var backfill = new RecordPhaseEventCommand(
                 run.getId(),
@@ -354,6 +357,7 @@ class WorkflowTelemetryAggregationIntegrationTest extends BaseIntegrationTest {
                 null,
                 null,
                 TelemetryProvenance.ISSUE_THREAD,
+                null,
                 null,
                 null,
                 null,
@@ -412,6 +416,7 @@ class WorkflowTelemetryAggregationIntegrationTest extends BaseIntegrationTest {
                 5L,
                 null,
                 TelemetryProvenance.LIVE_EMISSION,
+                null,
                 null,
                 null,
                 null,

@@ -205,7 +205,12 @@ public class WorkflowTelemetryService {
         // downstream re-derives one from another, so a contradictory combination stored here is
         // indistinguishable from a real observation forever after.
         WorkflowTelemetryValidation.validateMeasurement(
-                stationCatalog, command.stationId(), command.stationResult(), command.eventType(), command.findings());
+                stationCatalog,
+                command.stationId(),
+                command.stationResult(),
+                command.eventType(),
+                command.findings(),
+                command.findingsDropped());
 
         var event = new WorkflowPhaseEvent(
                 command.runId(),
@@ -220,6 +225,7 @@ public class WorkflowTelemetryService {
         event.setSourceId(sourceId);
         event.setStationId(command.stationId());
         event.setStationResult(command.stationResult());
+        event.setFindingsDropped(command.findingsDropped());
         var appended = phaseEventRepository.save(event);
         // Same transaction as the attempt: a partial batch must never be readable as a complete
         // gate outcome, so either the attempt and every finding it observed commit together or

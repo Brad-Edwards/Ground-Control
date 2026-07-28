@@ -153,7 +153,8 @@ public class WorkflowRunController {
                 request.sourceId(),
                 request.stationId(),
                 request.stationResult(),
-                toFindingCommands(request.findings()));
+                toFindingCommands(request.findings()),
+                request.findingsDropped());
         return PhaseEventResponse.from(telemetryService.recordPhaseEvent(command));
     }
 

@@ -52,6 +52,66 @@ describe("workflow-run lifecycle emitter — station result axis (issue #1355)",
     assert.equal(terminal.event_type, "COMPLETED");
   });
 
+  it("records FAILED only when the operation produced no verdict", async () => {
+    // The other direction of the same separation. A gate rejecting the change is COMPLETED with a
+    // `fail`; FAILED is reserved for an attempt that never rendered a verdict, so it must not be
+    // reachable merely by a gate saying no.
+    const { events, deps } = recorder();
+    const emitter = createWorkflowRunLifecycleEmitter({ ...IDENTITY, deps });
+
+    emitter.ensureRun();
+    await emitter.station("git_publish", async () => ({
+      ok: false,
+      error: "implement_mechanical_input_invalid",
+      stationResult: "not_evaluable",
+    }));
+    await emitter.flush();
+
+    const terminal = events.find((e) => e.event_type !== "STARTED");
+    assert.equal(terminal.event_type, "FAILED");
+    assert.equal(terminal.station_result, "not_evaluable");
+    assert.equal(terminal.outcome, "implement_mechanical_input_invalid");
+  });
+
+  it("carries the truncated-batch count with the batch it truncated", async () => {
+    // Logging the count alone left the store unable to tell a truncated batch from a complete one:
+    // the stored count read as everything the gate found, and the defect signal was understated by
+    // exactly the amount hidden.
+    const { events, deps } = recorder();
+    const emitter = createWorkflowRunLifecycleEmitter({ ...IDENTITY, deps });
+
+    emitter.ensureRun();
+    await emitter.station("completion_gate", async () => ({
+      ok: false,
+      stationResult: "fail",
+      findings: [{ finding_key: "k1", source_kind: "DETECTOR", source_id: "policy" }],
+      findingsDropped: 212,
+    }));
+    await emitter.flush();
+
+    const terminal = events.find((e) => e.event_type === "COMPLETED");
+    assert.equal(terminal.findings_dropped, 212);
+  });
+
+  it("omits the count when the cap never engaged", async () => {
+    // Zero dropped is the ordinary case. Emitting it would put a field on every event to say
+    // nothing happened.
+    const { events, deps } = recorder();
+    const emitter = createWorkflowRunLifecycleEmitter({ ...IDENTITY, deps });
+
+    emitter.ensureRun();
+    await emitter.station("completion_gate", async () => ({
+      ok: true,
+      stationResult: "pass",
+      findings: [],
+      findingsDropped: 0,
+    }));
+    await emitter.flush();
+
+    const terminal = events.find((e) => e.event_type === "COMPLETED");
+    assert.equal("findings_dropped" in terminal, false);
+  });
+
   it("records unobserved when a gate states no verdict", async () => {
     const { events, deps } = recorder();
     const emitter = createWorkflowRunLifecycleEmitter({ ...IDENTITY, deps });
@@ -108,11 +168,15 @@ describe("workflow-run lifecycle emitter — station result axis (issue #1355)",
     await emitter.flush();
 
     const started = events.find((e) => e.event_type === "STARTED");
-    const terminal = events.find((e) => e.event_type === "FAILED");
+    // A gate that inspected the change and rejected it finished. The rejection is the
+    // station_result; deriving the lifecycle axis from it is the conflation this issue removes.
+    const terminal = events.find((e) => e.event_type === "COMPLETED");
     // The batch belongs to the attempt's verdict; attaching it to STARTED would
     // describe findings before the gate had produced any.
     assert.equal(started.findings, undefined);
     assert.deepEqual(terminal.findings, findings);
+    assert.equal(terminal.station_result, "fail");
+    assert.equal(events.some((e) => e.event_type === "FAILED"), false);
   });
 
   it("sends an explicit empty batch for a passing gate", async () => {

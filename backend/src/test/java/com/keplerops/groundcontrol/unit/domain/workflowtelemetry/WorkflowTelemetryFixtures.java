@@ -41,6 +41,7 @@ final class WorkflowTelemetryFixtures {
                 sourceId,
                 null,
                 null,
+                null,
                 null);
     }
 

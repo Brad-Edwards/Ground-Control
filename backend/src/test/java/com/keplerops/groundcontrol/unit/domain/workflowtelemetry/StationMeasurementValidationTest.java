@@ -88,7 +88,8 @@ class StationMeasurementValidationTest {
                 null,
                 stationId,
                 result,
-                findings);
+                findings,
+                null);
     }
 
     private static List<GateFindingCommand> oneFinding() {

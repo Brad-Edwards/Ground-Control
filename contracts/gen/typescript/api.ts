@@ -1609,6 +1609,7 @@ export interface PhaseEventResponse {
   "cycleIndex": any;
   "durationMs": any;
   "eventType": any;
+  "findingsDropped": any;
   "id": any;
   "occurredAt": any;
   "outcome": any;
@@ -1863,6 +1864,7 @@ export interface RecordPhaseEventRequest {
   "durationMs"?: any;
   "eventType": any;
   "findings"?: GateFindingRequest[];
+  "findingsDropped"?: any;
   "occurredAt": any;
   "outcome"?: any;
   "phase": any;

@@ -35,4 +35,5 @@ public record RecordPhaseEventCommand(
         String sourceId,
         String stationId,
         StationResult stationResult,
-        List<GateFindingCommand> findings) {}
+        List<GateFindingCommand> findings,
+        Integer findingsDropped) {}

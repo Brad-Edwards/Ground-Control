@@ -19,6 +19,11 @@ import java.util.List;
  * {@code stationResult} and the service records {@code UNOBSERVED} rather than inferring one from
  * {@code eventType}. A null {@code findings} means nothing was measured; an empty list means the
  * gate ran and found nothing, which is a different fact.
+ *
+ * <p>{@code findingsDropped} is how many findings the emitter's own cap discarded before sending.
+ * A cap that drops silently makes a truncated batch read as a complete one, which is the same lie as
+ * a gate reporting clean because it inspected nothing, so the count travels with the batch instead
+ * of only reaching the emitter's log.
  */
 public record RecordPhaseEventRequest(
         @NotBlank @Size(max = 100) String phase,
@@ -31,4 +36,5 @@ public record RecordPhaseEventRequest(
         @Size(max = 200) String sourceId,
         @Size(max = 100) String stationId,
         StationResult stationResult,
-        @Valid @Size(max = 500) List<GateFindingRequest> findings) {}
+        @Valid @Size(max = 500) List<GateFindingRequest> findings,
+        @PositiveOrZero Integer findingsDropped) {}

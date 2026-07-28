@@ -131,6 +131,7 @@ export const WORKFLOW_RUN_EVENT_FIELDS = [
   "station_id",
   "station_result",
   "findings",
+  "findings_dropped",
   "phase",
   "event_type",
   "cycle_index",
@@ -224,6 +225,16 @@ export const gcWorkflowRunZodShape = {
     .describe(
       "Findings this attempt observed. An empty array means the gate ran and found nothing, which "
         + "is a different fact from omitting the field. Carries no prose: no title, body, path, or line",
+    ),
+  findings_dropped: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional()
+    .describe(
+      "How many findings the emitter's cap discarded before sending. Without it a truncated batch "
+        + "is indistinguishable from a complete one and the defect signal is understated by exactly "
+        + "the amount hidden",
     ),
   finding_id: z.string().uuid().optional().describe("Gate finding UUID (record_finding_disposition)"),
   disposition: z

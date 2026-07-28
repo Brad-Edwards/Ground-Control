@@ -1091,6 +1091,12 @@ remove the finding from the escape-rate signal. The rule is enforced on the enti
 controller, so it holds for every path into the field, and the reference is carried on the audited
 row so the authority behind a retired finding survives with it.
 
+`findingsDropped` is how many findings the emitter's own cap discarded before sending. It is
+persisted rather than only logged: without it a truncated batch is indistinguishable from a complete
+one, so the stored count reads as everything the gate found and every aggregate built on it
+understates the defect signal by exactly the amount that was hidden. A positive value with no
+delivered batch returns 400, because that describes a lost batch rather than a truncated one.
+
 `stationId` must name an entry in the published station catalogue
 (`contracts/measurement/gc-station-catalogue-v2.json`, copied onto the backend classpath at build
 time so the validator cannot disagree with the contract). An unrecognised id returns 400 rather than

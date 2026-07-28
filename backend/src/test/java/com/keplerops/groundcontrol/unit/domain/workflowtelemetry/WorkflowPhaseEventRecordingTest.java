@@ -73,6 +73,7 @@ class WorkflowPhaseEventRecordingTest {
                 null,
                 null,
                 null,
+                null,
                 null);
         assertThatThrownBy(() -> service.recordPhaseEvent(command)).isInstanceOf(NotFoundException.class);
     }
@@ -94,6 +95,7 @@ class WorkflowPhaseEventRecordingTest {
                 5000L,
                 "clean",
                 TelemetryProvenance.ISSUE_THREAD,
+                null,
                 null,
                 null,
                 null,
@@ -120,6 +122,7 @@ class WorkflowPhaseEventRecordingTest {
                 null,
                 null,
                 TelemetryProvenance.ISSUE_THREAD,
+                null,
                 null,
                 null,
                 null,
@@ -225,6 +228,7 @@ class WorkflowPhaseEventRecordingTest {
                 null,
                 null,
                 null,
+                null,
                 null);
         assertThatThrownBy(() -> service.recordPhaseEvent(command))
                 .isInstanceOf(DomainValidationException.class)
@@ -243,6 +247,7 @@ class WorkflowPhaseEventRecordingTest {
                 -1L,
                 null,
                 TelemetryProvenance.LIVE_EMISSION,
+                null,
                 null,
                 null,
                 null,

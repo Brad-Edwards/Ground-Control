@@ -24,6 +24,13 @@ UPDATE workflow_phase_event_audit SET station_result = 'UNOBSERVED' WHERE statio
 ALTER TABLE workflow_phase_event ALTER COLUMN station_result SET NOT NULL;
 ALTER TABLE workflow_phase_event ALTER COLUMN station_result SET DEFAULT 'UNOBSERVED';
 
+-- How many findings the emitter's cap discarded before sending the batch. Persisted rather than only
+-- logged: a truncated batch is otherwise indistinguishable from a complete one, and an aggregate
+-- built on the stored count would understate the defect signal by exactly the amount that was
+-- hidden. Legacy rows carried no batch at all, so zero is the honest backfill.
+ALTER TABLE workflow_phase_event ADD COLUMN findings_dropped INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE workflow_phase_event_audit ADD COLUMN findings_dropped INTEGER;
+
 -- Aggregates scan by station and verdict; the run scope keeps the index selective per work item.
 CREATE INDEX idx_workflow_phase_event_station
     ON workflow_phase_event (project, station_id, station_result);

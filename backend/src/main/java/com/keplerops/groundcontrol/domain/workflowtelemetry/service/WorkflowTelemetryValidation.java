@@ -94,9 +94,21 @@ final class WorkflowTelemetryValidation {
             String stationId,
             StationResult stationResult,
             PhaseEventType eventType,
-            List<GateFindingCommand> findings) {
+            List<GateFindingCommand> findings,
+            Integer findingsDropped) {
         var hasVerdict = stationResult != null && stationResult != StationResult.UNOBSERVED;
         var hasFindings = findings != null && !findings.isEmpty();
+        var dropped = findingsDropped == null ? 0 : findingsDropped;
+        if (dropped < 0) {
+            throw new DomainValidationException("findingsDropped must not be negative");
+        }
+        if (dropped > 0 && !hasFindings) {
+            // The cap discards the overflow past a full batch. A drop with nothing delivered means
+            // the emitter lost the batch rather than truncated it, and recording it as a truncation
+            // would describe a cap that never engaged.
+            throw new DomainValidationException(
+                    "findingsDropped requires a delivered findings batch to have truncated");
+        }
         if (stationId == null) {
             if (hasVerdict) {
                 throw new DomainValidationException(
