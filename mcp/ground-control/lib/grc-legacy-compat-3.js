@@ -171,7 +171,17 @@ async function postSingleReviewComment({
     return null;
   }
 }
-export async function getOwnerRepo(repoRoot, { allowGhFallback = true } = {}) {
+/**
+ * Resolve the GitHub owner/repo for a checkout.
+ *
+ * The git-remote path is authoritative because git ignores `GH_REPO`. The `gh repo view` fallback
+ * honours it and is therefore an env-hijack seam, so it is opt-in rather than the default: every
+ * caller that reads or writes under the host identity gets the fail-closed behaviour without having
+ * to remember to ask for it. The previous default was the other way round, and reviewing which of
+ * the twenty-odd call sites had remembered is exactly the audit a safe default removes. A caller
+ * that is genuinely repo-agnostic passes `allowGhFallback: true` deliberately.
+ */
+export async function getOwnerRepo(repoRoot, { allowGhFallback = false } = {}) {
   // Primary path: read the git remote URL directly. git ignores GH_REPO,
   // so this path is immune to env-var hijack and is the source of truth
   // for every real /implement run (real repos always have an origin
@@ -203,11 +213,10 @@ export async function getOwnerRepo(repoRoot, { allowGhFallback = true } = {}) {
         "refusing to fall back to GH_REPO-sensitive resolution.",
     );
   }
-  // Fallback: `gh repo view --json nameWithOwner`. This path honors
-  // GH_REPO and is therefore vulnerable to env hijack — but it only
-  // fires when the git-remote path fails. Real repos always have a
-  // github.com origin, so the fallback is exercised only by tests and
-  // pathological states. Documented in the issue #934 follow-up.
+  // Fallback: `gh repo view --json nameWithOwner`. This path honors GH_REPO and is therefore
+  // vulnerable to env hijack. It is now reached only when a caller opted in explicitly, and only
+  // when the git-remote path already failed. Real repos always have a github.com origin, so it is
+  // exercised by tests and pathological states. Documented in the issue #934 follow-up.
   const { stdout } = await execFile(
     "gh",
     ["repo", "view", "--json", "nameWithOwner"],

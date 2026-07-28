@@ -212,9 +212,22 @@ export function buildReviewCommentPostFailedEnvelope({
 }
 const FINDINGS_COMMENT_BODY_MAX = 65535;
 const FINDINGS_COMMENT_PER_REVIEWER_MAX = 28000;
+/**
+ * Neutralize every reserved marker sequence in reviewer prose before it is posted.
+ *
+ * Reviewer output is model text written over a diff, so its content is influenced by whatever the
+ * branch contains. Other tool surfaces reject a caller-supplied `<!-- gc:` outright, but a review
+ * comment has to be posted verbatim to stay a faithful record, so the sequence is disarmed instead.
+ *
+ * The disarm covers the whole `gc:` namespace, not just `gc:codex-`. Narrowing it to the review
+ * markers left every other marker forgeable: a branch containing the literal text of a
+ * `gc:phase phase="ready_for_review"` or `gc:execution-obligation-authorization` marker could have
+ * it quoted into the thread by the reviewer, where the readers that gate on those markers cannot
+ * tell a forged one from a marker the server wrote.
+ */
 function disarmMarkerSequences(text) {
   if (typeof text !== "string" || text === "") return text;
-  return text.replace(/<!--(\s*gc:codex-)/g, "&lt;!--$1");
+  return text.replace(/<!--(\s*gc:)/g, "&lt;!--$1");
 }
 function truncateReviewText(text, cap) {
   if (typeof text !== "string") return "";
