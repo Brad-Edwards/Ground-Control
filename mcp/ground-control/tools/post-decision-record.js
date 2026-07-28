@@ -24,7 +24,7 @@ import {
   runRenderPrBody,
   runTestQualityReviewCycle,
   runWatchCiRun,
-  startReviewJob,
+  startAsyncJob,
 } from "../lib.js";
 import { ASYNC_REVIEW_PARAM_DESC } from "./query.js";
 import { ok, err } from "./respond.js";
@@ -396,7 +396,7 @@ export function registerPostDecisionRecord(server, ctx) {
           autoGrant: Boolean(auto_grant),
         };
         if (asyncMode) {
-          return ok(JSON.stringify(startReviewJob(
+          return ok(JSON.stringify(startAsyncJob(
             "codex_review_cycle",
             (signal) => runCodexReviewCycle({ ...params, signal }),
           ), null, 2));
@@ -431,7 +431,7 @@ export function registerPostDecisionRecord(server, ctx) {
           model,
         };
         if (asyncMode) {
-          return ok(JSON.stringify(startReviewJob(
+          return ok(JSON.stringify(startAsyncJob(
             "test_quality_review_cycle",
             (signal) => runTestQualityReviewCycle({ ...params, signal }),
           ), null, 2));

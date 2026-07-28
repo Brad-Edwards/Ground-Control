@@ -20,6 +20,10 @@ through Q8.5 use `action="publish"`; and Q10 through Q11 use
 its lightweight close record and requirement-free lifecycle intentionally
 differ from `/implement`. A mechanical failure hands control to the primary
 only for the named repair, after which the same action is retried.
+The three long actions use the same background contract as `/implement`: pass
+`async=true` plus one bounded `idempotency_key` per logical attempt, poll the
+returned handle through `gc_codex_job`, and dispatch on the terminal `result`.
+Reuse a key only after a lost start response; create a new key after a repair.
 
 ## When to pick `/quickfix` vs `/implement`
 

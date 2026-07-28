@@ -31,7 +31,7 @@ import {
   runCodexReview,
   runPostImplementationPlan,
   runTestQualityReview,
-  startReviewJob,
+  startAsyncJob,
   transitionStatus,
   writeKnowledgeInbox,
 } from "../lib.js";
@@ -274,7 +274,7 @@ export function registerQuery(server, ctx) {
           issueNumber: issue_number ?? null, repo: repo ?? null,
         };
         if (asyncMode) {
-          return ok(JSON.stringify(startReviewJob(
+          return ok(JSON.stringify(startAsyncJob(
             "architecture_preflight",
             (signal) => runCodexArchitecturePreflight({ ...params, signal }),
           ), null, 2));
@@ -401,7 +401,7 @@ export function registerQuery(server, ctx) {
           overridePhaseReason: override_phase_reason ?? null,
         };
         if (asyncMode) {
-          return ok(JSON.stringify(startReviewJob(
+          return ok(JSON.stringify(startAsyncJob(
             "codex_review",
             (signal) => runCodexReview({ ...params, signal }),
           ), null, 2));
@@ -456,7 +456,7 @@ export function registerQuery(server, ctx) {
           ...(model ? { model } : {}),
         };
         if (asyncMode) {
-          return ok(JSON.stringify(startReviewJob(
+          return ok(JSON.stringify(startAsyncJob(
             "test_quality_review",
             (signal) => runTestQualityReview({ ...params, signal }),
           ), null, 2));

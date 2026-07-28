@@ -77,7 +77,7 @@ const REQUIRED_FIELD_REGISTRY = {
   gc_implement_mechanical: [
     "action", "repo_path", "issue_number", "invocation_root", "branch_name",
     "base_branch", "driver", "requested_requirement_uid", "requirements", "commit_message",
-    "synchronization", "pr_number", "completion",
+    "synchronization", "pr_number", "completion", "async", "idempotency_key",
   ],
   gc_synchronize_implement_branch: [
     "repo_path", "issue_number", "branch_name", "action", "record_id",
@@ -103,6 +103,7 @@ describe("MCP tool description parity (issue #1169)", { timeout: 30000 }, () => 
   let client;
   let transport;
   let descriptionMap;
+  let toolMap;
 
   before(async () => {
     transport = new StdioClientTransport({
@@ -115,6 +116,7 @@ describe("MCP tool description parity (issue #1169)", { timeout: 30000 }, () => 
     await client.connect(transport);
 
     const { tools } = await client.listTools();
+    toolMap = Object.fromEntries(tools.map((tool) => [tool.name, tool]));
     descriptionMap = Object.fromEntries(
       tools.map((t) => [t.name, t.description ?? ""]),
     );
@@ -139,4 +141,18 @@ describe("MCP tool description parity (issue #1169)", { timeout: 30000 }, () => 
       }
     });
   }
+
+  it("publishes the bounded async mechanical and polling schema", () => {
+    const mechanical = toolMap.gc_implement_mechanical?.inputSchema?.properties;
+    assert.equal(mechanical?.async?.type, "boolean");
+    assert.equal(mechanical?.idempotency_key?.type, "string");
+    assert.ok(mechanical?.idempotency_key?.maxLength <= 128);
+    assert.equal(typeof mechanical?.idempotency_key?.pattern, "string");
+
+    const polling = toolMap.gc_codex_job?.inputSchema?.properties;
+    assert.equal(polling?.job_id?.type, "string");
+    assert.ok(polling?.job_id?.maxLength <= 80);
+    assert.equal(typeof polling?.job_id?.pattern, "string");
+    assert.match(descriptionMap.gc_codex_job, /gc_implement_mechanical/);
+  });
 });

@@ -12,7 +12,11 @@ import { buildCiWatchGhArgs } from "./doc-coverage.js";
 import { execFile } from "./runtime-primitives.js";
 
 export const TEST_QUALITY_REVIEW_DEFAULT_MODEL = "claude-sonnet-5";
-export const TEST_QUALITY_REVIEW_TIMEOUT_MS = 600_000;
+// Hard timeout for a single review call. Repository-scale test cutovers can
+// legitimately require more than ten minutes of read-only inspection. The
+// async job owns cancellation and result polling; this 30-minute ceiling is a
+// final stuck-child bound, not an MCP request-lifetime surrogate.
+export const TEST_QUALITY_REVIEW_TIMEOUT_MS = 1_800_000;
 export const TEST_QUALITY_FINDING_FIELDS_DESCRIPTION = [
   '    `severity`        — exactly "critical" or "warning".',
   "    `location`        — `<file>::<TestClass>::<test_method>` OR `<file>:<line>`.",

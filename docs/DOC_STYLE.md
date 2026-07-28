@@ -539,3 +539,10 @@ on a tracked source file over 500 lines, and it splits the files that were over
 it. The documentation classification, the `outcome_required` mapping, and the
 Vale configuration are untouched; the only documentation change is the
 enforcement section added to `docs/CODING_STANDARDS.md`.
+
+The issue #1473 async mechanical-job change follows the same convention:
+`async`, `idempotency_key`, and bounded `job_id` are documented in the MCP
+README and live tool schemas; start-and-poll behavior is synchronized in
+ADR-036, ADR-054, ADR-090, the implement/quickfix skills, and workflow
+documentation. The existing documentation classifier, Vale configuration, and
+style rules are unchanged.

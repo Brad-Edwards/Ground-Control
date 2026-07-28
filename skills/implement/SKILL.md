@@ -84,11 +84,11 @@ MCP records. The primary consumes compact structured envelopes.
 |---|---|---|
 | 1–2 | script/agent | Resolve issue/branch naming inputs, then `gc_implement_mechanical action=bootstrap`; interpret the returned discussion in the next semantic band |
 | 2.5–5 | agent | Architecture preflight, code assessment, plan, TDD implementation, clause mapping, and proportionate targeted tests |
-| 6 | script | `gc_implement_mechanical action=verify` |
+| 6 | script | Start `gc_implement_mechanical action=verify` with `async=true`, then poll the shared job |
 | 6.5–6.6 | script/agent | Existing bounded review-cycle tools run reviewers; the primary acts only on returned findings or cap decisions |
-| 7–8.5 | script | `gc_implement_mechanical action=publish`; an agent enters only for a returned merge conflict or failed hook |
+| 7–8.5 | script | Start `gc_implement_mechanical action=publish` with `async=true`, then poll; an agent enters only for a returned merge conflict or failed hook |
 | 9 | script/agent | The primary supplies semantic PR inputs; existing render and synchronized-create tools enforce and publish them |
-| 10–11 | script | `gc_implement_mechanical action=monitor`; an agent enters only when CI or Sonar returns an actionable failure |
+| 10–11 | script | Start `gc_implement_mechanical action=monitor` with `async=true`, then poll; an agent enters only when CI or Sonar returns an actionable failure |
 | 15–16 | agent | Post-merge requirement transition and semantic traceability reconciliation |
 | 17 pre-merge | script | `gc_implement_mechanical action=readiness` |
 | 17 post-merge and 20 | script | `gc_implement_mechanical action=finalize` |
@@ -100,6 +100,18 @@ bounded repair; repair that condition and retry the same action. For a
 `publish` merge conflict, pass the returned `retry_input` as
 `synchronization` after resolving every conflict. Never replace a failed
 mechanical gate with an agent assertion.
+
+The three long actions (`verify`, `publish`, and `monitor`) use the shared
+background-job transport. Create one bounded `idempotency_key` for each logical
+attempt, call `gc_implement_mechanical` with `async=true`, and poll the returned
+`job_id` through `gc_codex_job` until `status="done"`. Consume `result` exactly
+as the synchronous mechanical envelope; a completed job may correctly contain
+`result.ok=false` for an actionable gate failure. Reuse the same key only when
+retrying the start because the transport response was lost. After repairing the
+reported condition, create a new key for the new logical attempt. `bootstrap`,
+`readiness`, and `finalize` remain synchronous. Mechanical jobs do not claim
+cancellation; `gc_codex_job action=cancel` returns `job_not_cancellable` while
+their existing command and polling call graph lacks end-to-end abort support.
 
 ## Step list (in order)
 

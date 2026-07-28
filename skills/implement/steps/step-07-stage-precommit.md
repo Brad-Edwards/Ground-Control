@@ -7,27 +7,30 @@ tier: low
 # Step 7: Stage & Pre-commit Loop
 
 On the normal path, Steps 7, 8, and 8.5 are one
-`gc_implement_mechanical action="publish"` call. It screens changed paths
-before staging, runs pre-commit, commits, pushes, starts base synchronization,
-and completes a clean merge automatically. If synchronization reports
-conflicts, resolve them and retry `publish` with the returned `retry_input` as
-`synchronization`; the existing synchronization boundary verifies, commits,
-pushes, and attests the preserved merge.
+`gc_implement_mechanical action="publish"` background job. Call it with
+`async=true` and one bounded `idempotency_key` for the publish attempt, then
+poll the returned `job_id` through `gc_codex_job` until `status="done"` and
+dispatch on `result`. Reuse the same key only when the start response was lost.
+After repairing a hook failure or resolving synchronization conflicts, create a
+new key for that new attempt and pass the returned `retry_input` as
+`synchronization`. The action screens changed paths before staging, runs
+pre-commit, commits, pushes, starts base synchronization, and completes a clean
+merge automatically; the existing synchronization boundary verifies, commits,
+pushes, and attests a preserved merge.
 
-1. `git add` all relevant changed files. Do NOT stage .env files, credentials, secrets, or large binaries.
-2. Run the workflow's single mandatory pre-publish hook invocation -
-   `cfg.workflow.precommit_command`, default `pre-commit run --all-files`. The
-   boundary is mandatory; the tool is repo-native, so a repo on lefthook,
-   husky, or a bespoke script configures that field. Do not duplicate this
+1. The action stages all relevant changed files after refusing environment
+   files, credentials, secrets, and sensitive key material.
+2. The action runs the workflow's single mandatory pre-publish hook invocation:
+   `cfg.workflow.precommit_command`, default
+   `pre-commit run --all-files`. The boundary is mandatory; a repo on lefthook,
+   husky, or a bespoke script configures that field. Do not duplicate a
    successful boundary elsewhere.
-3. If the hook boundary fails:
-   - Read the failure output.
-   - Fix the issues.
-   - Re-stage any modified files with `git add`.
-   - Re-run `cfg.workflow.precommit_command`. A failure retry is repair of this
-     same mandatory boundary, not a redundant second gate.
-   - Repeat up to 5 times. If still failing after 5 attempts, escalate to the user with the failure details (post as an issue comment).
-4. When the hook boundary passes, proceed.
+3. If the completed result names a hook failure, read its bounded output, fix
+   the issue, and retry `publish` with a new idempotency key. Repeat up to 5
+   failed attempts. If it still fails, escalate with the failure details and
+   record the open execution obligation.
+4. When the completed result passes, continue from its synchronization and
+   publication evidence.
 
 ## Return contract
 
