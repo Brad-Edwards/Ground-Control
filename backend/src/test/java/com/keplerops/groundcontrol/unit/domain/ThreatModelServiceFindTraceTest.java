@@ -313,8 +313,9 @@ class ThreatModelServiceFindTraceTest {
                             RiskScenarioLinkTargetType.THREAT_MODEL, tm.getId(), projectId))
                     .thenReturn(List.of());
 
-            var thrown = catchThrowableOfType(
-                    () -> threatModelService.delete(projectId, tm.getId()), ConflictException.class);
+            var tmId = tm.getId();
+            var thrown =
+                    catchThrowableOfType(() -> threatModelService.delete(projectId, tmId), ConflictException.class);
             assertThat(thrown).isNotNull().hasMessageContaining("reverse links");
             assertThat(thrown.getErrorCode()).isEqualTo("threat_model_referenced");
             var detail = thrown.getDetail();
@@ -338,8 +339,9 @@ class ThreatModelServiceFindTraceTest {
                             RiskScenarioLinkTargetType.THREAT_MODEL, tm.getId(), projectId))
                     .thenReturn(List.of("RS-001"));
 
-            var thrown = catchThrowableOfType(
-                    () -> threatModelService.delete(projectId, tm.getId()), ConflictException.class);
+            var tmId = tm.getId();
+            var thrown =
+                    catchThrowableOfType(() -> threatModelService.delete(projectId, tmId), ConflictException.class);
             assertThat(thrown).isNotNull().hasMessageContaining("reverse links");
             assertThat(thrown.getErrorCode()).isEqualTo("threat_model_referenced");
             var detail = thrown.getDetail();
