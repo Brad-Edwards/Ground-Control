@@ -3,7 +3,6 @@ package com.keplerops.groundcontrol.unit.domain.research;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.keplerops.groundcontrol.TestUtil;
@@ -70,14 +69,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
-/**
- * GC-RSCH-F008 / GC-RSCH-F009 / ADR-083 — service-layer unit tests for the
- * protocol plan on {@link ResearchRunService}.
- */
+/** Split from ResearchRunProtocolPlanServiceTest under issue #1467 for the 500-LOC limit
+ * (docs/CODING_STANDARDS.md). Test bodies are unchanged; fixtures are
+ * repeated because JUnit builds a fresh instance per test class. */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 class ResearchRunProtocolPlanServiceTest {
-
     private static final UUID PROJECT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID RUN_ID = UUID.fromString("00000000-0000-0000-0000-000000000010");
     private static final UUID SELECTION_ID = UUID.fromString("00000000-0000-0000-0000-000000000020");
@@ -296,6 +293,28 @@ class ResearchRunProtocolPlanServiceTest {
         return List.of(filled("req-1"), deferred("oq-1"));
     }
 
+    private static Stream<Arguments> coverageValidationScenarios() {
+        return Stream.of(
+                // record_missingCoverageForRequirement_throwsIncomplete
+                Arguments.of(List.of(filled("req-1")), "research_run_protocol_plan_coverage_incomplete"),
+                // record_unknownContractEntryKey_throwsValidation
+                Arguments.of(
+                        List.of(filled("req-1"), deferred("oq-1"), filled("nope")),
+                        "research_run_protocol_plan_unknown_contract_entry"),
+                // record_duplicateCoverage_throwsValidation
+                Arguments.of(
+                        List.of(filled("req-1"), filled("req-1"), deferred("oq-1")),
+                        "research_run_protocol_plan_duplicate_coverage"),
+                // record_coverageOnMethodLimit_throwsNotCoverable
+                Arguments.of(
+                        List.of(filled("req-1"), deferred("oq-1"), filled("lim-1")),
+                        "research_run_protocol_plan_entry_not_coverable"),
+                // record_coverageOnNonClaim_throwsNotCoverable
+                Arguments.of(
+                        List.of(filled("req-1"), deferred("oq-1"), filled("nc-1")),
+                        "research_run_protocol_plan_entry_not_coverable"));
+    }
+
     // ---- record: happy path -------------------------------------------------
 
     @Test
@@ -357,28 +376,6 @@ class ResearchRunProtocolPlanServiceTest {
                 .isInstanceOf(DomainValidationException.class)
                 .extracting(e -> ((DomainValidationException) e).getErrorCode())
                 .isEqualTo(expectedErrorCode);
-    }
-
-    private static Stream<Arguments> coverageValidationScenarios() {
-        return Stream.of(
-                // record_missingCoverageForRequirement_throwsIncomplete
-                Arguments.of(List.of(filled("req-1")), "research_run_protocol_plan_coverage_incomplete"),
-                // record_unknownContractEntryKey_throwsValidation
-                Arguments.of(
-                        List.of(filled("req-1"), deferred("oq-1"), filled("nope")),
-                        "research_run_protocol_plan_unknown_contract_entry"),
-                // record_duplicateCoverage_throwsValidation
-                Arguments.of(
-                        List.of(filled("req-1"), filled("req-1"), deferred("oq-1")),
-                        "research_run_protocol_plan_duplicate_coverage"),
-                // record_coverageOnMethodLimit_throwsNotCoverable
-                Arguments.of(
-                        List.of(filled("req-1"), deferred("oq-1"), filled("lim-1")),
-                        "research_run_protocol_plan_entry_not_coverable"),
-                // record_coverageOnNonClaim_throwsNotCoverable
-                Arguments.of(
-                        List.of(filled("req-1"), deferred("oq-1"), filled("nc-1")),
-                        "research_run_protocol_plan_entry_not_coverable"));
     }
 
     // ---- record: per-disposition field validation ------------------------------
@@ -478,247 +475,5 @@ class ResearchRunProtocolPlanServiceTest {
                 .isInstanceOf(DomainValidationException.class)
                 .extracting(e -> ((DomainValidationException) e).getErrorCode())
                 .isEqualTo("research_run_protocol_plan_source_role_not_allowed");
-    }
-
-    @Test
-    void record_sourceRoleOnTaxonomyNonSourceRolesSection_throwsValidation() {
-        var run = activeRun();
-        var sel = selection(run, "taxonomy_development");
-        var mArtifact = methodologyArtifact(run);
-        var contract = new MethodologyRequirementsContract(run, sel, METHODOLOGY_ARTIFACT_ID, 1, "1", "actor");
-        TestUtil.setField(contract, "id", CONTRACT_ID);
-        var entries = List.of(entry(contract, ContractEntryKind.REQUIREMENT, "req-1"));
-        when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
-                        RUN_ID, ResearchArtifactType.PROTOCOL_PLAN, ResearchArtifactStatus.ACTIVE))
-                .thenReturn(Optional.of(protocolArtifact(run)));
-        when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
-                        RUN_ID, ResearchArtifactType.METHODOLOGY_REQUIREMENTS, ResearchArtifactStatus.ACTIVE))
-                .thenReturn(Optional.of(mArtifact));
-        when(contractRepository.findByArtifactId(METHODOLOGY_ARTIFACT_ID)).thenReturn(Optional.of(contract));
-        when(contractEntryRepository.findByContractIdOrderByCreatedAtAsc(CONTRACT_ID))
-                .thenReturn(entries);
-        when(selectionRepository.findFirstByResearchRunIdAndSupersededAtIsNull(RUN_ID))
-                .thenReturn(Optional.of(sel));
-        when(protocolPlanRepository.existsByArtifactId(PROTOCOL_ARTIFACT_ID)).thenReturn(false);
-
-        var taxonomySections = List.of(
-                new SectionCommand(
-                        "meta", ProtocolSectionKind.META_CHARACTERISTIC, ProtocolSourceRole.BACKGROUND_FRAMING, "s"),
-                section("unit", ProtocolSectionKind.UNIT_OF_ANALYSIS),
-                section("roles", ProtocolSectionKind.SOURCE_ROLES),
-                section("start", ProtocolSectionKind.STARTING_CONCEPTS),
-                section("construct", ProtocolSectionKind.CONSTRUCTION_PROCEDURE),
-                section("iter", ProtocolSectionKind.ITERATION_LOG_PROTOCOL),
-                section("end", ProtocolSectionKind.ENDING_CONDITIONS),
-                section("eval", ProtocolSectionKind.EVALUATION_PLAN),
-                section("threats", ProtocolSectionKind.VALIDITY_THREATS),
-                section("limits", ProtocolSectionKind.METHOD_LIMITS),
-                section("nonclaims", ProtocolSectionKind.NON_CLAIMS));
-        var cmd = new RecordProtocolPlanCommand("1", List.of(filled("req-1")), taxonomySections);
-        assertThatThrownBy(() -> service.recordProtocolPlan(PROJECT_ID, RUN_ID, cmd))
-                .isInstanceOf(DomainValidationException.class)
-                .extracting(e -> ((DomainValidationException) e).getErrorCode())
-                .isEqualTo("research_run_protocol_plan_source_role_not_allowed");
-    }
-
-    @Test
-    void record_sourceRoleOnTaxonomySourceRolesSection_accepted() {
-        var run = activeRun();
-        var sel = selection(run, "taxonomy_development");
-        var mArtifact = methodologyArtifact(run);
-        var contract = new MethodologyRequirementsContract(run, sel, METHODOLOGY_ARTIFACT_ID, 1, "1", "actor");
-        TestUtil.setField(contract, "id", CONTRACT_ID);
-        var entries = List.of(entry(contract, ContractEntryKind.REQUIREMENT, "req-1"));
-        when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
-                        RUN_ID, ResearchArtifactType.PROTOCOL_PLAN, ResearchArtifactStatus.ACTIVE))
-                .thenReturn(Optional.of(protocolArtifact(run)));
-        when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
-                        RUN_ID, ResearchArtifactType.METHODOLOGY_REQUIREMENTS, ResearchArtifactStatus.ACTIVE))
-                .thenReturn(Optional.of(mArtifact));
-        when(contractRepository.findByArtifactId(METHODOLOGY_ARTIFACT_ID)).thenReturn(Optional.of(contract));
-        when(contractEntryRepository.findByContractIdOrderByCreatedAtAsc(CONTRACT_ID))
-                .thenReturn(entries);
-        when(selectionRepository.findFirstByResearchRunIdAndSupersededAtIsNull(RUN_ID))
-                .thenReturn(Optional.of(sel));
-        when(protocolPlanRepository.existsByArtifactId(PROTOCOL_ARTIFACT_ID)).thenReturn(false);
-
-        var cmd = new RecordProtocolPlanCommand("1", List.of(filled("req-1")), taxonomySectionsAllRoles());
-
-        var result = service.recordProtocolPlan(PROJECT_ID, RUN_ID, cmd);
-
-        assertThat(result.sections()).hasSize(14);
-    }
-
-    @Test
-    void record_taxonomyMissingSourceRole_throwsValidation() {
-        var run = activeRun();
-        var sel = selection(run, "taxonomy_development");
-        var mArtifact = methodologyArtifact(run);
-        var contract = new MethodologyRequirementsContract(run, sel, METHODOLOGY_ARTIFACT_ID, 1, "1", "actor");
-        TestUtil.setField(contract, "id", CONTRACT_ID);
-        var entries = List.of(entry(contract, ContractEntryKind.REQUIREMENT, "req-1"));
-        when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
-                        RUN_ID, ResearchArtifactType.PROTOCOL_PLAN, ResearchArtifactStatus.ACTIVE))
-                .thenReturn(Optional.of(protocolArtifact(run)));
-        when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
-                        RUN_ID, ResearchArtifactType.METHODOLOGY_REQUIREMENTS, ResearchArtifactStatus.ACTIVE))
-                .thenReturn(Optional.of(mArtifact));
-        when(contractRepository.findByArtifactId(METHODOLOGY_ARTIFACT_ID)).thenReturn(Optional.of(contract));
-        when(contractEntryRepository.findByContractIdOrderByCreatedAtAsc(CONTRACT_ID))
-                .thenReturn(entries);
-        when(selectionRepository.findFirstByResearchRunIdAndSupersededAtIsNull(RUN_ID))
-                .thenReturn(Optional.of(sel));
-        when(protocolPlanRepository.existsByArtifactId(PROTOCOL_ARTIFACT_ID)).thenReturn(false);
-
-        // Only two of the four ADR-083 §3 taxonomy source roles are carried.
-        var taxonomySections = List.of(
-                section("meta", ProtocolSectionKind.META_CHARACTERISTIC),
-                section("unit", ProtocolSectionKind.UNIT_OF_ANALYSIS),
-                new SectionCommand(
-                        "roles-instance",
-                        ProtocolSectionKind.SOURCE_ROLES,
-                        ProtocolSourceRole.TAXONOMY_INSTANCE_CORPUS,
-                        "instances"),
-                new SectionCommand(
-                        "roles-background",
-                        ProtocolSectionKind.SOURCE_ROLES,
-                        ProtocolSourceRole.BACKGROUND_FRAMING,
-                        "background"),
-                section("start", ProtocolSectionKind.STARTING_CONCEPTS),
-                section("construct", ProtocolSectionKind.CONSTRUCTION_PROCEDURE),
-                section("iter", ProtocolSectionKind.ITERATION_LOG_PROTOCOL),
-                section("end", ProtocolSectionKind.ENDING_CONDITIONS),
-                section("eval", ProtocolSectionKind.EVALUATION_PLAN),
-                section("threats", ProtocolSectionKind.VALIDITY_THREATS),
-                section("limits", ProtocolSectionKind.METHOD_LIMITS),
-                section("nonclaims", ProtocolSectionKind.NON_CLAIMS));
-        var cmd = new RecordProtocolPlanCommand("1", List.of(filled("req-1")), taxonomySections);
-        assertThatThrownBy(() -> service.recordProtocolPlan(PROJECT_ID, RUN_ID, cmd))
-                .isInstanceOf(DomainValidationException.class)
-                .extracting(e -> ((DomainValidationException) e).getErrorCode())
-                .isEqualTo("research_run_protocol_plan_source_roles_incomplete");
-    }
-
-    @Test
-    void record_taxonomySourceRolesSectionWithoutRole_throwsValidation() {
-        var run = activeRun();
-        var sel = selection(run, "taxonomy_development");
-        var mArtifact = methodologyArtifact(run);
-        var contract = new MethodologyRequirementsContract(run, sel, METHODOLOGY_ARTIFACT_ID, 1, "1", "actor");
-        TestUtil.setField(contract, "id", CONTRACT_ID);
-        var entries = List.of(entry(contract, ContractEntryKind.REQUIREMENT, "req-1"));
-        when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
-                        RUN_ID, ResearchArtifactType.PROTOCOL_PLAN, ResearchArtifactStatus.ACTIVE))
-                .thenReturn(Optional.of(protocolArtifact(run)));
-        when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
-                        RUN_ID, ResearchArtifactType.METHODOLOGY_REQUIREMENTS, ResearchArtifactStatus.ACTIVE))
-                .thenReturn(Optional.of(mArtifact));
-        when(contractRepository.findByArtifactId(METHODOLOGY_ARTIFACT_ID)).thenReturn(Optional.of(contract));
-        when(contractEntryRepository.findByContractIdOrderByCreatedAtAsc(CONTRACT_ID))
-                .thenReturn(entries);
-        when(selectionRepository.findFirstByResearchRunIdAndSupersededAtIsNull(RUN_ID))
-                .thenReturn(Optional.of(sel));
-        when(protocolPlanRepository.existsByArtifactId(PROTOCOL_ARTIFACT_ID)).thenReturn(false);
-
-        // A SOURCE_ROLES section that names no role would let the roles collapse.
-        var taxonomySections = List.of(
-                section("meta", ProtocolSectionKind.META_CHARACTERISTIC),
-                section("unit", ProtocolSectionKind.UNIT_OF_ANALYSIS),
-                section("roles", ProtocolSectionKind.SOURCE_ROLES),
-                section("start", ProtocolSectionKind.STARTING_CONCEPTS),
-                section("construct", ProtocolSectionKind.CONSTRUCTION_PROCEDURE),
-                section("iter", ProtocolSectionKind.ITERATION_LOG_PROTOCOL),
-                section("end", ProtocolSectionKind.ENDING_CONDITIONS),
-                section("eval", ProtocolSectionKind.EVALUATION_PLAN),
-                section("threats", ProtocolSectionKind.VALIDITY_THREATS),
-                section("limits", ProtocolSectionKind.METHOD_LIMITS),
-                section("nonclaims", ProtocolSectionKind.NON_CLAIMS));
-        var cmd = new RecordProtocolPlanCommand("1", List.of(filled("req-1")), taxonomySections);
-        assertThatThrownBy(() -> service.recordProtocolPlan(PROJECT_ID, RUN_ID, cmd))
-                .isInstanceOf(DomainValidationException.class)
-                .extracting(e -> ((DomainValidationException) e).getErrorCode())
-                .isEqualTo("research_run_protocol_plan_source_role_required");
-    }
-
-    /** A complete taxonomy-development section set carrying all four ADR-083 §3 source roles. */
-    private static List<SectionCommand> taxonomySectionsAllRoles() {
-        return List.of(
-                section("meta", ProtocolSectionKind.META_CHARACTERISTIC),
-                section("unit", ProtocolSectionKind.UNIT_OF_ANALYSIS),
-                new SectionCommand(
-                        "roles-instance",
-                        ProtocolSectionKind.SOURCE_ROLES,
-                        ProtocolSourceRole.TAXONOMY_INSTANCE_CORPUS,
-                        "instances"),
-                new SectionCommand(
-                        "roles-background",
-                        ProtocolSectionKind.SOURCE_ROLES,
-                        ProtocolSourceRole.BACKGROUND_FRAMING,
-                        "background"),
-                new SectionCommand(
-                        "roles-methodology",
-                        ProtocolSectionKind.SOURCE_ROLES,
-                        ProtocolSourceRole.METHODOLOGY_LITERATURE,
-                        "methodology"),
-                new SectionCommand(
-                        "roles-validation",
-                        ProtocolSectionKind.SOURCE_ROLES,
-                        ProtocolSourceRole.VALIDATION_EVALUATION,
-                        "validation"),
-                section("start", ProtocolSectionKind.STARTING_CONCEPTS),
-                section("construct", ProtocolSectionKind.CONSTRUCTION_PROCEDURE),
-                section("iter", ProtocolSectionKind.ITERATION_LOG_PROTOCOL),
-                section("end", ProtocolSectionKind.ENDING_CONDITIONS),
-                section("eval", ProtocolSectionKind.EVALUATION_PLAN),
-                section("threats", ProtocolSectionKind.VALIDITY_THREATS),
-                section("limits", ProtocolSectionKind.METHOD_LIMITS),
-                section("nonclaims", ProtocolSectionKind.NON_CLAIMS));
-    }
-
-    // ---- get --------------------------------------------------------------
-
-    @Test
-    void get_noPlan_throwsNotFound() {
-        var run = activeRun();
-        when(artifactRepository.findByResearchRunIdAndArtifactTypeAndStatus(
-                        RUN_ID, ResearchArtifactType.PROTOCOL_PLAN, ResearchArtifactStatus.ACTIVE))
-                .thenReturn(Optional.of(protocolArtifact(run)));
-        when(protocolPlanRepository.findByArtifactId(PROTOCOL_ARTIFACT_ID)).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> service.getProtocolPlan(PROJECT_ID, RUN_ID)).isInstanceOf(NotFoundException.class);
-    }
-
-    @Test
-    void get_returnsAggregate() {
-        var run = readyRun();
-        var sel = selection(run, "systematic");
-        var contract = new MethodologyRequirementsContract(run, sel, METHODOLOGY_ARTIFACT_ID, 1, "1", "actor");
-        TestUtil.setField(contract, "id", CONTRACT_ID);
-        var plan = new ProtocolPlan(run, contract, PROTOCOL_ARTIFACT_ID, 1, "1", "systematic", "1", "actor");
-        TestUtil.setField(plan, "id", UUID.randomUUID());
-        var coverage = new ProtocolPlanCoverage(
-                plan,
-                "req-1",
-                ProtocolCoverageDisposition.FILLED,
-                "answer",
-                ProtocolAnswerProvenance.METHODOLOGY_SOURCE,
-                null,
-                null,
-                null,
-                "actor");
-        var section = new ProtocolPlanSection(
-                plan, "sec-1", ProtocolSectionKind.ELIGIBILITY_CRITERIA, null, "content", "actor");
-        when(protocolPlanRepository.findByArtifactId(PROTOCOL_ARTIFACT_ID)).thenReturn(Optional.of(plan));
-        when(protocolPlanCoverageRepository.findByProtocolPlanId(plan.getId())).thenReturn(List.of(coverage));
-        when(protocolPlanSectionRepository.findByProtocolPlanId(plan.getId())).thenReturn(List.of(section));
-
-        var result = service.getProtocolPlan(PROJECT_ID, RUN_ID);
-
-        // Assert the child collections flow through from the repositories (not a hollow shell),
-        // and verify() the queries actually happened so a dropped child query cannot pass silently.
-        assertThat(result.plan()).isSameAs(plan);
-        assertThat(result.coverages()).containsExactly(coverage);
-        assertThat(result.sections()).containsExactly(section);
-        verify(protocolPlanCoverageRepository).findByProtocolPlanId(plan.getId());
-        verify(protocolPlanSectionRepository).findByProtocolPlanId(plan.getId());
     }
 }

@@ -70,6 +70,10 @@ from .core import (  # noqa: F401
     normalize_path,
     run_no_deferral_disposition_check,
 )
+from .file_size import (  # noqa: F401
+    MAX_LINES,
+    run_file_size_limit_check,
+)
 from .adr_guard import (  # noqa: F401
     JAVA_DOTTED_NAME_RE,
     JAVA_IMPORT_RE,

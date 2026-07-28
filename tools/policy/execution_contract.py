@@ -28,6 +28,7 @@ from .core import (
 )
 from .deploy_artifacts import (
     read_mcp_library,
+    read_mcp_registrations,
 )
 
 
@@ -64,7 +65,8 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
     cursor = paths["cursor"].read_text(encoding="utf-8")
     # Barrel plus every extracted module: lib.js alone holds no implementation since #1355.
     mcp_lib = read_mcp_library(root) or ""
-    mcp_index = paths["mcp_index"].read_text(encoding="utf-8")
+    # Registrations moved out of index.js when it was decomposed; read the whole surface.
+    mcp_index = read_mcp_registrations(root)
     principles_flat = " ".join(principles.split())
     cursor_flat = " ".join(cursor.split()).lower()
 

@@ -1,5 +1,7 @@
 package com.keplerops.groundcontrol.domain.requirements.service;
 
+import static com.keplerops.groundcontrol.domain.requirements.service.AnalysisServiceSupport.topoSortWave;
+
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.graph.model.GraphEdge;
 import com.keplerops.groundcontrol.domain.graph.model.GraphEntityType;
@@ -12,7 +14,6 @@ import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRel
 import com.keplerops.groundcontrol.domain.requirements.repository.RequirementRepository;
 import com.keplerops.groundcontrol.domain.requirements.repository.TraceabilityLinkRepository;
 import com.keplerops.groundcontrol.domain.requirements.state.LinkType;
-import com.keplerops.groundcontrol.domain.requirements.state.Priority;
 import com.keplerops.groundcontrol.domain.requirements.state.RelationType;
 import com.keplerops.groundcontrol.domain.requirements.state.Status;
 import java.util.ArrayList;
@@ -37,9 +38,6 @@ public class AnalysisService {
             List.of(RelationType.PARENT, RelationType.DEPENDS_ON, RelationType.REFINES);
 
     private static final Set<Status> SATISFIED_STATUSES = Set.of(Status.ACTIVE, Status.DEPRECATED, Status.ARCHIVED);
-
-    private static final Map<Priority, Integer> PRIORITY_ORDER =
-            Map.of(Priority.MUST, 0, Priority.SHOULD, 1, Priority.COULD, 2, Priority.WONT, 3);
 
     private final RequirementRepository requirementRepository;
     private final RequirementRelationRepository relationRepository;
@@ -290,46 +288,6 @@ public class AnalysisService {
         }
 
         return new WorkOrderResult(allRequirements.size(), totalUnblocked, totalBlocked, totalUnconstrained, waves);
-    }
-
-    private List<UUID> topoSortWave(List<Requirement> waveReqs, Map<UUID, List<UUID>> dependsOn) {
-        Set<UUID> waveIds = new HashSet<>();
-        for (Requirement req : waveReqs) {
-            waveIds.add(req.getId());
-        }
-
-        Map<UUID, List<UUID>> waveDeps = new HashMap<>();
-        for (Requirement req : waveReqs) {
-            UUID id = req.getId();
-            List<UUID> deps = dependsOn.getOrDefault(id, List.of());
-            List<UUID> intraWaveDeps = new ArrayList<>();
-            for (UUID dep : deps) {
-                if (waveIds.contains(dep)) {
-                    intraWaveDeps.add(dep);
-                }
-            }
-            waveDeps.put(id, intraWaveDeps);
-        }
-
-        Map<UUID, Priority> priorityMap = new HashMap<>();
-        for (Requirement req : waveReqs) {
-            priorityMap.put(req.getId(), req.getPriority());
-        }
-        Comparator<UUID> tieBreaker = Comparator.comparingInt(
-                id -> PRIORITY_ORDER.getOrDefault(priorityMap.getOrDefault(id, Priority.WONT), 3));
-
-        List<UUID> sorted = GraphAlgorithms.topologicalSort(waveDeps, tieBreaker);
-
-        Set<UUID> sortedSet = new HashSet<>(sorted);
-        List<UUID> remaining = new ArrayList<>();
-        for (Requirement req : waveReqs) {
-            if (!sortedSet.contains(req.getId())) {
-                remaining.add(req.getId());
-            }
-        }
-        remaining.sort(tieBreaker);
-        sorted.addAll(remaining);
-        return sorted;
     }
 
     private WorkOrderWaveAccumulator buildWaveItems(

@@ -40,15 +40,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 
-/**
- * GC-RSCH-R001/R003/F003/F036/N007/N011 — end-to-end lifecycle against a live
- * Postgres. Validates that the migrations apply, the JPA mappings and Envers
- * audit shadows are consistent, and the four acceptance criteria hold with real
- * persistence (mocked-repo unit tests cannot exercise the schema).
- */
+/** Split from ResearchRunLifecycleIntegrationTest under issue #1467 for the 500-LOC limit
+ * (docs/CODING_STANDARDS.md). Test bodies are unchanged; fixtures are
+ * repeated because JUnit builds a fresh instance per test class. */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ResearchRunLifecycleIntegrationTest extends BaseIntegrationTest {
-
     private static final String PROJECT = "rsch-run-it";
 
     @Autowired
@@ -207,6 +203,26 @@ class ResearchRunLifecycleIntegrationTest extends BaseIntegrationTest {
                     + "(SELECT id FROM project WHERE identifier = '" + PROJECT + "')");
             stmt.executeUpdate("DELETE FROM project WHERE identifier = '" + PROJECT + "'");
         }
+    }
+
+    private static List<SectionCommand> systematicReviewSections() {
+        return List.of(
+                new SectionCommand(
+                        "s-eligibility", ProtocolSectionKind.ELIGIBILITY_CRITERIA, null, "eligibility criteria"),
+                new SectionCommand(
+                        "s-databases",
+                        ProtocolSectionKind.DATABASES_SEARCH_STRINGS,
+                        null,
+                        "databases and search strings"),
+                new SectionCommand("s-screening", ProtocolSectionKind.SCREENING, null, "screening process"),
+                new SectionCommand("s-extraction", ProtocolSectionKind.DATA_EXTRACTION, null, "data extraction plan"),
+                new SectionCommand("s-rob", ProtocolSectionKind.RISK_OF_BIAS_POSTURE, null, "risk of bias posture"),
+                new SectionCommand("s-synthesis", ProtocolSectionKind.SYNTHESIS_PLAN, null, "synthesis plan"),
+                new SectionCommand("s-reporting", ProtocolSectionKind.REPORTING_STANDARD, null, "reporting standard"),
+                new SectionCommand(
+                        "s-certainty", ProtocolSectionKind.CERTAINTY_CLAIM_LIMITS, null, "certainty and claim limits"),
+                new SectionCommand("s-limits", ProtocolSectionKind.METHOD_LIMITS, null, "method limits"),
+                new SectionCommand("s-nonclaims", ProtocolSectionKind.NON_CLAIMS, null, "non-claims"));
     }
 
     @Test
@@ -375,136 +391,5 @@ class ResearchRunLifecycleIntegrationTest extends BaseIntegrationTest {
                 // best-effort cleanup
             }
         }
-    }
-
-    /**
-     * GC-RSCH-F008 / ADR-083 §2 — the SOURCE_SEARCH durable gate: advancing past
-     * PROTOCOL_PLANNING is blocked while the active protocol plan carries an
-     * unresolved BLOCKING_DECISION_REQUIRED coverage, and allowed once a reworked
-     * plan resolves it.
-     */
-    @Test
-    void advanceToSourceSearch_blockedByBlockingCoverage_thenAllowedAfterRework() {
-        var projectId = ensureProject();
-        ActorHolder.set("it-actor-2");
-        ResearchRun run;
-        try {
-            run = researchRunService.start(new StartResearchRunCommand(projectId, "RUN-IT-2", null, null, Map.of()));
-        } finally {
-            ActorHolder.clear();
-        }
-        var runId = run.getId();
-
-        researchRunService.selectMethodology(projectId, runId, new SelectMethodologyCommand("systematic"));
-        var sources = researchRunService.listMethodologySources(projectId, runId);
-        for (var source : sources) {
-            researchRunService.updateMethodologySourceState(
-                    projectId,
-                    runId,
-                    source.getId(),
-                    new UpdateMethodologySourceStateCommand(MethodologySourceState.OBTAINED));
-            researchRunService.updateMethodologySourceState(
-                    projectId,
-                    runId,
-                    source.getId(),
-                    new UpdateMethodologySourceStateCommand(MethodologySourceState.READ));
-        }
-        researchRunService.recordArtifact(
-                projectId,
-                runId,
-                new RecordArtifactCommand(
-                        ResearchArtifactType.METHODOLOGY_REQUIREMENTS,
-                        "ws://m",
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null));
-        researchRunService.recordMethodologyRequirementsContract(
-                projectId,
-                runId,
-                new RecordMethodologyRequirementsContractCommand(
-                        List.of(new EntryCommand(
-                                ContractEntryKind.OPEN_PROTOCOL_QUESTION,
-                                "oq-1",
-                                "which risk-of-bias tool?",
-                                List.of(new SourceLinkCommand(sources.get(0).getId(), "p.1")),
-                                null)),
-                        List.of()));
-        researchRunService.advanceStage(projectId, runId, new AdvanceStageCommand(ResearchRunStage.PROTOCOL_PLANNING));
-
-        // First PROTOCOL_PLAN attempt leaves oq-1 as BLOCKING_DECISION_REQUIRED.
-        researchRunService.recordArtifact(
-                projectId,
-                runId,
-                new RecordArtifactCommand(
-                        ResearchArtifactType.PROTOCOL_PLAN, null, null, null, null, null, null, null, null));
-        researchRunService.recordProtocolPlan(
-                projectId,
-                runId,
-                new RecordProtocolPlanCommand(
-                        "1",
-                        List.of(new CoverageCommand(
-                                "oq-1",
-                                ProtocolCoverageDisposition.BLOCKING_DECISION_REQUIRED,
-                                null,
-                                null,
-                                "needs a human call on the RoB tool",
-                                null,
-                                null)),
-                        systematicReviewSections()));
-        var blockedAdvance = new AdvanceStageCommand(ResearchRunStage.SOURCE_SEARCH);
-        assertThatThrownBy(() -> researchRunService.advanceStage(projectId, runId, blockedAdvance))
-                .isInstanceOf(DomainValidationException.class)
-                .extracting(e -> ((DomainValidationException) e).getErrorCode())
-                .isEqualTo("research_run_protocol_plan_blocking");
-        assertThat(researchRunService.getById(projectId, runId).getCurrentStage())
-                .isEqualTo(ResearchRunStage.PROTOCOL_PLANNING);
-
-        // Rework the artifact (new attempt) with a plan that resolves oq-1: now allowed.
-        researchRunService.recordArtifact(
-                projectId,
-                runId,
-                new RecordArtifactCommand(
-                        ResearchArtifactType.PROTOCOL_PLAN, null, null, null, null, null, null, null, null));
-        researchRunService.recordProtocolPlan(
-                projectId,
-                runId,
-                new RecordProtocolPlanCommand(
-                        "1",
-                        List.of(new CoverageCommand(
-                                "oq-1",
-                                ProtocolCoverageDisposition.RESOLVED_BY_USER_DECISION,
-                                null,
-                                null,
-                                null,
-                                null,
-                                "gate-decision:PROTOCOL_DECISION")),
-                        systematicReviewSections()));
-        var advanced = researchRunService.advanceStage(
-                projectId, runId, new AdvanceStageCommand(ResearchRunStage.SOURCE_SEARCH));
-        assertThat(advanced.getCurrentStage()).isEqualTo(ResearchRunStage.SOURCE_SEARCH);
-    }
-
-    private static List<SectionCommand> systematicReviewSections() {
-        return List.of(
-                new SectionCommand(
-                        "s-eligibility", ProtocolSectionKind.ELIGIBILITY_CRITERIA, null, "eligibility criteria"),
-                new SectionCommand(
-                        "s-databases",
-                        ProtocolSectionKind.DATABASES_SEARCH_STRINGS,
-                        null,
-                        "databases and search strings"),
-                new SectionCommand("s-screening", ProtocolSectionKind.SCREENING, null, "screening process"),
-                new SectionCommand("s-extraction", ProtocolSectionKind.DATA_EXTRACTION, null, "data extraction plan"),
-                new SectionCommand("s-rob", ProtocolSectionKind.RISK_OF_BIAS_POSTURE, null, "risk of bias posture"),
-                new SectionCommand("s-synthesis", ProtocolSectionKind.SYNTHESIS_PLAN, null, "synthesis plan"),
-                new SectionCommand("s-reporting", ProtocolSectionKind.REPORTING_STANDARD, null, "reporting standard"),
-                new SectionCommand(
-                        "s-certainty", ProtocolSectionKind.CERTAINTY_CLAIM_LIMITS, null, "certainty and claim limits"),
-                new SectionCommand("s-limits", ProtocolSectionKind.METHOD_LIMITS, null, "method limits"),
-                new SectionCommand("s-nonclaims", ProtocolSectionKind.NON_CLAIMS, null, "non-claims"));
     }
 }

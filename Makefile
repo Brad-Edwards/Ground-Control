@@ -59,7 +59,7 @@ contract-breaking: ## Check OpenAPI breaking changes against BASE_REF (default o
 	node tools/contracts/check-breaking-changes.mjs
 
 mcp-openapi-contract: contracts ## MCP↔backend write-contract drift gate (ADR-034/#1106, ADR-082/#1275)
-	GC_OPENAPI_SPEC=contracts/openapi/openapi.json node --test mcp/ground-control/openapi-contract.test.js
+	GC_OPENAPI_SPEC=contracts/openapi/openapi.json node mcp/ground-control/scripts/run-node-tests.mjs mcp/ground-control/openapi-contract.*.test.js
 
 devmain: ## Open the dev -> main promotion PR titled so the PR-title gate passes
 	@gh pr create --base main --head dev \

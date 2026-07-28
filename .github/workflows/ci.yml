@@ -554,7 +554,7 @@ jobs:
           BASE_REF: origin/${{ github.base_ref || 'dev' }}
         run: node tools/contracts/check-breaking-changes.mjs
       - name: Run MCP contract test
-        run: GC_OPENAPI_SPEC=contracts/openapi/openapi.json node --test mcp/ground-control/openapi-contract.test.js
+        run: GC_OPENAPI_SPEC=contracts/openapi/openapi.json node mcp/ground-control/scripts/run-node-tests.mjs mcp/ground-control/openapi-contract.*.test.js
 
   # ---------------------------------------------------------------------------
   # Docker — publishes only behind every verification gate. This list is

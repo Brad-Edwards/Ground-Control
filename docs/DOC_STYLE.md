@@ -532,3 +532,10 @@ documented in the MCP README and the tool descriptions, while the workflow
 contract is synchronized in ADR-021, ADR-029, ADR-031, ADR-036, ADR-054, and the
 workflow documents. It changes no documentation classification, Vale rule, or
 style rule.
+
+The issue #1467 file-size work establishes no new style rule. It adds a
+repo-native gate (`tools/policy/file_size.py`, ADR-092) that fails `make policy`
+on a tracked source file over 500 lines, and it splits the files that were over
+it. The documentation classification, the `outcome_required` mapping, and the
+Vale configuration are untouched; the only documentation change is the
+enforcement section added to `docs/CODING_STANDARDS.md`.
