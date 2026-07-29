@@ -258,9 +258,28 @@ export async function checkPackCompatibility(data, project) {
 export async function createWorkflowRun(data, project, { signal } = {}) {
   return request("POST", "/api/v1/workflow-runs", { body: data, params: { project }, signal });
 }
+
+const REST_STATION_RESULT = Object.freeze({
+  pass: "PASS",
+  fail: "FAIL",
+  skipped_station: "SKIPPED_STATION",
+  cancelled: "CANCELLED",
+  not_evaluable: "NOT_EVALUABLE",
+  unobserved: "UNOBSERVED",
+});
+
+function workflowRunEventBody(data) {
+  if (data?.station_result === undefined) return data;
+  const stationResult = REST_STATION_RESULT[data.station_result];
+  if (stationResult === undefined) {
+    throw new TypeError(`Unknown station_result: ${String(data.station_result)}`);
+  }
+  return { ...data, station_result: stationResult };
+}
+
 export async function recordWorkflowRunEvent(runId, data, project, { signal } = {}) {
   return request("POST", `/api/v1/workflow-runs/${encodeURIComponent(runId)}/events`, {
-    body: data,
+    body: workflowRunEventBody(data),
     params: { project },
     signal,
   });

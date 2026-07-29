@@ -4,6 +4,7 @@ import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.FindingDisposition;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.PhaseEventEmitter;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.StationResult;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowGateFinding;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowPhaseEvent;
@@ -158,7 +159,10 @@ public class WorkflowMeasurementService {
             String project, Instant from, Instant to) {
         requireText(project, PROJECT_FIELD);
         var window = resolveWindow(from, to);
-        var rows = phaseEventRepository.findEvaluableAttempts(project, EVALUABLE, window.from(), window.to()).stream()
+        var rows = phaseEventRepository
+                .findEvaluableAttempts(
+                        project, PhaseEventEmitter.ADR061_WORKFLOW_TELEMETRY, EVALUABLE, window.from(), window.to())
+                .stream()
                 .map(r -> new StationYieldCalculator.AttemptRow(
                         (String) r[0], (UUID) r[1], (Integer) r[2], (StationResult) r[3]))
                 .toList();

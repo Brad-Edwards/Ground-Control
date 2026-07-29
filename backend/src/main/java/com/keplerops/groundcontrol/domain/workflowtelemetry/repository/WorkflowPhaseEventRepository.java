@@ -1,5 +1,6 @@
 package com.keplerops.groundcontrol.domain.workflowtelemetry.repository;
 
+import com.keplerops.groundcontrol.domain.workflowtelemetry.PhaseEventEmitter;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.PhaseEventType;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.StationResult;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowPhaseEvent;
@@ -118,8 +119,9 @@ public interface WorkflowPhaseEventRepository extends JpaRepository<WorkflowPhas
     @Query(
             """
             select e.stationId, e.runId, e.cycleIndex, e.stationResult
-              from WorkflowPhaseEvent e
+             from WorkflowPhaseEvent e
              where e.project = :project
+               and e.emitter = :emitter
                and e.stationId is not null
                and e.stationResult in :evaluable
                and e.occurredAt >= :from
@@ -127,6 +129,7 @@ public interface WorkflowPhaseEventRepository extends JpaRepository<WorkflowPhas
             """)
     List<Object[]> findEvaluableAttempts(
             @Param("project") String project,
+            @Param("emitter") PhaseEventEmitter emitter,
             @Param("evaluable") java.util.Collection<StationResult> evaluable,
             @Param("from") Instant from,
             @Param("to") Instant to);

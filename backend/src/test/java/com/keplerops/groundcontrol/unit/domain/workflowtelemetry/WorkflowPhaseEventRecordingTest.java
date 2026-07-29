@@ -20,6 +20,7 @@ import com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowRun;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.repository.WorkflowPhaseEventRepository;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.repository.WorkflowRunRepository;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.RecordPhaseEventCommand;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.service.StationCatalog;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowMeasurementService;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowTelemetryService;
 import java.util.List;
@@ -45,6 +46,9 @@ class WorkflowPhaseEventRecordingTest {
 
     @Mock
     private WorkflowMeasurementService measurementService;
+
+    @Mock
+    private StationCatalog stationCatalog;
 
     @Mock
     private ApplicationEventPublisher eventPublisher;

@@ -35,6 +35,9 @@ public final class StationCatalog {
     /** The catalogue alias kind that names an ADR-036 routing stage (issue #1354). */
     private static final String ADR036_STAGE_ALIAS = "adr036_stage";
 
+    /** The catalogue alias kind that names an ADR-061 persisted phase (issue #1439). */
+    private static final String ADR061_PHASE_ALIAS = "adr061_phase";
+
     private final Set<String> stationIds;
     private final Set<String> markerIds;
 
@@ -45,6 +48,12 @@ public final class StationCatalog {
      * two can never disagree.
      */
     private final Map<String, String> stationByStage;
+
+    /** ADR-061 phase or direct station id → canonical station id. */
+    private final Map<String, String> stationByPhase;
+
+    /** Direct marker ids and their ADR-061 phase aliases. */
+    private final Set<String> markerPhases;
 
     /**
      * Every ADR-036 stage the catalogue declares — as a station alias, a lifecycle-marker alias, or a
@@ -70,6 +79,8 @@ public final class StationCatalog {
         this.stationIds = ids(root, "stations", "station_id");
         this.markerIds = ids(root, "lifecycle_markers", "marker_id");
         this.stationByStage = stationByStage(root);
+        this.stationByPhase = stationByPhase(root);
+        this.markerPhases = markerPhases(root);
         this.knownStages = knownStages(root, stationByStage);
         if (stationIds.isEmpty()) {
             // An empty set would accept nothing, but an empty *parse* means the shape changed and
@@ -104,6 +115,41 @@ public final class StationCatalog {
             }
         }
         return Map.copyOf(byStage);
+    }
+
+    private static Map<String, String> stationByPhase(JsonNode root) {
+        var byPhase = new LinkedHashMap<String, String>();
+        for (var station : root.path("stations")) {
+            var stationId = station.path("station_id").asText(null);
+            if (stationId == null || stationId.isBlank()) {
+                continue;
+            }
+            byPhase.put(stationId, stationId);
+            for (var alias : station.path("aliases").path(ADR061_PHASE_ALIAS)) {
+                var phase = alias.asText(null);
+                if (phase != null && !phase.isBlank()) {
+                    byPhase.put(phase, stationId);
+                }
+            }
+        }
+        return Map.copyOf(byPhase);
+    }
+
+    private static Set<String> markerPhases(JsonNode root) {
+        var phases = new LinkedHashSet<String>();
+        for (var marker : root.path("lifecycle_markers")) {
+            var markerId = marker.path("marker_id").asText(null);
+            if (markerId != null && !markerId.isBlank()) {
+                phases.add(markerId);
+            }
+            for (var alias : marker.path("aliases").path(ADR061_PHASE_ALIAS)) {
+                var phase = alias.asText(null);
+                if (phase != null && !phase.isBlank()) {
+                    phases.add(phase);
+                }
+            }
+        }
+        return Set.copyOf(phases);
     }
 
     private static Set<String> knownStages(JsonNode root, Map<String, String> stationByStage) {
@@ -145,6 +191,22 @@ public final class StationCatalog {
             return Optional.empty();
         }
         return Optional.ofNullable(stationByStage.get(stageId));
+    }
+
+    /**
+     * Resolve an ADR-061 phase to its canonical station id. Direct station ids and declared
+     * {@code adr061_phase} aliases are equivalent inputs; markers and unknown phases resolve empty.
+     */
+    public Optional<String> resolveStationForPhase(String phase) {
+        if (phase == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(stationByPhase.get(phase));
+    }
+
+    /** Whether an ADR-061 phase names a lifecycle marker rather than an inspecting station. */
+    public boolean isLifecycleMarkerPhase(String phase) {
+        return phase != null && markerPhases.contains(phase);
     }
 
     /** Whether the catalogue declares this ADR-036 stage at all (station, marker, or non-station). */
