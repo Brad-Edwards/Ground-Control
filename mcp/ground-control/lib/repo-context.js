@@ -51,8 +51,8 @@ export function emptyWorkflowConfig() {
     // Per-reviewer pre-push cap defaults. `null` means "use the MCP tool
     // default" (issue #906 lowered the tool default from 3 to 1; repos that
     // want the old behavior set `pre_push_cap: 3` explicitly).
-    codex_review: { pre_push_cap: null },
-    test_quality_review: { pre_push_cap: null },
+    codex_review: { pre_push_cap: null, non_verdict_retry_limit: null },
+    test_quality_review: { pre_push_cap: null, non_verdict_retry_limit: null },
     // PR title validation config (issue #896). `null` means "use the canonical
     // defaults declared in step-09-pr-body.md".
     pr_title: null,
@@ -157,35 +157,55 @@ export function normalizePrTitleConfig(raw) {
 }
 const REVIEWER_PRE_PUSH_CAP_MIN = 1;
 const REVIEWER_PRE_PUSH_CAP_MAX = 10;
+// Additional attempts after the first when a station renders no verdict (issue #1476). Zero is
+// meaningful — it opts out of automatic re-attempts — which is why the lower bound is 0 and not 1
+// as it is for pre_push_cap. The upper bound is deliberately small: a station that cannot be
+// observed in three total attempts is a hard external dependency, not something to keep hammering.
+const REVIEWER_NON_VERDICT_RETRY_MIN = 0;
+const REVIEWER_NON_VERDICT_RETRY_MAX = 2;
 export function normalizeReviewerConfig(rawBlock, blockName) {
   if (rawBlock == null) {
-    return { ok: true, value: { pre_push_cap: null } };
+    return { ok: true, value: { pre_push_cap: null, non_verdict_retry_limit: null } };
   }
   if (typeof rawBlock !== "object" || Array.isArray(rawBlock)) {
     return { ok: false, errors: [`${blockName} must be a mapping when set`] };
   }
-  const allowed = ["pre_push_cap"];
+  const allowed = ["pre_push_cap", "non_verdict_retry_limit"];
   const errors = [];
   for (const key of Object.keys(rawBlock)) {
     if (!allowed.includes(key)) {
       errors.push(`${blockName} has unknown key '${key}'`);
     }
   }
-  let pre_push_cap = null;
-  if (rawBlock.pre_push_cap != null) {
-    const v = rawBlock.pre_push_cap;
-    if (typeof v !== "number" || !Number.isInteger(v)) {
-      errors.push(`${blockName}.pre_push_cap must be an integer`);
-    } else if (v < REVIEWER_PRE_PUSH_CAP_MIN || v > REVIEWER_PRE_PUSH_CAP_MAX) {
-      errors.push(
-        `${blockName}.pre_push_cap must be between ${REVIEWER_PRE_PUSH_CAP_MIN} and ${REVIEWER_PRE_PUSH_CAP_MAX} inclusive`,
-      );
-    } else {
-      pre_push_cap = v;
-    }
-  }
+  const pre_push_cap = normalizeBoundedReviewerInteger(
+    rawBlock.pre_push_cap,
+    `${blockName}.pre_push_cap`,
+    REVIEWER_PRE_PUSH_CAP_MIN,
+    REVIEWER_PRE_PUSH_CAP_MAX,
+    errors,
+  );
+  const non_verdict_retry_limit = normalizeBoundedReviewerInteger(
+    rawBlock.non_verdict_retry_limit,
+    `${blockName}.non_verdict_retry_limit`,
+    REVIEWER_NON_VERDICT_RETRY_MIN,
+    REVIEWER_NON_VERDICT_RETRY_MAX,
+    errors,
+  );
   if (errors.length) return { ok: false, errors };
-  return { ok: true, value: { pre_push_cap } };
+  return { ok: true, value: { pre_push_cap, non_verdict_retry_limit } };
+}
+/** Null means "unset — use the tool-layer default"; an out-of-range value is an error, not a clamp. */
+function normalizeBoundedReviewerInteger(value, label, min, max, errors) {
+  if (value == null) return null;
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    errors.push(`${label} must be an integer`);
+    return null;
+  }
+  if (value < min || value > max) {
+    errors.push(`${label} must be between ${min} and ${max} inclusive`);
+    return null;
+  }
+  return value;
 }
 export const INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MIN = 1;
 export const INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MAX = 100;

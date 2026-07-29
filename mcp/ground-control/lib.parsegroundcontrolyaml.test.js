@@ -41,8 +41,8 @@ describe("parseGroundControlYaml", () => {
       policy_command: "make policy",
       precommit_command: "pre-commit run --all-files",
       base_branch: null,
-      codex_review: { pre_push_cap: null },
-      test_quality_review: { pre_push_cap: null },
+      codex_review: { pre_push_cap: null, non_verdict_retry_limit: null },
+      test_quality_review: { pre_push_cap: null, non_verdict_retry_limit: null },
       pr_title: null,
       integration_manager: { approval_label: null, ordering: null, max_queue_size: null, merge_strategy: null },
       dev_start_gate: {
@@ -279,7 +279,7 @@ describe("parseGroundControlYaml", () => {
       "",
     ]);
     assert.equal(result.ok, true, JSON.stringify(result.errors));
-    assert.deepEqual(result.value.workflow.codex_review, { pre_push_cap: 2 });
+    assert.deepEqual(result.value.workflow.codex_review, { pre_push_cap: 2, non_verdict_retry_limit: null });
   });
 
 
@@ -290,7 +290,7 @@ describe("parseGroundControlYaml", () => {
     // Cap default lives at the MCP-tool layer (so override_cap-aware callers
     // see the consistent number) — the parser surfaces null to mean
     // "use the tool default".
-    assert.deepEqual(result.value.workflow.codex_review, { pre_push_cap: null });
+    assert.deepEqual(result.value.workflow.codex_review, { pre_push_cap: null, non_verdict_retry_limit: null });
   });
 
 
@@ -360,7 +360,7 @@ describe("parseGroundControlYaml", () => {
       "",
     ]);
     assert.equal(result.ok, true, JSON.stringify(result.errors));
-    assert.deepEqual(result.value.workflow.test_quality_review, { pre_push_cap: 2 });
+    assert.deepEqual(result.value.workflow.test_quality_review, { pre_push_cap: 2, non_verdict_retry_limit: null });
   });
 
 
