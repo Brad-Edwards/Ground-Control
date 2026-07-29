@@ -101,6 +101,13 @@ export const WORKFLOW_RUN_EVENT_TYPES = [
   "SKIPPED",
 ];
 
+// Which emitter produced a phase-event row (ADR-090 amendment, issue #1354). The discriminator that
+// keeps a durable ADR-036 step observation from being counted as a lifecycle/station attempt.
+export const WORKFLOW_PHASE_EMITTERS = ["ADR061_WORKFLOW_TELEMETRY", "ADR036_STEP_JSONL"];
+
+// ADR-036 provider-neutral capability tier carried by a durable step observation.
+export const WORKFLOW_CAPABILITY_TIERS = ["LOW", "MEDIUM", "HIGH", "NOT_APPLICABLE", "UNOBSERVED"];
+
 // ---------------------------------------------------------------------------
 // Field lists for pick() — closed body sets; no free-form fields accepted
 // ---------------------------------------------------------------------------
@@ -142,6 +149,17 @@ export const WORKFLOW_RUN_EVENT_FIELDS = [
   // Deterministic identity of the logical fact (issue #1435). Supplied when the emitter can attest
   // it; the backend derives phase:eventType:cycleIndex otherwise.
   "source_id",
+  // Durable ADR-036 step observation (ADR-090 amendment, issue #1354). Present only on an
+  // ADR036_STEP_JSONL row; `model` above is reused for the step's reported model.
+  "emitter",
+  "measurement_version",
+  "step_alias",
+  "tier",
+  "model",
+  "expected_model",
+  "model_matches_expected",
+  "input_tokens",
+  "output_tokens",
 ];
 
 export const WORKFLOW_RUN_COST_FIELDS = [
@@ -236,6 +254,25 @@ export const gcWorkflowRunZodShape = {
         + "is indistinguishable from a complete one and the defect signal is understated by exactly "
         + "the amount hidden",
     ),
+  // ADR-036 durable step observation (ADR-090 amendment, issue #1354)
+  emitter: z
+    .enum(WORKFLOW_PHASE_EMITTERS)
+    .optional()
+    .describe(
+      "Which emitter produced the row. ADR036_STEP_JSONL marks a durable step observation; omit (or "
+        + "ADR061_WORKFLOW_TELEMETRY) for a lifecycle/station attempt. Lifecycle/graph aggregates "
+        + "exclude the step emitter",
+    ),
+  measurement_version: z.string().max(40).optional().describe("Measurement contract version, e.g. gc.measurement/v1"),
+  step_alias: z.string().max(40).optional().describe("Numbered SKILL step; a non-identity diagnostic alias"),
+  tier: z
+    .enum(WORKFLOW_CAPABILITY_TIERS)
+    .optional()
+    .describe("Capability tier of a durable ADR-036 step observation; separate from provider/model"),
+  expected_model: z.string().max(200).optional().describe("Tier's canonical model, for the consistency assertion"),
+  model_matches_expected: z.boolean().optional().describe("Whether the reported model matched the tier's canonical model"),
+  input_tokens: z.number().int().nonnegative().optional(),
+  output_tokens: z.number().int().nonnegative().optional(),
   finding_id: z.string().uuid().optional().describe("Gate finding UUID (record_finding_disposition)"),
   disposition: z
     .enum(["FIXED", "WONTFIX", "NOT_APPLICABLE"])

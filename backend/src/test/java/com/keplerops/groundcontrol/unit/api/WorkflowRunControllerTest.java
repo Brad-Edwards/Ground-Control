@@ -24,6 +24,9 @@ import com.keplerops.groundcontrol.api.workflowtelemetry.stream.WorkflowRunStrea
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.CapabilityTier;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.PhaseEventEmitter;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.service.RecordPhaseEventCommand;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowMeasurementService;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowTelemetryService;
 import java.util.List;
@@ -33,6 +36,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -168,6 +172,54 @@ class WorkflowRunControllerTest {
                 .andExpect(jsonPath("$.sourceId", is("ci:COMPLETED:1")))
                 .andExpect(jsonPath("$.project", is("ground-control")))
                 .andExpect(jsonPath("$.durationMs", is(1000)));
+    }
+
+    @Test
+    void recordPhaseEventMapsTheAdr036StepObservationFields() throws Exception {
+        // The controller is a thin map from request to command; the ADR-036 step-observation fields
+        // (issue #1354) must reach the service, or a durable step record would silently drop its tier,
+        // emitter, and economics.
+        var runId = UUID.randomUUID();
+        when(projectService.requireProjectIdentifier(any())).thenReturn("ground-control");
+        when(telemetryService.recordPhaseEvent(any())).thenReturn(sampleEvent(runId));
+
+        mockMvc.perform(
+                        post("/api/v1/workflow-runs/" + runId + "/events")
+                                .param("project", "ground-control")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+                                {
+                                  "phase": "completion_gate",
+                                  "eventType": "COMPLETED",
+                                  "occurredAt": "2026-07-29T12:00:00Z",
+                                  "provenance": "LIVE_EMISSION",
+                                  "sourceId": "adr036_step:completion_gate:0",
+                                  "emitter": "ADR036_STEP_JSONL",
+                                  "measurementVersion": "gc.measurement/v1",
+                                  "stepAlias": "Step 6",
+                                  "tier": "LOW",
+                                  "model": "claude-haiku-4-5",
+                                  "expectedModel": "claude-haiku-4-5",
+                                  "modelMatchesExpected": true,
+                                  "inputTokens": 8421,
+                                  "outputTokens": 612
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        var captor = ArgumentCaptor.forClass(RecordPhaseEventCommand.class);
+        verify(telemetryService).recordPhaseEvent(captor.capture());
+        var command = captor.getValue();
+        assertThat(command.emitter()).isEqualTo(PhaseEventEmitter.ADR036_STEP_JSONL);
+        assertThat(command.tier()).isEqualTo(CapabilityTier.LOW);
+        assertThat(command.measurementVersion()).isEqualTo("gc.measurement/v1");
+        assertThat(command.stepAlias()).isEqualTo("Step 6");
+        assertThat(command.model()).isEqualTo("claude-haiku-4-5");
+        assertThat(command.expectedModel()).isEqualTo("claude-haiku-4-5");
+        assertThat(command.modelMatchesExpected()).isTrue();
+        assertThat(command.inputTokens()).isEqualTo(8421L);
+        assertThat(command.outputTokens()).isEqualTo(612L);
     }
 
     @Test

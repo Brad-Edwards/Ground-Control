@@ -397,7 +397,11 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         // V207-V208 (#1355, ADR-090 amendment): the station-result axis and the
                         // gate-finding projection, with its Envers shadow.
                         "207",
-                        "208");
+                        "208",
+                        // V209 (#1354, ADR-090 amendment): durable ADR-036 step observation — the
+                        // emitter discriminator plus the ADR-036 step facts on the phase-event row
+                        // and its Envers shadow.
+                        "209");
     }
 
     @Test

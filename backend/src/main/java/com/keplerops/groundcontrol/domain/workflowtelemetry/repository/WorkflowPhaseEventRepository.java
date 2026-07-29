@@ -38,9 +38,17 @@ public interface WorkflowPhaseEventRepository extends JpaRepository<WorkflowPhas
     List<WorkflowPhaseEvent> findByRunIdAndProjectOrderByOccurredAtAscIdAsc(
             UUID runId, String project, Pageable pageable);
 
-    /** Project-scoped read for the mixed graph, resolving its UUID to the immutable identifier. */
+    /**
+     * Project-scoped read for the mixed graph, resolving its UUID to the immutable identifier.
+     *
+     * <p>Selects the ADR-061 lifecycle emitter positively (issue #1354): the graph projects
+     * lifecycle/station attempts, so it must own its emitter rather than accept "anything that is not
+     * an ADR-036 step observation" — a future phase-event emitter would otherwise silently become a
+     * graph edge. Step observations are routed-step cost facts and stay out of the graph.
+     */
     @Query("SELECT e FROM WorkflowPhaseEvent e "
             + "WHERE e.project = (SELECT p.identifier FROM Project p WHERE p.id = :projectId) "
+            + "AND e.emitter = com.keplerops.groundcontrol.domain.workflowtelemetry.PhaseEventEmitter.ADR061_WORKFLOW_TELEMETRY "
             + "ORDER BY e.occurredAt, e.id")
     List<WorkflowPhaseEvent> findForGraphProjection(@Param("projectId") UUID projectId);
 
@@ -68,6 +76,11 @@ public interface WorkflowPhaseEventRepository extends JpaRepository<WorkflowPhas
                     + " FROM workflow_phase_event e"
                     + " JOIN workflow_run r ON r.id = e.run_id"
                     + " WHERE e.occurred_at >= :from AND e.occurred_at < :to"
+                    // The hot-spot rollup owns the ADR-061 lifecycle emitter explicitly (issue #1354),
+                    // rather than counting "anything that is not an ADR-036 step observation": a future
+                    // phase-event emitter must not silently inflate a phase's event count and skew its
+                    // duration percentiles. Step observations are a parallel per-step cost stream.
+                    + "   AND e.emitter = 'ADR061_WORKFLOW_TELEMETRY'"
                     + "   AND (:project IS NULL OR e.project = :project)"
                     + "   AND (:repo IS NULL OR r.repo = :repo)"
                     + "   AND (:runtime IS NULL OR r.runtime_driver = :runtime)"
@@ -94,7 +107,9 @@ public interface WorkflowPhaseEventRepository extends JpaRepository<WorkflowPhas
      *
      * <p>Only {@code PASS} and {@code FAIL} are returned: skipped, cancelled, not-evaluable and
      * unobserved attempts remain measurable coverage but must stay out of the yield and
-     * iterations-to-green denominators, or an unmeasured gate reads as a failing one.
+     * iterations-to-green denominators, or an unmeasured gate reads as a failing one. This is also
+     * what keeps ADR-036 step observations (issue #1354) out of the yield series without a second
+     * predicate: a step observation is always {@code UNOBSERVED}, so it can never be evaluable.
      *
      * <p>The rows are the terminal event of each attempt. Ordering and de-duplication happen in
      * {@code StationYieldCalculator} rather than here, because "first pass wins" is a formula

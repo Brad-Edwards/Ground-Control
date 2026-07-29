@@ -347,6 +347,20 @@ The report contract is derived evidence: each finding carries the DRAFT requirem
   structured artifacts their own runs write, so no canonical gate is executed twice to be
   measured and the parent command's duration is never divided among them.
 
+- Durable ADR-036 step observations (issue #1354, ADR-090 amendment). `gc_log_step_telemetry`
+  no longer writes a gitignored per-clone JSONL file: it records each routed `/implement` step as
+  a durable observation on the same `WorkflowPhaseEvent` row, distinguished by an `emitter`
+  (`ADR036_STEP_JSONL` vs the default `ADR061_WORKFLOW_TELEMETRY`). The row adds the ADR-036 facts
+  that had no owner (capability `tier`, reported/expected `model` and their consistency flag,
+  optional token counts, `measurement_version`, and the numbered SKILL step as a non-identity
+  `step_alias`) while its `phase` carries the stable ADR-036 stage id and the backend resolves the
+  catalogue `station_id` from it. The observation reports operation outcome only, so `station_result`
+  stays `UNOBSERVED` and it can never produce first-pass yield; a namespaced `(run_id, source_id)`
+  (`adr036_step:<stage>:<attempt>`) keeps it from colliding with a live station attempt. Per-step
+  reads select the emitter from the existing run-scoped event surface, while the phase hot-spot
+  aggregate and the context-graph projection exclude the step emitter so step economics never inflate
+  gate counts or graph edges. The write is fail-open with no local-file fallback.
+
 - Production-line measurement contract (issue #1438, ADR-090, ADR-082, GC-O014). The
   ADR-090 measurement model is published as versioned contract artifacts rather than ADR
   prose: `contracts/schemas/measurement/measurement-record.v1.schema.json` is the record

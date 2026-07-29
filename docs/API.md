@@ -1055,6 +1055,18 @@ attempt instead of appending a phantom retry. `sourceId` defaults to
 returns the stored event rather than appending a duplicate, which is what lets live emission and
 `gc_workflow_run_ingest` describe the same attempt without double-counting it.
 
+The same phase-event surface carries the durable **ADR-036 step observation** (issue #1354): a routed
+`/implement` step recorded via `gc_log_step_telemetry`, distinguished by `emitter`
+(`ADR036_STEP_JSONL` vs the default `ADR061_WORKFLOW_TELEMETRY`). Such a row sends `phase` = the
+ADR-036 stage id (the backend resolves the catalogue `stationId` from it and refuses an undeclared
+stage), leaves `stationResult` `UNOBSERVED` (it reports operation outcome only, never a gate verdict),
+and adds the ADR-036 facts `tier` (`LOW` | `MEDIUM` | `HIGH` | `NOT_APPLICABLE` | `UNOBSERVED`),
+`model`, `expectedModel`, `modelMatchesExpected`, `measurementVersion`, `stepAlias`, and optional
+`inputTokens`/`outputTokens`. Its `(runId, sourceId)` is namespaced (`adr036_step:<stage>:<attempt>`)
+so it never collides with a live station attempt. `GET /{runId}/events` returns these rows (the
+queryable per-step record), but the `/aggregate` phase hot-spots and the context-graph projection
+exclude the step emitter so step economics never inflate gate counts.
+
 **GET `/workflow-runs/measurement`** (issue #1355, ADR-090): the production-line process
 variables for one project over a window (`from`/`to`, defaulting to the standard look-back and
 bounded by the same maximum as `/aggregate`). Returns per-station first-pass yield, iterations to
@@ -1130,7 +1142,7 @@ Named events are `workflow-run` and `phase-event`; their `data` payloads are exa
 them into the same cache its polling reads populate. Heartbeats are SSE comments with no payload.
 
 Delivery is **best-effort and may duplicate**: reconcile by entity id, and refetch the REST
-snapshots on connect and reconnect. There is no `Last-Event-ID` replay and no durable backlog—an
+snapshots on connect and reconnect. There is no `Last-Event-ID` replay and no durable backlog; an
 in-memory notification can be lost if the process dies after the database commit.
 
 Connections are bounded (`groundcontrol.workflow-telemetry.stream.*`): a global cap, a

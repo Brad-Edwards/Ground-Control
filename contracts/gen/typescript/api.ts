@@ -1608,11 +1608,18 @@ export interface PhaseEventResponse {
   [key: string]: any;
   "cycleIndex": any;
   "durationMs": any;
+  "emitter": any;
   "eventType": any;
+  "expectedModel": any;
   "findingsDropped": any;
   "id": any;
+  "inputTokens": any;
+  "measurementVersion": any;
+  "model": any;
+  "modelMatchesExpected": any;
   "occurredAt": any;
   "outcome": any;
+  "outputTokens": any;
   "phase": any;
   "project": any;
   "provenance": any;
@@ -1620,6 +1627,8 @@ export interface PhaseEventResponse {
   "sourceId": any;
   "stationId": any;
   "stationResult": any;
+  "stepAlias": any;
+  "tier": any;
 }
 
 export interface PhaseHotspotResponse {
@@ -1862,16 +1871,25 @@ export interface RecordPhaseEventRequest {
   [key: string]: any;
   "cycleIndex"?: any;
   "durationMs"?: any;
+  "emitter"?: any;
   "eventType": any;
+  "expectedModel"?: any;
   "findings"?: GateFindingRequest[];
   "findingsDropped"?: any;
+  "inputTokens"?: any;
+  "measurementVersion"?: any;
+  "model"?: any;
+  "modelMatchesExpected"?: any;
   "occurredAt": any;
   "outcome"?: any;
+  "outputTokens"?: any;
   "phase": any;
   "provenance": any;
   "sourceId"?: any;
   "stationId"?: any;
   "stationResult"?: any;
+  "stepAlias"?: any;
+  "tier"?: any;
 }
 
 export interface RecordProtocolPlanRequest {

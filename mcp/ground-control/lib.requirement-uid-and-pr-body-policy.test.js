@@ -1,141 +1,23 @@
-// Split from lib.test.js under issue #1467 for the 500-LOC limit
-// (docs/CODING_STANDARDS.md). Test bodies are unchanged.
+// Requirement-UID recognition and PR-body policy-shape suites.
+//
+// Relocated from lib.appendsteptelemetry.test.js when that file was retired with the ADR-036 JSONL
+// sink (issue #1354): these describe blocks cover still-active exported code — isRequirementUidToken,
+// findRequirementUidTokens, EXACT_REQUIREMENT_UID_RE, checkPrBodyShape, and the live gc_render_pr_body
+// tool (runRenderPrBody) — none of which the durable-telemetry change touched. Only the
+// appendStepTelemetry/JSONL-writer suite was dropped. Test bodies are unchanged.
 
 import { before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { execFileSync } from "node:child_process";
 import {
+  EXACT_REQUIREMENT_UID_RE,
   PR_BODY_POLICY_CHECK_LINE,
   PR_REQUIREMENT_RE,
-  TELEMETRY_SCHEMA_VERSION,
-  appendStepTelemetry,
   buildPrBody,
-  buildTelemetryRecord,
-  buildTelemetryRelPath,
   checkPrBodyShape,
+  findRequirementUidTokens,
   isRequirementUidToken,
   runRenderPrBody,
 } from "./lib.js";
-
-describe("appendStepTelemetry", () => {
-  function makeTempRepo() {
-    const dir = mkdtempSync(join(tmpdir(), "gc-telemetry-test-"));
-    execFileSync("git", ["-C", dir, "init", "-q"]);
-    execFileSync("git", ["-C", dir, "config", "user.email", "t@example.com"]);
-    execFileSync("git", ["-C", dir, "config", "user.name", "t"]);
-    writeFileSync(join(dir, "README"), "x\n");
-    execFileSync("git", ["-C", dir, "add", "README"]);
-    execFileSync("git", ["-C", dir, "commit", "-q", "-m", "init"]);
-    // Real origin so owner/repo resolves from the git remote, as production does. git ignores
-    // GH_REPO; the `gh repo view` fallback honours it.
-    execFileSync("git", ["-C", dir, "remote", "add", "origin", "https://github.com/fake/repo.git"]);
-    return dir;
-  }
-
-  it("appends a JSONL line under .gc/telemetry/", async () => {
-    const dir = makeTempRepo();
-    try {
-      const record = buildTelemetryRecord({
-        issueNumber: 868, branch: "868-test", step: "1", tier: "low",
-        model: "haiku", wallTimeMs: 100, outcome: "ok",
-      });
-      const r = await appendStepTelemetry({ repoPath: dir, record });
-      assert.equal(r.ok, true);
-      assert.equal(r.path, ".gc/telemetry/868-868-test.jsonl");
-      const content = readFileSync(join(dir, ".gc/telemetry/868-868-test.jsonl"), "utf8");
-      const parsed = JSON.parse(content.trim());
-      assert.equal(parsed.schema, TELEMETRY_SCHEMA_VERSION);
-      assert.equal(parsed.step, "1");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it("appends a second line without overwriting the first", async () => {
-    const dir = makeTempRepo();
-    try {
-      const mk = (step) => buildTelemetryRecord({
-        issueNumber: 868, branch: "x", step, tier: "low",
-        model: "haiku", wallTimeMs: 1, outcome: "ok",
-      });
-      await appendStepTelemetry({ repoPath: dir, record: mk("1") });
-      await appendStepTelemetry({ repoPath: dir, record: mk("2") });
-      const content = readFileSync(join(dir, ".gc/telemetry/868-x.jsonl"), "utf8");
-      const lines = content.trim().split("\n");
-      assert.equal(lines.length, 2);
-      assert.equal(JSON.parse(lines[0]).step, "1");
-      assert.equal(JSON.parse(lines[1]).step, "2");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it("returns ok:false when the path would escape via a symlink-targeted directory", async () => {
-    const dir = makeTempRepo();
-    const outside = mkdtempSync(join(tmpdir(), "gc-telemetry-outside-"));
-    try {
-      // Pre-create .gc and link telemetry to a directory outside the repo.
-      mkdirSync(join(dir, ".gc"), { recursive: true });
-      symlinkSync(outside, join(dir, ".gc/telemetry"));
-      const record = buildTelemetryRecord({
-        issueNumber: 1, branch: "x", step: "1", tier: "low",
-        model: "haiku", wallTimeMs: 1, outcome: "ok",
-      });
-      const r = await appendStepTelemetry({ repoPath: dir, record });
-      assert.equal(r.ok, false);
-      assert.match(r.error, /telemetry_path_escapes_repo/);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-      rmSync(outside, { recursive: true, force: true });
-    }
-  });
-
-  it("does NOT mkdir before the containment check (codex cycle-3 security F6)", async () => {
-    // The previous version called mkdirSync(dirAbs, {recursive:true}) BEFORE
-    // assertRealpathInRepo, so a `.gc` symlink to an out-of-repo dir would
-    // induce a mkdir into the symlink's target before refusal fired. After
-    // the F6 fix, containment is checked FIRST. This test confirms the new
-    // call order: when `.gc` is a symlink to an outside dir, the outside dir
-    // must NOT gain a fresh `telemetry/` subdirectory.
-    const dir = makeTempRepo();
-    const outside = mkdtempSync(join(tmpdir(), "gc-tel-mkdir-pre-"));
-    try {
-      symlinkSync(outside, join(dir, ".gc"));
-      const record = buildTelemetryRecord({
-        issueNumber: 1, branch: "x", step: "1", tier: "low",
-        model: "haiku", wallTimeMs: 1, outcome: "ok",
-      });
-      const r = await appendStepTelemetry({ repoPath: dir, record });
-      assert.equal(r.ok, false);
-      assert.match(r.error, /telemetry_path_escapes_repo/);
-      // The forbidden write would have been outside/telemetry/. Confirm no
-      // such directory was created.
-      assert.equal(existsSync(join(outside, "telemetry")), false,
-        "containment must run BEFORE mkdir; no telemetry/ should have been created in the symlink target");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-      rmSync(outside, { recursive: true, force: true });
-    }
-  });
-
-  it("returns ok:false when repo is not a git repo", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "gc-telemetry-nogit-"));
-    try {
-      const record = buildTelemetryRecord({
-        issueNumber: 1, branch: "x", step: "1", tier: "low",
-        model: "haiku", wallTimeMs: 1, outcome: "ok",
-      });
-      const r = await appendStepTelemetry({ repoPath: dir, record });
-      assert.equal(r.ok, false);
-      assert.match(r.error, /telemetry_repo_not_git/);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-});
 
 describe("free-text UID recognition (isRequirementUidToken)", () => {
   // Asserted through the live helper rather than the raw PR_REQUIREMENT_RE
@@ -441,22 +323,5 @@ describe("runRenderPrBody (policy enforcement at the tool boundary)", () => {
     const r = await runRenderPrBody(baseInput());
     assert.equal(r.ok, true);
     assert.ok(!r.body.includes("## Documentation"), "body should not contain a Documentation section when the field is absent");
-  });
-});
-
-describe("buildTelemetryRecord (sanitizes branch in record body — F5 fix)", () => {
-  it("stores the sanitized branch in the record, matching the path", () => {
-    const r = buildTelemetryRecord({
-      issueNumber: 1,
-      branch: "feat/x",
-      step: "1",
-      tier: "low",
-      model: "haiku",
-      wallTimeMs: 100,
-      outcome: "ok",
-    });
-    assert.equal(r.branch, "feat_x");
-    const p = buildTelemetryRelPath({ issueNumber: 1, branch: "feat/x" });
-    assert.ok(p.includes("feat_x"), `path should carry the same sanitized form: ${p}`);
   });
 });

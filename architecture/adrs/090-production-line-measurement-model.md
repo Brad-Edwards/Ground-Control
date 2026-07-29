@@ -593,3 +593,94 @@ start and poll as it already observes every tool call, but those observations
 remain distinct from production-line station facts under ADR-059. No
 measurement schema, station catalogue entry, lifecycle emitter, persistence,
 dashboard, or retention rule changes.
+
+## Amendment (issue #1354, 2026-07-29): durable ADR-036 step observations
+
+ADR-036 step telemetry currently stops at a gitignored JSONL file. Issue #1354
+makes new observations durable without creating another measurement owner:
+`WorkflowRun` and `WorkflowPhaseEvent` remain the ADR-061 reporting projection,
+and the existing run-upsert plus phase-event write path is the only product
+ingest path. No step-telemetry entity, table, repository, REST prefix, generic
+event store, or JSONB payload is introduced. Existing local JSONL files are
+historical input only: they are not backfilled, dual-written, or promoted into
+a second source of truth.
+
+The durable record is a step observation carried by the existing phase-event
+row, distinguished by the contract's `emitter` value. It reuses
+`occurred_at`, `duration_ms`, the operation-outcome field, provenance,
+`cycle_index`, and `(run_id, source_id)` idempotency. The closed event shape
+adds only the ADR-036 facts that have no existing owner: measurement version,
+the numbered SKILL step as a non-identity alias, capability tier, reported
+model, expected model, the tier/model consistency assertion, and optional
+input/output token counts. These are event-level facts: writing them onto
+`WorkflowRun` would overwrite one routed step with the next. A free-form
+payload bag would merely hide a second schema inside the first store and is
+therefore forbidden.
+
+Correlation is authoritative at every layer:
+
+- The parent run supplies the exact `(project, repo, issue_number)` work item
+  and `workflow_run.id`. The MCP boundary resolves project through the
+  canonical repository context and repository identity through the existing
+  origin-derived, fail-closed resolver; it never uses the sanitized JSONL
+  branch, `GH_REPO`, an issue number alone, or a synthesized `unknown`. It
+  upserts the existing `IMPLEMENT` run by the raw
+  `(project, repo, issue_number, branch)` natural key before recording the
+  event.
+- `phase` carries the stable ADR-036 `stage_id`, not a numbered step or display
+  label. The numbered step remains only an alias for compatibility and
+  diagnostics. The backend resolves the stage through the published station
+  catalogue. A station alias stores the canonical `station_id`; a declared
+  lifecycle marker or non-station stage stores no station id. Absence in those
+  two cases is correct modelling, not missing data.
+- Capability tier is required and remains separate from provider/model.
+  `low`, `medium`, and `high` keep their ADR-036 meanings; no model name is
+  accepted as a tier.
+- Every logical dispatch supplies a non-negative attempt index. The durable
+  source identity is namespaced to the ADR-036 emitter and derived from the
+  stable stage, step alias, and attempt index. A transport retry reuses that
+  identity; a later real attempt receives another index. Observation time,
+  provenance, and branch are never idempotency keys. Reusing an identity with
+  different measurement facts is a conflict, not a silent overwrite or a
+  second row.
+
+The three outcome axes remain disjoint. ADR-036 `ok` / stable error / `skipped`
+is operation outcome only. It may describe whether the routed step ran, but it
+never becomes `station_result=PASS` or `FAIL`. A step observation carries
+`UNOBSERVED` on the station-result axis; the existing lifecycle/gate emitter
+continues to own explicit station verdicts and findings. Consequently a gate
+can have both a routed-step cost observation and a separate evaluable station
+attempt without either record impersonating the other.
+
+Consumers must select the intended emitter explicitly. Per-step queries select
+the ADR-036 emitter from the existing project/run-scoped event surface.
+Lifecycle hot-spot queries, yield/rework calculations, and the context-graph
+projection must not acquire extra attempts or edges merely because step
+economics became durable; they continue to consume their existing
+ADR-061/station facts unless separately amended. SSE may transport the extended
+`PhaseEventResponse`, but it remains a projection transport and creates no
+stream-only schema.
+
+The durable write inherits the existing security and failure boundaries:
+MCP Zod shape validation; `telemetry.enabled`; canonical repo-context and
+origin identity resolution; the shared REST client and environment-sourced
+bearer header; `IpAllowlistFilter`, the authenticated `ApiPathMatrix` rule,
+`ProjectService`, Bean Validation, reserved-marker/range/catalogue/cross-field
+validation in `WorkflowTelemetryService`, project-scoped locked repository
+lookups, and database constraints. The standard
+`GroundControlException`/`GlobalExceptionHandler`/`ErrorResponse` path owns
+backend failures. Tokens, prompts, completions, raw reviewer/tool payloads,
+issue bodies, credentials, response bodies, and stack traces never enter the
+record or diagnostics. Credentials remain environment-to-header data and
+never enter process argv. Because `WorkflowPhaseEvent` is already on the
+Envers graph spine, its forward migration keeps the live and audit shapes
+synchronized rather than adding a parallel audit mechanism.
+
+Telemetry remains fail-open and cannot advance, fail, retry, or cap a workflow.
+A bounded durable-write failure returns only safe correlation identifiers and
+a stable failure class; it does not fall back to a local authoritative file.
+This means the acceptance criterion assumes a reachable, authenticated
+Ground Control backend with telemetry enabled. Durable queuing, offline
+backfill, retention/partitioning, new aggregates or dashboards, price
+translation, changing ADR-029 workflow authority, and making telemetry
+mandatory workflow evidence are separate decisions.

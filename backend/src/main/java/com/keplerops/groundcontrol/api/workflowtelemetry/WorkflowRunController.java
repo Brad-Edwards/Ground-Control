@@ -154,7 +154,16 @@ public class WorkflowRunController {
                 request.stationId(),
                 request.stationResult(),
                 toFindingCommands(request.findings()),
-                request.findingsDropped());
+                request.findingsDropped(),
+                request.emitter(),
+                request.measurementVersion(),
+                request.stepAlias(),
+                request.tier(),
+                request.model(),
+                request.expectedModel(),
+                request.modelMatchesExpected(),
+                request.inputTokens(),
+                request.outputTokens());
         return PhaseEventResponse.from(telemetryService.recordPhaseEvent(command));
     }
 

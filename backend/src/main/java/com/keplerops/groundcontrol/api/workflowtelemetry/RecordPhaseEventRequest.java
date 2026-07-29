@@ -1,5 +1,7 @@
 package com.keplerops.groundcontrol.api.workflowtelemetry;
 
+import com.keplerops.groundcontrol.domain.workflowtelemetry.CapabilityTier;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.PhaseEventEmitter;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.PhaseEventType;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.StationResult;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.TelemetryProvenance;
@@ -24,6 +26,13 @@ import java.util.List;
  * A cap that drops silently makes a truncated batch read as a complete one, which is the same lie as
  * a gate reporting clean because it inspected nothing, so the count travels with the batch instead
  * of only reaching the emitter's log.
+ *
+ * <p>{@code emitter} and the ADR-036 step facts below it ({@code measurementVersion} through
+ * {@code outputTokens}) carry a durable ADR-036 step observation (ADR-090 amendment, issue #1354).
+ * They are absent on a lifecycle/station emission ({@code emitter} defaults to the ADR-061 value)
+ * and populated only for an {@code ADR036_STEP_JSONL} row. A step emitter sends {@code phase =
+ * stage_id} and leaves {@code stationId} null — the backend resolves the canonical station from the
+ * stage through the published catalogue, so the emitter never duplicates it.
  */
 public record RecordPhaseEventRequest(
         @NotBlank @Size(max = 100) String phase,
@@ -37,4 +46,13 @@ public record RecordPhaseEventRequest(
         @Size(max = 100) String stationId,
         StationResult stationResult,
         @Valid @Size(max = 500) List<GateFindingRequest> findings,
-        @PositiveOrZero Integer findingsDropped) {}
+        @PositiveOrZero Integer findingsDropped,
+        PhaseEventEmitter emitter,
+        @Size(max = 40) String measurementVersion,
+        @Size(max = 40) String stepAlias,
+        CapabilityTier tier,
+        @Size(max = 200) String model,
+        @Size(max = 200) String expectedModel,
+        Boolean modelMatchesExpected,
+        @PositiveOrZero Long inputTokens,
+        @PositiveOrZero Long outputTokens) {}

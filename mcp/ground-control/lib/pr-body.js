@@ -4,18 +4,17 @@
 // (docs/CODING_STANDARDS.md, Sonar S104). It contained no mutual recursion, so it was
 // split along its own dependency layering. lib.js remains the barrel every caller imports.
 
-import { appendFileSync, mkdirSync, realpathSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { readAbsoluteTextFile } from "./api-requirements.js";
-import { parseGroundControlYaml } from "./ground-control-config.js";
+import { join } from "node:path";
 import { renderDocumentationSection, validateDocumentationOutcome } from "./doc-coverage.js";
 import { detectSensitiveBodyContent } from "./grc-legacy-compat-2.js";
 import { ensureGitRepo } from "./grc-legacy-compat-4.js";
 import { devStartFieldValue, extractMarkdownHeadingSection, parseDevStartGateFields } from "./grc-legacy-compat.js";
-import { assertRealpathInRepo } from "./repo-context-2.js";
-import { DEFAULT_DEV_START_GATE_PLAN_SECTION, resolveRepoRelativePath } from "./repo-context.js";
+import { DEFAULT_DEV_START_GATE_PLAN_SECTION } from "./repo-context.js";
 import { getRepoGroundControlContext } from "./repo-vocabulary-2.js";
-import { PR_BODY_SUMMARY_MAX, buildTelemetryRecord, buildTelemetryRelPath } from "./repo-vocabulary.js";
+import { PR_BODY_SUMMARY_MAX } from "./repo-vocabulary.js";
+import { buildStepObservationEvent } from "./step-telemetry.js";
+import { getOwnerRepo } from "./grc-legacy-compat-3.js";
+import { createWorkflowRun, recordWorkflowRunEvent } from "./api-workflow-run.js";
 import { EXACT_REQUIREMENT_UID_RE, PR_BODY_CHANGE_CLASSES, PR_BODY_GC_CHECK_LINES, REQUIREMENT_UID_CONTRACT_DESCRIPTION, checkPrBodyShape, execFile } from "./runtime-primitives.js";
 
 export const MAPPING_CONTROL_ROLES = [
@@ -334,121 +333,123 @@ export async function runRenderPrBody(input) {
     byte_length: Buffer.byteLength(body, "utf8"),
   };
 }
-export async function appendStepTelemetry({ repoPath, record }) {
-  if (record == null || typeof record !== "object") {
-    return { ok: false, error: "telemetry_record_invalid", message: "record must be an object" };
+export async function runLogStepTelemetry(
+  {
+    repoPath,
+    issueNumber,
+    branch,
+    stage,
+    step = null,
+    tier,
+    model,
+    wallTimeMs,
+    inputTokens = null,
+    outputTokens = null,
+    outcome,
+    attempt,
+    ts = null,
+  },
+  deps = {},
+) {
+  const createRun = deps.createRun ?? createWorkflowRun;
+  const recordEvent = deps.recordEvent ?? recordWorkflowRunEvent;
+  const resolveContext = deps.getContext ?? getRepoGroundControlContext;
+  const resolveOwnerRepo = deps.getOwnerRepo ?? getOwnerRepo;
+
+  // Build the durable event first (ADR-090 amendment, issue #1354). This is the successor to the
+  // forward JSONL record: the same step/tier/model/wall-time/outcome, mapped onto the ADR-061
+  // phase-event write path instead of a gitignored file. Existing local JSONL files stay historical;
+  // nothing is written to disk from here anymore. An invalid record is a caller bug, so it is
+  // surfaced structurally rather than swallowed by the fail-open backend path below.
+  let event;
+  try {
+    event = buildStepObservationEvent({
+      stage,
+      step,
+      tier,
+      model,
+      wallTimeMs,
+      inputTokens,
+      outputTokens,
+      outcome,
+      attempt,
+      ts,
+    });
+  } catch (error) {
+    return { ok: false, error: "telemetry_input_invalid", message: error.message, issue_number: issueNumber ?? null };
   }
+  if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
+    return { ok: false, error: "telemetry_input_invalid", message: "issueNumber must be positive integer", issue_number: null };
+  }
+  if (typeof branch !== "string" || branch.trim() === "") {
+    return { ok: false, error: "telemetry_input_invalid", message: "branch must be non-empty string", issue_number: issueNumber };
+  }
+
   let repoRoot;
   try {
     repoRoot = await ensureGitRepo(repoPath);
   } catch (error) {
-    return { ok: false, error: "telemetry_repo_not_git", message: error.message };
+    return { ok: false, error: "telemetry_repo_not_git", message: error.message, issue_number: issueNumber };
   }
-  const relPath = buildTelemetryRelPath({ issueNumber: record.issue, branch: record.branch });
-  const lex = resolveRepoRelativePath(repoRoot, relPath, "telemetry path");
-  if (!lex.ok) {
-    return { ok: false, error: "telemetry_path_invalid", message: lex.error };
-  }
-  let repoRootReal;
-  try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- repoRoot from git
-    repoRootReal = realpathSync(repoRoot);
-  } catch (error) {
-    return { ok: false, error: "telemetry_repo_canonicalize_failed", message: error.message };
-  }
-  // Containment check BEFORE any filesystem write (codex cycle-3 security
-  // finding F6). `assertRealpathInRepo` walks up to the deepest existing
-  // ancestor — if `.gc/` is a symlink pointing outside the repo, this catches
-  // it via the realpath of `.gc/` (the deepest existing ancestor) and refuses
-  // the call. Previously this ran AFTER `mkdirSync(dirAbs, { recursive: true })`,
-  // so an attacker with a malicious `.gc/` symlink could induce a mkdir into
-  // the symlink's target before the containment check fired. Reordering fixes
-  // that bug — no write happens until containment is confirmed.
-  const containment = assertRealpathInRepo(repoRootReal, lex.abs, "telemetry path");
-  if (!containment.ok) {
-    return { ok: false, error: "telemetry_path_escapes_repo", message: containment.error };
-  }
-  // Now safe to create the directory and append.
-  const dirAbs = dirname(lex.abs);
-  try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- dirAbs derived from validated lex.abs AND containment-checked above
-    mkdirSync(dirAbs, { recursive: true });
-  } catch (error) {
-    return { ok: false, error: "telemetry_mkdir_failed", message: error.message };
-  }
-  // Re-confirm containment after mkdir in case the freshly-created dir
-  // resolves through a symlink we couldn't see before (defense in depth).
-  const postContainment = assertRealpathInRepo(repoRootReal, lex.abs, "telemetry path");
-  if (!postContainment.ok) {
-    return { ok: false, error: "telemetry_path_escapes_repo", message: postContainment.error };
-  }
-  const line = JSON.stringify(record) + "\n";
-  try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- postContainment.canonical is the realpath after mkdir; both pre-mkdir + post-mkdir containment checks above confirmed it resolves inside the repo
-    appendFileSync(postContainment.canonical, line, { encoding: "utf8" });
-  } catch (error) {
-    return { ok: false, error: "telemetry_write_failed", message: error.message };
-  }
-  return {
-    ok: true,
-    path: relPath,
-    bytes_written: Buffer.byteLength(line, "utf8"),
-  };
-}
-export async function runLogStepTelemetry({ repoPath, issueNumber, branch, step, tier, model, wallTimeMs, inputTokens = null, outputTokens = null, outcome, ts = null }) {
-  let record;
-  try {
-    record = buildTelemetryRecord({ issueNumber, branch, step, tier, model, wallTimeMs, inputTokens, outputTokens, outcome, ts });
-  } catch (error) {
-    return {
-      ok: false,
-      error: "telemetry_input_invalid",
-      message: error.message,
-      issue_number: issueNumber ?? null,
-    };
-  }
-  // Tool-boundary opt-in gate: read .ground-control.yaml and refuse if the
-  // repo has not turned telemetry on. Without this gate any caller could
-  // create `.gc/telemetry/` records in a repo that defaults to off, which
-  // contradicts ADR-036's opt-in contract. ENOENT / parse failure is
-  // surfaced as a structured refusal so the caller knows why.
-  let repoRoot;
-  try {
-    repoRoot = await ensureGitRepo(repoPath);
-  } catch (error) {
-    return { ok: false, error: "telemetry_repo_not_git", message: error.message };
-  }
-  let yamlText;
-  try {
-    yamlText = readAbsoluteTextFile(join(repoRoot, ".ground-control.yaml"));
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      return {
-        ok: false,
-        error: "telemetry_no_ground_control_yaml",
-        message: ".ground-control.yaml missing at repo root; telemetry refuses to write without an explicit opt-in",
-        issue_number: issueNumber,
-      };
-    }
-    return { ok: false, error: "telemetry_config_read_failed", message: error.message };
-  }
-  const parsed = parseGroundControlYaml(yamlText);
-  if (!parsed.ok) {
+
+  // Tool-boundary opt-in gate (ADR-036): resolve the canonical repository context and refuse unless
+  // the repo turned telemetry on. Reusing gc_get_repo_ground_control_context is the one context path
+  // (ADR-027) and also yields the authoritative project id the run correlation needs.
+  const ctx = await resolveContext(repoRoot);
+  if (!ctx || ctx.status !== "ok") {
     return {
       ok: false,
       error: "telemetry_config_invalid",
-      message: parsed.errors.join("; "),
+      message: ctx && ctx.status ? `repository context status: ${ctx.status}` : "could not resolve repository context",
       issue_number: issueNumber,
     };
   }
-  if (!parsed.value.telemetry || parsed.value.telemetry.enabled !== true) {
+  if (!ctx.telemetry || ctx.telemetry.enabled !== true) {
     return {
       ok: false,
       error: "telemetry_disabled",
-      message: "telemetry.enabled is false (or absent) in .ground-control.yaml; flip it to true to opt this repo into per-step telemetry logging",
+      message: "telemetry.enabled is false (or absent) in .ground-control.yaml; flip it to true to opt this repo into durable per-step telemetry",
       issue_number: issueNumber,
       next_action: "set_telemetry_enabled_true_or_omit_call",
     };
   }
-  return await appendStepTelemetry({ repoPath: repoRoot, record });
+  const project = ctx.project;
+
+  // The durable write is strictly fail-open (ADR-090 amendment): the workflow result is already
+  // determined, so a backend outage, an unresolved repository identity, or a rejected write returns a
+  // bounded diagnostic carrying safe identifiers and a stable failure class only, and never blocks or
+  // alters the step. There is no local JSONL fallback — a durable record is guaranteed only when the
+  // authenticated backend is reachable and telemetry is enabled.
+  try {
+    // Origin-derived, fail-closed repository identity — never the GH_REPO-sensitive fallback for this
+    // identity-bearing run key.
+    const repo = await resolveOwnerRepo(repoRoot);
+    // Upsert the IMPLEMENT run by the RAW (project, repo, issue, branch) natural key. No final_state
+    // is sent, so an open observation can never overwrite a terminal one the merge protects.
+    const run = await createRun(
+      { repo, issue_number: issueNumber, branch, workflow_type: "IMPLEMENT", provenance: "LIVE_EMISSION" },
+      project,
+    );
+    const runId = run?.id ?? null;
+    if (!runId) {
+      return { ok: false, error: "telemetry_run_upsert_no_id", issue_number: issueNumber };
+    }
+    const recorded = await recordEvent(runId, event, project);
+    return {
+      ok: true,
+      run_id: runId,
+      event_id: recorded?.id ?? null,
+      phase: event.phase,
+      station_id: recorded?.station_id ?? null,
+      emitter: event.emitter,
+    };
+  } catch (error) {
+    const code = error?.code ?? error?.name;
+    return {
+      ok: false,
+      error: "telemetry_durable_write_failed",
+      failure_class: typeof code === "string" && /^[A-Za-z0-9_.-]{1,60}$/.test(code) ? code : "unknown",
+      issue_number: issueNumber,
+    };
+  }
 }
