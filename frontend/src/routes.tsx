@@ -1,6 +1,9 @@
-import { AppLayout } from "@/components/layout/app-layout";
+import { AppShell } from "@/components/layout/app-shell";
+import { EmptyState } from "@/components/ui/empty-state";
+import { LoadingState } from "@/components/ui/loading-state";
 import { ProjectProvider } from "@/contexts/project-context";
 import { useProjects } from "@/hooks/use-projects";
+import { FileQuestion } from "lucide-react";
 import { Suspense, lazy } from "react";
 import { Link, Navigate, Route, Routes } from "react-router";
 
@@ -44,22 +47,18 @@ const WorkflowRuns = lazy(() =>
   })),
 );
 
-function PageSkeleton() {
-  return (
-    <div className="flex min-h-[60vh] items-center justify-center">
-      <div className="h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
-    </div>
-  );
-}
-
 function NotFound() {
   return (
-    <div className="py-20 text-center text-muted-foreground">
-      <p>Page not found.</p>
-      <Link to="/projects" className="mt-4 inline-block text-primary underline">
-        Back to projects
-      </Link>
-    </div>
+    <EmptyState
+      icon={FileQuestion}
+      title="Page not found"
+      description="The page you are looking for does not exist."
+      action={
+        <Link to="/projects" className="text-sm text-primary underline">
+          Back to projects
+        </Link>
+      }
+    />
   );
 }
 
@@ -67,11 +66,7 @@ function RootRedirect() {
   const { data: projects = [], isLoading } = useProjects();
 
   if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
-      </div>
-    );
+    return <LoadingState className="min-h-screen" />;
   }
 
   const first = projects[0];
@@ -84,17 +79,17 @@ function RootRedirect() {
 
 export function AppRoutes() {
   return (
-    <Suspense fallback={<PageSkeleton />}>
+    <Suspense fallback={<LoadingState />}>
       <Routes>
         <Route path="/" element={<RootRedirect />} />
-        <Route element={<AppLayout />}>
+        <Route element={<AppShell />}>
           <Route path="projects" element={<Projects />} />
         </Route>
         <Route
           path="p/:projectId"
           element={
             <ProjectProvider>
-              <AppLayout />
+              <AppShell />
             </ProjectProvider>
           }
         >
@@ -110,7 +105,7 @@ export function AppRoutes() {
           <Route path="admin" element={<Admin />} />
           <Route path="*" element={<NotFound />} />
         </Route>
-        <Route element={<AppLayout />}>
+        <Route element={<AppShell />}>
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>

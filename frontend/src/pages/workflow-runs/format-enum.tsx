@@ -1,3 +1,5 @@
+import { Badge, type BadgeVariant } from "@/components/ui/badge";
+import { MetricCard } from "@/components/ui/metric-card";
 import type { WorkflowRunFilters } from "@/hooks/use-workflow-runs";
 import type { WorkflowRunFinalState, WorkflowRunOutcome } from "@/types/api";
 
@@ -45,36 +47,6 @@ function percentage(value: number, total: number): string {
 // Shared UI primitives
 // ---------------------------------------------------------------------------
 
-export function MetricCard({
-  label,
-  value,
-  detail,
-  tone = "neutral",
-}: Readonly<{
-  label: string;
-  value: string | number;
-  detail?: string;
-  tone?: "neutral" | "good" | "warn" | "bad" | "info";
-}>) {
-  const toneClass = {
-    neutral: "text-foreground",
-    good: "text-green-300",
-    warn: "text-yellow-300",
-    bad: "text-red-300",
-    info: "text-blue-300",
-  }[tone];
-
-  return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <p className="text-xs font-medium uppercase text-muted-foreground">
-        {label}
-      </p>
-      <p className={`mt-2 text-2xl font-semibold ${toneClass}`}>{value}</p>
-      {detail && <p className="mt-1 text-xs text-muted-foreground">{detail}</p>}
-    </div>
-  );
-}
-
 export function SectionHeading({
   id,
   title,
@@ -113,33 +85,33 @@ function BarRow({
 // Final-state / outcome badge
 // ---------------------------------------------------------------------------
 
-const FINAL_STATE_STYLE: Record<WorkflowRunFinalState, string> = {
-  RUNNING: "bg-blue-100 text-blue-800",
-  READY_FOR_REVIEW: "bg-yellow-100 text-yellow-800",
-  MERGED: "bg-green-100 text-green-800",
-  CLOSED: "bg-gray-100 text-gray-700",
-  ESCALATED: "bg-orange-100 text-orange-800",
-  ABANDONED: "bg-red-100 text-red-800",
-  SUPERSEDED: "bg-slate-100 text-slate-600",
-  FAILED: "bg-red-100 text-red-900",
+const FINAL_STATE_VARIANT: Record<WorkflowRunFinalState, BadgeVariant> = {
+  RUNNING: "info",
+  READY_FOR_REVIEW: "warning",
+  MERGED: "success",
+  CLOSED: "neutral",
+  ESCALATED: "warning",
+  ABANDONED: "danger",
+  SUPERSEDED: "neutral",
+  FAILED: "danger",
 };
 
-const OUTCOME_STYLE: Record<WorkflowRunOutcome, string> = {
-  MERGED: "bg-green-100 text-green-800",
-  CLOSED_WITHOUT_MERGE: "bg-gray-100 text-gray-700",
-  NONE: "bg-muted text-muted-foreground",
+const OUTCOME_VARIANT: Record<WorkflowRunOutcome, BadgeVariant> = {
+  MERGED: "success",
+  CLOSED_WITHOUT_MERGE: "neutral",
+  NONE: "neutral",
 };
 
 export function StateBadge({
   state,
 }: Readonly<{ state: WorkflowRunFinalState }>) {
   return (
-    <span
-      className={`rounded px-1.5 py-0.5 text-xs font-medium ${FINAL_STATE_STYLE[state]}`}
+    <Badge
+      variant={FINAL_STATE_VARIANT[state]}
       aria-label={`Final state: ${state}`}
     >
       {formatEnum(state)}
-    </span>
+    </Badge>
   );
 }
 
@@ -147,12 +119,12 @@ export function OutcomeBadge({
   outcome,
 }: Readonly<{ outcome: WorkflowRunOutcome }>) {
   return (
-    <span
-      className={`rounded px-1.5 py-0.5 text-xs font-medium ${OUTCOME_STYLE[outcome]}`}
+    <Badge
+      variant={OUTCOME_VARIANT[outcome]}
       aria-label={`Outcome: ${outcome}`}
     >
       {formatEnum(outcome)}
-    </span>
+    </Badge>
   );
 }
 
@@ -244,7 +216,7 @@ export function ThroughputSection({
           label="Merged"
           value={mergedRuns}
           detail={percentage(mergedRuns, totalRuns)}
-          tone="good"
+          tone="success"
         />
         <MetricCard
           label="Closed"
@@ -260,12 +232,12 @@ export function ThroughputSection({
         <MetricCard
           label="Escalated"
           value={escalatedRuns}
-          tone={escalatedRuns > 0 ? "warn" : "neutral"}
+          tone={escalatedRuns > 0 ? "warning" : "default"}
         />
         <MetricCard
           label="Abandoned"
           value={abandonedRuns}
-          tone={abandonedRuns > 0 ? "bad" : "neutral"}
+          tone={abandonedRuns > 0 ? "danger" : "default"}
         />
         <MetricCard label="Superseded" value={supersededRuns} />
       </div>

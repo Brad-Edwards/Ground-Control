@@ -23,9 +23,13 @@ export function ProjectSwitcher() {
       onValueChange={(value) => {
         const project = projects.find((p) => p.identifier === value);
         if (project) {
-          const match = location.pathname.match(/^\/p\/[^/]+\/(.*)/);
-          const subPath = match?.[1] ?? "";
-          navigate(`/p/${project.identifier}/${subPath}${location.search}`);
+          // Preserve only the workspace route key (the first path segment), never entity-detail
+          // ids or filter query strings — those are project-owned and meaningless in another
+          // project (GC-Q015 preflight guardrail). All projects support the same workspaces, so
+          // the destination can always render the same workspace.
+          const workspace =
+            location.pathname.match(/^\/p\/[^/]+\/([^/]*)/)?.[1] ?? "";
+          navigate(`/p/${project.identifier}/${workspace}`);
         }
       }}
     >

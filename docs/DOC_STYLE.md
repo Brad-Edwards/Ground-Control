@@ -225,7 +225,8 @@ the `/implement` policy gate and again on the post-base-sync tree, and CI runs
 it on every pull request.
 
 Changes to any doc-coverage gate surface - `mcp/ground-control/index.js`,
-`mcp/ground-control/lib.js`, `tools/policy/checks.py`, `tools/install-vale.sh`,
+`mcp/ground-control/lib.js`, `mcp/ground-control/lib/doc-coverage.js`,
+`tools/policy/checks.py`, `tools/install-vale.sh`,
 `.vale.ini`, or this file - trigger the `doc-coverage-gate-sync` rule per
 ADR-054, which requires this file and ADR-054 to stay current with the gate
 surface they describe. A new policy check in `tools/policy/checks.py` records

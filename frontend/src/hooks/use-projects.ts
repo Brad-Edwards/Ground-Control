@@ -1,14 +1,8 @@
 import { apiFetch } from "@/lib/api-client";
+import type { ProjectResponse } from "@/types/api";
 import { useQuery } from "@tanstack/react-query";
 
-export interface ProjectResponse {
-  id: string;
-  identifier: string;
-  name: string;
-  description: string;
-  createdAt: string;
-  updatedAt: string;
-}
+export type { ProjectResponse };
 
 export function useProjects() {
   return useQuery({

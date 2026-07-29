@@ -58,9 +58,10 @@ import {
   crossWaveValidation, detectConsistencyViolations, analyzeCompleteness,
   analyzeStatusDrift, analyzeSemanticSimilarity, getWorkOrder,
   getDashboardStats,
-  // ---- history / exports (kept for completeness even though tools route to gc_query) ----
+  // ---- history / exports / session (kept for completeness even though tools route to gc_query) ----
   getRequirementHistory, getRelationHistory, getTraceabilityLinkHistory,
   getRequirementTimeline, getRequirementDiff, getProjectTimeline,
+  getCurrentSession,
   exportAuditTimeline, exportRequirements, exportSweepReport, exportDocument,
   // ---- graph ----
   materializeGraph, getAncestors, getDescendants, findPaths,

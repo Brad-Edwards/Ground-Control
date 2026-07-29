@@ -349,6 +349,8 @@ module, and each content check reads that instead of one path.
 
 **2026-06-15 (issue #1168).** `tools/policy/checks.py` gained `run_workflow_routing_contract` and its `parse_routing_agents` helper - a guardrail that asserts the async-poll `/implement` routing stages in `.ground-control.yaml` resolve to `agent: parent`. The change is unrelated to documentation coverage: the surface classifier (`run_documentation_coverage_check`), the Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged. `docs/DOC_STYLE.md` is updated only to list `tools/policy/checks.py` among the gate-surface trigger paths it previously omitted.
 
+**2026-07-29 (issue #1283, GC-Q015 console session read).** The new `SessionController` (`GET /api/v1/session`) added a `getCurrentSession` completeness helper in `mcp/ground-control/lib/api-session.js` (re-exported by `mcp/ground-control/lib.js` and imported in `mcp/ground-control/index.js`) plus a `/api/v1/session` entry in the `gc_query` read allowlist (`mcp/ground-control/gc-query.js`), for API/MCP parity; the endpoint is documented in `docs/API.md § Session`. This is an MCP tool-surface addition only - the documentation-coverage classifier (`classifyChangedSurface` / `run_documentation_coverage_check`), the `outcome_required` mapping, the Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged. `docs/DOC_STYLE.md` is updated only to add the previously omitted `mcp/ground-control/lib/doc-coverage.js` gate-surface trigger path.
+
 **2026-07-26 (issue #1421).** The #1168 executor-routing guard above is
 retired because `/implement` no longer carries an `agent` execution-control
 field. `run_workflow_routing_contract` now rejects those retired fields and

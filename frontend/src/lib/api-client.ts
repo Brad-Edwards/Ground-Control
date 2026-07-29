@@ -2,6 +2,11 @@ const API_BASE = "/api/v1";
 const CSRF_COOKIE = "XSRF-TOKEN";
 const CSRF_HEADER = "X-XSRF-TOKEN";
 const LOGIN_PATH = "/login";
+// GC-Q015 clause (a): a fixed, non-secret flag so the standalone login bundle can render a
+// "your session expired" notice when re-authentication was triggered by an XHR 401. It is not a
+// return URL and reflects no response text (preflight guardrail), so it carries no open-redirect
+// or reflection surface.
+const LOGIN_EXPIRED_PATH = `${LOGIN_PATH}?expired=1`;
 
 /**
  * Redirect-on-401 indirection. Tests replace this via {@link setRedirectorForTests}; production
@@ -94,7 +99,7 @@ async function handleError(response: Response): Promise<never> {
   // routing anywhere. Spring's request cache will restore the user's SPA route if they had
   // navigated to one directly; XHR-initiated re-auth lands back at the app default ("/").
   if (response.status === 401) {
-    activeRedirector(LOGIN_PATH);
+    activeRedirector(LOGIN_EXPIRED_PATH);
   }
   const errorBody = await response.json().catch(() => ({}));
   const body = errorBody as { detail?: string; error?: { message?: string } };
@@ -210,4 +215,23 @@ export async function apiUpload<T>(
   }
 
   return response.json() as Promise<T>;
+}
+
+/**
+ * Sign out through the ADR-037 browser-session chain. {@code /logout} is a top-level Spring
+ * endpoint outside {@code API_BASE}, so it does not go through {@link apiFetch}, but it reuses the
+ * same CSRF cookie boundary ({@link attachCsrfHeader}), same-origin credentials, and the injectable
+ * redirector — the view layer must not carry its own logout cookie parser or redirect (GC-Q015
+ * preflight guardrail). On a successful invalidation the user lands on {@code /login}; a non-ok
+ * response leaves the user in place, since there is no destructive client state to roll back.
+ */
+export async function logout(): Promise<void> {
+  const response = await fetch("/logout", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: attachCsrfHeader("POST", {}),
+  });
+  if (response.ok) {
+    activeRedirector(LOGIN_PATH);
+  }
 }

@@ -16,6 +16,12 @@ corrected. What survives is a **read and reporting** console: the GitHub issue
 thread as the durable workflow record (ADR-029) and the ADR-061 workflow-run
 telemetry model as the queryable projection over it.
 
+**Re-scoped 2026-07-29 (GC-Q015 preflight).** ADR-089 also retired the composed
+GRC console surface. Portfolio, Controls, Evidence, Threat Modeling, and Risk
+Scenarios are not shell destinations or migration targets. The lower-level
+aggregates retained by ADR-089 remain backend concepts; GC-Q015 does not
+recreate their retired console composition.
+
 It is not an implementation plan for new routes, controllers, or migrations.
 ADR-085 decides the identity-administration surface. No workflow-control
 contract exists today.
@@ -25,6 +31,9 @@ contract exists today.
 - ADR-017: the frontend is a React / TypeScript SPA consuming the REST API.
 - ADR-037: browser users authenticate through the session-cookie and CSRF
   model; the login bundle stays separate from the authenticated SPA shell.
+- ADR-082: the committed OpenAPI document and generated TypeScript surface are
+  the frontend contract. The existing same-origin fetch boundary remains the
+  HTTP runtime.
 - ADR-029: the GitHub issue thread is the durable workflow record. The console
   reads and links to it; it is not a second record of authority.
 - ADR-061: workflow-run telemetry is a read-model - a correlation/projection
@@ -33,6 +42,8 @@ contract exists today.
   turn it into a control plane by rendering it as one.
 - ADR-085: identity administration is a domain model for users, groups, roles,
   permissions, and project access; it is not SaaS tenancy.
+- ADR-089: the composed GRC product surface, including its console workspaces,
+  is retired. Retained lower-level aggregates do not imply retained pages.
 - `architecture/notes/console-ia-design-system-preflight.md`: guardrails for
   this design issue.
 - Existing frontend surfaces under `frontend/src/routes.tsx`,
@@ -82,7 +93,6 @@ the grouping is stable.
 | Requirements | Requirements, Requirement Detail | Project |
 | Traceability and Verification | Traceability Matrix, Test Runs, Test Runner | Project |
 | Graph and Analysis | Graph, Analysis | Project |
-| Assurance | Portfolio, Controls, Evidence, Threat Modeling, Risk Scenarios | Project |
 | Workflow | Workflow Runs, future Workflow Reporting | Project and global/operator |
 | Administration | Current Project Admin, future Identity Administration | Project and global/operator |
 
@@ -110,22 +120,22 @@ simply because both are "admin."
 | Test Runner | Project Traceability and Verification detail route. |
 | Graph | Project Graph and Analysis, with full-bleed layout preserved. |
 | Analysis | Project Graph and Analysis. |
-| Portfolio | Project Assurance. |
-| Controls | Project Assurance. |
-| Evidence | Project Assurance. |
-| Threat Modeling | Project Assurance. |
-| Risk Scenarios | Project Assurance. |
 | Workflow Runs | Project Workflow telemetry and historical reporting. |
 | Workflow Reporting | Global/operator and project cross-project run observation over the same telemetry read-model. |
 | Current Admin | Project Administration. |
 | Identity Administration | Global/operator Administration. |
 
+ADR-089 removed the former Portfolio and Assurance workspace routes. Retained
+`Control`, `ControlTest`, `EvidenceArtifact`, `Finding`, `Asset`,
+`RiskScenario`, and `ThreatModel` APIs are not an instruction to restore those
+routes under new shell navigation.
+
 ### Project and Context Switching
 
 - The active project remains URL-addressable via `/p/:projectId/...`.
-- Switching projects should preserve the current sub-route when the destination
-  project can support it; otherwise it should route to the destination
-  dashboard and show a non-blocking notification.
+- Switching projects preserves a stable workspace route, not an entity-detail
+  identifier from the prior project. Requirement and test-run detail routes
+  fall back to the destination workspace index or dashboard.
 - Global/operator pages should expose a project filter or project group where
   useful, but they should not rely on a hidden "active project" for
   authorization or data scoping.
@@ -153,8 +163,8 @@ simply because both are "admin."
   bar.
 - Tables must degrade to horizontal scroll or card rows only when the row
   actions and identifiers remain visible.
-- Gate-action and destructive-confirmation flows must remain keyboard usable
-  and must not depend on hover-only controls.
+- Destructive-confirmation flows must remain keyboard usable and must not
+  depend on hover-only controls.
 
 ### User Menu and Notifications
 
@@ -196,7 +206,6 @@ Use semantic roles rather than feature-owned colors:
 | Success | Passed, merged, completed, active, enabled. |
 | Warning | Pending, ready for review, stale, needs attention. |
 | Danger | Failed, destructive action, denied, revoked. |
-| Evidence / assurance | Assurance-specific highlights where a neutral info color is insufficient. |
 
 Do not let the app collapse into one blue-only palette. State colors must be
 semantically distinguishable and meet WCAG 2.1 AA contrast for text and key
@@ -224,23 +233,23 @@ real call sites. The target library should include:
 | AppShell | Authenticated frame, top bar, grouped navigation, responsive layout | `AppLayout` |
 | ProjectSwitcher | Project context selection and route preservation | `ProjectSwitcher` |
 | UserMenu | Principal display, identity/admin affordances, sign-out | `SignOutButton` plus future user endpoint |
-| NotificationCenter | Toasts and durable notices | `components/ui/toast` |
+| NotificationCenter | Transient shell notices and operation feedback | `components/ui/toast` |
 | StatusBadge | Typed state display with semantic colors | `status-badge.tsx`, `components/ui/badge.tsx`, page-local badges |
 | DataTable | Sort, filter, pagination, row actions, empty/loading/error states | Requirements and workspace tables |
 | FilterBar | Compact scope and search controls | Workflow Runs and workspace filters |
 | FormField | Label, hint, validation, disabled/read-only states | `components/ui/form-field.tsx` |
 | Modal / ConfirmDialog | Blocking decisions and destructive confirmation | `components/ui/modal.tsx`, `confirm-dialog.tsx` |
 | SlidePanel | Detail/edit panels without route loss | `components/ui/slide-panel.tsx` |
-| MetricCard | Small numeric summary cards | page-local cards in dashboard/workflow/GRC pages |
+| MetricCard | Small numeric summary cards | page-local cards in dashboard and workflow pages |
 | EmptyState | Meaningful absence with optional action | page-local empty paragraphs |
-| ErrorPanel | API and authorization error display | `WorkspaceError` and page-local panels |
-| LoadingState | Skeletons and spinners sized to their container | `PageSkeleton`, `WorkspaceLoading` |
+| ErrorPanel | API and authorization error display | page-local panels |
+| LoadingState | Skeletons and spinners sized to their container | `PageSkeleton`, `RequirementsSkeleton` |
 | DurableRecordViewer | Plans, review findings, decision records, final reports - rendered read-only from the issue thread | new for GC-Q016 |
 | RunTimeline | Recorded phase history, outcome, and timing from the telemetry read-model | new for GC-Q016 |
 
 Component APIs should accept typed domain state and render display labels at the
 edge. CSS class maps are display details, not the source of truth for workflow,
-identity, or GRC state.
+identity, requirement, or test state.
 
 ## Interaction Patterns
 
@@ -298,13 +307,23 @@ ADR-037 remains the security contract:
   SPA client.
 
 GC-Q015 should add in-app session awareness after the backend exposes the
-current-principal/session read needed for it. The shell should then render:
+current-principal/session read needed for it. That read is a backend-owned,
+credential-free contract generated through ADR-082. It exposes only the
+principal identity needed for display plus server-derived shell capability
+hints. It does not reuse the admin-only `UserResponse` or
+`IdentityUserResponse`, expose a session id or CSRF value, or make a client role
+check authoritative. The shell should then render:
 
 - signed-in user display;
 - compatibility role or future ADR-085 role/project-access summary;
 - sign-out;
 - session-expired notice when navigation to login was triggered by an XHR 401;
 - permission-denied panel for 403 responses.
+
+An XHR 401 may route to a fixed login reason such as `session-expired`. It must
+not reflect a return URL, response detail, principal, or other caller-controlled
+text into the login URL. The standalone login bundle remains separate from the
+authenticated SPA.
 
 Do not store bearer tokens, passwords, CSRF values, session ids, or generated
 API tokens in local storage, session storage, URLs, logs, issue-thread records,
@@ -389,17 +408,22 @@ token credential administration waits for the authoritative credential-store
 cutover and must use a non-transcript secret path. Tenant organizations,
 invitations, and subscriptions stay future work unless their own ADR lands.
 
-## Migration Guidance
+## Migration Constraints
 
-GC-Q015 should proceed in this order:
-
-1. Add the shell with grouped navigation and responsive layout.
-2. Add current-principal/session read integration when the backend exposes it.
-3. Formalize design tokens and component primitives.
-4. Migrate existing workspaces group by group with no loss of function.
-5. Adopt the generated API client from GC-O014 and remove hand-maintained API
-   type mirrors.
-6. Add component tests for reusable shell/design-system components.
+- Every route currently registered in `frontend/src/routes.tsx` remains
+  reachable inside the shell, including graph full-bleed behavior.
+- The user menu consumes the backend current-principal contract; it does not
+  infer identity from project data or admin list endpoints.
+- Semantic tokens and shared primitives replace page-local copies only where
+  the component has repeated call sites.
+- Frontend DTOs and enums come from `contracts/gen/typescript/api.ts`.
+  `frontend/src/types/api.ts` remains the generator-owned compatibility
+  re-export required by repository policy; it contains no hand-maintained
+  schema.
+- `apiFetch`, `apiUpload`, and `apiDelete` remain the one authenticated HTTP
+  boundary. Generated types do not introduce a second fetch runtime.
+- Reusable shell and design-system components carry Vitest and Testing Library
+  behavior tests.
 
 GC-Q016 is scoped to observation and record-reading over the ADR-061 telemetry
 model, so it can proceed on the surfaces that exist today; it does not wait on
@@ -415,6 +439,8 @@ needs a product decision and an ADR first.
 - `aria-sort` for sortable columns and accessible names for icon-only actions.
 - No hover-only critical actions.
 - Component tests for reusable components.
+- Contrast verification covers every semantic foreground/background and focus
+  pair at the token level; status is never conveyed by color alone.
 - Playwright coverage for the GC-Q016 observe -> read durable record -> follow
   through to the issue or PR path.
 
@@ -422,6 +448,9 @@ needs a product decision and an ADR first.
 
 - No new authentication model, SSO, MFA, password reset, or signup flow.
 - No tenant organization/workspace model.
+- No notification inbox, notification persistence model, or new backend
+  notification aggregate.
+- No restoration or rebranding of the ADR-089-retired GRC console workspaces.
 - No workflow control surface: no run start, cancel, retry, gate action, or
   operator signal. None of these exist to call (#1359), and reintroducing one
   is a product decision with its own ADR, not a console feature.
@@ -429,5 +458,8 @@ needs a product decision and an ADR first.
   machine. The telemetry read-model must not become an executor (ADR-061).
 - No route hiding as authorization.
 - No request-body actor fields or frontend-supplied audit actors.
+- No hand-written frontend copy of generated DTOs, enums, or validation schemas.
+- No second HTTP client that bypasses the existing session, CSRF, 401, and
+  `ErrorResponse` handling.
 - No backend schema, controller, route, migration, generated client, or
   component implementation in issue #1274.

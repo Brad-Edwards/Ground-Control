@@ -57,6 +57,7 @@ export * from "./lib/api-controls-3.js";
 export * from "./lib/operational-asset-api-functions.js";
 export * from "./lib/api-workflow-run.js";
 export * from "./lib/api-history.js";
+export * from "./lib/api-session.js";
 export * from "./lib/assert-traceability.js";
 export * from "./lib/assert-completion.js";
 export * from "./lib/decision-records.js";

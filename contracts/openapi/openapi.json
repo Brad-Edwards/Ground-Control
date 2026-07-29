@@ -9636,6 +9636,23 @@
         ],
         "type": "object"
       },
+      "SessionResponse": {
+        "properties": {
+          "canAdminister": {
+            "type": "boolean"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "SimilarityPairResponse": {
         "properties": {
           "score": {
@@ -26194,6 +26211,26 @@
         },
         "tags": [
           "section-controller"
+        ]
+      }
+    },
+    "/api/v1/session": {
+      "get": {
+        "operationId": "currentSession",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "session-controller"
         ]
       }
     },
