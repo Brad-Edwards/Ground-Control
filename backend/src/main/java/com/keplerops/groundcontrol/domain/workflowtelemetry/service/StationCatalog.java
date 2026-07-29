@@ -32,6 +32,11 @@ public final class StationCatalog {
 
     static final String DEFAULT_RESOURCE = "measurement/gc-station-catalogue-v2.json";
 
+    private static final String ALIASES_FIELD = "aliases";
+    private static final String LIFECYCLE_MARKERS_FIELD = "lifecycle_markers";
+    private static final String STATION_ID_FIELD = "station_id";
+    private static final String STATIONS_FIELD = "stations";
+
     /** The catalogue alias kind that names an ADR-036 routing stage (issue #1354). */
     private static final String ADR036_STAGE_ALIAS = "adr036_stage";
 
@@ -76,8 +81,8 @@ public final class StationCatalog {
         } catch (IOException | RuntimeException e) {
             throw new IllegalStateException("Could not load the station catalogue: " + resourcePath, e);
         }
-        this.stationIds = ids(root, "stations", "station_id");
-        this.markerIds = ids(root, "lifecycle_markers", "marker_id");
+        this.stationIds = ids(root, STATIONS_FIELD, STATION_ID_FIELD);
+        this.markerIds = ids(root, LIFECYCLE_MARKERS_FIELD, "marker_id");
         this.stationByStage = stationByStage(root);
         this.stationByPhase = stationByPhase(root);
         this.markerPhases = markerPhases(root);
@@ -102,12 +107,12 @@ public final class StationCatalog {
 
     private static Map<String, String> stationByStage(JsonNode root) {
         var byStage = new LinkedHashMap<String, String>();
-        for (var station : root.path("stations")) {
-            var stationId = station.path("station_id").asText(null);
+        for (var station : root.path(STATIONS_FIELD)) {
+            var stationId = station.path(STATION_ID_FIELD).asText(null);
             if (stationId == null || stationId.isBlank()) {
                 continue;
             }
-            for (var alias : station.path("aliases").path(ADR036_STAGE_ALIAS)) {
+            for (var alias : station.path(ALIASES_FIELD).path(ADR036_STAGE_ALIAS)) {
                 var stage = alias.asText(null);
                 if (stage != null && !stage.isBlank()) {
                     byStage.put(stage, stationId);
@@ -119,13 +124,13 @@ public final class StationCatalog {
 
     private static Map<String, String> stationByPhase(JsonNode root) {
         var byPhase = new LinkedHashMap<String, String>();
-        for (var station : root.path("stations")) {
-            var stationId = station.path("station_id").asText(null);
+        for (var station : root.path(STATIONS_FIELD)) {
+            var stationId = station.path(STATION_ID_FIELD).asText(null);
             if (stationId == null || stationId.isBlank()) {
                 continue;
             }
             byPhase.put(stationId, stationId);
-            for (var alias : station.path("aliases").path(ADR061_PHASE_ALIAS)) {
+            for (var alias : station.path(ALIASES_FIELD).path(ADR061_PHASE_ALIAS)) {
                 var phase = alias.asText(null);
                 if (phase != null && !phase.isBlank()) {
                     byPhase.put(phase, stationId);
@@ -137,12 +142,12 @@ public final class StationCatalog {
 
     private static Set<String> markerPhases(JsonNode root) {
         var phases = new LinkedHashSet<String>();
-        for (var marker : root.path("lifecycle_markers")) {
+        for (var marker : root.path(LIFECYCLE_MARKERS_FIELD)) {
             var markerId = marker.path("marker_id").asText(null);
             if (markerId != null && !markerId.isBlank()) {
                 phases.add(markerId);
             }
-            for (var alias : marker.path("aliases").path(ADR061_PHASE_ALIAS)) {
+            for (var alias : marker.path(ALIASES_FIELD).path(ADR061_PHASE_ALIAS)) {
                 var phase = alias.asText(null);
                 if (phase != null && !phase.isBlank()) {
                     phases.add(phase);
@@ -154,8 +159,8 @@ public final class StationCatalog {
 
     private static Set<String> knownStages(JsonNode root, Map<String, String> stationByStage) {
         var stages = new LinkedHashSet<>(stationByStage.keySet());
-        for (var marker : root.path("lifecycle_markers")) {
-            for (var alias : marker.path("aliases").path(ADR036_STAGE_ALIAS)) {
+        for (var marker : root.path(LIFECYCLE_MARKERS_FIELD)) {
+            for (var alias : marker.path(ALIASES_FIELD).path(ADR036_STAGE_ALIAS)) {
                 var stage = alias.asText(null);
                 if (stage != null && !stage.isBlank()) {
                     stages.add(stage);
