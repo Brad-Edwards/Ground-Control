@@ -180,6 +180,10 @@ public class WorkflowTelemetryService {
         if (command.cycleIndex() != null && command.cycleIndex() < 0) {
             throw new DomainValidationException("cycleIndex must not be negative");
         }
+        // Resolve emitter + catalogue station + station result for the write (issue #1354); the
+        // step-vs-lifecycle rules live in resolveStepEmission.
+        var emission = WorkflowTelemetryValidation.resolveStepEmission(stationCatalog, command);
+
         // The project-scoped lookup is what authorizes the write; afterwards command.runId() is the
         // proven identity of that run, so the derivation and idempotency lookups key on it directly.
         // It takes the row lock so the ordinal derivation, the existence check, and the insert below
@@ -189,15 +193,22 @@ public class WorkflowTelemetryService {
                 .orElseThrow(() -> new NotFoundException(RUN_NOT_FOUND + command.runId()));
 
         int cycleIndex = resolveCycleIndex(command, command.runId());
-        String sourceId = command.sourceId() != null && !command.sourceId().isBlank()
-                ? command.sourceId()
-                : WorkflowPhaseEvent.deriveSourceId(command.phase(), command.eventType(), cycleIndex);
+        // A step observation's identity is derived server-side and namespaced to the ADR-036 emitter,
+        // so it can never collide with a live station attempt's phase:eventType:cycleIndex and a caller
+        // cannot forge a colliding one (issue #1354).
+        String sourceId = emission.isStepObservation()
+                ? "adr036_step:" + command.phase() + ":" + cycleIndex
+                : command.sourceId() != null && !command.sourceId().isBlank()
+                        ? command.sourceId()
+                        : WorkflowPhaseEvent.deriveSourceId(command.phase(), command.eventType(), cycleIndex);
 
         var alreadyRecorded = phaseEventRepository.findByRunIdAndSourceId(command.runId(), sourceId);
         if (alreadyRecorded.isPresent()) {
+            // A step observation's measurement facts are immutable, so a replay with different facts is
+            // a conflict; lifecycle rows keep their live-vs-backfill convergence where the first wins.
+            WorkflowTelemetryValidation.assertReplayFactsMatch(alreadyRecorded.get(), command, emission);
             // The attempt is already recorded, so its batch is too. Re-appending the findings here
-            // would double every count on an at-least-once redelivery, which is precisely what the
-            // shared identity exists to prevent.
+            // would double every count on an at-least-once redelivery.
             return alreadyRecorded.get();
         }
 
@@ -206,26 +217,13 @@ public class WorkflowTelemetryService {
         // indistinguishable from a real observation forever after.
         WorkflowTelemetryValidation.validateMeasurement(
                 stationCatalog,
-                command.stationId(),
-                command.stationResult(),
+                emission.stationId(),
+                emission.stationResult(),
                 command.eventType(),
                 command.findings(),
                 command.findingsDropped());
 
-        var event = new WorkflowPhaseEvent(
-                command.runId(),
-                run.getProject(),
-                command.phase(),
-                command.eventType(),
-                command.occurredAt(),
-                command.durationMs(),
-                command.provenance());
-        event.setCycleIndex(cycleIndex);
-        event.setOutcome(command.outcome());
-        event.setSourceId(sourceId);
-        event.setStationId(command.stationId());
-        event.setStationResult(command.stationResult());
-        event.setFindingsDropped(command.findingsDropped());
+        var event = WorkflowPhaseEventFactory.build(command, run.getProject(), emission, cycleIndex, sourceId);
         var appended = phaseEventRepository.save(event);
         // Same transaction as the attempt: a partial batch must never be readable as a complete
         // gate outcome, so either the attempt and every finding it observed commit together or

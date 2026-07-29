@@ -5853,6 +5853,13 @@
             "format": "int64",
             "type": "integer"
           },
+          "emitter": {
+            "enum": [
+              "ADR061_WORKFLOW_TELEMETRY",
+              "ADR036_STEP_JSONL"
+            ],
+            "type": "string"
+          },
           "eventType": {
             "enum": [
               "STARTED",
@@ -5863,6 +5870,9 @@
             ],
             "type": "string"
           },
+          "expectedModel": {
+            "type": "string"
+          },
           "findingsDropped": {
             "format": "int32",
             "type": "integer"
@@ -5871,12 +5881,29 @@
             "format": "uuid",
             "type": "string"
           },
+          "inputTokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "measurementVersion": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "modelMatchesExpected": {
+            "type": "boolean"
+          },
           "occurredAt": {
             "format": "date-time",
             "type": "string"
           },
           "outcome": {
             "type": "string"
+          },
+          "outputTokens": {
+            "format": "int64",
+            "type": "integer"
           },
           "phase": {
             "type": "string"
@@ -5910,6 +5937,19 @@
               "SKIPPED_STATION",
               "CANCELLED",
               "NOT_EVALUABLE",
+              "UNOBSERVED"
+            ],
+            "type": "string"
+          },
+          "stepAlias": {
+            "type": "string"
+          },
+          "tier": {
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH",
+              "NOT_APPLICABLE",
               "UNOBSERVED"
             ],
             "type": "string"
@@ -6824,6 +6864,13 @@
             "format": "int64",
             "type": "integer"
           },
+          "emitter": {
+            "enum": [
+              "ADR061_WORKFLOW_TELEMETRY",
+              "ADR036_STEP_JSONL"
+            ],
+            "type": "string"
+          },
           "eventType": {
             "enum": [
               "STARTED",
@@ -6832,6 +6879,11 @@
               "ESCALATED",
               "SKIPPED"
             ],
+            "type": "string"
+          },
+          "expectedModel": {
+            "maxLength": 200,
+            "minLength": 0,
             "type": "string"
           },
           "findings": {
@@ -6846,6 +6898,23 @@
             "format": "int32",
             "type": "integer"
           },
+          "inputTokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "measurementVersion": {
+            "maxLength": 40,
+            "minLength": 0,
+            "type": "string"
+          },
+          "model": {
+            "maxLength": 200,
+            "minLength": 0,
+            "type": "string"
+          },
+          "modelMatchesExpected": {
+            "type": "boolean"
+          },
           "occurredAt": {
             "format": "date-time",
             "type": "string"
@@ -6854,6 +6923,10 @@
             "maxLength": 100,
             "minLength": 0,
             "type": "string"
+          },
+          "outputTokens": {
+            "format": "int64",
+            "type": "integer"
           },
           "phase": {
             "maxLength": 100,
@@ -6886,6 +6959,21 @@
               "SKIPPED_STATION",
               "CANCELLED",
               "NOT_EVALUABLE",
+              "UNOBSERVED"
+            ],
+            "type": "string"
+          },
+          "stepAlias": {
+            "maxLength": 40,
+            "minLength": 0,
+            "type": "string"
+          },
+          "tier": {
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH",
+              "NOT_APPLICABLE",
               "UNOBSERVED"
             ],
             "type": "string"

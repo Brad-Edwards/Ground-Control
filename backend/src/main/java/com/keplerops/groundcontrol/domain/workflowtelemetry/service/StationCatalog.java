@@ -3,7 +3,10 @@ package com.keplerops.groundcontrol.domain.workflowtelemetry.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;
@@ -32,6 +35,22 @@ public final class StationCatalog {
     private final Set<String> stationIds;
     private final Set<String> markerIds;
 
+    /**
+     * ADR-036 routing stage → canonical station id, built from every station's {@code adr036_stage}
+     * aliases (ADR-090 amendment, issue #1354). A durable step observation carries {@code phase =
+     * stage_id}; this is where the backend, not the emitter, resolves the catalogue station so the
+     * two can never disagree.
+     */
+    private final Map<String, String> stationByStage;
+
+    /**
+     * Every ADR-036 stage the catalogue declares — as a station alias, a lifecycle-marker alias, or a
+     * declared non-station stage. A stage in this set that resolves to no station is honest
+     * modelling (a marker or non-station inspects nothing); a stage NOT in this set is an undeclared
+     * phantom the write path refuses rather than opening a station nobody catalogued.
+     */
+    private final Set<String> knownStages;
+
     @Autowired
     public StationCatalog() {
         this(DEFAULT_RESOURCE);
@@ -47,6 +66,8 @@ public final class StationCatalog {
         }
         this.stationIds = ids(root, "stations", "station_id");
         this.markerIds = ids(root, "lifecycle_markers", "marker_id");
+        this.stationByStage = stationByStage(root);
+        this.knownStages = knownStages(root, stationByStage);
         if (stationIds.isEmpty()) {
             // An empty set would accept nothing, but an empty *parse* means the shape changed and
             // the catalogue was read as vacuous. Refusing to start is the only honest response.
@@ -65,6 +86,42 @@ public final class StationCatalog {
         return Set.copyOf(found);
     }
 
+    private static Map<String, String> stationByStage(JsonNode root) {
+        var byStage = new LinkedHashMap<String, String>();
+        for (var station : root.path("stations")) {
+            var stationId = station.path("station_id").asText(null);
+            if (stationId == null || stationId.isBlank()) {
+                continue;
+            }
+            for (var alias : station.path("aliases").path("adr036_stage")) {
+                var stage = alias.asText(null);
+                if (stage != null && !stage.isBlank()) {
+                    byStage.put(stage, stationId);
+                }
+            }
+        }
+        return Map.copyOf(byStage);
+    }
+
+    private static Set<String> knownStages(JsonNode root, Map<String, String> stationByStage) {
+        var stages = new LinkedHashSet<>(stationByStage.keySet());
+        for (var marker : root.path("lifecycle_markers")) {
+            for (var alias : marker.path("aliases").path("adr036_stage")) {
+                var stage = alias.asText(null);
+                if (stage != null && !stage.isBlank()) {
+                    stages.add(stage);
+                }
+            }
+        }
+        for (var nonStation : root.path("non_station_stages")) {
+            var stage = nonStation.path("adr036_stage").asText(null);
+            if (stage != null && !stage.isBlank()) {
+                stages.add(stage);
+            }
+        }
+        return Set.copyOf(stages);
+    }
+
     /** Whether the id names a station the catalogue defines — something that inspects and reports. */
     public boolean isStation(String stationId) {
         return stationId != null && stationIds.contains(stationId);
@@ -73,6 +130,23 @@ public final class StationCatalog {
     /** Whether the id names a lifecycle marker, which inspects nothing and can carry no verdict. */
     public boolean isMarker(String stationId) {
         return stationId != null && markerIds.contains(stationId);
+    }
+
+    /**
+     * Resolve an ADR-036 routing stage to its catalogue station id (issue #1354). Empty means the
+     * stage is a declared marker or non-station — it correctly maps to no station — OR the stage is
+     * undeclared; callers distinguish those with {@link #isKnownStage(String)}.
+     */
+    public Optional<String> resolveStationForStage(String stageId) {
+        if (stageId == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(stationByStage.get(stageId));
+    }
+
+    /** Whether the catalogue declares this ADR-036 stage at all (station, marker, or non-station). */
+    public boolean isKnownStage(String stageId) {
+        return stageId != null && knownStages.contains(stageId);
     }
 
     /** The catalogue's station ids, for error messages that can name the valid set. */

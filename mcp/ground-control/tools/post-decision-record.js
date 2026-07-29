@@ -277,12 +277,14 @@ export function registerPostDecisionRecord(server, ctx) {
 
   server.tool(
     "gc_log_step_telemetry",
-    "Append a single JSONL telemetry record for a /implement step to `.gc/telemetry/<issue>-<sanitized-branch>.jsonl`. Operational measurement only — NOT workflow state (per ADR-036). wall_time_ms is mandatory; input_tokens / output_tokens are optional. Path is repo-relative and validated for containment.",
+    "Record a single durable per-step telemetry observation for a /implement step into the ADR-061 workflow-run projection (ADR-090 amendment, issue #1354), keyed on the measurement model: work item (project/repo/issue), run, station (resolved backend-side from the stage), and capability tier. Supersedes the gitignored `.gc/telemetry` JSONL — no file is written. Operational measurement only, never gating, strictly fail-open (ADR-036): a durable record is guaranteed only when telemetry.enabled and the backend is reachable. Pass `stage` (the ADR-036 stage id, e.g. `completion_gate`) and a non-negative `attempt` index; `step` is the numbered SKILL step kept as a non-identity alias. wall_time_ms is mandatory; input_tokens / output_tokens are optional.",
     {
       repo_path: z.string(),
       issue_number: z.number().int().positive(),
       branch: z.string().min(1),
-      step: z.string().min(1),
+      stage: z.string().min(1),
+      attempt: z.number().int().nonnegative(),
+      step: z.string().min(1).nullable().optional(),
       tier: z.enum(TELEMETRY_TIERS),
       model: z.string().min(1),
       wall_time_ms: z.number().int().nonnegative(),
@@ -291,13 +293,15 @@ export function registerPostDecisionRecord(server, ctx) {
       outcome: z.enum(TELEMETRY_OUTCOMES),
       ts: z.string().optional(),
     },
-    async ({ repo_path, issue_number, branch, step, tier, model, wall_time_ms, input_tokens, output_tokens, outcome, ts }) => {
+    async ({ repo_path, issue_number, branch, stage, attempt, step, tier, model, wall_time_ms, input_tokens, output_tokens, outcome, ts }) => {
       try {
         return ok(JSON.stringify(await runLogStepTelemetry({
           repoPath: repo_path,
           issueNumber: issue_number,
           branch,
-          step,
+          stage,
+          attempt,
+          step: step ?? null,
           tier,
           model,
           wallTimeMs: wall_time_ms,

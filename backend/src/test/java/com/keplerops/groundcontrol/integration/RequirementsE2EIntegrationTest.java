@@ -44,6 +44,13 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * End-to-end requirements flow against the full Flyway migration set applied by
+ * {@link BaseIntegrationTest} — through V209, which adds the ADR-036 durable step-observation columns
+ * to {@code workflow_phase_event} and its audit shadow (issue #1354). It exercises the API and the
+ * audited persistence spine those migrations build, so a migration that breaks the end-to-end path
+ * fails here rather than only in the migration smoke test.
+ */
 @AutoConfigureMockMvc
 @TestMethodOrder(OrderAnnotation.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)

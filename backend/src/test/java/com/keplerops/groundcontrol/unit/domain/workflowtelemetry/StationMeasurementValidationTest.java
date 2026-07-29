@@ -89,6 +89,17 @@ class StationMeasurementValidationTest {
                 stationId,
                 result,
                 findings,
+                null,
+                // The ADR-036 step-observation fields are absent here: this fixture builds a
+                // lifecycle/station command, so emitter defaults to ADR061 (issue #1354).
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null);
     }
 

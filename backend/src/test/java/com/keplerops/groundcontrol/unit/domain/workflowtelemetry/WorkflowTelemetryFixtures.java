@@ -42,6 +42,17 @@ final class WorkflowTelemetryFixtures {
                 null,
                 null,
                 null,
+                null,
+                // emitter null -> defaults ADR061_WORKFLOW_TELEMETRY; the ADR-036 step facts are
+                // absent, as every lifecycle/station emitter sends (issue #1354).
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null);
     }
 

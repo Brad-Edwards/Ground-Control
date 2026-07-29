@@ -606,3 +606,39 @@ and `gc_render_pr_body` gains no input and emits no command text (see ADR-029).
 and now resolves and validates the repository context before the hook boundary,
 so an invalid `.ground-control.yaml` cannot fall through to a default hook
 command.
+
+**2026-07-29 (issue #1354, durable step-telemetry sink).** The per-step
+telemetry contract above still holds — `gc_log_step_telemetry`, `telemetry.enabled`
+opt-in, operational-measurement-only, non-gating — but the **sink changes**.
+The forward `.gc/telemetry/<issue>-<sanitized-branch>.jsonl` write is retired:
+`gc_log_step_telemetry` now records each routed step as a durable observation on
+the ADR-061 `WorkflowRun` / `WorkflowPhaseEvent` reporting projection, so a
+completed `/implement` run leaves a queryable per-step record instead of a
+gitignored per-clone file. The binding design lives in ADR-090's 2026-07-29
+amendment ("durable ADR-036 step observations"); this ADR records the
+consequences for its own surface:
+
+- The step record maps onto the ADR-090 production-line measurement model,
+  keyed on work item `(project, repo, issue_number)`, the run's
+  `(project, repo, issue_number, branch)` natural key, the catalogue
+  `station_id` (resolved backend-side from the ADR-036 stage), and the
+  capability `tier`. It is distinguished from a lifecycle/station attempt by an
+  `emitter` value (`ADR036_STEP_JSONL`); lifecycle hot-spot, yield/rework, and
+  context-graph consumers exclude it.
+- The v2 JSONL schema semantics are frozen: the step record's `outcome` stays
+  **operation outcome** and never becomes a station verdict (`station_result`
+  is `UNOBSERVED`), so it cannot by itself produce first-pass yield.
+- `gc_log_step_telemetry` gains `stage` (the ADR-036 stage id, carried as the
+  event `phase`) and a non-negative `attempt` index; `step` (the numbered SKILL
+  step) becomes a non-identity alias. The durable `(run_id, source_id)`
+  identity is namespaced to the ADR-036 emitter
+  (`adr036_step:<stage>:<attempt>`) so it never collides with a live station
+  attempt.
+- The write is strictly fail-open and never falls back to a local authoritative
+  file: a durable record is guaranteed only when `telemetry.enabled` and the
+  authenticated backend is reachable. Existing local JSONL files remain
+  historical input for the `make implement-cost-summary` summarizer; they are
+  not backfilled, dual-written, or promoted to a second source of truth.
+
+The routing table, the tier→model mapping, and the telemetry record's
+operational-only status are otherwise unchanged.
