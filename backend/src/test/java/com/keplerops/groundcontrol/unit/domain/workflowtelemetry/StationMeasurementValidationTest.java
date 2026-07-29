@@ -75,10 +75,19 @@ class StationMeasurementValidationTest {
 
     private RecordPhaseEventCommand command(
             String stationId, StationResult result, PhaseEventType type, List<GateFindingCommand> findings) {
+        return command(stationId == null ? "planning" : stationId, stationId, result, type, findings);
+    }
+
+    private RecordPhaseEventCommand command(
+            String phase,
+            String stationId,
+            StationResult result,
+            PhaseEventType type,
+            List<GateFindingCommand> findings) {
         return new RecordPhaseEventCommand(
                 runId,
                 "gc",
-                stationId == null ? "planning" : stationId,
+                phase,
                 type,
                 0,
                 FROM,
@@ -117,6 +126,27 @@ class StationMeasurementValidationTest {
     }
 
     @Test
+    void phaseAliasSuppliesTheCanonicalStationWhenTheEmitterOmitsIt() {
+        var event = service.recordPhaseEvent(
+                command("preflight", null, StationResult.PASS, PhaseEventType.COMPLETED, null));
+
+        assertThat(event.getPhase()).isEqualTo("preflight");
+        assertThat(event.getStationId()).isEqualTo("architecture_preflight");
+        assertThat(event.getStationResult()).isEqualTo(StationResult.PASS);
+    }
+
+    @Test
+    void aSuppliedStationIdMustMatchThePhaseBinding() {
+        var mismatched = command("ci", "policy", StationResult.PASS, PhaseEventType.COMPLETED, null);
+
+        assertThatThrownBy(() -> service.recordPhaseEvent(mismatched))
+                .isInstanceOf(DomainValidationException.class)
+                .hasMessageContaining("policy")
+                .hasMessageContaining("ci");
+        verify(phaseEventRepository, never()).save(any());
+    }
+
+    @Test
     void aStationIdOutsideTheCatalogueIsRefused() {
         // A typo does not fail on its own. It opens a phantom station holding one attempt and
         // silently removes that attempt from the real station's denominator, and no later query can
@@ -151,9 +181,9 @@ class StationMeasurementValidationTest {
 
     @Test
     void aMarkerWithNoMeasurementIsRecorded() {
-        var event = service.recordPhaseEvent(command("plan", null, PhaseEventType.COMPLETED, null));
+        var event = service.recordPhaseEvent(command("plan", null, null, PhaseEventType.COMPLETED, null));
 
-        assertThat(event.getStationId()).isEqualTo("plan");
+        assertThat(event.getStationId()).isNull();
         assertThat(event.getStationResult()).isEqualTo(StationResult.UNOBSERVED);
     }
 
@@ -204,7 +234,8 @@ class StationMeasurementValidationTest {
         assertThat(service.recordPhaseEvent(command("ci", StationResult.UNOBSERVED, PhaseEventType.STARTED, null))
                         .getStationResult())
                 .isEqualTo(StationResult.UNOBSERVED);
-        assertThat(service.recordPhaseEvent(command("plan", StationResult.UNOBSERVED, PhaseEventType.COMPLETED, null))
+        assertThat(service.recordPhaseEvent(
+                                command("plan", null, StationResult.UNOBSERVED, PhaseEventType.COMPLETED, null))
                         .getStationResult())
                 .isEqualTo(StationResult.UNOBSERVED);
     }

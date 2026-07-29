@@ -77,6 +77,7 @@ describe("recordWorkflowRunEvent", () => {
       assert.equal(calls[0].body.occurredAt, "2026-01-01T12:00:00Z");
     }),
   );
+
 });
 
 describe("importWorkflowRunCost", () => {

@@ -28,6 +28,7 @@ import com.keplerops.groundcontrol.domain.workflowtelemetry.repository.WorkflowP
 import com.keplerops.groundcontrol.domain.workflowtelemetry.repository.WorkflowRunRepository;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.ImportRunCostCommand;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.RecordWorkflowRunCommand;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.service.StationCatalog;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowMeasurementService;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowTelemetryChangeEvent;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowTelemetryService;
@@ -56,6 +57,9 @@ class WorkflowTelemetryServiceTest {
 
     @Mock
     private WorkflowMeasurementService measurementService;
+
+    @Mock
+    private StationCatalog stationCatalog;
 
     @Mock
     private ApplicationEventPublisher eventPublisher;

@@ -45,4 +45,19 @@ class StationCatalogStageResolutionTest {
         assertThat(catalog.resolveStationForStage("not_a_real_stage")).isEmpty();
         assertThat(catalog.isKnownStage(null)).isFalse();
     }
+
+    @Test
+    void adr061PhaseAliasesResolveToCanonicalStationIds() {
+        assertThat(catalog.resolveStationForPhase("preflight")).contains("architecture_preflight");
+        assertThat(catalog.resolveStationForPhase("completion_gate")).contains("completion_gate");
+        assertThat(catalog.resolveStationForPhase("ci")).contains("ci");
+    }
+
+    @Test
+    void directAndAliasedLifecycleMarkersResolveWithoutBecomingStations() {
+        assertThat(catalog.isLifecycleMarkerPhase("plan")).isTrue();
+        assertThat(catalog.resolveStationForPhase("plan")).isEmpty();
+        assertThat(catalog.isLifecycleMarkerPhase("traceability_reconcile")).isTrue();
+        assertThat(catalog.resolveStationForPhase("traceability_reconcile")).isEmpty();
+    }
 }

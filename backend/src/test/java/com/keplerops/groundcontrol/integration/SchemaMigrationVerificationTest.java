@@ -244,6 +244,7 @@ class SchemaMigrationVerificationTest extends BaseIntegrationTest {
                         "206", // V206: identity/RBAC Envers audit shadows (#1282)
                         "207", // V207: station-result axis + gate-finding projection (#1355)
                         "208", // V208: workflow_gate_finding Envers shadow (#1355)
-                        "209"); // V209: durable ADR-036 step observation on the phase-event row (#1354)
+                        "209", // V209: durable ADR-036 step observation on the phase-event row (#1354)
+                        "210"); // V210: canonical ADR-061 workflow station binding (#1439)
     }
 }
