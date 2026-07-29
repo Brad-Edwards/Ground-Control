@@ -608,8 +608,8 @@ so an invalid `.ground-control.yaml` cannot fall through to a default hook
 command.
 
 **2026-07-29 (issue #1354, durable step-telemetry sink).** The per-step
-telemetry contract above still holds — `gc_log_step_telemetry`, `telemetry.enabled`
-opt-in, operational-measurement-only, non-gating — but the **sink changes**.
+telemetry contract above still holds (`gc_log_step_telemetry`, `telemetry.enabled`
+opt-in, operational-measurement-only, non-gating), but the **sink changes**.
 The forward `.gc/telemetry/<issue>-<sanitized-branch>.jsonl` write is retired:
 `gc_log_step_telemetry` now records each routed step as a durable observation on
 the ADR-061 `WorkflowRun` / `WorkflowPhaseEvent` reporting projection, so a

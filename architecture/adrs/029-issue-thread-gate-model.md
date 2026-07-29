@@ -547,3 +547,51 @@ status is not `ok` before any fetch, merge, gate, or PR write, so an invalid
 `.ground-control.yaml` can no longer fall through to default values on the way
 to a durable attestation. Every other marker family, the issue-thread
 durable-record contract, and the single-human-touchpoint contract are unchanged.
+
+**2026-07-29 (issue #1476, station-observation obligations and the v2 marker
+family).** The issue thread gains `gc.implement.execution-obligation/v2`, a
+second execution-obligation marker family carrying an obligation kind, a
+canonical station id, a logical review cycle, and - for the new `reobserved`
+disposition - the id of the durable record it resolves against. v1 could not
+simply gain the disposition: its regex pins a closed disposition set, so a
+reader running older code would not match the resolution marker at all and would
+treat the obligation as permanently open. A distinct schema id makes the
+incompatibility explicit - old readers ignore v2 records rather than misreading
+them. The ledger parses v1 and v2 together; v1 obligations retain their exact
+semantics and authorization checks, and their prose is never reclassified.
+
+A review station that runs but renders no verdict opens a `station_observation`
+obligation, one per issue, station, and logical cycle. This records a missing
+observation, not a defect. `reobserved` closes it, and states only that the gate
+was finally observed: a re-observed verdict that found problems leaves every
+finding subject to the existing `fix` / `wontfix` / `not-applicable` rules, and
+`reobserved` is never added to the review decision-record vocabulary or to any
+finding disposition.
+
+The disposition is tool-attested rather than agent-asserted, because it is the
+one disposition that closes an obligation without user authorization.
+`gc_record_execution_obligation` does not expose it - an agent cannot select it
+or claim tool verification through a flag - and only the station-owning cycle
+wrapper emits it. Replay accepts it only when the marker author is the trusted
+MCP posting identity (the same trusted-login check the review auto-disposition
+grant uses, not a second authorization hierarchy) rather than merely a
+repository writer, the obligation is a `station_observation` for the same
+station and logical cycle, and the referenced observation record exists, was
+posted by that same identity, and is not the marker itself. A resolution failing
+any of these is dropped and its obligation stays open, so both
+`gc_assert_completion` phases keep refusing; dropping rather than erroring keeps
+anyone who can comment from wedging a run with a marker-shaped record.
+
+Durable write order is findings record, then the `reobserved` resolution bound
+to it, then the cycle marker, then the decision record. The cap marker must not
+land before the resolution: the inverse order spends the review cycle while the
+observation obligation is still open, which is exactly the deadlock that
+previously required a human authorization. Any earlier failure leaves the cycle
+unconsumed, so retrying is safe, and writes are idempotent under the
+deterministic obligation identity. Exhausted bounded re-attempts keep the
+obligation open and append an escalation under `hard_external_dependency` naming
+the station, attempt count, and stable failure classes; it never requests a
+`wontfix` decision about a defect nobody observed. `wontfix` authorization is
+unchanged in every respect. The single-human-touchpoint contract (PR merge) and
+the reviewer-of-record invariant are unchanged. See
+`architecture/notes/unobserved-station-recovery-preflight.md`.

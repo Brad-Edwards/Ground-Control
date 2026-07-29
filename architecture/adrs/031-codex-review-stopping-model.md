@@ -419,3 +419,32 @@ post-fix tree, not after every small fix. The stopping model, severity rubric,
 per-cycle caps, per-issue cycle counters, and the reviewer-of-record invariant
 are unchanged. Cross-referenced for the `workflow-guardrail-sync` contract. See
 ADR-021 and ADR-027 (2026-07-26 amendments).
+
+**2026-07-29 (issue #1476 bounded non-verdict re-attempts).** The stopping model
+gains a second, disjoint bound. The review cycle cap bounds how many times a
+station renders a *verdict*; the new per-reviewer
+`non_verdict_retry_limit` bounds how many times a station that rendered *no*
+verdict is automatically re-attempted (bounds `[0, 2]`, default 1; `0` restores
+the previous never-retry behavior). The two never interact: every retry-eligible
+failure class returns before any findings record or cycle marker is written, so
+a re-attempt provably consumes no cycle, no cap override, and no
+auto-disposition grant.
+
+Retry eligibility is an allow-list of stable error codes - engine invocation
+failure (including timeout), unparseable validated output, and incomplete
+reviewer coverage - not a heuristic over messages, because a wrong "retryable"
+would re-run a station that already spent a cycle. Cancellation, cap refusal,
+invalid input or configuration, repository/authorization failure,
+reserved-marker and sensitive-content rejection, and GitHub posting failure are
+never retried; the last of these matters because re-running an engine to retry a
+GitHub write would burn a review for a transport problem.
+
+The retry boundary wraps one complete station attempt, never a slice, poll, or
+durable write: partial work from an incomplete attempt is discarded with that
+attempt and never merged into a later verdict. Measurement follows the same
+split - one ADR-090 station attempt per real execution, `not_evaluable` for each
+non-verdict and `pass`/`fail` for the observed one, with `not_evaluable` outside
+the first-pass-yield and iterations-to-green denominators so an outage never
+reads as rework. Cap evaluators, the per-issue cycle counter, the verbatim
+findings record, the zero-deferral rule, and the human `override_cap` escape are
+unchanged. See ADR-029 (2026-07-29 amendment) for the obligation side.

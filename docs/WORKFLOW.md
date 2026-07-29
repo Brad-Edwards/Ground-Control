@@ -406,3 +406,39 @@ implementation and review fixes, widen for shared/security-sensitive risk, and
 run broad completion/policy gates once at the meaningful final tree boundary.
 Pre-commit, completion, review, CI, SonarCloud, and final policy gates remain
 mandatory; efficient iteration does not waive them.
+
+**2026-07-29 (issue #1476 unobserved review stations).** A review station that
+runs but renders no verdict - a timed-out engine, a dead child process, an
+unparseable payload, an incomplete slice sweep - is a missing observation, not a
+failing gate and not a defect. Previously its only exit was a repository writer
+posting an exact `wontfix` authorization for a defect nobody had observed.
+
+Each such failure returns before any findings record or cycle marker is written,
+so the review cap is untouched and re-running is free. The station owner now
+consumes that free retry: `workflow.codex_review.non_verdict_retry_limit` and
+`workflow.test_quality_review.non_verdict_retry_limit` set how many additional
+attempts follow the first (bounds `[0, 2]`, default 1). Only the declared
+transient classes retry; cancellation, cap refusal, invalid input or
+configuration, authorization failure, reserved-marker or sensitive-content
+rejection, and GitHub posting failure do not.
+
+The first non-verdict attempt opens a `station_observation` execution
+obligation - one per issue, station, and logical cycle, so repeated transport
+attempts update one record. A later attempt that renders a verdict resolves it
+as `reobserved`, bound to the findings record proving the verdict exists, and
+written between that record and the cycle marker so the cap is never spent while
+the obligation is still open. `reobserved` states only that the gate was
+observed: a re-observed verdict that found problems leaves every finding under
+the existing `fix` / `wontfix` / `not-applicable` rules.
+
+The disposition is tool-attested, not agent-asserted.
+`gc_record_execution_obligation` does not accept it, and replay honours it only
+when the marker author is the trusted MCP posting identity, the obligation is a
+`station_observation` for the same station and logical cycle, and the referenced
+record was posted by that identity. Anything else leaves the obligation open and
+completion blocked. Exhausted re-attempts keep the obligation open and escalate
+under `hard_external_dependency` naming the station, never as a `wontfix`
+decision request. Records use the new `gc.implement.execution-obligation/v2`
+marker family; v1 obligations keep their existing semantics and authorization
+checks. The single-human-touchpoint contract and review caps are unchanged. See
+ADR-029 and ADR-031 (amendments).

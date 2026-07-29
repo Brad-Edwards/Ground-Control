@@ -136,7 +136,7 @@ Config contract:
 - Routing stages use lowercase stage keys matching `[a-z][a-z0-9_-]*`. Route fields are `tier`, `provider`, and `model`.
 - Routing `tier` is one of `low`, `medium`, or `high`; `provider` currently supports `claude`. Routing is advisory metadata and does not select an executor or force delegation.
 - Claude model values in executable routing config must be canonical CLI ids such as `claude-haiku-4-5`, `claude-sonnet-5`, or `claude-opus-4-8`; display aliases like `sonnet-4.6` are rejected.
-- `telemetry.enabled` defaults to `false`. `gc_log_step_telemetry` refuses to record telemetry unless this is explicitly true. Since issue #1354 (ADR-090 amendment) it records a **durable** per-step observation into the ADR-061 `workflow_run` projection — keyed on work item, run, catalogue station, and capability tier — instead of a gitignored `.gc/telemetry/*.jsonl` file. The write is strictly fail-open (a backend outage never blocks the step) and has no local-file fallback; existing JSONL files remain historical input for `make implement-cost-summary`.
+- `telemetry.enabled` defaults to `false`. `gc_log_step_telemetry` refuses to record telemetry unless this is explicitly true. Since issue #1354 (ADR-090 amendment) it records a **durable** per-step observation into the ADR-061 `workflow_run` projection (keyed on work item, run, catalogue station, and capability tier) instead of a gitignored `.gc/telemetry/*.jsonl` file. The write is strictly fail-open (a backend outage never blocks the step) and has no local-file fallback; existing JSONL files remain historical input for `make implement-cost-summary`.
 
 `AGENTS.md` should still carry a brief `Ground Control Context` section that points agents at `.ground-control.yaml` and `.gc/`, so repo newcomers know where the workflow config lives.
 
@@ -831,6 +831,48 @@ authority already granted. Workload and file count do not qualify. When a
 pause is necessary, `gc_record_execution_obligation` preserves each unresolved
 problem on the issue thread. `gc_assert_completion` refuses both pre-merge
 readiness and post-merge completion while any trusted obligation remains open.
+
+### Unobserved review stations
+
+A review station that runs but renders no verdict is not a failing gate and not
+a defect. It is a missing observation, and it is kept on its own axis end to
+end (issue #1476). The cases are a timed-out engine, a dead child process, an
+unparseable payload, and a diff whose slices did not all return.
+
+Each such failure returns before any findings record or cycle marker is
+written, so the review cap is untouched and re-running is free. The station
+owner consumes that free retry automatically: `workflow.codex_review.
+non_verdict_retry_limit` and `workflow.test_quality_review.non_verdict_retry_limit`
+set how many additional attempts follow the first (bounds `[0, 2]`, default 1).
+Only the declared transient classes are retried. Cancellation, cap refusal,
+invalid input or configuration, authorization failure, reserved-marker or
+sensitive-content rejection, and GitHub posting failure are not.
+
+The first non-verdict attempt opens a `station_observation` execution
+obligation, one per issue, station, and logical cycle, so repeated transport
+attempts update one record. A later attempt that renders a verdict resolves it
+as `reobserved`, bound to the findings record proving the verdict exists. That
+resolution is written after the findings record and before the cycle marker, so
+the cap is never spent while the observation obligation is still open.
+
+`reobserved` states only that the gate was finally observed. A re-observed
+verdict that found problems still leaves every finding under the existing
+`fix`, `wontfix`, and `not-applicable` rules. The disposition is tool-attested,
+not agent-asserted: `gc_record_execution_obligation` does not accept it, and
+replay honours it only when the marker author is the trusted MCP posting
+identity, the obligation is a `station_observation` for the same station and
+logical cycle, and the referenced record was posted by that same identity.
+Anything else leaves the obligation open and completion blocked.
+
+When the bounded re-attempts are spent, the obligation stays open and escalates
+under `hard_external_dependency`, naming the station, the attempt count, and the
+stable failure classes. It never asks an operator to authorize a `wontfix` for a
+defect nobody observed. `wontfix` authorization is unchanged.
+
+Measurement follows the same split: every real execution is one ADR-090 station
+attempt, `not_evaluable` for each non-verdict and `pass` or `fail` for the
+observed one. `not_evaluable` stays outside the first-pass-yield and
+iterations-to-green denominators, so an outage never reads as rework.
 
 The `/implement` mutation tools are repository-bound at the server boundary. Their
 `repo_path` must resolve to the Git workspace captured when that repository's

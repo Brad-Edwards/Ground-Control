@@ -1058,8 +1058,8 @@ returns the stored event rather than appending a duplicate, which is what lets l
 The same phase-event surface carries the durable **ADR-036 step observation** (issue #1354): a routed
 `/implement` step recorded via `gc_log_step_telemetry`, distinguished by `emitter`
 (`ADR036_STEP_JSONL` vs the default `ADR061_WORKFLOW_TELEMETRY`). Such a row sends `phase` = the
-ADR-036 stage id — the backend resolves the catalogue `stationId` from it and refuses an undeclared
-stage — leaves `stationResult` `UNOBSERVED` (it reports operation outcome only, never a gate verdict),
+ADR-036 stage id (the backend resolves the catalogue `stationId` from it and refuses an undeclared
+stage), leaves `stationResult` `UNOBSERVED` (it reports operation outcome only, never a gate verdict),
 and adds the ADR-036 facts `tier` (`LOW` | `MEDIUM` | `HIGH` | `NOT_APPLICABLE` | `UNOBSERVED`),
 `model`, `expectedModel`, `modelMatchesExpected`, `measurementVersion`, `stepAlias`, and optional
 `inputTokens`/`outputTokens`. Its `(runId, sourceId)` is namespaced (`adr036_step:<stage>:<attempt>`)
@@ -1142,7 +1142,7 @@ Named events are `workflow-run` and `phase-event`; their `data` payloads are exa
 them into the same cache its polling reads populate. Heartbeats are SSE comments with no payload.
 
 Delivery is **best-effort and may duplicate**: reconcile by entity id, and refetch the REST
-snapshots on connect and reconnect. There is no `Last-Event-ID` replay and no durable backlog—an
+snapshots on connect and reconnect. There is no `Last-Event-ID` replay and no durable backlog; an
 in-memory notification can be lost if the process dies after the database commit.
 
 Connections are bounded (`groundcontrol.workflow-telemetry.stream.*`): a global cap, a

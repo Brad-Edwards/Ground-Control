@@ -11,6 +11,7 @@ import { _statusForReviewerAction, buildAutoFixDecisionFindings, normalizeReview
 import { _emitReviewStationAttempt } from "./review-station-emission.js";
 import { verifyAutoDispositionGrant } from "./review-cap-disposition-2.js";
 import { runTestQualityReview } from "./test-quality-runner-2.js";
+import { _decorateUnobservedStation, _runStationWithObservationLedger } from "./station-observation-seam.js";
 
 async function _runReviewCycleShared({
   reviewer,
@@ -70,9 +71,9 @@ async function _runReviewCycleShared({
     };
   }
 
-  // The cycle was consumed, so this is one station attempt. A capped cycle returned above
-  // without reaching here: the cap refused before the reviewer ran, so there is no attempt to
-  // record and counting one would report rework that never occurred.
+  // The verdict's findings travel with the attempt that rendered it. The attempt itself was
+  // already recorded at the execution boundary (issue #1476) — including the `not_evaluable`
+  // attempts a transient failure produces, which the old cycle-consumed placement could not see.
   const reviewFindings = reviewGateFindings(findings, reviewer);
   await _emitReviewStationAttempt({
     repoPath,
@@ -211,19 +212,34 @@ export async function runCodexReviewCycle({
     effectiveOverrideReason = `auto-disposition grant #${grant.grant_number} (gc_review_cap_disposition one_more_cycle for codex)`;
   }
 
-  const reviewResult = await runCodexReview({
+  const run = await _runStationWithObservationLedger({
+    reviewer: "codex",
     repoPath,
-    baseBranch: baseBranch ?? "dev",
-    uncommitted: true,
     issueNumber,
-    overrideCap: effectiveOverrideCap,
-    overrideReason: effectiveOverrideReason,
     signal,
+    invokeReview: ({ stationObservation }) => runCodexReview({
+      repoPath,
+      baseBranch: baseBranch ?? "dev",
+      uncommitted: true,
+      issueNumber,
+      overrideCap: effectiveOverrideCap,
+      overrideReason: effectiveOverrideReason,
+      stationObservation,
+      signal,
+    }),
   });
+
+  if (!run.observed && run.exhaustedNonVerdict) {
+    return {
+      ..._decorateUnobservedStation(run.envelope, run),
+      reviewer: "codex",
+      status: "post_failed",
+    };
+  }
 
   return _runReviewCycleShared({
     reviewer: "codex",
-    reviewResult,
+    reviewResult: run.envelope,
     repoPath,
     issueNumber,
   });
@@ -282,20 +298,37 @@ export async function runTestQualityReviewCycle({
     effectiveOverrideReason = `auto-disposition grant #${grant.grant_number} (gc_review_cap_disposition one_more_cycle for test-quality)`;
   }
 
-  const reviewParams = {
+  const run = await _runStationWithObservationLedger({
+    reviewer: "test-quality",
     repoPath,
-    baseBranch,
     issueNumber,
-    overrideCap: effectiveOverrideCap,
-    overrideReason: effectiveOverrideReason,
     signal,
-  };
-  if (model !== undefined) reviewParams.model = model;
-  const reviewResult = await runTestQualityReview(reviewParams);
+    invokeReview: ({ stationObservation }) => {
+      const reviewParams = {
+        repoPath,
+        baseBranch,
+        issueNumber,
+        overrideCap: effectiveOverrideCap,
+        overrideReason: effectiveOverrideReason,
+        stationObservation,
+        signal,
+      };
+      if (model !== undefined) reviewParams.model = model;
+      return runTestQualityReview(reviewParams);
+    },
+  });
+
+  if (!run.observed && run.exhaustedNonVerdict) {
+    return {
+      ..._decorateUnobservedStation(run.envelope, run),
+      reviewer: "test-quality",
+      status: "post_failed",
+    };
+  }
 
   return _runReviewCycleShared({
     reviewer: "test-quality",
-    reviewResult,
+    reviewResult: run.envelope,
     repoPath,
     issueNumber,
   });

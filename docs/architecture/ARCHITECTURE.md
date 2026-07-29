@@ -351,9 +351,9 @@ The report contract is derived evidence: each finding carries the DRAFT requirem
   no longer writes a gitignored per-clone JSONL file: it records each routed `/implement` step as
   a durable observation on the same `WorkflowPhaseEvent` row, distinguished by an `emitter`
   (`ADR036_STEP_JSONL` vs the default `ADR061_WORKFLOW_TELEMETRY`). The row adds the ADR-036 facts
-  that had no owner — capability `tier`, reported/expected `model` and their consistency flag,
+  that had no owner (capability `tier`, reported/expected `model` and their consistency flag,
   optional token counts, `measurement_version`, and the numbered SKILL step as a non-identity
-  `step_alias` — while its `phase` carries the stable ADR-036 stage id and the backend resolves the
+  `step_alias`) while its `phase` carries the stable ADR-036 stage id and the backend resolves the
   catalogue `station_id` from it. The observation reports operation outcome only, so `station_result`
   stays `UNOBSERVED` and it can never produce first-pass yield; a namespaced `(run_id, source_id)`
   (`adr036_step:<stage>:<attempt>`) keeps it from colliding with a live station attempt. Per-step
