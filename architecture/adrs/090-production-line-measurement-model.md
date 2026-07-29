@@ -594,6 +594,19 @@ remain distinct from production-line station facts under ADR-059. No
 measurement schema, station catalogue entry, lifecycle emitter, persistence,
 dashboard, or retention rule changes.
 
+## Amendment (issue #943, 2026-07-30): review-cycle retry transport
+
+Idempotent, single-flight review-cycle starts remain transport facts. Reusing
+the async registry's normalized fingerprint helper from
+`gc_implement_mechanical` is behavior-neutral for mechanical actions and does
+not change their station emission. A retained review-cycle start likewise
+does not emit another reviewer attempt, station result, lifecycle transition,
+or finding batch because the reviewer does not run again. Job ids,
+idempotency keys, namespaces, fingerprints, execution scopes, and poll counts
+remain excluded from MCP usage payloads and workflow-run measurement records.
+No measurement schema, station catalogue entry, emitter, dashboard, formula,
+or retention rule changes.
+
 ## Amendment (issue #1354, 2026-07-29): durable ADR-036 step observations
 
 ADR-036 step telemetry currently stops at a gitignored JSONL file. Issue #1354

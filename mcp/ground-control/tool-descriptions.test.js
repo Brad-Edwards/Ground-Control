@@ -154,5 +154,22 @@ describe("MCP tool description parity (issue #1169)", { timeout: 30000 }, () => 
     assert.ok(polling?.job_id?.maxLength <= 80);
     assert.equal(typeof polling?.job_id?.pattern, "string");
     assert.match(descriptionMap.gc_codex_job, /gc_implement_mechanical/);
+    assert.match(descriptionMap.gc_codex_job, /review-cycle.*issue thread/i);
+    assert.doesNotMatch(descriptionMap.gc_codex_job, /re-run the originating tool/i);
+  });
+
+  it("publishes async-only idempotent review-cycle schemas", () => {
+    for (const name of ["gc_codex_review_cycle", "gc_test_quality_review_cycle"]) {
+      const properties = toolMap[name]?.inputSchema?.properties;
+      const required = toolMap[name]?.inputSchema?.required ?? [];
+      assert.equal(properties?.async?.type, "boolean");
+      assert.equal(properties?.idempotency_key?.type, "string");
+      assert.ok(properties?.idempotency_key?.maxLength <= 128);
+      assert.equal(typeof properties?.idempotency_key?.pattern, "string");
+      assert.ok(required.includes("idempotency_key"));
+      assert.match(descriptionMap[name], /async-only/i);
+      assert.match(descriptionMap[name], /idempotency_key/);
+      assert.match(descriptionMap[name], /gc_codex_job/);
+    }
   });
 });

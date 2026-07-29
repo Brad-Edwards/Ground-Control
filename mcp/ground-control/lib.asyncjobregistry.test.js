@@ -71,6 +71,8 @@ describe("async job registry (gc_codex_job, issues #937 and #1473)", () => {
     assert.equal(r.ok, false);
     assert.equal(r.error, "job_not_found");
     assert.doesNotMatch(r.message, new RegExp(unknown));
+    assert.match(r.message, /review-cycle.*issue thread/i);
+    assert.doesNotMatch(r.message, /re-run the originating tool/i);
   });
 
   it("a runFn that rejects surfaces as a failed job", async () => {

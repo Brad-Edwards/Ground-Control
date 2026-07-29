@@ -107,9 +107,10 @@ export function registerReviewCapDisposition(server, ctx) {
       "work continues, and {ok:true,status:'done',result:<original tool envelope>} once it finishes. " +
       "Dispatch on result.next_action exactly as for the synchronous originating tool. A failed or cancelled " +
       "job returns ok=false. action='cancel' aborts only jobs whose complete execution path supports it; " +
-      "mechanical jobs currently return job_not_cancellable and continue to their ordinary terminal result. " +
+      "review-cycle and mechanical jobs currently return job_not_cancellable and continue to their ordinary terminal result. " +
       "Jobs are reaped 30 minutes after they finish; a poll for an unknown or expired job_id returns " +
-      "error='job_not_found', at which point re-run the originating tool with the same logical-attempt input.",
+      "error='job_not_found'. For a review-cycle job, refresh and reconcile the authoritative issue thread before " +
+      "another attempt; for other jobs, follow the originating tool's retry contract.",
     {
       action: z.enum(["poll", "cancel"]),
       job_id: z.string().min(1).max(ASYNC_JOB_ID_MAX).regex(ASYNC_JOB_ID_RE),

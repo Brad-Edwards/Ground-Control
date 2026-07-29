@@ -256,6 +256,17 @@ per-issue cycle cap, the `gc:codex-review-cycle` marker family, the
 exactly as before. Async changes only how the agent waits for a cycle's
 result, never when the loop stops. See ADR-036 (amendments) for the job model.
 
+**2026-07-30 (issue #943): retained attempts are idempotent and serialized.**
+The public Codex and test-quality cycle wrappers are async-only and require a
+bounded idempotency key. Same-key/same-input starts reuse the retained running
+or terminal job; changed input conflicts, and distinct keys cannot race the
+same canonical repository/issue/reviewer scope. The synchronous internal
+executors and every stopping decision remain unchanged under terminal
+`result`. Cycle jobs are non-cancellable because aborting the reviewer cannot
+roll back durable GitHub writes. After `job_not_found`, the caller refreshes
+the issue thread before selecting a new key. Cap counters, marker families,
+override authorization, and clean/findings/capped outcomes are unchanged.
+
 **Amendment: renderer summary byte caps (#964).** `gc_render_pr_body` and `gc_post_final_report` now enforce reject-not-truncate byte caps on their caller-controlled summary fields. `gc_post_decision_record` (the per-cycle decision-record surface this ADR's stopping model writes to) is unchanged at the schema layer; its caller-controlled prose fields (`notes[].text`, finding rationales, titles) already had per-field caps. The canonical succinctness rule lives in `skills/implement/steps/_review-loop-rules.md § Update succinctness (canonical)`.
 
 **Amendment: issue close mechanism (#862 typed-action-items PR).** The /implement Step 18 no longer runs `gh issue close`. The GitHub issue closes via `Closes #<issue-number>` in the PR body (rendered by `gc_render_pr_body` in Step 9) when the user merges the PR. Step 18 only removes the `in-progress` label set in Step 1. Closing from the agent decoupled the close event from the merge: an unmerged or rolled-back PR would leave a closed issue with no shipped code (GitHub does not re-open issues on revert). Step 19 (final report) is correspondingly tightened: traceability reconciliation (Steps 15 through 17) is an explicit precondition, and no earlier step surfaces a user-facing "complete" signal (prior escalations are for input, not for "done"). The /quickfix sibling lane is updated in lockstep.

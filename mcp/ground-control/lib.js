@@ -40,6 +40,7 @@ export * from "./lib/repo-context-2.js";
 export * from "./lib/field-mapping.js";
 export * from "./lib/close-issue.js";
 export * from "./lib/async-job-registry.js";
+export * from "./lib/review-cycle-transport.js";
 export * from "./lib/sonar-watcher.js";
 export * from "./lib/codex-workflow-3.js";
 export * from "./lib/ground-control-config.js";
