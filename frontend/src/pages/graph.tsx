@@ -311,7 +311,7 @@ export function Graph() {
             domainId: String(n.data("domainId") ?? ""),
             entityType: n.data("entityType") as GraphNodeData["entityType"],
             projectIdentifier: "",
-            uid: n.data("uid") ? String(n.data("uid")) : null,
+            uid: String(n.data("uid") ?? ""),
             label: String(n.data("label") ?? ""),
             properties: {
               priority: n.data("priority"),
