@@ -1677,14 +1677,14 @@ export interface ProjectRequest {
 
 export interface ProjectResponse {
   [key: string]: any;
-  "createdAt": any;
-  "description": any;
-  "id": any;
-  "identifier": any;
-  "name": any;
+  "createdAt": string;
+  "description": string;
+  "id": string;
+  "identifier": string;
+  "name": string;
   "researchIntake": ResearchIntakeResponse;
   "type": any;
-  "updatedAt": any;
+  "updatedAt": string;
 }
 
 export interface ProtocolPlanResponse {
@@ -2570,6 +2570,13 @@ export interface SecurityTraceResponse {
 export interface SelectMethodologyRequest {
   [key: string]: any;
   "methodKey": any;
+}
+
+export interface SessionResponse {
+  [key: string]: any;
+  "canAdminister": boolean;
+  "displayName": string;
+  "roles": string[];
 }
 
 export interface SimilarityPairResponse {

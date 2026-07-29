@@ -23,6 +23,7 @@ import {
   apiDelete,
   apiFetch,
   apiUpload,
+  logout,
   setRedirectorForTests,
 } from "./api-client";
 
@@ -144,11 +145,13 @@ describe("apiFetch", () => {
 
       await expect(apiFetch("/requirements")).rejects.toBeInstanceOf(ApiError);
       expect(redirectSpy).toHaveBeenCalledOnce();
-      // We send the user to /login bare — the backend does not consume `?continue=`, and
-      // emitting one would look like an open-redirect surface that does nothing.
+      // GC-Q015: we redirect to /login with a fixed, non-secret `expired=1` flag so the login
+      // bundle can show a session-expired notice. It is not a return URL and reflects no response
+      // text — the backend still does not consume a `?continue=`, so there is no open-redirect
+      // surface.
       const redirectCall = redirectSpy.mock.calls[0];
       if (!redirectCall) throw new Error("expected redirector to be called");
-      expect(redirectCall[0]).toBe("/login");
+      expect(redirectCall[0]).toBe("/login?expired=1");
     } finally {
       restore();
     }
@@ -167,6 +170,27 @@ describe("apiFetch", () => {
 
       await expect(apiFetch("/admin/users")).rejects.toBeInstanceOf(ApiError);
       expect(redirectSpy).not.toHaveBeenCalled();
+    } finally {
+      restore();
+    }
+  });
+
+  it("logout POSTs /logout with the CSRF header and redirects to /login", async () => {
+    const redirectSpy = vi.fn();
+    const restore = setRedirectorForTests(redirectSpy);
+    setCookie("XSRF-TOKEN=tok");
+    try {
+      fetchSpy.mockResolvedValueOnce(new Response(null, { status: 204 }));
+      await logout();
+      expect(fetchSpy).toHaveBeenCalledOnce();
+      const call = fetchSpy.mock.calls[0];
+      if (!call) throw new Error("expected fetch to be called");
+      const [url, init] = call;
+      expect(url).toBe("/logout");
+      expect(init.method).toBe("POST");
+      expect(init.credentials).toBe("same-origin");
+      expect(init.headers["X-XSRF-TOKEN"]).toBe("tok");
+      expect(redirectSpy).toHaveBeenCalledWith("/login");
     } finally {
       restore();
     }

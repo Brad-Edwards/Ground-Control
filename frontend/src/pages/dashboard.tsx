@@ -1,3 +1,8 @@
+import { Badge, type BadgeVariant } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/loading-state";
+import { MetricCard } from "@/components/ui/metric-card";
+import { PageHeader } from "@/components/ui/page-header";
 import { useProjectContext } from "@/contexts/project-context";
 import {
   useCoverageGaps,
@@ -20,6 +25,8 @@ import {
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 
+type MetricTone = "default" | "info" | "success" | "warning" | "danger";
+
 export function Dashboard() {
   const { activeProject, isLoading } = useProjectContext();
   const { projectId } = useParams<{ projectId: string }>();
@@ -29,27 +36,20 @@ export function Dashboard() {
 
   if (!activeProject) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 py-20 text-center">
-        <Rocket className="h-12 w-12 text-muted-foreground" />
-        <h1 className="text-2xl font-semibold">Welcome to Ground Control</h1>
-        <p className="text-muted-foreground">
-          Select a project from the header to get started.
-        </p>
-      </div>
+      <EmptyState
+        icon={Rocket}
+        title="Welcome to Ground Control"
+        description="Select a project from the header to get started."
+      />
     );
   }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">{activeProject.name}</h1>
-        {activeProject.description && (
-          <p className="mt-1 text-muted-foreground">
-            {activeProject.description}
-          </p>
-        )}
-      </div>
-
+      <PageHeader
+        title={activeProject.name}
+        description={activeProject.description || undefined}
+      />
       <DashboardContent navigate={navigate} projectId={projectId ?? ""} />
     </div>
   );
@@ -96,35 +96,35 @@ function StatusOverview({
   navigate: (path: string) => void;
   projectId: string;
 }) {
-  const statCards = [
-    {
-      label: "Total",
-      value: stats.totalRequirements,
-      color: "text-foreground",
-      filter: undefined,
-    },
+  const statCards: {
+    label: string;
+    value: number;
+    tone: MetricTone;
+    filter?: string;
+  }[] = [
+    { label: "Total", value: stats.totalRequirements, tone: "default" },
     {
       label: "Draft",
       value: stats.byStatus.DRAFT ?? 0,
-      color: "text-gray-400",
+      tone: "default",
       filter: "DRAFT",
     },
     {
       label: "Active",
       value: stats.byStatus.ACTIVE ?? 0,
-      color: "text-green-400",
+      tone: "success",
       filter: "ACTIVE",
     },
     {
       label: "Deprecated",
       value: stats.byStatus.DEPRECATED ?? 0,
-      color: "text-orange-400",
+      tone: "warning",
       filter: "DEPRECATED",
     },
     {
       label: "Archived",
       value: stats.byStatus.ARCHIVED ?? 0,
-      color: "text-gray-500",
+      tone: "default",
       filter: "ARCHIVED",
     },
   ];
@@ -132,10 +132,11 @@ function StatusOverview({
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
       {statCards.map((s) => (
-        <button
+        <MetricCard
           key={s.label}
-          type="button"
-          className="rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-accent/30"
+          label={s.label}
+          value={s.value}
+          tone={s.tone}
           onClick={() =>
             navigate(
               s.filter
@@ -143,22 +144,17 @@ function StatusOverview({
                 : `/p/${projectId}/requirements`,
             )
           }
-        >
-          <p className="text-sm text-muted-foreground">{s.label}</p>
-          <p className={cn("mt-1 text-2xl font-semibold", s.color)}>
-            {s.value}
-          </p>
-        </button>
+        />
       ))}
     </div>
   );
 }
 
 const STATUS_BAR_COLORS: Record<string, string> = {
-  DRAFT: "bg-gray-400",
-  ACTIVE: "bg-green-400",
-  DEPRECATED: "bg-orange-400",
-  ARCHIVED: "bg-gray-500",
+  DRAFT: "bg-muted-foreground",
+  ACTIVE: "bg-success",
+  DEPRECATED: "bg-warning",
+  ARCHIVED: "bg-muted-foreground/50",
 };
 
 function WaveProgress({
@@ -180,7 +176,7 @@ function WaveProgress({
           <button
             key={wave.wave ?? "unassigned"}
             type="button"
-            className="flex w-full items-center gap-4 rounded-lg border border-border bg-card p-3 text-left transition-colors hover:bg-accent/30"
+            className="flex w-full items-center gap-4 rounded-lg border border-border bg-card p-3 text-left transition-colors hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() =>
               navigate(
                 wave.wave != null
@@ -198,7 +194,7 @@ function WaveProgress({
                   key={status}
                   className={cn(
                     "h-full",
-                    STATUS_BAR_COLORS[status] ?? "bg-blue-400",
+                    STATUS_BAR_COLORS[status] ?? "bg-info",
                   )}
                   style={{ width: `${(count / wave.total) * 100}%` }}
                   title={`${status}: ${count}`}
@@ -225,6 +221,12 @@ function WaveProgress({
   );
 }
 
+function coverageTone(percentage: number): string {
+  if (percentage >= 80) return "bg-success";
+  if (percentage >= 50) return "bg-warning";
+  return "bg-danger";
+}
+
 function TraceabilityCoverage({
   stats,
   navigate,
@@ -245,7 +247,7 @@ function TraceabilityCoverage({
           <button
             key={linkType}
             type="button"
-            className="flex w-full items-center gap-4 rounded-lg border border-border bg-card p-3 text-left transition-colors hover:bg-accent/30"
+            className="flex w-full items-center gap-4 rounded-lg border border-border bg-card p-3 text-left transition-colors hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => navigate(`/p/${projectId}/analysis`)}
           >
             <span className="w-28 shrink-0 text-sm font-medium text-muted-foreground">
@@ -255,11 +257,7 @@ function TraceabilityCoverage({
               <div
                 className={cn(
                   "h-full rounded-full",
-                  cov.percentage >= 80
-                    ? "bg-green-400"
-                    : cov.percentage >= 50
-                      ? "bg-yellow-400"
-                      : "bg-red-400",
+                  coverageTone(cov.percentage),
                 )}
                 style={{ width: `${cov.percentage}%` }}
               />
@@ -274,10 +272,10 @@ function TraceabilityCoverage({
   );
 }
 
-const REVISION_TYPE_COLORS: Record<string, string> = {
-  ADD: "bg-green-500/20 text-green-400",
-  MOD: "bg-blue-500/20 text-blue-400",
-  DEL: "bg-red-500/20 text-red-400",
+const REVISION_TYPE_VARIANT: Record<string, BadgeVariant> = {
+  ADD: "success",
+  MOD: "info",
+  DEL: "danger",
 };
 
 function formatRelativeTime(timestamp: string): string {
@@ -307,8 +305,8 @@ function RecentChanges({
 
   return (
     <div className="space-y-3">
-      <h2 className="text-lg font-medium flex items-center gap-2">
-        <Clock className="h-5 w-5 text-muted-foreground" />
+      <h2 className="flex items-center gap-2 text-lg font-medium">
+        <Clock className="h-5 w-5 text-muted-foreground" aria-hidden />
         Recent Changes
       </h2>
       <div className="space-y-1">
@@ -316,23 +314,19 @@ function RecentChanges({
           <button
             key={`${change.uid}-${idx}`}
             type="button"
-            className="flex w-full items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-accent/30"
+            className="flex w-full items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() =>
               navigate(
                 `/p/${projectId}/requirements?search=${encodeURIComponent(change.uid)}`,
               )
             }
           >
-            <span
-              className={cn(
-                "inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs font-medium",
-                REVISION_TYPE_COLORS[change.revisionType] ??
-                  "bg-muted text-muted-foreground",
-              )}
+            <Badge
+              variant={REVISION_TYPE_VARIANT[change.revisionType] ?? "neutral"}
             >
               {change.revisionType}
-            </span>
-            <span className="shrink-0 text-sm font-mono text-muted-foreground">
+            </Badge>
+            <span className="shrink-0 font-mono text-sm text-muted-foreground">
               {change.uid}
             </span>
             <span className="min-w-0 flex-1 truncate text-sm">
@@ -365,37 +359,44 @@ function AnalysisAlerts({
   const { data: coverageGaps } = useCoverageGaps("IMPLEMENTS");
   const { data: crossWave } = useCrossWave();
 
-  const alerts = [
+  const alerts: {
+    icon: typeof GitFork;
+    label: string;
+    count: number;
+    tone: MetricTone;
+    accent: string;
+    path: string;
+  }[] = [
     {
       icon: GitFork,
       label: "Dependency Cycles",
       count: cycles?.length ?? 0,
-      color: "text-red-400",
-      bgColor: "border-red-500/20 bg-red-500/5",
+      tone: "danger",
+      accent: "border-danger/20 bg-danger/5 text-danger",
       path: `/p/${projectId}/analysis`,
     },
     {
       icon: Unlink,
       label: "Orphan Requirements",
       count: orphans?.length ?? 0,
-      color: "text-yellow-400",
-      bgColor: "border-yellow-500/20 bg-yellow-500/5",
+      tone: "warning",
+      accent: "border-warning/20 bg-warning/5 text-warning",
       path: `/p/${projectId}/analysis`,
     },
     {
       icon: Link2Off,
       label: "Missing IMPLEMENTS Links",
       count: coverageGaps?.length ?? 0,
-      color: "text-orange-400",
-      bgColor: "border-orange-500/20 bg-orange-500/5",
+      tone: "warning",
+      accent: "border-warning/20 bg-warning/5 text-warning",
       path: `/p/${projectId}/analysis`,
     },
     {
       icon: Layers,
       label: "Cross-Wave Violations",
       count: crossWave?.length ?? 0,
-      color: "text-violet-400",
-      bgColor: "border-violet-500/20 bg-violet-500/5",
+      tone: "evidence" as MetricTone,
+      accent: "border-evidence/20 bg-evidence/5 text-evidence",
       path: `/p/${projectId}/analysis`,
     },
   ];
@@ -404,8 +405,8 @@ function AnalysisAlerts({
 
   if (!hasAlerts) {
     return (
-      <div className="rounded-lg border border-green-500/20 bg-green-500/5 p-6 text-center">
-        <p className="text-green-400 font-medium">
+      <div className="rounded-lg border border-success/20 bg-success/5 p-6 text-center">
+        <p className="font-medium text-success">
           All clear — no analysis issues detected.
         </p>
       </div>
@@ -414,8 +415,8 @@ function AnalysisAlerts({
 
   return (
     <div className="space-y-3">
-      <h2 className="text-lg font-medium flex items-center gap-2">
-        <AlertTriangle className="h-5 w-5 text-yellow-400" />
+      <h2 className="flex items-center gap-2 text-lg font-medium">
+        <AlertTriangle className="h-5 w-5 text-warning" aria-hidden />
         Analysis Alerts
       </h2>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -426,19 +427,22 @@ function AnalysisAlerts({
               key={alert.label}
               type="button"
               className={cn(
-                "flex items-center gap-4 rounded-lg border p-4 text-left transition-colors hover:bg-accent/30",
-                alert.bgColor,
+                "flex items-center gap-4 rounded-lg border p-4 text-left transition-colors hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                alert.accent,
               )}
               onClick={() => navigate(alert.path)}
             >
-              <alert.icon className={cn("h-8 w-8", alert.color)} />
+              <alert.icon className="h-8 w-8" aria-hidden />
               <div className="flex-1">
-                <p className="text-sm font-medium">{alert.label}</p>
-                <p className={cn("text-2xl font-semibold", alert.color)}>
-                  {alert.count}
+                <p className="text-sm font-medium text-foreground">
+                  {alert.label}
                 </p>
+                <p className="text-2xl font-semibold">{alert.count}</p>
               </div>
-              <ArrowRight className="h-4 w-4 text-muted-foreground" />
+              <ArrowRight
+                className="h-4 w-4 text-muted-foreground"
+                aria-hidden
+              />
             </button>
           ))}
       </div>
@@ -449,13 +453,10 @@ function AnalysisAlerts({
 function LoadingSkeleton() {
   return (
     <div className="space-y-6">
-      <div className="h-8 w-48 animate-pulse rounded bg-muted" />
+      <Skeleton className="h-8 w-48" />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {["s1", "s2", "s3", "s4", "s5"].map((key) => (
-          <div
-            key={key}
-            className="h-20 animate-pulse rounded-lg border border-border bg-card"
-          />
+          <Skeleton key={key} className="h-20 border border-border" />
         ))}
       </div>
     </div>

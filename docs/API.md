@@ -37,6 +37,21 @@ http://localhost:8000/api/v1/
 
 ## Endpoints
 
+### Session
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| GET | `/session` | - | 200 | Read the current authenticated principal for the console shell (GC-Q015) |
+
+Returns a credential-free `SessionResponse` with `displayName`, a compatibility
+`roles` projection (for example `ROLE_USER` or `ROLE_ADMIN`), and a
+`canAdminister` presentation hint. It carries no session id, CSRF value, or
+credential material. The read is consumed by the SPA shell over the browser
+session and is reachable via `gc_query` for a bearer caller's own principal.
+Capability hints are presentation only; `ApiPathMatrix` and the service layer
+remain the authorization boundary. Returns 401 when the caller is
+unauthenticated.
+
 ### Projects
 
 | Method | Path | Body | Status | Purpose |

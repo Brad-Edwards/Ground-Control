@@ -1,3 +1,4 @@
+import { MetricCard } from "@/components/ui/metric-card";
 import type { StreamStatus } from "@/hooks/use-workflow-run-stream";
 import type {
   WorkflowRunFinalState,
@@ -5,7 +6,6 @@ import type {
   WorkflowRunResponse,
 } from "@/types/api";
 import {
-  MetricCard,
   OutcomeBadge,
   SectionHeading,
   StateBadge,
@@ -156,30 +156,30 @@ export function CostProxiesSection({
           label="Cost / merged run"
           value={formatCost(costProxyPerMergedRun)}
           detail={`${formatCost(mergedCostProxy)} total`}
-          tone={costProxyPerMergedRun != null ? "info" : "neutral"}
+          tone={costProxyPerMergedRun != null ? "info" : "default"}
         />
         <MetricCard
           label="Cost / closed run"
           value={formatCost(costProxyPerClosedRun)}
           detail={`${formatCost(closedCostProxy)} total`}
-          tone={costProxyPerClosedRun != null ? "info" : "neutral"}
+          tone={costProxyPerClosedRun != null ? "info" : "default"}
         />
         <MetricCard
           label="Model invocations"
           value={totalModelInvocations.toLocaleString()}
-          tone="neutral"
+          tone="default"
         />
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <MetricCard
           label="Wall-clock minutes"
           value={formatMinutes(totalWallClockMinutes)}
-          tone="neutral"
+          tone="default"
         />
         <MetricCard
           label="Token usage"
           value={totalTokenUsage.toLocaleString()}
-          tone="neutral"
+          tone="default"
         />
       </div>
     </section>

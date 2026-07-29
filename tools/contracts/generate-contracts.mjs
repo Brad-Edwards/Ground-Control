@@ -127,6 +127,21 @@ const exactPropertyTypes = {
   // (GC-O009 (b), #1279). springdoc emits a bare $ref (non-null) for it; this override keeps the
   // generated client honest about the intentionally-nullable field.
   "WorkflowExecutionResponse.gateState": "GateStateResponse | null",
+  // GC-Q015 clause (d): precisely type the console's ProjectResponse so `use-projects.ts` can drop
+  // its hand-mirror. springdoc emits these as untyped, and the generator's default `any` fallback
+  // is deliberately conservative to avoid asserting a non-null shape for the many DTO fields whose
+  // runtime nullability the OpenAPI contract does not yet capture (a GC-O014 contract-quality
+  // concern). These overrides mirror the non-null Project fields the console actually consumes.
+  "ProjectResponse.id": "string",
+  "ProjectResponse.identifier": "string",
+  "ProjectResponse.name": "string",
+  "ProjectResponse.description": "string",
+  "ProjectResponse.createdAt": "string",
+  "ProjectResponse.updatedAt": "string",
+  // GC-Q015 clause (a): the console's session read is a first-party contract; type its scalar
+  // fields precisely (roles already resolves to string[] as an array).
+  "SessionResponse.displayName": "string",
+  "SessionResponse.canAdminister": "boolean",
 };
 
 function propertyType(schemaName, propName, propSchema) {
