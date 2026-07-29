@@ -12,6 +12,7 @@ import com.keplerops.groundcontrol.domain.exception.ConflictException;
 import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.FindingDisposition;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.FindingSourceKind;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.PhaseEventEmitter;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.PhaseEventType;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.StationResult;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.TelemetryProvenance;
@@ -209,13 +210,15 @@ class WorkflowMeasurementServiceTest {
 
     @Test
     void onlyEvaluableAttemptsReachTheYieldQuery() {
-        when(phaseEventRepository.findEvaluableAttempts(any(), any(), any(), any()))
+        when(phaseEventRepository.findEvaluableAttempts(any(), any(), any(), any(), any()))
                 .thenReturn(List.of());
 
         service.aggregateStationYield("gc", null, null);
 
         var results = ArgumentCaptor.forClass(java.util.Collection.class);
-        verify(phaseEventRepository).findEvaluableAttempts(any(), results.capture(), any(), any());
+        var emitter = ArgumentCaptor.forClass(PhaseEventEmitter.class);
+        verify(phaseEventRepository).findEvaluableAttempts(any(), emitter.capture(), results.capture(), any(), any());
+        assertThat(emitter.getValue()).isEqualTo(PhaseEventEmitter.ADR061_WORKFLOW_TELEMETRY);
         // Skipped, cancelled, not-evaluable and unobserved attempts stay measurable coverage
         // but must never enter a yield denominator, or an unmeasured gate reads as a failing one.
         assertThat(results.getValue()).containsExactlyInAnyOrder(StationResult.PASS, StationResult.FAIL);

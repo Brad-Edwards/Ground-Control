@@ -29,7 +29,7 @@ meaning never rests on colour alone.
 
 Every state foreground is verified for WCAG 2.1 AA (≥ 4.5:1) against both the
 background and the card surface. Tinted fills use the same hue at low alpha
-(e.g. `bg-success/15 text-success`).
+(for example `bg-success/15 text-success`).
 
 ## Components
 
@@ -69,7 +69,7 @@ shared primitive only once there are three real call sites.
 
 The login bundle stays a separate anonymous asset graph (ADR-037). The
 authenticated shell reads the current principal from `GET /api/v1/session`
-(`useSession`) — display name, a compatibility role projection, and a
+(`useSession`): display name, a compatibility role projection, and a
 `canAdminister` presentation hint. Authorization is always enforced server-side
 by `ApiPathMatrix` and the service layer; the hint only shapes affordances.
 

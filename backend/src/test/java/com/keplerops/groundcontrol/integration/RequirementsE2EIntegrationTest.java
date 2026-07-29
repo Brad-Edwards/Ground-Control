@@ -46,10 +46,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * End-to-end requirements flow against the full Flyway migration set applied by
- * {@link BaseIntegrationTest} — through V209, which adds the ADR-036 durable step-observation columns
- * to {@code workflow_phase_event} and its audit shadow (issue #1354). It exercises the API and the
- * audited persistence spine those migrations build, so a migration that breaks the end-to-end path
- * fails here rather than only in the migration smoke test.
+ * {@link BaseIntegrationTest} — through V210, which adds canonical station binding for resolvable
+ * ADR-061 phases in live and audit rows (issue #1439). It exercises the API and the audited
+ * persistence spine those migrations build, so a migration that breaks the end-to-end path fails
+ * here rather than only in the migration smoke test.
  */
 @AutoConfigureMockMvc
 @TestMethodOrder(OrderAnnotation.class)

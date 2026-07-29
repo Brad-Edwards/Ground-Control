@@ -198,11 +198,38 @@ final class WorkflowTelemetryValidation {
         var emitter = command.emitter() == null ? PhaseEventEmitter.ADR061_WORKFLOW_TELEMETRY : command.emitter();
         if (emitter != PhaseEventEmitter.ADR036_STEP_JSONL) {
             rejectStepObservationFields(command);
-            return new StepEmission(emitter, command.stationId(), command.stationResult());
+            return resolveLifecycleEmission(catalog, command, emitter);
         }
         requireStepObservationContract(catalog, command);
         return new StepEmission(
                 emitter, catalog.resolveStationForStage(command.phase()).orElse(null), StationResult.UNOBSERVED);
+    }
+
+    /**
+     * Bind an ADR-061 phase to the catalogue station. A supplied station id can only confirm the
+     * binding; it cannot redirect an event to a different valid station.
+     */
+    private static StepEmission resolveLifecycleEmission(
+            StationCatalog catalog, RecordPhaseEventCommand command, PhaseEventEmitter emitter) {
+        var resolved = catalog.resolveStationForPhase(command.phase());
+        if (resolved.isPresent()) {
+            var canonical = resolved.orElseThrow();
+            if (command.stationId() != null && !Objects.equals(command.stationId(), canonical)) {
+                throw new DomainValidationException("stationId '" + command.stationId() + "' does not match phase '"
+                        + command.phase() + "', which resolves to '" + canonical + "'");
+            }
+            return new StepEmission(emitter, canonical, command.stationResult());
+        }
+        if (command.stationId() != null) {
+            if (catalog.isLifecycleMarkerPhase(command.phase())) {
+                throw new DomainValidationException(command.phase()
+                        + " is a lifecycle marker: it inspects nothing and cannot carry stationId '"
+                        + command.stationId() + "'");
+            }
+            throw new DomainValidationException("stationId '" + command.stationId() + "' does not match phase '"
+                    + command.phase() + "', which resolves to no station");
+        }
+        return new StepEmission(emitter, null, command.stationResult());
     }
 
     /**

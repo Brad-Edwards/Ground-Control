@@ -401,7 +401,10 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         // V209 (#1354, ADR-090 amendment): durable ADR-036 step observation — the
                         // emitter discriminator plus the ADR-036 step facts on the phase-event row
                         // and its Envers shadow.
-                        "209");
+                        "209",
+                        // V210 (#1439, ADR-090 amendment): canonical station binding backfill for
+                        // resolvable ADR-061 phases in live and Envers rows.
+                        "210");
     }
 
     @Test

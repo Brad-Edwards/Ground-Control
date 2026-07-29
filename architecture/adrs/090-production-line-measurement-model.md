@@ -684,3 +684,43 @@ Ground Control backend with telemetry enabled. Durable queuing, offline
 backfill, retention/partitioning, new aggregates or dashboards, price
 translation, changing ADR-029 workflow authority, and making telemetry
 mandatory workflow evidence are separate decisions.
+
+## Amendment (issue #1439, 2026-07-29): canonical station binding on the ADR-061 write path
+
+Issue #1355 added the station-result column and formula surface before #1439
+reconciled the original ADR-061 migration issue. This overlap does not authorize
+a second result field, event entity, measurement aggregate, endpoint, or
+catalogue. #1439 makes the existing path obey the already-published contract.
+
+For an ADR-061 phase event, the backend station catalogue is the authority for
+binding. The service resolves the persisted `phase` as either a direct catalogue
+entry or an `adr061_phase` alias. A station entry supplies the canonical
+`station_id`; a lifecycle marker supplies no station id and can carry no verdict
+or findings. A caller-provided station id is only a consistency assertion. It
+must match the catalogue resolution and must never override it. The original
+`phase` remains stored exactly as observed, so the binding adds identity without
+rewriting history.
+
+Legacy live and Envers rows may receive a `station_id` only where their persisted
+phase resolves unambiguously through the published catalogue. Marker and
+unresolved legacy phases retain a null station id. Every legacy station result
+remains `UNOBSERVED`, including a row whose phase can be mapped safely. Station
+identity may be resolved from a governed alias; a verdict must never be inferred
+from phase, event type, free-text outcome, run state, temporal order, or the
+absence of a later failure. Forward migration keeps the live and audit shapes in
+lockstep and does not edit V203 or another applied migration.
+
+The measurement contract uses lower snake-case values while the existing
+REST/OpenAPI enum surface uses Java enum names. Contract-native emitters cross
+that representation boundary in the workflow-run REST adapter. The generic
+snake-to-camel key mapper remains a key mapper; it does not rewrite arbitrary
+values. Global case-insensitive Jackson parsing, a second permissive enum, or a
+second station-result vocabulary would hide drift instead of validating it.
+
+Yield and rework continue to group by canonical `station_id` and consume only
+explicit `PASS` and `FAIL` results. `UNOBSERVED`, `SKIPPED_STATION`,
+`CANCELLED`, and `NOT_EVALUABLE` remain coverage facts outside formula
+denominators. Aggregate ratios continue to expose numerator, denominator,
+unresolved count, and `gc.measurement/v1`. The catalogue-backed resolver is the
+extension seam: adding a catalogue station or alias must not require another
+hard-coded service mapping.
