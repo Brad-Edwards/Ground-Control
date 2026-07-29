@@ -32,6 +32,9 @@ public final class StationCatalog {
 
     static final String DEFAULT_RESOURCE = "measurement/gc-station-catalogue-v2.json";
 
+    /** The catalogue alias kind that names an ADR-036 routing stage (issue #1354). */
+    private static final String ADR036_STAGE_ALIAS = "adr036_stage";
+
     private final Set<String> stationIds;
     private final Set<String> markerIds;
 
@@ -93,7 +96,7 @@ public final class StationCatalog {
             if (stationId == null || stationId.isBlank()) {
                 continue;
             }
-            for (var alias : station.path("aliases").path("adr036_stage")) {
+            for (var alias : station.path("aliases").path(ADR036_STAGE_ALIAS)) {
                 var stage = alias.asText(null);
                 if (stage != null && !stage.isBlank()) {
                     byStage.put(stage, stationId);
@@ -106,7 +109,7 @@ public final class StationCatalog {
     private static Set<String> knownStages(JsonNode root, Map<String, String> stationByStage) {
         var stages = new LinkedHashSet<>(stationByStage.keySet());
         for (var marker : root.path("lifecycle_markers")) {
-            for (var alias : marker.path("aliases").path("adr036_stage")) {
+            for (var alias : marker.path("aliases").path(ADR036_STAGE_ALIAS)) {
                 var stage = alias.asText(null);
                 if (stage != null && !stage.isBlank()) {
                     stages.add(stage);
@@ -114,7 +117,7 @@ public final class StationCatalog {
             }
         }
         for (var nonStation : root.path("non_station_stages")) {
-            var stage = nonStation.path("adr036_stage").asText(null);
+            var stage = nonStation.path(ADR036_STAGE_ALIAS).asText(null);
             if (stage != null && !stage.isBlank()) {
                 stages.add(stage);
             }

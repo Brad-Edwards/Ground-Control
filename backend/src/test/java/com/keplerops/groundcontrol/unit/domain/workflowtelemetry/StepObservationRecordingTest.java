@@ -248,37 +248,40 @@ class StepObservationRecordingTest {
     void aStepObservationRequiresItsCompleteClosedFieldSet() {
         // measurement version, reported model, expected model, and the consistency flag are all part
         // of the closed contract — an ADR-036 row that omits any of them is not a durable record.
-        assertThatThrownBy(() -> service.recordPhaseEvent(full(
-                        PhaseEventEmitter.ADR036_STEP_JSONL,
-                        CapabilityTier.LOW,
-                        null,
-                        "claude-haiku-4-5",
-                        "claude-haiku-4-5",
-                        Boolean.TRUE,
-                        8421L,
-                        612L)))
+        var noMeasurementVersion = full(
+                PhaseEventEmitter.ADR036_STEP_JSONL,
+                CapabilityTier.LOW,
+                null,
+                "claude-haiku-4-5",
+                "claude-haiku-4-5",
+                Boolean.TRUE,
+                8421L,
+                612L);
+        assertThatThrownBy(() -> service.recordPhaseEvent(noMeasurementVersion))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("measurementVersion");
-        assertThatThrownBy(() -> service.recordPhaseEvent(full(
-                        PhaseEventEmitter.ADR036_STEP_JSONL,
-                        CapabilityTier.LOW,
-                        "gc.measurement/v1",
-                        "claude-haiku-4-5",
-                        null,
-                        Boolean.TRUE,
-                        8421L,
-                        612L)))
+        var noExpectedModel = full(
+                PhaseEventEmitter.ADR036_STEP_JSONL,
+                CapabilityTier.LOW,
+                "gc.measurement/v1",
+                "claude-haiku-4-5",
+                null,
+                Boolean.TRUE,
+                8421L,
+                612L);
+        assertThatThrownBy(() -> service.recordPhaseEvent(noExpectedModel))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("expectedModel");
-        assertThatThrownBy(() -> service.recordPhaseEvent(full(
-                        PhaseEventEmitter.ADR036_STEP_JSONL,
-                        CapabilityTier.LOW,
-                        "gc.measurement/v1",
-                        "claude-haiku-4-5",
-                        "claude-haiku-4-5",
-                        null,
-                        8421L,
-                        612L)))
+        var noConsistencyFlag = full(
+                PhaseEventEmitter.ADR036_STEP_JSONL,
+                CapabilityTier.LOW,
+                "gc.measurement/v1",
+                "claude-haiku-4-5",
+                "claude-haiku-4-5",
+                null,
+                8421L,
+                612L);
+        assertThatThrownBy(() -> service.recordPhaseEvent(noConsistencyFlag))
                 .isInstanceOf(DomainValidationException.class)
                 .hasMessageContaining("consistency flag");
     }

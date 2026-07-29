@@ -196,11 +196,14 @@ public class WorkflowTelemetryService {
         // A step observation's identity is derived server-side and namespaced to the ADR-036 emitter,
         // so it can never collide with a live station attempt's phase:eventType:cycleIndex and a caller
         // cannot forge a colliding one (issue #1354).
-        String sourceId = emission.isStepObservation()
-                ? "adr036_step:" + command.phase() + ":" + cycleIndex
-                : command.sourceId() != null && !command.sourceId().isBlank()
-                        ? command.sourceId()
-                        : WorkflowPhaseEvent.deriveSourceId(command.phase(), command.eventType(), cycleIndex);
+        String sourceId;
+        if (emission.isStepObservation()) {
+            sourceId = "adr036_step:" + command.phase() + ":" + cycleIndex;
+        } else if (command.sourceId() != null && !command.sourceId().isBlank()) {
+            sourceId = command.sourceId();
+        } else {
+            sourceId = WorkflowPhaseEvent.deriveSourceId(command.phase(), command.eventType(), cycleIndex);
+        }
 
         var alreadyRecorded = phaseEventRepository.findByRunIdAndSourceId(command.runId(), sourceId);
         if (alreadyRecorded.isPresent()) {
