@@ -5,109 +5,109 @@
 
 export interface AddDisclosureEntryRequest {
   [key: string]: any;
-  "decisionLogId"?: any;
-  "family": any;
-  "locator"?: any;
-  "modelLabel"?: any;
-  "rationaleEntryId"?: any;
-  "reviewCommentId"?: any;
-  "sectionKey"?: any;
-  "summary": any;
-  "uncertaintyCategory"?: any;
+  "decisionLogId"?: string;
+  "family": "AI_GENERATED_PART" | "UNRESOLVED_UNCERTAINTY";
+  "locator"?: string;
+  "modelLabel"?: string;
+  "rationaleEntryId"?: string;
+  "reviewCommentId"?: string;
+  "sectionKey"?: string;
+  "summary": string;
+  "uncertaintyCategory"?: "SCIENTIFIC" | "ACCESS_GAP" | "WORKFLOW_ERROR" | "UNRESOLVED_REVIEW";
 }
 
 export interface AddEvidenceRefRequest {
   [key: string]: any;
-  "evidenceArtifactId"?: any;
-  "evidenceNote"?: any;
-  "evidenceRef": any;
+  "evidenceArtifactId"?: string;
+  "evidenceNote"?: string;
+  "evidenceRef": string;
 }
 
 export interface AddRationaleEntryRequest {
   [key: string]: any;
-  "artifactId"?: any;
-  "artifactType"?: any;
-  "attemptNo"?: any;
-  "confidenceSummary"?: any;
-  "evidenceBasis": any;
-  "evidenceLocator"?: any;
-  "gatePoint"?: any;
-  "kind": any;
-  "provenance": any;
-  "rationaleSummary": any;
-  "stage": any;
-  "subjectKey": any;
+  "artifactId"?: string;
+  "artifactType"?: "METHODOLOGY_REQUIREMENTS" | "PROTOCOL_PLAN" | "SEARCH_LOG" | "SCREENING_RESULT" | "CHARTING_DATA" | "SYNTHESIS" | "ARGUMENT_MAP" | "MANUSCRIPT";
+  "attemptNo"?: number;
+  "confidenceSummary"?: string;
+  "evidenceBasis": "METHODOLOGY_SOURCE" | "USER_DECISION" | "CITED_SOURCE" | "FULL_TEXT_SPAN" | "CHARTED_CELL" | "EVIDENCE_MATRIX_CELL" | "ARGUMENT_MAP_PREMISE" | "MANUSCRIPT_CITATION" | "POLICY_DEFAULT" | "EXPLICIT_LIMITATION";
+  "evidenceLocator"?: string;
+  "gatePoint"?: "METHOD_DECISION" | "PROTOCOL_DECISION" | "SEARCH_DECISION" | "SYNTHESIS_DECISION" | "WRITING_DECISION";
+  "kind": "METHODOLOGY_CHOICE" | "SEARCH_DECISION" | "EXCLUSION" | "CHARTED_VALUE" | "SYNTHESIS_CLAIM" | "WRITING_CLAIM";
+  "provenance": "HUMAN" | "AGENT_RECOMMENDATION" | "AUTONOMOUS_DEFAULT" | "IMPORTED_ARTIFACT" | "ADAPTER";
+  "rationaleSummary": string;
+  "stage": "METHODOLOGY_SELECTION" | "PROTOCOL_PLANNING" | "SOURCE_SEARCH" | "SCREENING" | "CHARTING" | "SYNTHESIS" | "ARGUMENT_CONSTRUCTION" | "PROSE_DRAFTING";
+  "subjectKey": string;
 }
 
 export interface AddReviewCommentRequest {
   [key: string]: any;
-  "body": any;
-  "provenance": any;
-  "targetArtifactId"?: any;
-  "targetDecisionLogId"?: any;
-  "targetGatePoint"?: any;
-  "targetStage"?: any;
-  "targetType": any;
+  "body": string;
+  "provenance": "HUMAN_REVIEW" | "AGENT_RECOMMENDATION" | "SYSTEM_CHECK";
+  "targetArtifactId"?: string;
+  "targetDecisionLogId"?: string;
+  "targetGatePoint"?: "METHOD_DECISION" | "PROTOCOL_DECISION" | "SEARCH_DECISION" | "SYNTHESIS_DECISION" | "WRITING_DECISION";
+  "targetStage"?: "METHODOLOGY_SELECTION" | "PROTOCOL_PLANNING" | "SOURCE_SEARCH" | "SCREENING" | "CHARTING" | "SYNTHESIS" | "ARGUMENT_CONSTRUCTION" | "PROSE_DRAFTING";
+  "targetType": "RUN" | "GATE_POINT" | "STAGE" | "ARTIFACT" | "DECISION_LOG";
 }
 
 export interface AddTestRunTesterRequest {
   [key: string]: any;
-  "testerName": any;
+  "testerName": string;
 }
 
 export interface AddTestSuiteMemberRequest {
   [key: string]: any;
-  "position"?: any;
-  "testCaseId": any;
+  "position"?: number;
+  "testCaseId": string;
 }
 
 export interface AddTestSuiteSourceRequirementRequest {
   [key: string]: any;
-  "requirementId": any;
+  "requirementId": string;
 }
 
 export interface AdrRequest {
   [key: string]: any;
-  "consequences"?: any;
-  "context"?: any;
-  "decision"?: any;
-  "decisionDate": any;
-  "title": any;
-  "uid": any;
+  "consequences"?: string;
+  "context"?: string;
+  "decision"?: string;
+  "decisionDate": string;
+  "title": string;
+  "uid": string;
 }
 
 export interface AdrResponse {
   [key: string]: any;
-  "consequences": any;
-  "context": any;
-  "createdAt": any;
-  "createdBy": any;
-  "decision": any;
-  "decisionDate": any;
-  "id": any;
-  "projectIdentifier": any;
-  "status": any;
-  "supersededBy": any;
-  "title": any;
-  "uid": any;
-  "updatedAt": any;
+  "consequences": string;
+  "context": string;
+  "createdAt": string;
+  "createdBy": string;
+  "decision": string;
+  "decisionDate": string;
+  "id": string;
+  "projectIdentifier": string;
+  "status": "PROPOSED" | "ACCEPTED" | "DEPRECATED" | "SUPERSEDED";
+  "supersededBy": string;
+  "title": string;
+  "uid": string;
+  "updatedAt": string;
 }
 
 export interface AdrStatusTransitionRequest {
   [key: string]: any;
-  "status": any;
+  "status": "PROPOSED" | "ACCEPTED" | "DEPRECATED" | "SUPERSEDED";
 }
 
 export interface AdvanceStageRequest {
   [key: string]: any;
-  "targetStage": any;
+  "targetStage": "METHODOLOGY_SELECTION" | "PROTOCOL_PLANNING" | "SOURCE_SEARCH" | "SCREENING" | "CHARTING" | "SYNTHESIS" | "ARGUMENT_CONSTRUCTION" | "PROSE_DRAFTING";
 }
 
 export interface ArtifactReadiness {
   [key: string]: any;
-  "artifactType": any;
-  "readiness": any;
-  "stage": any;
+  "artifactType": "METHODOLOGY_REQUIREMENTS" | "PROTOCOL_PLAN" | "SEARCH_LOG" | "SCREENING_RESULT" | "CHARTING_DATA" | "SYNTHESIS" | "ARGUMENT_MAP" | "MANUSCRIPT";
+  "readiness": "READY" | "MISSING" | "FAILED" | "SUPERSEDED";
+  "stage": "METHODOLOGY_SELECTION" | "PROTOCOL_PLANNING" | "SOURCE_SEARCH" | "SCREENING" | "CHARTING" | "SYNTHESIS" | "ARGUMENT_CONSTRUCTION" | "PROSE_DRAFTING";
 }
 
 export interface AssetCycleResponse {
@@ -118,118 +118,118 @@ export interface AssetCycleResponse {
 
 export interface AssetExternalIdRequest {
   [key: string]: any;
-  "collectedAt"?: any;
-  "confidence"?: any;
-  "sourceId": any;
-  "sourceSystem": any;
+  "collectedAt"?: string;
+  "confidence"?: string;
+  "sourceId": string;
+  "sourceSystem": string;
 }
 
 export interface AssetExternalIdResponse {
   [key: string]: any;
-  "assetId": any;
-  "assetUid": any;
-  "collectedAt": any;
-  "confidence": any;
-  "createdAt": any;
-  "id": any;
-  "sourceId": any;
-  "sourceSystem": any;
-  "updatedAt": any;
+  "assetId": string;
+  "assetUid": string;
+  "collectedAt": string;
+  "confidence": string;
+  "createdAt": string;
+  "id": string;
+  "sourceId": string;
+  "sourceSystem": string;
+  "updatedAt": string;
 }
 
 export interface AssetLinkRequest {
   [key: string]: any;
-  "linkType": any;
-  "targetEntityId"?: any;
-  "targetIdentifier"?: any;
-  "targetTitle"?: any;
-  "targetType": any;
-  "targetUrl"?: any;
+  "linkType": "IMPLEMENTS" | "MITIGATES" | "SUBJECT_OF" | "EVIDENCED_BY" | "GOVERNED_BY" | "DEPENDS_ON" | "ASSOCIATED";
+  "targetEntityId"?: string;
+  "targetIdentifier"?: string;
+  "targetTitle"?: string;
+  "targetType": "REQUIREMENT" | "CONTROL" | "RISK_SCENARIO" | "RISK_REGISTER_RECORD" | "RISK_ASSESSMENT_RESULT" | "TREATMENT_PLAN" | "METHODOLOGY_PROFILE" | "THREAT_MODEL_ENTRY" | "FINDING" | "EVIDENCE" | "AUDIT" | "ISSUE" | "CODE" | "CONFIGURATION" | "EXTERNAL";
+  "targetUrl"?: string;
 }
 
 export interface AssetLinkResponse {
   [key: string]: any;
-  "assetId": any;
-  "assetUid": any;
-  "createdAt": any;
-  "id": any;
-  "linkType": any;
-  "targetEntityId": any;
-  "targetIdentifier": any;
-  "targetTitle": any;
-  "targetType": any;
-  "targetUrl": any;
-  "updatedAt": any;
+  "assetId": string;
+  "assetUid": string;
+  "createdAt": string;
+  "id": string;
+  "linkType": "IMPLEMENTS" | "MITIGATES" | "SUBJECT_OF" | "EVIDENCED_BY" | "GOVERNED_BY" | "DEPENDS_ON" | "ASSOCIATED";
+  "targetEntityId": string;
+  "targetIdentifier": string;
+  "targetTitle": string;
+  "targetType": "REQUIREMENT" | "CONTROL" | "RISK_SCENARIO" | "RISK_REGISTER_RECORD" | "RISK_ASSESSMENT_RESULT" | "TREATMENT_PLAN" | "METHODOLOGY_PROFILE" | "THREAT_MODEL_ENTRY" | "FINDING" | "EVIDENCE" | "AUDIT" | "ISSUE" | "CODE" | "CONFIGURATION" | "EXTERNAL";
+  "targetUrl": string;
+  "updatedAt": string;
 }
 
 export interface AssetRelationRequest {
   [key: string]: any;
-  "collectedAt"?: any;
-  "confidence"?: any;
-  "description"?: any;
-  "externalSourceId"?: any;
-  "knowledgeState"?: any;
-  "relationType": any;
-  "sourceSystem"?: any;
-  "targetId": any;
+  "collectedAt"?: string;
+  "confidence"?: string;
+  "description"?: string;
+  "externalSourceId"?: string;
+  "knowledgeState"?: "UNKNOWN" | "PROVISIONAL" | "CONFIRMED";
+  "relationType": "CONTAINS" | "DEPENDS_ON" | "COMMUNICATES_WITH" | "TRUST_BOUNDARY" | "SUPPORTS" | "ACCESSES" | "DATA_FLOW";
+  "sourceSystem"?: string;
+  "targetId": string;
 }
 
 export interface AssetRelationResponse {
   [key: string]: any;
-  "collectedAt": any;
-  "confidence": any;
-  "createdAt": any;
-  "description": any;
-  "externalSourceId": any;
-  "id": any;
-  "knowledgeState": any;
-  "relationType": any;
-  "sourceId": any;
-  "sourceSystem": any;
-  "sourceUid": any;
-  "targetId": any;
-  "targetUid": any;
-  "updatedAt": any;
+  "collectedAt": string;
+  "confidence": string;
+  "createdAt": string;
+  "description": string;
+  "externalSourceId": string;
+  "id": string;
+  "knowledgeState": "UNKNOWN" | "PROVISIONAL" | "CONFIRMED";
+  "relationType": "CONTAINS" | "DEPENDS_ON" | "COMMUNICATES_WITH" | "TRUST_BOUNDARY" | "SUPPORTS" | "ACCESSES" | "DATA_FLOW";
+  "sourceId": string;
+  "sourceSystem": string;
+  "sourceUid": string;
+  "targetId": string;
+  "targetUid": string;
+  "updatedAt": string;
 }
 
 export interface AssetRequest {
   [key: string]: any;
-  "assetType"?: any;
-  "businessContext"?: any;
-  "criticality"?: any;
-  "description"?: any;
-  "environment"?: any;
-  "knowledgeState"?: any;
+  "assetType"?: "APPLICATION" | "SERVICE" | "SYSTEM" | "DATABASE" | "NETWORK" | "HOST" | "CONTAINER" | "IDENTITY" | "DATA_STORE" | "ENDPOINT" | "INTEGRATION" | "WORKLOAD" | "THIRD_PARTY" | "BOUNDARY" | "OTHER";
+  "businessContext"?: string;
+  "criticality"?: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  "description"?: string;
+  "environment"?: "PRODUCTION" | "STAGING" | "DEVELOPMENT" | "TEST" | "NON_PRODUCTION" | "OTHER";
+  "knowledgeState"?: "UNKNOWN" | "PROVISIONAL" | "CONFIRMED";
   "metadata"?: Record<string, any>;
-  "name": any;
-  "owner"?: any;
-  "scopeDesignation"?: any;
-  "steward"?: any;
-  "subtype"?: any;
-  "uid": any;
+  "name": string;
+  "owner"?: string;
+  "scopeDesignation"?: "IN_SCOPE" | "OUT_OF_SCOPE";
+  "steward"?: string;
+  "subtype"?: string;
+  "uid": string;
 }
 
 export interface AssetResponse {
   [key: string]: any;
-  "archivedAt": any;
-  "assetType": any;
-  "businessContext": any;
-  "createdAt": any;
-  "criticality": any;
-  "description": any;
-  "environment": any;
-  "graphNodeId": any;
-  "id": any;
-  "knowledgeState": any;
+  "archivedAt": string;
+  "assetType": "APPLICATION" | "SERVICE" | "SYSTEM" | "DATABASE" | "NETWORK" | "HOST" | "CONTAINER" | "IDENTITY" | "DATA_STORE" | "ENDPOINT" | "INTEGRATION" | "WORKLOAD" | "THIRD_PARTY" | "BOUNDARY" | "OTHER";
+  "businessContext": string;
+  "createdAt": string;
+  "criticality": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  "description": string;
+  "environment": "PRODUCTION" | "STAGING" | "DEVELOPMENT" | "TEST" | "NON_PRODUCTION" | "OTHER";
+  "graphNodeId": string;
+  "id": string;
+  "knowledgeState": "UNKNOWN" | "PROVISIONAL" | "CONFIRMED";
   "metadata": Record<string, any>;
-  "name": any;
-  "owner": any;
-  "projectIdentifier": any;
-  "scopeDesignation": any;
-  "steward": any;
-  "subtype": any;
-  "uid": any;
-  "updatedAt": any;
+  "name": string;
+  "owner": string;
+  "projectIdentifier": string;
+  "scopeDesignation": "IN_SCOPE" | "OUT_OF_SCOPE";
+  "steward": string;
+  "subtype": string;
+  "uid": string;
+  "updatedAt": string;
 }
 
 export interface AssetSubgraphResponse {
@@ -240,422 +240,422 @@ export interface AssetSubgraphResponse {
 
 export interface AssetSubtypeSchemaRequest {
   [key: string]: any;
-  "assetType": any;
-  "description"?: any;
+  "assetType": "APPLICATION" | "SERVICE" | "SYSTEM" | "DATABASE" | "NETWORK" | "HOST" | "CONTAINER" | "IDENTITY" | "DATA_STORE" | "ENDPOINT" | "INTEGRATION" | "WORKLOAD" | "THIRD_PARTY" | "BOUNDARY" | "OTHER";
+  "description"?: string;
   "schemaBody"?: Record<string, any>;
-  "schemaVersion": any;
-  "subtype": any;
+  "schemaVersion": string;
+  "subtype": string;
 }
 
 export interface AssetSubtypeSchemaResponse {
   [key: string]: any;
-  "assetType": any;
-  "createdAt": any;
-  "description": any;
-  "id": any;
-  "projectIdentifier": any;
+  "assetType": "APPLICATION" | "SERVICE" | "SYSTEM" | "DATABASE" | "NETWORK" | "HOST" | "CONTAINER" | "IDENTITY" | "DATA_STORE" | "ENDPOINT" | "INTEGRATION" | "WORKLOAD" | "THIRD_PARTY" | "BOUNDARY" | "OTHER";
+  "createdAt": string;
+  "description": string;
+  "id": string;
+  "projectIdentifier": string;
   "schemaBody": Record<string, any>;
-  "schemaVersion": any;
-  "status": any;
-  "subtype": any;
-  "updatedAt": any;
+  "schemaVersion": string;
+  "status": "ACTIVE" | "DEPRECATED";
+  "subtype": string;
+  "updatedAt": string;
 }
 
 export interface AttachObservationRequest {
   [key: string]: any;
-  "observationId": any;
+  "observationId": string;
 }
 
 export interface AuditLinkRequest {
   [key: string]: any;
-  "linkType": any;
-  "targetEntityId"?: any;
-  "targetIdentifier"?: any;
-  "targetTitle"?: any;
-  "targetType": any;
-  "targetUrl"?: any;
+  "linkType": "SCOPES" | "ASSESSES" | "EVIDENCED_BY" | "FOLLOWS_UP_ON" | "ASSOCIATED";
+  "targetEntityId"?: string;
+  "targetIdentifier"?: string;
+  "targetTitle"?: string;
+  "targetType": "FRAMEWORK" | "ASSET" | "CONTROL" | "RISK_SCENARIO" | "RISK_REGISTER_RECORD" | "EVIDENCE" | "FINDING" | "EXTERNAL";
+  "targetUrl"?: string;
 }
 
 export interface AuditLinkResponse {
   [key: string]: any;
-  "auditId": any;
-  "createdAt": any;
-  "id": any;
-  "linkType": any;
-  "targetEntityId": any;
-  "targetIdentifier": any;
-  "targetTitle": any;
-  "targetType": any;
-  "targetUrl": any;
-  "updatedAt": any;
+  "auditId": string;
+  "createdAt": string;
+  "id": string;
+  "linkType": "SCOPES" | "ASSESSES" | "EVIDENCED_BY" | "FOLLOWS_UP_ON" | "ASSOCIATED";
+  "targetEntityId": string;
+  "targetIdentifier": string;
+  "targetTitle": string;
+  "targetType": "FRAMEWORK" | "ASSET" | "CONTROL" | "RISK_SCENARIO" | "RISK_REGISTER_RECORD" | "EVIDENCE" | "FINDING" | "EXTERNAL";
+  "targetUrl": string;
+  "updatedAt": string;
 }
 
 export interface AuditPhaseDto {
   [key: string]: any;
-  "actualEnd": any;
-  "actualStart": any;
-  "kind": any;
-  "plannedEnd": any;
-  "plannedStart": any;
+  "actualEnd": string;
+  "actualStart": string;
+  "kind": "PLANNING" | "FIELDWORK" | "REPORTING" | "FOLLOWUP";
+  "plannedEnd": string;
+  "plannedStart": string;
 }
 
 export interface AuditRequest {
   [key: string]: any;
-  "auditType": any;
+  "auditType": "INTERNAL" | "EXTERNAL" | "REGULATORY" | "SPECIAL";
   "objectives"?: string[];
   "phases"?: AuditPhaseDto[];
-  "scopeDescription": any;
+  "scopeDescription": string;
   "teamMembers"?: string[];
-  "title": any;
-  "uid": any;
+  "title": string;
+  "uid": string;
 }
 
 export interface AuditResponse {
   [key: string]: any;
-  "auditType": any;
-  "createdAt": any;
-  "createdBy": any;
-  "graphNodeId": any;
-  "id": any;
+  "auditType": "INTERNAL" | "EXTERNAL" | "REGULATORY" | "SPECIAL";
+  "createdAt": string;
+  "createdBy": string;
+  "graphNodeId": string;
+  "id": string;
   "objectives": string[];
   "phases": AuditPhaseDto[];
-  "projectIdentifier": any;
-  "scopeDescription": any;
-  "status": any;
+  "projectIdentifier": string;
+  "scopeDescription": string;
+  "status": "PLANNED" | "IN_PROGRESS" | "DRAFT_REPORT" | "FINAL_REPORT" | "CLOSED";
   "teamMembers": string[];
-  "title": any;
-  "uid": any;
-  "updatedAt": any;
+  "title": string;
+  "uid": string;
+  "updatedAt": string;
 }
 
 export interface AuditStatusTransitionRequest {
   [key: string]: any;
-  "status": any;
+  "status": "PLANNED" | "IN_PROGRESS" | "DRAFT_REPORT" | "FINAL_REPORT" | "CLOSED";
 }
 
 export interface BaselineComparisonResponse {
   [key: string]: any;
   "added": RequirementResponse[];
-  "addedCount": any;
-  "baselineId": any;
-  "baselineName": any;
+  "addedCount": number;
+  "baselineId": string;
+  "baselineName": string;
   "modified": ModifiedRequirementResponse[];
-  "modifiedCount": any;
-  "otherBaselineId": any;
-  "otherBaselineName": any;
+  "modifiedCount": number;
+  "otherBaselineId": string;
+  "otherBaselineName": string;
   "removed": RequirementResponse[];
-  "removedCount": any;
+  "removedCount": number;
 }
 
 export interface BaselineRequest {
   [key: string]: any;
-  "description"?: any;
-  "name": any;
+  "description"?: string;
+  "name": string;
 }
 
 export interface BaselineResponse {
   [key: string]: any;
-  "createdAt": any;
-  "createdBy": any;
-  "description": any;
-  "id": any;
-  "name": any;
-  "projectIdentifier": any;
-  "revisionNumber": any;
+  "createdAt": string;
+  "createdBy": string;
+  "description": string;
+  "id": string;
+  "name": string;
+  "projectIdentifier": string;
+  "revisionNumber": number;
 }
 
 export interface BaselineSnapshotResponse {
   [key: string]: any;
-  "baselineId": any;
-  "name": any;
-  "requirementCount": any;
+  "baselineId": string;
+  "name": string;
+  "requirementCount": number;
   "requirements": RequirementResponse[];
-  "revisionNumber": any;
-  "timestamp": any;
+  "revisionNumber": number;
+  "timestamp": string;
 }
 
 export interface BatchEmbeddingResultResponse {
   [key: string]: any;
-  "embedded": any;
+  "embedded": number;
   "errors": string[];
-  "failed": any;
-  "modelId": any;
-  "skipped": any;
-  "total": any;
+  "failed": number;
+  "modelId": string;
+  "skipped": number;
+  "total": number;
 }
 
 export interface BulkFailureDetail {
   [key: string]: any;
-  "error": any;
-  "id": any;
-  "uid": any;
+  "error": string;
+  "id": string;
+  "uid": string;
 }
 
 export interface BulkStatusTransitionRequest {
   [key: string]: any;
   "ids": string[];
-  "reason"?: any;
-  "status": any;
+  "reason"?: string;
+  "status": "DRAFT" | "ACTIVE" | "DEPRECATED" | "ARCHIVED";
 }
 
 export interface BulkStatusTransitionResponse {
   [key: string]: any;
   "failed": BulkFailureDetail[];
   "succeeded": RequirementResponse[];
-  "totalFailed": any;
-  "totalRequested": any;
-  "totalSucceeded": any;
+  "totalFailed": number;
+  "totalRequested": number;
+  "totalSucceeded": number;
 }
 
 export interface CloneRequirementRequest {
   [key: string]: any;
-  "copyRelations"?: any;
-  "newUid": any;
+  "copyRelations"?: boolean;
+  "newUid": string;
 }
 
 export interface CompatibilityCheckResponse {
   [key: string]: any;
-  "compatible": any;
-  "packId": any;
-  "resolvedVersion": any;
+  "compatible": boolean;
+  "packId": string;
+  "resolvedVersion": string;
 }
 
 export interface CompletenessIssueResponse {
   [key: string]: any;
-  "issue": any;
-  "uid": any;
+  "issue": string;
+  "uid": string;
 }
 
 export interface CompletenessResponse {
   [key: string]: any;
   "byStatus": Record<string, any>;
   "issues": CompletenessIssueResponse[];
-  "total": any;
+  "total": number;
 }
 
 export interface ConsistencyViolationRef {
   [key: string]: any;
-  "sourceStatus": any;
-  "sourceUid": any;
-  "targetStatus": any;
-  "targetUid": any;
-  "violationType": any;
+  "sourceStatus": string;
+  "sourceUid": string;
+  "targetStatus": string;
+  "targetUid": string;
+  "violationType": string;
 }
 
 export interface ConsistencyViolationResponse {
   [key: string]: any;
-  "relationId": any;
-  "relationType": any;
-  "sourceId": any;
-  "sourceStatus": any;
-  "sourceUid": any;
-  "targetId": any;
-  "targetStatus": any;
-  "targetUid": any;
-  "violationType": any;
+  "relationId": string;
+  "relationType": string;
+  "sourceId": string;
+  "sourceStatus": Status;
+  "sourceUid": string;
+  "targetId": string;
+  "targetStatus": Status;
+  "targetUid": string;
+  "violationType": string;
 }
 
 export interface ContentItem {
   [key: string]: any;
-  "contentType": any;
-  "requirementTitle": any;
-  "requirementUid": any;
-  "sortOrder": any;
-  "textContent": any;
+  "contentType": string;
+  "requirementTitle": string;
+  "requirementUid": string;
+  "sortOrder": number;
+  "textContent": string;
 }
 
 export interface ControlLinkRequest {
   [key: string]: any;
-  "linkType": any;
-  "targetEntityId"?: any;
-  "targetIdentifier"?: any;
-  "targetTitle"?: any;
-  "targetType": any;
-  "targetUrl"?: any;
+  "linkType": "PROTECTS" | "IMPLEMENTS" | "EVIDENCED_BY" | "OBSERVED_IN" | "MITIGATES" | "MAPS_TO" | "ASSOCIATED";
+  "targetEntityId"?: string;
+  "targetIdentifier"?: string;
+  "targetTitle"?: string;
+  "targetType": "ASSET" | "RISK_SCENARIO" | "RISK_REGISTER_RECORD" | "RISK_ASSESSMENT_RESULT" | "TREATMENT_PLAN" | "METHODOLOGY_PROFILE" | "OBSERVATION" | "REQUIREMENT" | "EVIDENCE" | "FINDING" | "CODE" | "CONFIGURATION" | "OPERATIONAL_ARTIFACT" | "EXTERNAL";
+  "targetUrl"?: string;
 }
 
 export interface ControlLinkResponse {
   [key: string]: any;
-  "controlId": any;
-  "createdAt": any;
-  "id": any;
-  "linkType": any;
-  "targetEntityId": any;
-  "targetIdentifier": any;
-  "targetTitle": any;
-  "targetType": any;
-  "targetUrl": any;
-  "updatedAt": any;
+  "controlId": string;
+  "createdAt": string;
+  "id": string;
+  "linkType": "PROTECTS" | "IMPLEMENTS" | "EVIDENCED_BY" | "OBSERVED_IN" | "MITIGATES" | "MAPS_TO" | "ASSOCIATED";
+  "targetEntityId": string;
+  "targetIdentifier": string;
+  "targetTitle": string;
+  "targetType": "ASSET" | "RISK_SCENARIO" | "RISK_REGISTER_RECORD" | "RISK_ASSESSMENT_RESULT" | "TREATMENT_PLAN" | "METHODOLOGY_PROFILE" | "OBSERVATION" | "REQUIREMENT" | "EVIDENCE" | "FINDING" | "CODE" | "CONFIGURATION" | "OPERATIONAL_ARTIFACT" | "EXTERNAL";
+  "targetUrl": string;
+  "updatedAt": string;
 }
 
 export interface ControlRequest {
   [key: string]: any;
-  "category"?: any;
-  "controlFunction": any;
-  "description"?: any;
+  "category"?: string;
+  "controlFunction": "PREVENTIVE" | "DETECTIVE" | "CORRECTIVE" | "COMPENSATING";
+  "description"?: string;
   "effectiveness"?: Record<string, any>;
-  "implementationScope"?: any;
+  "implementationScope"?: string;
   "methodologyFactors"?: Record<string, any>;
-  "objective"?: any;
-  "owner"?: any;
-  "source"?: any;
-  "title": any;
-  "uid": any;
+  "objective"?: string;
+  "owner"?: string;
+  "source"?: string;
+  "title": string;
+  "uid": string;
 }
 
 export interface ControlResponse {
   [key: string]: any;
-  "category": any;
-  "controlFunction": any;
-  "createdAt": any;
-  "description": any;
+  "category": string;
+  "controlFunction": "PREVENTIVE" | "DETECTIVE" | "CORRECTIVE" | "COMPENSATING";
+  "createdAt": string;
+  "description": string;
   "effectiveness": Record<string, any>;
-  "graphNodeId": any;
-  "id": any;
-  "implementationScope": any;
+  "graphNodeId": string;
+  "id": string;
+  "implementationScope": string;
   "methodologyFactors": Record<string, any>;
-  "objective": any;
-  "owner": any;
-  "projectIdentifier": any;
-  "source": any;
-  "status": any;
-  "title": any;
-  "uid": any;
-  "updatedAt": any;
+  "objective": string;
+  "owner": string;
+  "projectIdentifier": string;
+  "source": string;
+  "status": "DRAFT" | "PROPOSED" | "IMPLEMENTED" | "OPERATIONAL" | "DEPRECATED" | "RETIRED";
+  "title": string;
+  "uid": string;
+  "updatedAt": string;
 }
 
 export interface ControlStatusTransitionRequest {
   [key: string]: any;
-  "status": any;
+  "status": "DRAFT" | "PROPOSED" | "IMPLEMENTED" | "OPERATIONAL" | "DEPRECATED" | "RETIRED";
 }
 
 export interface ControlSummary {
   [key: string]: any;
-  "id": any;
-  "title": any;
-  "uid": any;
+  "id": string;
+  "title": string;
+  "uid": string;
 }
 
 export interface ControlTestRequest {
   [key: string]: any;
-  "actualResults": any;
-  "conclusion": any;
-  "controlId": any;
-  "expectedResults": any;
-  "methodology": any;
-  "notes"?: any;
-  "testDate": any;
-  "testerIdentity": any;
-  "testSteps": any;
-  "uid": any;
+  "actualResults": string;
+  "conclusion": "EFFECTIVE" | "INEFFECTIVE" | "NOT_TESTED";
+  "controlId": string;
+  "expectedResults": string;
+  "methodology": "INQUIRY" | "OBSERVATION" | "INSPECTION" | "RE_PERFORMANCE";
+  "notes"?: string;
+  "testDate": string;
+  "testerIdentity": string;
+  "testSteps": string;
+  "uid": string;
 }
 
 export interface ControlTestResponse {
   [key: string]: any;
-  "actualResults": any;
-  "conclusion": any;
-  "controlId": any;
-  "controlUid": any;
-  "createdAt": any;
-  "expectedResults": any;
-  "graphNodeId": any;
-  "id": any;
-  "methodology": any;
-  "notes": any;
-  "projectIdentifier": any;
-  "testDate": any;
-  "testerIdentity": any;
-  "testSteps": any;
-  "uid": any;
-  "updatedAt": any;
+  "actualResults": string;
+  "conclusion": "EFFECTIVE" | "INEFFECTIVE" | "NOT_TESTED";
+  "controlId": string;
+  "controlUid": string;
+  "createdAt": string;
+  "expectedResults": string;
+  "graphNodeId": string;
+  "id": string;
+  "methodology": "INQUIRY" | "OBSERVATION" | "INSPECTION" | "RE_PERFORMANCE";
+  "notes": string;
+  "projectIdentifier": string;
+  "testDate": string;
+  "testerIdentity": string;
+  "testSteps": string;
+  "uid": string;
+  "updatedAt": string;
 }
 
 export interface CopyTestCaseRequest {
   [key: string]: any;
-  "newUid": any;
-  "parentFolderId"?: any;
-  "sortOrder"?: any;
+  "newUid": string;
+  "parentFolderId"?: string;
+  "sortOrder"?: number;
 }
 
 export interface Cost {
   [key: string]: any;
-  "budgetCostUsdMicros": any;
-  "budgetTokens": any;
-  "budgetWallClockMinutes": any;
-  "observedCostUsdMicros": any;
-  "observedTokens": any;
+  "budgetCostUsdMicros": number;
+  "budgetTokens": number;
+  "budgetWallClockMinutes": number;
+  "observedCostUsdMicros": number;
+  "observedTokens": number;
 }
 
 export interface CoverageRequest {
   [key: string]: any;
-  "answerProvenance"?: any;
-  "answerSummary"?: any;
-  "contractEntryKey": any;
-  "decisionReference"?: any;
-  "deferredToStage"?: any;
-  "disposition": any;
-  "rationale"?: any;
+  "answerProvenance"?: "METHODOLOGY_SOURCE" | "RESEARCH_INTAKE" | "USER_DECISION" | "CITED_SOURCE" | "DEFERRED_PILOT" | "ADAPTER_OUTPUT";
+  "answerSummary"?: string;
+  "contractEntryKey": string;
+  "decisionReference"?: string;
+  "deferredToStage"?: "METHODOLOGY_SELECTION" | "PROTOCOL_PLANNING" | "SOURCE_SEARCH" | "SCREENING" | "CHARTING" | "SYNTHESIS" | "ARGUMENT_CONSTRUCTION" | "PROSE_DRAFTING";
+  "disposition": "FILLED" | "RESOLVED_BY_USER_DECISION" | "DEFERRED_NON_BLOCKING" | "NOT_APPLICABLE_WITH_RATIONALE" | "BLOCKING_DECISION_REQUIRED";
+  "rationale"?: string;
 }
 
 export interface CoverageResponse {
   [key: string]: any;
-  "answerProvenance": any;
-  "answerSummary": any;
-  "contractEntryKey": any;
-  "decisionReference": any;
-  "deferredToStage": any;
-  "disposition": any;
-  "id": any;
-  "rationale": any;
+  "answerProvenance": "METHODOLOGY_SOURCE" | "RESEARCH_INTAKE" | "USER_DECISION" | "CITED_SOURCE" | "DEFERRED_PILOT" | "ADAPTER_OUTPUT";
+  "answerSummary": string;
+  "contractEntryKey": string;
+  "decisionReference": string;
+  "deferredToStage": "METHODOLOGY_SELECTION" | "PROTOCOL_PLANNING" | "SOURCE_SEARCH" | "SCREENING" | "CHARTING" | "SYNTHESIS" | "ARGUMENT_CONSTRUCTION" | "PROSE_DRAFTING";
+  "disposition": "FILLED" | "RESOLVED_BY_USER_DECISION" | "DEFERRED_NON_BLOCKING" | "NOT_APPLICABLE_WITH_RATIONALE" | "BLOCKING_DECISION_REQUIRED";
+  "id": string;
+  "rationale": string;
 }
 
 export interface CoverageStatsResponse {
   [key: string]: any;
-  "covered": any;
-  "percentage": any;
-  "total": any;
+  "covered": number;
+  "percentage": number;
+  "total": number;
 }
 
 export interface CreateDisclosureRequest {
   [key: string]: any;
-  "aiPartsDeclaredNone"?: any;
-  "finalArtifactId": any;
-  "finalAttemptNo": any;
-  "humanApprovalsDeclaredNone"?: any;
-  "uncertaintyDeclaredNone"?: any;
+  "aiPartsDeclaredNone"?: boolean;
+  "finalArtifactId": string;
+  "finalAttemptNo": number;
+  "humanApprovalsDeclaredNone"?: boolean;
+  "uncertaintyDeclaredNone"?: boolean;
 }
 
 export interface CreateTrustPolicyRequest {
   [key: string]: any;
-  "defaultOutcome": any;
-  "description"?: any;
-  "enabled"?: any;
-  "name": any;
-  "priority"?: any;
+  "defaultOutcome": "TRUSTED" | "REJECTED" | "UNKNOWN";
+  "description"?: string;
+  "enabled"?: boolean;
+  "name": string;
+  "priority"?: number;
   "rules"?: TrustPolicyRuleRequest[];
 }
 
 export interface CreateUserRequest {
   [key: string]: any;
-  "password": any;
-  "role": any;
-  "username": any;
+  "password": string;
+  "role": "USER" | "ADMIN";
+  "username": string;
 }
 
 export interface CrossWaveViolationRef {
   [key: string]: any;
-  "relationType": any;
-  "sourceUid": any;
-  "sourceWave": any;
-  "targetUid": any;
-  "targetWave": any;
+  "relationType": string;
+  "sourceUid": string;
+  "sourceWave": number;
+  "targetUid": string;
+  "targetWave": number;
 }
 
 export interface CycleEdgeResponse {
   [key: string]: any;
-  "relationType": any;
-  "sourceUid": any;
-  "targetUid": any;
+  "relationType": string;
+  "sourceUid": string;
+  "targetUid": string;
 }
 
 export interface CycleResponse {
@@ -670,136 +670,136 @@ export interface DashboardStatsResponse {
   "byWave": WaveStatsResponse[];
   "coverageByLinkType": Record<string, any>;
   "recentChanges": RecentChangeResponse[];
-  "totalRequirements": any;
+  "totalRequirements": number;
 }
 
 export interface DocumentReadingOrderResponse {
   [key: string]: any;
-  "description": any;
-  "documentId": any;
+  "description": string;
+  "documentId": string;
   "sections": SectionNode[];
-  "title": any;
-  "version": any;
+  "title": string;
+  "version": string;
 }
 
 export interface DocumentRequest {
   [key: string]: any;
-  "description"?: any;
-  "title": any;
-  "version": any;
+  "description"?: string;
+  "title": string;
+  "version": string;
 }
 
 export interface DocumentResponse {
   [key: string]: any;
-  "createdAt": any;
-  "createdBy": any;
-  "description": any;
-  "graphNodeId": any;
-  "hasGrammar": any;
-  "id": any;
-  "projectIdentifier": any;
-  "title": any;
-  "updatedAt": any;
-  "version": any;
+  "createdAt": string;
+  "createdBy": string;
+  "description": string;
+  "graphNodeId": string;
+  "hasGrammar": boolean;
+  "id": string;
+  "projectIdentifier": string;
+  "title": string;
+  "updatedAt": string;
+  "version": string;
 }
 
 export interface EmbeddingResultResponse {
   [key: string]: any;
-  "contentHash": any;
-  "modelId": any;
-  "requirementId": any;
-  "status": any;
+  "contentHash": string;
+  "modelId": string;
+  "requirementId": string;
+  "status": string;
 }
 
 export interface EmbeddingStatusResponse {
   [key: string]: any;
-  "currentModelId": any;
-  "embeddedAt": any;
-  "embeddingModelId": any;
-  "hasEmbedding": any;
-  "isStale": any;
-  "modelMismatch": any;
-  "requirementId": any;
+  "currentModelId": string;
+  "embeddedAt": string;
+  "embeddingModelId": string;
+  "hasEmbedding": boolean;
+  "isStale": boolean;
+  "modelMismatch": boolean;
+  "requirementId": string;
 }
 
 export interface EntryRequest {
   [key: string]: any;
-  "entryKey": any;
-  "kind": any;
-  "referencesEntryKey"?: any;
+  "entryKey": string;
+  "kind": "REQUIREMENT" | "METHOD_LIMIT" | "NON_CLAIM" | "OPEN_PROTOCOL_QUESTION";
+  "referencesEntryKey"?: string;
   "sourceLinks"?: SourceLinkRequest[];
-  "statement": any;
+  "statement": string;
 }
 
 export interface EntryResponse {
   [key: string]: any;
-  "entryKey": any;
-  "id": any;
-  "kind": any;
-  "referencesEntryKey": any;
+  "entryKey": string;
+  "id": string;
+  "kind": "REQUIREMENT" | "METHOD_LIMIT" | "NON_CLAIM" | "OPEN_PROTOCOL_QUESTION";
+  "referencesEntryKey": string;
   "sourceLinks": SourceLinkResponse[];
-  "statement": any;
+  "statement": string;
 }
 
 export interface EvidenceArtifactRequest {
   [key: string]: any;
-  "assuranceLevel"?: any;
-  "confidence"?: any;
-  "derivationMethod": any;
-  "derivedAt": any;
-  "evidenceType": any;
-  "notes"?: any;
+  "assuranceLevel"?: "L0" | "L1" | "L2" | "L3";
+  "confidence"?: string;
+  "derivationMethod": string;
+  "derivedAt": string;
+  "evidenceType": "OBSERVATION_SUMMARY" | "CONTROL_TEST_SUMMARY" | "ASSURANCE_CONCLUSION" | "VERIFICATION_SUMMARY" | "ATTESTATION" | "MIXED";
+  "notes"?: string;
   "sources": EvidenceSourceRefDto[];
-  "summary": any;
-  "title": any;
-  "uid": any;
+  "summary": string;
+  "title": string;
+  "uid": string;
 }
 
 export interface EvidenceArtifactResponse {
   [key: string]: any;
-  "assuranceLevel": any;
-  "confidence": any;
-  "createdAt": any;
-  "derivationMethod": any;
-  "derivedAt": any;
-  "derivedBy": any;
-  "evidenceType": any;
-  "graphNodeId": any;
-  "id": any;
-  "notes": any;
-  "projectIdentifier": any;
+  "assuranceLevel": "L0" | "L1" | "L2" | "L3";
+  "confidence": string;
+  "createdAt": string;
+  "derivationMethod": string;
+  "derivedAt": string;
+  "derivedBy": string;
+  "evidenceType": "OBSERVATION_SUMMARY" | "CONTROL_TEST_SUMMARY" | "ASSURANCE_CONCLUSION" | "VERIFICATION_SUMMARY" | "ATTESTATION" | "MIXED";
+  "graphNodeId": string;
+  "id": string;
+  "notes": string;
+  "projectIdentifier": string;
   "sources": EvidenceSourceRefDto[];
-  "summary": any;
-  "supersededByArtifactId": any;
-  "title": any;
-  "uid": any;
-  "updatedAt": any;
+  "summary": string;
+  "supersededByArtifactId": string;
+  "title": string;
+  "uid": string;
+  "updatedAt": string;
 }
 
 export interface EvidenceRef {
   [key: string]: any;
-  "artifactIdentifier": any;
-  "artifactTitle": any;
-  "artifactType": any;
-  "artifactUrl": any;
-  "confidence": any;
-  "detail": any;
-  "signal": any;
+  "artifactIdentifier": string;
+  "artifactTitle": string;
+  "artifactType": string;
+  "artifactUrl": string;
+  "confidence": "LOW" | "MEDIUM" | "HIGH";
+  "detail": string;
+  "signal": "IMPLEMENTS_LINK_ON_DRAFT" | "ACCEPTED_ADR_DOCUMENTS_LINK" | "LINKED_GITHUB_ISSUE" | "LINKED_PULL_REQUEST" | "LINKED_CODE_ARTIFACT" | "LINKED_DOC_ARTIFACT";
 }
 
 export interface EvidenceSourceRefDto {
   [key: string]: any;
-  "role": any;
-  "sourceEntityId": any;
-  "sourceIdentifier": any;
-  "sourceKind": any;
+  "role": string;
+  "sourceEntityId": string;
+  "sourceIdentifier": string;
+  "sourceKind": "OBSERVATION" | "CONTROL_TEST" | "CONTROL_EFFECTIVENESS_ASSESSMENT" | "VERIFICATION_RESULT" | "RISK_ASSESSMENT_RESULT" | "FINDING" | "ATTESTATION" | "EXTERNAL";
 }
 
 export interface FailRunRequest {
   [key: string]: any;
-  "errorClass"?: any;
-  "errorCode"?: any;
-  "errorSummary"?: any;
+  "errorClass"?: string;
+  "errorCode"?: string;
+  "errorSummary"?: string;
 }
 
 export interface FieldChange {
@@ -812,174 +812,174 @@ export interface FieldChangeResponse {
   [key: string]: any;
   "newValue": Record<string, any>;
   "oldValue": Record<string, any>;
-  "truncated": any;
+  "truncated": boolean;
 }
 
 export interface FindingCountRow {
   [key: string]: any;
-  "category": any;
-  "count": any;
-  "disposition": any;
-  "severity": any;
-  "sourceId": any;
-  "sourceKind": any;
-  "stationId": any;
+  "category": string;
+  "count": number;
+  "disposition": "OPEN" | "FIXED" | "WONTFIX" | "NOT_APPLICABLE";
+  "severity": string;
+  "sourceId": string;
+  "sourceKind": "REVIEWER" | "DETECTOR";
+  "stationId": string;
 }
 
 export interface FindingLinkRequest {
   [key: string]: any;
-  "linkType": any;
-  "targetEntityId"?: any;
-  "targetIdentifier"?: any;
-  "targetTitle"?: any;
-  "targetType": any;
-  "targetUrl"?: any;
+  "linkType": "AFFECTS" | "CAUSED_BY" | "MITIGATED_BY" | "EVIDENCED_BY" | "OBSERVED_IN" | "REMEDIATED_BY" | "ASSOCIATED";
+  "targetEntityId"?: string;
+  "targetIdentifier"?: string;
+  "targetTitle"?: string;
+  "targetType": "CONTROL" | "RISK_SCENARIO" | "ASSET" | "OBSERVATION" | "OPERATIONAL_ARTIFACT" | "EVIDENCE" | "AUDIT" | "REMEDIATION_PLAN" | "EXTERNAL";
+  "targetUrl"?: string;
 }
 
 export interface FindingLinkResponse {
   [key: string]: any;
-  "createdAt": any;
-  "findingId": any;
-  "id": any;
-  "linkType": any;
-  "targetEntityId": any;
-  "targetIdentifier": any;
-  "targetTitle": any;
-  "targetType": any;
-  "targetUrl": any;
-  "updatedAt": any;
+  "createdAt": string;
+  "findingId": string;
+  "id": string;
+  "linkType": "AFFECTS" | "CAUSED_BY" | "MITIGATED_BY" | "EVIDENCED_BY" | "OBSERVED_IN" | "REMEDIATED_BY" | "ASSOCIATED";
+  "targetEntityId": string;
+  "targetIdentifier": string;
+  "targetTitle": string;
+  "targetType": "CONTROL" | "RISK_SCENARIO" | "ASSET" | "OBSERVATION" | "OPERATIONAL_ARTIFACT" | "EVIDENCE" | "AUDIT" | "REMEDIATION_PLAN" | "EXTERNAL";
+  "targetUrl": string;
+  "updatedAt": string;
 }
 
 export interface FindingRef {
   [key: string]: any;
-  "confidence": any;
+  "confidence": "LOW" | "MEDIUM" | "HIGH";
   "evidence": EvidenceRef[];
-  "strongestSignal": any;
-  "title": any;
-  "uid": any;
+  "strongestSignal": "IMPLEMENTS_LINK_ON_DRAFT" | "ACCEPTED_ADR_DOCUMENTS_LINK" | "LINKED_GITHUB_ISSUE" | "LINKED_PULL_REQUEST" | "LINKED_CODE_ARTIFACT" | "LINKED_DOC_ARTIFACT";
+  "title": string;
+  "uid": string;
 }
 
 export interface FindingRequest {
   [key: string]: any;
-  "description": any;
-  "dueDate"?: any;
-  "findingType": any;
-  "owner"?: any;
-  "rootCauseAnalysis"?: any;
-  "severity": any;
-  "title": any;
-  "uid": any;
+  "description": string;
+  "dueDate"?: string;
+  "findingType": "AUDIT_FINDING" | "CONTROL_DEFICIENCY" | "POLICY_VIOLATION" | "VULNERABILITY" | "EXCEPTION_ESCALATION";
+  "owner"?: string;
+  "rootCauseAnalysis"?: string;
+  "severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFORMATIONAL";
+  "title": string;
+  "uid": string;
 }
 
 export interface FindingResponse {
   [key: string]: any;
-  "createdAt": any;
-  "createdBy": any;
-  "description": any;
-  "dueDate": any;
-  "findingType": any;
-  "graphNodeId": any;
-  "id": any;
-  "owner": any;
-  "projectIdentifier": any;
-  "rootCauseAnalysis": any;
-  "severity": any;
-  "status": any;
-  "title": any;
-  "uid": any;
-  "updatedAt": any;
+  "createdAt": string;
+  "createdBy": string;
+  "description": string;
+  "dueDate": string;
+  "findingType": "AUDIT_FINDING" | "CONTROL_DEFICIENCY" | "POLICY_VIOLATION" | "VULNERABILITY" | "EXCEPTION_ESCALATION";
+  "graphNodeId": string;
+  "id": string;
+  "owner": string;
+  "projectIdentifier": string;
+  "rootCauseAnalysis": string;
+  "severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFORMATIONAL";
+  "status": "OPEN" | "REMEDIATION_IN_PROGRESS" | "REMEDIATION_COMPLETE" | "VERIFIED_CLOSED";
+  "title": string;
+  "uid": string;
+  "updatedAt": string;
 }
 
 export interface FindingStatusTransitionRequest {
   [key: string]: any;
-  "status": any;
+  "status": "OPEN" | "REMEDIATION_IN_PROGRESS" | "REMEDIATION_COMPLETE" | "VERIFIED_CLOSED";
 }
 
 export interface GateDecisionRequest {
   [key: string]: any;
-  "gatePoint": any;
-  "outcome": any;
-  "questionKey"?: any;
-  "rationaleSummary"?: any;
-  "recommendationOptionId"?: any;
-  "recommendationProvenance"?: any;
-  "recommendationSummary"?: any;
-  "selectedOptionId"?: any;
-  "sourceActionId"?: any;
+  "gatePoint": "METHOD_DECISION" | "PROTOCOL_DECISION" | "SEARCH_DECISION" | "SYNTHESIS_DECISION" | "WRITING_DECISION";
+  "outcome": "APPROVED" | "REJECTED" | "AUTO_ACCEPTED";
+  "questionKey"?: string;
+  "rationaleSummary"?: string;
+  "recommendationOptionId"?: string;
+  "recommendationProvenance"?: "AGENT" | "SYSTEM_POLICY" | "HUMAN_REVIEWER";
+  "recommendationSummary"?: string;
+  "selectedOptionId"?: string;
+  "sourceActionId"?: string;
 }
 
 export interface GateFindingRequest {
   [key: string]: any;
-  "category"?: any;
-  "classification"?: any;
-  "findingKey": any;
-  "severity"?: any;
-  "sourceId": any;
-  "sourceKind": any;
+  "category"?: string;
+  "classification"?: string;
+  "findingKey": string;
+  "severity"?: string;
+  "sourceId": string;
+  "sourceKind": "REVIEWER" | "DETECTOR";
 }
 
 export interface GateFindingResponse {
   [key: string]: any;
-  "authorizationReference": any;
-  "category": any;
-  "classification": any;
-  "disposition": any;
-  "findingKey": any;
-  "id": any;
-  "occurredAt": any;
-  "phaseEventId": any;
-  "project": any;
-  "runId": any;
-  "severity": any;
-  "sourceId": any;
-  "sourceKind": any;
-  "stationId": any;
+  "authorizationReference": string;
+  "category": string;
+  "classification": string;
+  "disposition": "OPEN" | "FIXED" | "WONTFIX" | "NOT_APPLICABLE";
+  "findingKey": string;
+  "id": string;
+  "occurredAt": string;
+  "phaseEventId": string;
+  "project": string;
+  "runId": string;
+  "severity": string;
+  "sourceId": string;
+  "sourceKind": "REVIEWER" | "DETECTOR";
+  "stationId": string;
 }
 
 export interface GateResultResponse {
   [key: string]: any;
-  "actualValue": any;
-  "gateId": any;
-  "gateName": any;
-  "metricParam": any;
-  "metricType": any;
-  "operator": any;
-  "passed": any;
-  "scopeStatus": any;
-  "threshold": any;
+  "actualValue": number;
+  "gateId": string;
+  "gateName": string;
+  "metricParam": string;
+  "metricType": string;
+  "operator": string;
+  "passed": boolean;
+  "scopeStatus": string;
+  "threshold": number;
 }
 
 export interface GitHubIssueRequest {
   [key: string]: any;
-  "extraBody"?: any;
+  "extraBody"?: string;
   "labels"?: string[];
-  "repo"?: any;
-  "requirementUid": any;
+  "repo"?: string;
+  "requirementUid": string;
 }
 
 export interface GitHubIssueResponse {
   [key: string]: any;
-  "issueNumber": any;
-  "issueUrl": any;
-  "traceabilityLinkId": any;
-  "warning": any;
+  "issueNumber": number;
+  "issueUrl": string;
+  "traceabilityLinkId": string;
+  "warning": string;
 }
 
 export interface GraphEdgeResponse {
   [key: string]: any;
-  "edgeType": any;
-  "id": any;
+  "edgeType": string;
+  "id": string;
   "properties": Record<string, any>;
   "sourceEntityType": GraphEntityType;
-  "sourceId": any;
+  "sourceId": string;
   "targetEntityType": GraphEntityType;
-  "targetId": any;
+  "targetId": string;
 }
 
 export interface GraphNeighborhoodQueryRequest {
   [key: string]: any;
   "entityTypes"?: string[];
-  "maxDepth"?: any;
+  "maxDepth"?: number;
   "rootNodeIds": string[];
 }
 
@@ -992,604 +992,604 @@ export interface GraphPathResponse {
 export interface GraphPathsQueryRequest {
   [key: string]: any;
   "entityTypes"?: string[];
-  "maxDepth"?: any;
-  "sourceNodeId": any;
-  "targetNodeId": any;
+  "maxDepth"?: number;
+  "sourceNodeId": string;
+  "targetNodeId": string;
 }
 
 export interface GraphVisualizationNodeResponse {
   [key: string]: any;
-  "domainId": any;
+  "domainId": string;
   "entityType": GraphEntityType;
-  "id": any;
-  "label": any;
-  "projectIdentifier": any;
+  "id": string;
+  "label": string;
+  "projectIdentifier": string;
   "properties": Record<string, any>;
-  "uid": any;
+  "uid": string;
 }
 
 export interface GraphVisualizationResponse {
   [key: string]: any;
   "edges": GraphEdgeResponse[];
   "nodes": GraphVisualizationNodeResponse[];
-  "totalEdges": any;
-  "totalNodes": any;
+  "totalEdges": number;
+  "totalNodes": number;
 }
 
 export interface IdentityAssignPermissionRequest {
   [key: string]: any;
-  "permission": any;
-  "roleId": any;
+  "permission": "API_ACCESS" | "IDENTITY_ADMIN" | "EMBEDDINGS_ADMIN" | "ANALYSIS_SWEEP" | "PACK_REGISTRY_ADMIN" | "MCP_USAGE_READ" | "WORKFLOW_RUN_CROSS_PROJECT_READ" | "RESEARCH_OPERATION_AUTHORIZE" | "PROJECT_READ" | "PROJECT_WRITE" | "PROJECT_ACCESS_ADMIN";
+  "roleId": string;
 }
 
 export interface IdentityCreateGroupRequest {
   [key: string]: any;
-  "displayName": any;
-  "name": any;
+  "displayName": string;
+  "name": string;
 }
 
 export interface IdentityCreateMembershipRequest {
   [key: string]: any;
-  "effectiveFrom"?: any;
-  "effectiveUntil"?: any;
-  "groupId": any;
-  "userId": any;
+  "effectiveFrom"?: string;
+  "effectiveUntil"?: string;
+  "groupId": string;
+  "userId": string;
 }
 
 export interface IdentityCreateProjectAccessGrantRequest {
   [key: string]: any;
-  "effectiveFrom"?: any;
-  "effectiveUntil"?: any;
-  "groupId"?: any;
-  "userId"?: any;
+  "effectiveFrom"?: string;
+  "effectiveUntil"?: string;
+  "groupId"?: string;
+  "userId"?: string;
 }
 
 export interface IdentityCreateRoleGrantRequest {
   [key: string]: any;
-  "effectiveFrom"?: any;
-  "effectiveUntil"?: any;
-  "groupId"?: any;
-  "roleId": any;
-  "userId"?: any;
+  "effectiveFrom"?: string;
+  "effectiveUntil"?: string;
+  "groupId"?: string;
+  "roleId": string;
+  "userId"?: string;
 }
 
 export interface IdentityCreateRoleRequest {
   [key: string]: any;
-  "description"?: any;
-  "displayName": any;
-  "key": any;
+  "description"?: string;
+  "displayName": string;
+  "key": string;
 }
 
 export interface IdentityCreateUserRequest {
   [key: string]: any;
-  "displayName": any;
-  "kind": any;
-  "loginName": any;
+  "displayName": string;
+  "kind": "HUMAN" | "SERVICE";
+  "loginName": string;
 }
 
 export interface IdentityGroupResponse {
   [key: string]: any;
-  "createdAt": any;
-  "displayName": any;
-  "id": any;
-  "name": any;
-  "state": any;
-  "updatedAt": any;
+  "createdAt": string;
+  "displayName": string;
+  "id": string;
+  "name": string;
+  "state": "ACTIVE" | "INACTIVE";
+  "updatedAt": string;
 }
 
 export interface IdentityMembershipResponse {
   [key: string]: any;
-  "effectiveFrom": any;
-  "effectiveUntil": any;
-  "groupId": any;
-  "id": any;
-  "state": any;
-  "userId": any;
+  "effectiveFrom": string;
+  "effectiveUntil": string;
+  "groupId": string;
+  "id": string;
+  "state": "ACTIVE" | "REVOKED";
+  "userId": string;
 }
 
 export interface IdentityPermissionCatalogResponse {
   [key: string]: any;
-  "catalogVersion": any;
+  "catalogVersion": number;
   "permissions": IdentityPermissionResponse[];
 }
 
 export interface IdentityPermissionResponse {
   [key: string]: any;
-  "description": any;
-  "key": any;
-  "projectCapable": any;
+  "description": string;
+  "key": string;
+  "projectCapable": boolean;
 }
 
 export interface IdentityProjectAccessGrantResponse {
   [key: string]: any;
-  "effectiveFrom": any;
-  "effectiveUntil": any;
-  "groupId": any;
-  "id": any;
-  "projectId": any;
-  "state": any;
-  "userId": any;
+  "effectiveFrom": string;
+  "effectiveUntil": string;
+  "groupId": string;
+  "id": string;
+  "projectId": string;
+  "state": "ACTIVE" | "REVOKED";
+  "userId": string;
 }
 
 export interface IdentityRoleGrantResponse {
   [key: string]: any;
-  "effectiveFrom": any;
-  "effectiveUntil": any;
-  "groupId": any;
-  "id": any;
-  "projectId": any;
-  "roleId": any;
-  "state": any;
-  "userId": any;
+  "effectiveFrom": string;
+  "effectiveUntil": string;
+  "groupId": string;
+  "id": string;
+  "projectId": string;
+  "roleId": string;
+  "state": "ACTIVE" | "REVOKED";
+  "userId": string;
 }
 
 export interface IdentityRolePermissionResponse {
   [key: string]: any;
-  "id": any;
-  "permission": any;
-  "roleId": any;
-  "state": any;
+  "id": string;
+  "permission": "API_ACCESS" | "IDENTITY_ADMIN" | "EMBEDDINGS_ADMIN" | "ANALYSIS_SWEEP" | "PACK_REGISTRY_ADMIN" | "MCP_USAGE_READ" | "WORKFLOW_RUN_CROSS_PROJECT_READ" | "RESEARCH_OPERATION_AUTHORIZE" | "PROJECT_READ" | "PROJECT_WRITE" | "PROJECT_ACCESS_ADMIN";
+  "roleId": string;
+  "state": "ACTIVE" | "REVOKED";
 }
 
 export interface IdentityRoleResponse {
   [key: string]: any;
-  "builtIn": any;
-  "createdAt": any;
-  "description": any;
-  "displayName": any;
-  "id": any;
-  "key": any;
-  "state": any;
-  "updatedAt": any;
+  "builtIn": boolean;
+  "createdAt": string;
+  "description": string;
+  "displayName": string;
+  "id": string;
+  "key": string;
+  "state": "ACTIVE" | "INACTIVE";
+  "updatedAt": string;
 }
 
 export interface IdentityUpdateGroupRequest {
   [key: string]: any;
-  "displayName"?: any;
-  "state"?: any;
+  "displayName"?: string;
+  "state"?: "ACTIVE" | "INACTIVE";
 }
 
 export interface IdentityUpdateRoleRequest {
   [key: string]: any;
-  "description"?: any;
-  "displayName"?: any;
-  "state"?: any;
+  "description"?: string;
+  "displayName"?: string;
+  "state"?: "ACTIVE" | "INACTIVE";
 }
 
 export interface IdentityUpdateUserRequest {
   [key: string]: any;
-  "displayName"?: any;
-  "state"?: any;
+  "displayName"?: string;
+  "state"?: "ACTIVE" | "SUSPENDED" | "DISABLED";
 }
 
 export interface IdentityUserResponse {
   [key: string]: any;
-  "createdAt": any;
-  "displayName": any;
-  "id": any;
-  "kind": any;
-  "loginName": any;
-  "state": any;
-  "updatedAt": any;
+  "createdAt": string;
+  "displayName": string;
+  "id": string;
+  "kind": "HUMAN" | "SERVICE";
+  "loginName": string;
+  "state": "ACTIVE" | "SUSPENDED" | "DISABLED";
+  "updatedAt": string;
 }
 
 export type ImportError = string;
 
 export interface ImportResultResponse {
   [key: string]: any;
-  "documentsCreated": any;
+  "documentsCreated": number;
   "errors": ImportError[];
-  "importedAt": any;
-  "importId": any;
-  "relationsCreated": any;
-  "relationsSkipped": any;
-  "requirementsCreated": any;
-  "requirementsParsed": any;
-  "requirementsUpdated": any;
-  "sectionContentsCreated": any;
-  "sectionsCreated": any;
-  "traceabilityLinksCreated": any;
-  "traceabilityLinksSkipped": any;
+  "importedAt": string;
+  "importId": string;
+  "relationsCreated": number;
+  "relationsSkipped": number;
+  "requirementsCreated": number;
+  "requirementsParsed": number;
+  "requirementsUpdated": number;
+  "sectionContentsCreated": number;
+  "sectionsCreated": number;
+  "traceabilityLinksCreated": number;
+  "traceabilityLinksSkipped": number;
 }
 
 export interface ImportRunCostRequest {
   [key: string]: any;
-  "costCurrency"?: any;
-  "costProxy"?: any;
-  "model"?: any;
-  "modelInvocationCount"?: any;
-  "provider"?: any;
-  "tokenUsage"?: any;
-  "wallClockMinutes"?: any;
+  "costCurrency"?: string;
+  "costProxy"?: number;
+  "model"?: string;
+  "modelInvocationCount"?: number;
+  "provider"?: string;
+  "tokenUsage"?: number;
+  "wallClockMinutes"?: number;
 }
 
 export interface InstallPackRequest {
   [key: string]: any;
-  "packId": any;
-  "versionConstraint"?: any;
+  "packId": string;
+  "versionConstraint"?: string;
 }
 
 export interface LastError {
   [key: string]: any;
-  "at": any;
-  "code": any;
-  "errorClass": any;
-  "summary": any;
+  "at": string;
+  "code": string;
+  "errorClass": string;
+  "summary": string;
 }
 
 export interface McpToolUsageAggregateResponse {
   [key: string]: any;
-  "from": any;
-  "to": any;
+  "from": string;
+  "to": string;
   "tools": ToolUsageRow[];
 }
 
 export interface MeasurementAggregateResponse {
   [key: string]: any;
   "findingCounts": FindingCountRow[];
-  "from": any;
-  "measurementVersion": any;
+  "from": string;
+  "measurementVersion": string;
   "stations": StationYieldRow[];
-  "to": any;
+  "to": string;
 }
 
 export interface MethodologyCatalogMethodResponse {
   [key: string]: any;
-  "catalogVersion": any;
-  "label": any;
-  "methodKey": any;
-  "profileVersion": any;
+  "catalogVersion": string;
+  "label": string;
+  "methodKey": string;
+  "profileVersion": string;
   "requiredSources": MethodologyCatalogSourceResponse[];
 }
 
 export interface MethodologyCatalogResponse {
   [key: string]: any;
-  "catalogVersion": any;
+  "catalogVersion": string;
   "methods": MethodologyCatalogMethodResponse[];
 }
 
 export interface MethodologyCatalogSourceResponse {
   [key: string]: any;
-  "ref": any;
-  "title": any;
+  "ref": string;
+  "title": string;
 }
 
 export interface MethodologyRequirementsContractResponse {
   [key: string]: any;
-  "artifactId": any;
-  "attemptNo": any;
-  "createdAt": any;
+  "artifactId": string;
+  "attemptNo": number;
+  "createdAt": string;
   "entries": EntryResponse[];
-  "id": any;
-  "methodKey": any;
+  "id": string;
+  "methodKey": string;
   "rejectedAlternatives": RejectedAlternativeResponse[];
-  "researchRunId": any;
-  "schemaVersion": any;
-  "selectionId": any;
+  "researchRunId": string;
+  "schemaVersion": string;
+  "selectionId": string;
 }
 
 export interface ModifiedRequirementResponse {
   [key: string]: any;
   "after": RequirementResponse;
   "before": RequirementResponse;
-  "requirementId": any;
-  "uid": any;
+  "requirementId": string;
+  "uid": string;
 }
 
 export interface MoveTestCaseFolderRequest {
   [key: string]: any;
-  "parentFolderId"?: any;
-  "sortOrder"?: any;
+  "parentFolderId"?: string;
+  "sortOrder"?: number;
 }
 
 export interface MoveTestCaseRequest {
   [key: string]: any;
-  "parentFolderId"?: any;
-  "sortOrder"?: any;
+  "parentFolderId"?: string;
+  "sortOrder"?: number;
 }
 
 export interface ObservationRequest {
   [key: string]: any;
-  "category": any;
-  "confidence"?: any;
-  "evidenceRef"?: any;
-  "expiresAt"?: any;
-  "observationKey": any;
-  "observationValue": any;
-  "observedAt": any;
-  "source": any;
+  "category": "CONFIGURATION" | "EXPOSURE" | "IDENTITY" | "DEPLOYMENT" | "PATCH_STATE" | "RELATIONSHIP" | "OTHER";
+  "confidence"?: string;
+  "evidenceRef"?: string;
+  "expiresAt"?: string;
+  "observationKey": string;
+  "observationValue": string;
+  "observedAt": string;
+  "source": string;
 }
 
 export interface ObservationResponse {
   [key: string]: any;
-  "assetId": any;
-  "assetUid": any;
-  "category": any;
-  "confidence": any;
-  "createdAt": any;
-  "evidenceRef": any;
-  "expiresAt": any;
-  "graphNodeId": any;
-  "id": any;
-  "observationKey": any;
-  "observationValue": any;
-  "observedAt": any;
-  "source": any;
-  "updatedAt": any;
+  "assetId": string;
+  "assetUid": string;
+  "category": "CONFIGURATION" | "EXPOSURE" | "IDENTITY" | "DEPLOYMENT" | "PATCH_STATE" | "RELATIONSHIP" | "OTHER";
+  "confidence": string;
+  "createdAt": string;
+  "evidenceRef": string;
+  "expiresAt": string;
+  "graphNodeId": string;
+  "id": string;
+  "observationKey": string;
+  "observationValue": string;
+  "observedAt": string;
+  "source": string;
+  "updatedAt": string;
 }
 
 export interface OperationAuthorizationDecisionRequest {
   [key: string]: any;
-  "approve": any;
-  "note"?: any;
+  "approve": boolean;
+  "note"?: string;
 }
 
 export interface OperationAuthorizationRequest {
   [key: string]: any;
-  "dataClass": any;
-  "destinationClass": any;
-  "expiresAt"?: any;
-  "operationKind": any;
-  "requestedForm": any;
-  "sandboxProfile": any;
-  "sourceActionId": any;
-  "summary": any;
-  "targetClass"?: any;
-  "toolId": any;
+  "dataClass": "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "RESTRICTED";
+  "destinationClass": "LOCAL" | "AI_PROVIDER" | "CITATION_PROVIDER" | "VERSION_CONTROL" | "REFERENCE_MANAGER" | "BROWSER_TARGET" | "EXTERNAL_STORAGE" | "LAB_HARDWARE" | "OTHER_EXTERNAL";
+  "expiresAt"?: string;
+  "operationKind": "GENERATED_CODE_EXECUTION" | "BROWSER_ACTIVITY" | "LAB_HARDWARE_ACTION" | "EXTERNAL_WRITE";
+  "requestedForm": "NONE" | "DERIVED_METADATA" | "SUMMARY" | "RAW_CONTENT";
+  "sandboxProfile": string;
+  "sourceActionId": string;
+  "summary": string;
+  "targetClass"?: string;
+  "toolId": string;
 }
 
 export interface OperationAuthorizationResponse {
   [key: string]: any;
-  "attemptNo": any;
-  "createdAt": any;
-  "dataClass": any;
-  "decidingActor": any;
-  "destinationClass": any;
-  "expiresAt": any;
-  "id": any;
-  "operationKind": any;
-  "policyBasis": any;
-  "proposingActor": any;
-  "requestedForm": any;
-  "sandboxProfile": any;
-  "sourceActionId": any;
-  "state": any;
-  "summary": any;
-  "targetClass": any;
-  "toolId": any;
-  "updatedAt": any;
+  "attemptNo": number;
+  "createdAt": string;
+  "dataClass": "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "RESTRICTED";
+  "decidingActor": string;
+  "destinationClass": "LOCAL" | "AI_PROVIDER" | "CITATION_PROVIDER" | "VERSION_CONTROL" | "REFERENCE_MANAGER" | "BROWSER_TARGET" | "EXTERNAL_STORAGE" | "LAB_HARDWARE" | "OTHER_EXTERNAL";
+  "expiresAt": string;
+  "id": string;
+  "operationKind": "GENERATED_CODE_EXECUTION" | "BROWSER_ACTIVITY" | "LAB_HARDWARE_ACTION" | "EXTERNAL_WRITE";
+  "policyBasis": string;
+  "proposingActor": string;
+  "requestedForm": "NONE" | "DERIVED_METADATA" | "SUMMARY" | "RAW_CONTENT";
+  "sandboxProfile": string;
+  "sourceActionId": string;
+  "state": "PROPOSED" | "APPROVED" | "DENIED" | "CONSUMED" | "EXPIRED";
+  "summary": string;
+  "targetClass": string;
+  "toolId": string;
+  "updatedAt": string;
 }
 
 export interface PackDependency {
   [key: string]: any;
-  "packId": any;
-  "versionConstraint": any;
+  "packId": string;
+  "versionConstraint": string;
 }
 
 export interface PackDependencyRequest {
   [key: string]: any;
-  "packId": any;
-  "versionConstraint"?: any;
+  "packId": string;
+  "versionConstraint"?: string;
 }
 
 export interface PackInstallRecordResponse {
   [key: string]: any;
-  "createdAt": any;
-  "errorDetail": any;
-  "id": any;
-  "installedEntityId": any;
-  "installOutcome": any;
-  "packId": any;
-  "packType": any;
-  "performedAt": any;
-  "performedBy": any;
-  "projectIdentifier": any;
-  "requestedVersion": any;
-  "resolvedChecksum": any;
-  "resolvedSource": any;
-  "resolvedVersion": any;
-  "signatureVerified": any;
-  "trustOutcome": any;
-  "trustPolicyId": any;
-  "trustReason": any;
-  "updatedAt": any;
+  "createdAt": string;
+  "errorDetail": string;
+  "id": string;
+  "installedEntityId": string;
+  "installOutcome": "INSTALLED" | "UPGRADED" | "REJECTED" | "FAILED";
+  "packId": string;
+  "packType": "UNKNOWN" | "REQUIREMENTS_PACK" | "CUSTOM";
+  "performedAt": string;
+  "performedBy": string;
+  "projectIdentifier": string;
+  "requestedVersion": string;
+  "resolvedChecksum": string;
+  "resolvedSource": string;
+  "resolvedVersion": string;
+  "signatureVerified": boolean;
+  "trustOutcome": "TRUSTED" | "REJECTED" | "UNKNOWN";
+  "trustPolicyId": string;
+  "trustReason": string;
+  "updatedAt": string;
 }
 
 export interface PackRegistryEntryResponse {
   [key: string]: any;
-  "catalogStatus": any;
-  "checksum": any;
+  "catalogStatus": "AVAILABLE" | "WITHDRAWN" | "SUPERSEDED";
+  "checksum": string;
   "compatibility": Record<string, any>;
-  "createdAt": any;
+  "createdAt": string;
   "dependencies": PackDependency[];
-  "description": any;
-  "id": any;
-  "packId": any;
-  "packType": any;
-  "projectIdentifier": any;
+  "description": string;
+  "id": string;
+  "packId": string;
+  "packType": "UNKNOWN" | "REQUIREMENTS_PACK" | "CUSTOM";
+  "projectIdentifier": string;
   "provenance": Record<string, any>;
-  "publisher": any;
-  "registeredAt": any;
+  "publisher": string;
+  "registeredAt": string;
   "registryMetadata": Record<string, any>;
   "signatureInfo": Record<string, any>;
-  "sourceUrl": any;
-  "updatedAt": any;
-  "version": any;
+  "sourceUrl": string;
+  "updatedAt": string;
+  "version": string;
 }
 
 export interface PackRegistryImportRequest {
   [key: string]: any;
-  "checksum"?: any;
+  "checksum"?: string;
   "compatibility"?: Record<string, any>;
   "dependencies"?: PackDependencyRequest[];
-  "description"?: any;
-  "format"?: any;
-  "packId"?: any;
+  "description"?: string;
+  "format"?: "AUTO" | "GC_MANIFEST";
+  "packId"?: string;
   "provenance"?: Record<string, any>;
-  "publisher"?: any;
+  "publisher"?: string;
   "registryMetadata"?: Record<string, any>;
   "signatureInfo"?: Record<string, any>;
-  "sourceUrl"?: any;
-  "version"?: any;
+  "sourceUrl"?: string;
+  "version"?: string;
 }
 
 export interface PageIdentityGroupResponse {
   [key: string]: any;
   "content": IdentityGroupResponse[];
-  "empty": any;
-  "first": any;
-  "last": any;
-  "number": any;
-  "numberOfElements": any;
+  "empty": boolean;
+  "first": boolean;
+  "last": boolean;
+  "number": number;
+  "numberOfElements": number;
   "pageable": PageableObject;
-  "size": any;
+  "size": number;
   "sort": SortObject;
-  "totalElements": any;
-  "totalPages": any;
+  "totalElements": number;
+  "totalPages": number;
 }
 
 export interface PageIdentityMembershipResponse {
   [key: string]: any;
   "content": IdentityMembershipResponse[];
-  "empty": any;
-  "first": any;
-  "last": any;
-  "number": any;
-  "numberOfElements": any;
+  "empty": boolean;
+  "first": boolean;
+  "last": boolean;
+  "number": number;
+  "numberOfElements": number;
   "pageable": PageableObject;
-  "size": any;
+  "size": number;
   "sort": SortObject;
-  "totalElements": any;
-  "totalPages": any;
+  "totalElements": number;
+  "totalPages": number;
 }
 
 export interface PageIdentityProjectAccessGrantResponse {
   [key: string]: any;
   "content": IdentityProjectAccessGrantResponse[];
-  "empty": any;
-  "first": any;
-  "last": any;
-  "number": any;
-  "numberOfElements": any;
+  "empty": boolean;
+  "first": boolean;
+  "last": boolean;
+  "number": number;
+  "numberOfElements": number;
   "pageable": PageableObject;
-  "size": any;
+  "size": number;
   "sort": SortObject;
-  "totalElements": any;
-  "totalPages": any;
+  "totalElements": number;
+  "totalPages": number;
 }
 
 export interface PageIdentityRoleGrantResponse {
   [key: string]: any;
   "content": IdentityRoleGrantResponse[];
-  "empty": any;
-  "first": any;
-  "last": any;
-  "number": any;
-  "numberOfElements": any;
+  "empty": boolean;
+  "first": boolean;
+  "last": boolean;
+  "number": number;
+  "numberOfElements": number;
   "pageable": PageableObject;
-  "size": any;
+  "size": number;
   "sort": SortObject;
-  "totalElements": any;
-  "totalPages": any;
+  "totalElements": number;
+  "totalPages": number;
 }
 
 export interface PageIdentityRolePermissionResponse {
   [key: string]: any;
   "content": IdentityRolePermissionResponse[];
-  "empty": any;
-  "first": any;
-  "last": any;
-  "number": any;
-  "numberOfElements": any;
+  "empty": boolean;
+  "first": boolean;
+  "last": boolean;
+  "number": number;
+  "numberOfElements": number;
   "pageable": PageableObject;
-  "size": any;
+  "size": number;
   "sort": SortObject;
-  "totalElements": any;
-  "totalPages": any;
+  "totalElements": number;
+  "totalPages": number;
 }
 
 export interface PageIdentityRoleResponse {
   [key: string]: any;
   "content": IdentityRoleResponse[];
-  "empty": any;
-  "first": any;
-  "last": any;
-  "number": any;
-  "numberOfElements": any;
+  "empty": boolean;
+  "first": boolean;
+  "last": boolean;
+  "number": number;
+  "numberOfElements": number;
   "pageable": PageableObject;
-  "size": any;
+  "size": number;
   "sort": SortObject;
-  "totalElements": any;
-  "totalPages": any;
+  "totalElements": number;
+  "totalPages": number;
 }
 
 export interface PageIdentityUserResponse {
   [key: string]: any;
   "content": IdentityUserResponse[];
-  "empty": any;
-  "first": any;
-  "last": any;
-  "number": any;
-  "numberOfElements": any;
+  "empty": boolean;
+  "first": boolean;
+  "last": boolean;
+  "number": number;
+  "numberOfElements": number;
   "pageable": PageableObject;
-  "size": any;
+  "size": number;
   "sort": SortObject;
-  "totalElements": any;
-  "totalPages": any;
+  "totalElements": number;
+  "totalPages": number;
 }
 
 export interface PageRequirementResponse {
   [key: string]: any;
   "content": RequirementResponse[];
-  "empty": any;
-  "first": any;
-  "last": any;
-  "number": any;
-  "numberOfElements": any;
+  "empty": boolean;
+  "first": boolean;
+  "last": boolean;
+  "number": number;
+  "numberOfElements": number;
   "pageable": PageableObject;
-  "size": any;
+  "size": number;
   "sort": SortObject;
-  "totalElements": any;
-  "totalPages": any;
+  "totalElements": number;
+  "totalPages": number;
 }
 
 export interface PageRequirementWithLinksResponse {
   [key: string]: any;
   "content": RequirementWithLinksResponse[];
-  "empty": any;
-  "first": any;
-  "last": any;
-  "number": any;
-  "numberOfElements": any;
+  "empty": boolean;
+  "first": boolean;
+  "last": boolean;
+  "number": number;
+  "numberOfElements": number;
   "pageable": PageableObject;
-  "size": any;
+  "size": number;
   "sort": SortObject;
-  "totalElements": any;
-  "totalPages": any;
+  "totalElements": number;
+  "totalPages": number;
 }
 
 export interface Pageable {
   [key: string]: any;
-  "page": any;
-  "size": any;
+  "page": number;
+  "size": number;
   "sort": string[];
 }
 
 export interface PageableObject {
   [key: string]: any;
-  "offset": any;
-  "paged": any;
-  "pageNumber": any;
-  "pageSize": any;
+  "offset": number;
+  "paged": boolean;
+  "pageNumber": number;
+  "pageSize": number;
   "sort": SortObject;
-  "unpaged": any;
+  "unpaged": boolean;
 }
 
 export interface PathEdgeResponse {
   [key: string]: any;
-  "relationType": any;
-  "sourceUid": any;
-  "targetUid": any;
+  "relationType": string;
+  "sourceUid": string;
+  "targetUid": string;
 }
 
 export interface PathResponse {
@@ -1600,79 +1600,79 @@ export interface PathResponse {
 
 export interface PendingGate {
   [key: string]: any;
-  "gatePoint": any;
-  "guardedStageExit": any;
+  "gatePoint": "METHOD_DECISION" | "PROTOCOL_DECISION" | "SEARCH_DECISION" | "SYNTHESIS_DECISION" | "WRITING_DECISION";
+  "guardedStageExit": "METHODOLOGY_SELECTION" | "PROTOCOL_PLANNING" | "SOURCE_SEARCH" | "SCREENING" | "CHARTING" | "SYNTHESIS" | "ARGUMENT_CONSTRUCTION" | "PROSE_DRAFTING";
 }
 
 export interface PhaseEventResponse {
   [key: string]: any;
-  "cycleIndex": any;
-  "durationMs": any;
-  "emitter": any;
-  "eventType": any;
-  "expectedModel": any;
-  "findingsDropped": any;
-  "id": any;
-  "inputTokens": any;
-  "measurementVersion": any;
-  "model": any;
-  "modelMatchesExpected": any;
-  "occurredAt": any;
-  "outcome": any;
-  "outputTokens": any;
-  "phase": any;
-  "project": any;
-  "provenance": any;
-  "runId": any;
-  "sourceId": any;
-  "stationId": any;
-  "stationResult": any;
-  "stepAlias": any;
-  "tier": any;
+  "cycleIndex": number;
+  "durationMs": number;
+  "emitter": "ADR061_WORKFLOW_TELEMETRY" | "ADR036_STEP_JSONL";
+  "eventType": "STARTED" | "COMPLETED" | "FAILED" | "ESCALATED" | "SKIPPED";
+  "expectedModel": string;
+  "findingsDropped": number;
+  "id": string;
+  "inputTokens": number;
+  "measurementVersion": string;
+  "model": string;
+  "modelMatchesExpected": boolean;
+  "occurredAt": string;
+  "outcome": string;
+  "outputTokens": number;
+  "phase": string;
+  "project": string;
+  "provenance": "ISSUE_THREAD" | "TEMPORAL_VISIBILITY" | "MANUAL_IMPORT" | "LIVE_EMISSION";
+  "runId": string;
+  "sourceId": string;
+  "stationId": string;
+  "stationResult": "PASS" | "FAIL" | "SKIPPED_STATION" | "CANCELLED" | "NOT_EVALUABLE" | "UNOBSERVED";
+  "stepAlias": string;
+  "tier": "LOW" | "MEDIUM" | "HIGH" | "NOT_APPLICABLE" | "UNOBSERVED";
 }
 
 export interface PhaseHotspotResponse {
   [key: string]: any;
-  "escalatedCount": any;
-  "eventCount": any;
-  "failedCount": any;
-  "maxCycleIndex": any;
-  "p50Ms": any;
-  "p95Ms": any;
-  "phase": any;
+  "escalatedCount": number;
+  "eventCount": number;
+  "failedCount": number;
+  "maxCycleIndex": number | null;
+  "p50Ms": number;
+  "p95Ms": number;
+  "phase": string;
 }
 
 export interface PluginResponse {
   [key: string]: any;
-  "available": any;
-  "builtin": any;
+  "available": boolean;
+  "builtin": boolean;
   "capabilities": string[];
-  "description": any;
+  "description": string;
   "metadata": Record<string, any>;
-  "name": any;
-  "state": any;
-  "type": any;
-  "version": any;
+  "name": string;
+  "state": "CREATED" | "INITIALIZED" | "STARTED" | "STOPPED" | "FAILED";
+  "type": "PACK_HANDLER" | "REGISTRY_BACKEND" | "VALIDATOR" | "POLICY_HOOK" | "VERIFIER" | "EVIDENCE_COLLECTOR" | "EMBEDDING_PROVIDER" | "GRAPH_CONTRIBUTOR" | "CUSTOM";
+  "version": string;
 }
 
 export interface PrSyncResultResponse {
   [key: string]: any;
   "errors": SyncError[];
-  "linksUpdated": any;
-  "prsCreated": any;
-  "prsFetched": any;
-  "prsUpdated": any;
-  "syncedAt": any;
-  "syncId": any;
+  "linksUpdated": number;
+  "prsCreated": number;
+  "prsFetched": number;
+  "prsUpdated": number;
+  "syncedAt": string;
+  "syncId": string;
 }
 
 export interface ProjectRequest {
   [key: string]: any;
-  "description"?: any;
-  "identifier": any;
-  "name": any;
+  "description"?: string;
+  "identifier": string;
+  "name": string;
   "researchIntake"?: ResearchIntakeRequest;
-  "type"?: any;
+  "type"?: "SOFTWARE" | "GRC" | "RESEARCH";
 }
 
 export interface ProjectResponse {
@@ -1683,176 +1683,176 @@ export interface ProjectResponse {
   "identifier": string;
   "name": string;
   "researchIntake": ResearchIntakeResponse;
-  "type": any;
+  "type": "SOFTWARE" | "GRC" | "RESEARCH";
   "updatedAt": string;
 }
 
 export interface ProtocolPlanResponse {
   [key: string]: any;
-  "artifactId": any;
-  "attemptNo": any;
+  "artifactId": string;
+  "attemptNo": number;
   "coverages": CoverageResponse[];
-  "createdAt": any;
-  "id": any;
-  "methodKey": any;
-  "methodologyRequirementsContractId": any;
-  "methodProfileVersion": any;
-  "protocolSchemaVersion": any;
-  "researchRunId": any;
+  "createdAt": string;
+  "id": string;
+  "methodKey": string;
+  "methodologyRequirementsContractId": string;
+  "methodProfileVersion": string;
+  "protocolSchemaVersion": string;
+  "researchRunId": string;
   "sections": SectionResponse[];
 }
 
 export interface ProvenanceChainResponse {
   [key: string]: any;
   "edges": ProvenanceEdgeResponse[];
-  "maxDepth": any;
+  "maxDepth": number;
   "nodes": ProvenanceNodeResponse[];
-  "rootNodeId": any;
-  "truncated": any;
+  "rootNodeId": string;
+  "truncated": boolean;
 }
 
 export interface ProvenanceEdgeRequest {
   [key: string]: any;
-  "fromNodeId": any;
-  "idempotencyKey"?: any;
-  "relation": any;
-  "role"?: any;
-  "summary"?: any;
-  "toNodeId": any;
+  "fromNodeId": string;
+  "idempotencyKey"?: string;
+  "relation": "DERIVED_FROM" | "SUPPORTS" | "SELECTED" | "CITED" | "CONTRIBUTED_TO";
+  "role"?: string;
+  "summary"?: string;
+  "toNodeId": string;
 }
 
 export interface ProvenanceEdgeResponse {
   [key: string]: any;
-  "actor": any;
-  "createdAt": any;
-  "fromNodeId": any;
-  "id": any;
-  "relation": any;
-  "role": any;
-  "status": any;
-  "summary": any;
-  "supersededByEdgeId": any;
-  "toNodeId": any;
-  "updatedAt": any;
+  "actor": string;
+  "createdAt": string;
+  "fromNodeId": string;
+  "id": string;
+  "relation": "DERIVED_FROM" | "SUPPORTS" | "SELECTED" | "CITED" | "CONTRIBUTED_TO";
+  "role": string;
+  "status": "ACTIVE" | "SUPERSEDED";
+  "summary": string;
+  "supersededByEdgeId": string;
+  "toNodeId": string;
+  "updatedAt": string;
 }
 
 export interface ProvenanceNodeRequest {
   [key: string]: any;
-  "artifactId"?: any;
-  "artifactType"?: any;
-  "attemptNo"?: any;
-  "contentHash"?: any;
-  "externalIdentifier"?: any;
-  "idempotencyKey"?: any;
-  "kind": any;
-  "locator"?: any;
-  "sourceActionId"?: any;
-  "stage"?: any;
-  "subjectKey": any;
-  "summary"?: any;
-  "toolName"?: any;
-  "toolVersion"?: any;
+  "artifactId"?: string;
+  "artifactType"?: "METHODOLOGY_REQUIREMENTS" | "PROTOCOL_PLAN" | "SEARCH_LOG" | "SCREENING_RESULT" | "CHARTING_DATA" | "SYNTHESIS" | "ARGUMENT_MAP" | "MANUSCRIPT";
+  "attemptNo"?: number;
+  "contentHash"?: string;
+  "externalIdentifier"?: string;
+  "idempotencyKey"?: string;
+  "kind": "USER_GOAL" | "METHODOLOGY_SOURCE" | "QUERY" | "CANDIDATE_SOURCE" | "FULL_TEXT_ACCESS" | "CHARTING_CELL" | "EVIDENCE_MATRIX_CELL" | "SYNTHESIS_CLAIM" | "ARGUMENT_MOVE" | "FINAL_PROSE";
+  "locator"?: string;
+  "sourceActionId"?: string;
+  "stage"?: "METHODOLOGY_SELECTION" | "PROTOCOL_PLANNING" | "SOURCE_SEARCH" | "SCREENING" | "CHARTING" | "SYNTHESIS" | "ARGUMENT_CONSTRUCTION" | "PROSE_DRAFTING";
+  "subjectKey": string;
+  "summary"?: string;
+  "toolName"?: string;
+  "toolVersion"?: string;
 }
 
 export interface ProvenanceNodeResponse {
   [key: string]: any;
-  "actor": any;
-  "artifactId": any;
-  "artifactType": any;
-  "attemptNo": any;
-  "contentHash": any;
-  "createdAt": any;
-  "externalIdentifier": any;
-  "id": any;
-  "kind": any;
-  "locator": any;
-  "sourceActionId": any;
-  "stage": any;
-  "status": any;
-  "subjectKey": any;
-  "summary": any;
-  "supersededByNodeId": any;
-  "toolName": any;
-  "toolVersion": any;
-  "updatedAt": any;
+  "actor": string;
+  "artifactId": string;
+  "artifactType": "METHODOLOGY_REQUIREMENTS" | "PROTOCOL_PLAN" | "SEARCH_LOG" | "SCREENING_RESULT" | "CHARTING_DATA" | "SYNTHESIS" | "ARGUMENT_MAP" | "MANUSCRIPT";
+  "attemptNo": number;
+  "contentHash": string;
+  "createdAt": string;
+  "externalIdentifier": string;
+  "id": string;
+  "kind": "USER_GOAL" | "METHODOLOGY_SOURCE" | "QUERY" | "CANDIDATE_SOURCE" | "FULL_TEXT_ACCESS" | "CHARTING_CELL" | "EVIDENCE_MATRIX_CELL" | "SYNTHESIS_CLAIM" | "ARGUMENT_MOVE" | "FINAL_PROSE";
+  "locator": string;
+  "sourceActionId": string;
+  "stage": "METHODOLOGY_SELECTION" | "PROTOCOL_PLANNING" | "SOURCE_SEARCH" | "SCREENING" | "CHARTING" | "SYNTHESIS" | "ARGUMENT_CONSTRUCTION" | "PROSE_DRAFTING";
+  "status": "ACTIVE" | "SUPERSEDED";
+  "subjectKey": string;
+  "summary": string;
+  "supersededByNodeId": string;
+  "toolName": string;
+  "toolVersion": string;
+  "updatedAt": string;
 }
 
 export interface QualityGateEvaluationResponse {
   [key: string]: any;
-  "failedCount": any;
+  "failedCount": number;
   "gates": GateResultResponse[];
-  "passed": any;
-  "passedCount": any;
-  "projectIdentifier": any;
-  "timestamp": any;
-  "totalGates": any;
+  "passed": boolean;
+  "passedCount": number;
+  "projectIdentifier": string;
+  "timestamp": string;
+  "totalGates": number;
 }
 
 export interface QualityGateRequest {
   [key: string]: any;
-  "description"?: any;
-  "metricParam"?: any;
-  "metricType": any;
-  "name": any;
-  "operator": any;
-  "scopeStatus"?: any;
-  "threshold": any;
+  "description"?: string;
+  "metricParam"?: string;
+  "metricType": "COVERAGE" | "ORPHAN_COUNT" | "COMPLETENESS";
+  "name": string;
+  "operator": "GTE" | "LTE" | "EQ" | "GT" | "LT";
+  "scopeStatus"?: "DRAFT" | "ACTIVE" | "DEPRECATED" | "ARCHIVED";
+  "threshold": number;
 }
 
 export interface QualityGateResponse {
   [key: string]: any;
-  "createdAt": any;
-  "description": any;
-  "enabled": any;
-  "id": any;
-  "metricParam": any;
-  "metricType": any;
-  "name": any;
-  "operator": any;
-  "projectIdentifier": any;
-  "scopeStatus": any;
-  "threshold": any;
-  "updatedAt": any;
+  "createdAt": string;
+  "description": string;
+  "enabled": boolean;
+  "id": string;
+  "metricParam": string;
+  "metricType": string;
+  "name": string;
+  "operator": string;
+  "projectIdentifier": string;
+  "scopeStatus": string;
+  "threshold": number;
+  "updatedAt": string;
 }
 
 export interface RecentChangeResponse {
   [key: string]: any;
-  "actor": any;
-  "reason": any;
-  "revisionType": any;
-  "timestamp": any;
-  "title": any;
-  "uid": any;
+  "actor": string;
+  "reason": string;
+  "revisionType": string;
+  "timestamp": string;
+  "title": string;
+  "uid": string;
 }
 
 export interface RecordArtifactRequest {
   [key: string]: any;
-  "accessGaps"?: any;
-  "artifactType": any;
-  "candidateSources"?: any;
-  "chartedFullText"?: any;
-  "contentHash"?: any;
-  "dataClass"?: any;
-  "idempotencyKey"?: any;
-  "locator"?: any;
-  "screenedExcluded"?: any;
-  "screenedIncluded"?: any;
+  "accessGaps"?: number;
+  "artifactType": "METHODOLOGY_REQUIREMENTS" | "PROTOCOL_PLAN" | "SEARCH_LOG" | "SCREENING_RESULT" | "CHARTING_DATA" | "SYNTHESIS" | "ARGUMENT_MAP" | "MANUSCRIPT";
+  "candidateSources"?: number;
+  "chartedFullText"?: number;
+  "contentHash"?: string;
+  "dataClass"?: "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "RESTRICTED";
+  "idempotencyKey"?: string;
+  "locator"?: string;
+  "screenedExcluded"?: number;
+  "screenedIncluded"?: number;
 }
 
 export interface RecordFindingDispositionRequest {
   [key: string]: any;
-  "authorizationReference"?: any;
-  "disposition": any;
+  "authorizationReference"?: string;
+  "disposition": "OPEN" | "FIXED" | "WONTFIX" | "NOT_APPLICABLE";
 }
 
 export interface RecordMcpToolEventRequest {
   [key: string]: any;
-  "action"?: any;
-  "durationMs": any;
-  "outcome": any;
-  "project"?: any;
-  "tool": any;
-  "ts": any;
+  "action"?: string;
+  "durationMs": number;
+  "outcome": string;
+  "project"?: string;
+  "tool": string;
+  "ts": string;
 }
 
 export interface RecordMethodologyRequirementsContractRequest {
@@ -1863,180 +1863,180 @@ export interface RecordMethodologyRequirementsContractRequest {
 
 export interface RecordMethodologySourceRequest {
   [key: string]: any;
-  "sourceLabel"?: any;
-  "sourceRef": any;
+  "sourceLabel"?: string;
+  "sourceRef": string;
 }
 
 export interface RecordPhaseEventRequest {
   [key: string]: any;
-  "cycleIndex"?: any;
-  "durationMs"?: any;
-  "emitter"?: any;
-  "eventType": any;
-  "expectedModel"?: any;
+  "cycleIndex"?: number;
+  "durationMs"?: number;
+  "emitter"?: "ADR061_WORKFLOW_TELEMETRY" | "ADR036_STEP_JSONL";
+  "eventType": "STARTED" | "COMPLETED" | "FAILED" | "ESCALATED" | "SKIPPED";
+  "expectedModel"?: string;
   "findings"?: GateFindingRequest[];
-  "findingsDropped"?: any;
-  "inputTokens"?: any;
-  "measurementVersion"?: any;
-  "model"?: any;
-  "modelMatchesExpected"?: any;
-  "occurredAt": any;
-  "outcome"?: any;
-  "outputTokens"?: any;
-  "phase": any;
-  "provenance": any;
-  "sourceId"?: any;
-  "stationId"?: any;
-  "stationResult"?: any;
-  "stepAlias"?: any;
-  "tier"?: any;
+  "findingsDropped"?: number;
+  "inputTokens"?: number;
+  "measurementVersion"?: string;
+  "model"?: string;
+  "modelMatchesExpected"?: boolean;
+  "occurredAt": string;
+  "outcome"?: string;
+  "outputTokens"?: number;
+  "phase": string;
+  "provenance": "ISSUE_THREAD" | "TEMPORAL_VISIBILITY" | "MANUAL_IMPORT" | "LIVE_EMISSION";
+  "sourceId"?: string;
+  "stationId"?: string;
+  "stationResult"?: "PASS" | "FAIL" | "SKIPPED_STATION" | "CANCELLED" | "NOT_EVALUABLE" | "UNOBSERVED";
+  "stepAlias"?: string;
+  "tier"?: "LOW" | "MEDIUM" | "HIGH" | "NOT_APPLICABLE" | "UNOBSERVED";
 }
 
 export interface RecordProtocolPlanRequest {
   [key: string]: any;
   "coverages": CoverageRequest[];
-  "protocolSchemaVersion": any;
+  "protocolSchemaVersion": string;
   "sections": SectionRequest[];
 }
 
 export interface RecordUsageRequest {
   [key: string]: any;
-  "costUsdMicros"?: any;
-  "tokens"?: any;
+  "costUsdMicros"?: number;
+  "tokens"?: number;
 }
 
 export interface RecordWorkflowRunRequest {
   [key: string]: any;
-  "branch"?: any;
-  "costCurrency"?: any;
-  "costProxy"?: any;
-  "endedAt"?: any;
-  "finalState"?: any;
-  "issueNumber"?: any;
-  "model"?: any;
-  "modelInvocationCount"?: any;
-  "outcome"?: any;
-  "prNumber"?: any;
-  "provenance": any;
-  "provider"?: any;
-  "repo"?: any;
+  "branch"?: string;
+  "costCurrency"?: string;
+  "costProxy"?: number;
+  "endedAt"?: string;
+  "finalState"?: "RUNNING" | "READY_FOR_REVIEW" | "MERGED" | "CLOSED" | "ESCALATED" | "ABANDONED" | "SUPERSEDED" | "FAILED";
+  "issueNumber"?: number;
+  "model"?: string;
+  "modelInvocationCount"?: number;
+  "outcome"?: "MERGED" | "CLOSED_WITHOUT_MERGE" | "NONE";
+  "prNumber"?: number;
+  "provenance": "ISSUE_THREAD" | "TEMPORAL_VISIBILITY" | "MANUAL_IMPORT" | "LIVE_EMISSION";
+  "provider"?: string;
+  "repo"?: string;
   "requirementUids"?: string[];
-  "runtimeDriver"?: any;
-  "startedAt"?: any;
-  "tokenUsage"?: any;
-  "wallClockMinutes"?: any;
-  "workflowType": any;
+  "runtimeDriver"?: string;
+  "startedAt"?: string;
+  "tokenUsage"?: number;
+  "wallClockMinutes"?: number;
+  "workflowType": string;
 }
 
 export interface RegisterPackRequest {
   [key: string]: any;
-  "checksum"?: any;
+  "checksum"?: string;
   "compatibility"?: Record<string, any>;
   "dependencies"?: PackDependencyRequest[];
-  "description"?: any;
-  "packId": any;
-  "packType": any;
+  "description"?: string;
+  "packId": string;
+  "packType": "UNKNOWN" | "REQUIREMENTS_PACK" | "CUSTOM";
   "provenance"?: Record<string, any>;
-  "publisher"?: any;
+  "publisher"?: string;
   "registryMetadata"?: Record<string, any>;
   "signatureInfo"?: Record<string, any>;
-  "sourceUrl"?: any;
-  "version": any;
+  "sourceUrl"?: string;
+  "version": string;
 }
 
 export interface RegisterPluginRequest {
   [key: string]: any;
   "capabilities"?: string[];
-  "description"?: any;
+  "description"?: string;
   "metadata"?: Record<string, any>;
-  "name": any;
-  "type": any;
-  "version": any;
+  "name": string;
+  "type": "PACK_HANDLER" | "REGISTRY_BACKEND" | "VALIDATOR" | "POLICY_HOOK" | "VERIFIER" | "EVIDENCE_COLLECTOR" | "EMBEDDING_PROVIDER" | "GRAPH_CONTRIBUTOR" | "CUSTOM";
+  "version": string;
 }
 
 export interface RejectedAlternativeRequest {
   [key: string]: any;
-  "external"?: any;
-  "methodKey": any;
-  "profileVersion"?: any;
-  "rationaleEntryId"?: any;
+  "external"?: boolean;
+  "methodKey": string;
+  "profileVersion"?: string;
+  "rationaleEntryId"?: string;
 }
 
 export interface RejectedAlternativeResponse {
   [key: string]: any;
-  "external": any;
-  "methodKey": any;
-  "profileVersion": any;
-  "rationaleEntryId": any;
+  "external": boolean;
+  "methodKey": string;
+  "profileVersion": string;
+  "rationaleEntryId": string;
 }
 
 export interface RelationChange {
   [key: string]: any;
-  "changeType": any;
+  "changeType": "ADDED" | "REMOVED" | "MODIFIED";
   "fieldChanges": Record<string, any>;
-  "relationId": any;
+  "relationId": string;
   "snapshot": Record<string, any>;
 }
 
 export interface RelationHistoryResponse {
   [key: string]: any;
-  "actor": any;
-  "reason": any;
-  "revisionNumber": any;
-  "revisionType": any;
+  "actor": string;
+  "reason": string;
+  "revisionNumber": number;
+  "revisionType": string;
   "snapshot": RelationSnapshot;
-  "timestamp": any;
+  "timestamp": string;
 }
 
 export interface RelationRequest {
   [key: string]: any;
-  "relationType": any;
-  "targetId": any;
+  "relationType": "PARENT" | "DEPENDS_ON" | "CONFLICTS_WITH" | "REFINES" | "SUPERSEDES" | "RELATED";
+  "targetId": string;
 }
 
 export interface RelationResponse {
   [key: string]: any;
-  "createdAt": any;
-  "id": any;
-  "relationType": any;
-  "sourceId": any;
-  "sourceUid": any;
-  "targetId": any;
-  "targetUid": any;
+  "createdAt": string;
+  "id": string;
+  "relationType": "PARENT" | "DEPENDS_ON" | "CONFLICTS_WITH" | "REFINES" | "SUPERSEDES" | "RELATED";
+  "sourceId": string;
+  "sourceUid": string;
+  "targetId": string;
+  "targetUid": string;
 }
 
 export interface RelationSnapshot {
   [key: string]: any;
-  "createdAt": any;
-  "description": any;
-  "id": any;
-  "relationType": any;
-  "sourceId": any;
-  "targetId": any;
+  "createdAt": string;
+  "description": string;
+  "id": string;
+  "relationType": "PARENT" | "DEPENDS_ON" | "CONFLICTS_WITH" | "REFINES" | "SUPERSEDES" | "RELATED";
+  "sourceId": string;
+  "targetId": string;
 }
 
 export interface RelationValidationResponse {
   [key: string]: any;
-  "id": any;
-  "relationType": any;
-  "sourceId": any;
-  "sourceUid": any;
-  "sourceWave": any;
-  "targetId": any;
-  "targetUid": any;
-  "targetWave": any;
+  "id": string;
+  "relationType": string;
+  "sourceId": string;
+  "sourceUid": string;
+  "sourceWave": number;
+  "targetId": string;
+  "targetUid": string;
+  "targetWave": number;
 }
 
 export interface ReorderTestCaseFoldersRequest {
   [key: string]: any;
   "orderedFolderIds": string[];
-  "parentFolderId"?: any;
+  "parentFolderId"?: string;
 }
 
 export interface ReorderTestCasesRequest {
   [key: string]: any;
   "orderedTestCaseIds": string[];
-  "parentFolderId"?: any;
+  "parentFolderId"?: string;
 }
 
 export interface ReorderTestSuiteMembersRequest {
@@ -2046,69 +2046,69 @@ export interface ReorderTestSuiteMembersRequest {
 
 export interface RequirementHistoryResponse {
   [key: string]: any;
-  "actor": any;
+  "actor": string;
   "changes": Record<string, any>;
-  "reason": any;
-  "revisionNumber": any;
-  "revisionType": any;
+  "reason": string;
+  "revisionNumber": number;
+  "revisionType": string;
   "snapshot": RequirementResponse;
-  "timestamp": any;
-  "truncated": any;
+  "timestamp": string;
+  "truncated": boolean;
 }
 
 export interface RequirementRef {
   [key: string]: any;
-  "title": any;
-  "uid": any;
+  "title": string;
+  "uid": string;
 }
 
 export interface RequirementRequest {
   [key: string]: any;
-  "exactlyOneOfUidOrUidPrefixPresent"?: any;
-  "priority"?: any;
-  "rationale"?: any;
-  "requirementType"?: any;
-  "statement": any;
-  "title": any;
-  "uid"?: any;
-  "uidPrefix"?: any;
-  "wave"?: any;
+  "exactlyOneOfUidOrUidPrefixPresent"?: boolean;
+  "priority"?: "MUST" | "SHOULD" | "COULD" | "WONT";
+  "rationale"?: string;
+  "requirementType"?: "FUNCTIONAL" | "NON_FUNCTIONAL" | "CONSTRAINT" | "INTERFACE";
+  "statement": string;
+  "title": string;
+  "uid"?: string;
+  "uidPrefix"?: string;
+  "wave"?: number;
 }
 
 export interface RequirementResponse {
   [key: string]: any;
-  "archivedAt": any;
-  "createdAt": any;
-  "graphNodeId": any;
-  "id": any;
-  "priority": any;
-  "projectIdentifier": any;
-  "rationale": any;
-  "requirementType": any;
-  "statement": any;
-  "status": any;
-  "title": any;
-  "uid": any;
-  "updatedAt": any;
-  "wave": any;
+  "archivedAt": string | null;
+  "createdAt": string;
+  "graphNodeId": string;
+  "id": string;
+  "priority": "MUST" | "SHOULD" | "COULD" | "WONT";
+  "projectIdentifier": string;
+  "rationale": string;
+  "requirementType": "FUNCTIONAL" | "NON_FUNCTIONAL" | "CONSTRAINT" | "INTERFACE";
+  "statement": string;
+  "status": "DRAFT" | "ACTIVE" | "DEPRECATED" | "ARCHIVED";
+  "title": string;
+  "uid": string;
+  "updatedAt": string;
+  "wave": number;
 }
 
 export interface RequirementSummaryResponse {
   [key: string]: any;
-  "id": any;
-  "status": any;
-  "title": any;
-  "uid": any;
-  "wave": any;
+  "id": string;
+  "status": Status;
+  "title": string;
+  "uid": string;
+  "wave": number;
 }
 
 export interface RequirementVersionDiffResponse {
   [key: string]: any;
   "fieldChanges": Record<string, any>;
-  "fromRevision": any;
+  "fromRevision": number;
   "relationChanges": RelationChange[];
-  "requirementId": any;
-  "toRevision": any;
+  "requirementId": string;
+  "toRevision": number;
   "traceabilityLinkChanges": TraceabilityLinkChange[];
 }
 
@@ -2120,440 +2120,440 @@ export interface RequirementWithLinksResponse {
 
 export interface ResearchEgressAllowance {
   [key: string]: any;
-  "allowedForm": any;
-  "dataClass": any;
-  "destinationClass": any;
-  "purpose": any;
+  "allowedForm": "NONE" | "DERIVED_METADATA" | "SUMMARY" | "RAW_CONTENT";
+  "dataClass": "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "RESTRICTED";
+  "destinationClass": "LOCAL" | "AI_PROVIDER" | "CITATION_PROVIDER" | "VERSION_CONTROL" | "REFERENCE_MANAGER" | "BROWSER_TARGET" | "EXTERNAL_STORAGE" | "LAB_HARDWARE" | "OTHER_EXTERNAL";
+  "purpose": string;
 }
 
 export interface ResearchIntakeRequest {
   [key: string]: any;
   "allowedTools": string[];
-  "autonomyLevel": any;
-  "budgetCostUsdMicros"?: any;
-  "budgetTokens"?: any;
-  "budgetWallClockMinutes"?: any;
-  "contributionType": any;
+  "autonomyLevel": "COPILOT" | "AUTONOMOUS";
+  "budgetCostUsdMicros"?: number;
+  "budgetTokens"?: number;
+  "budgetWallClockMinutes"?: number;
+  "contributionType": "TAXONOMY" | "REVIEW" | "EMPIRICAL_STUDY" | "METHODOLOGY" | "POSITION" | "OTHER";
   "egressPolicy"?: ResearchEgressAllowance[];
-  "goal": any;
-  "intendedOutput": any;
-  "paperContext"?: any;
-  "privacyConstraints"?: any;
+  "goal": string;
+  "intendedOutput": "SCOPING_REVIEW" | "SYSTEMATIC_REVIEW" | "SYSTEMATIC_MAP" | "CRITICAL_REVIEW" | "NARRATIVE_REVIEW" | "TARGETED_RELATED_WORK" | "TAXONOMY_PAPER" | "OTHER";
+  "paperContext"?: string;
+  "privacyConstraints"?: string;
 }
 
 export interface ResearchIntakeResponse {
   [key: string]: any;
   "allowedTools": string[];
-  "autonomyLevel": any;
-  "budgetCostUsdMicros": any;
-  "budgetTokens": any;
-  "budgetWallClockMinutes": any;
-  "contributionType": any;
-  "createdAt": any;
+  "autonomyLevel": "COPILOT" | "AUTONOMOUS";
+  "budgetCostUsdMicros": number;
+  "budgetTokens": number;
+  "budgetWallClockMinutes": number;
+  "contributionType": "TAXONOMY" | "REVIEW" | "EMPIRICAL_STUDY" | "METHODOLOGY" | "POSITION" | "OTHER";
+  "createdAt": string;
   "egressPolicy": ResearchEgressAllowance[];
-  "goal": any;
-  "id": any;
-  "intendedOutput": any;
-  "paperContext": any;
-  "privacyConstraints": any;
-  "updatedAt": any;
+  "goal": string;
+  "id": string;
+  "intendedOutput": "SCOPING_REVIEW" | "SYSTEMATIC_REVIEW" | "SYSTEMATIC_MAP" | "CRITICAL_REVIEW" | "NARRATIVE_REVIEW" | "TARGETED_RELATED_WORK" | "TAXONOMY_PAPER" | "OTHER";
+  "paperContext": string;
+  "privacyConstraints": string;
+  "updatedAt": string;
 }
 
 export interface ResearchRunArtifactResponse {
   [key: string]: any;
-  "actor": any;
-  "artifactType": any;
-  "attemptNo": any;
-  "contentHash": any;
-  "createdAt": any;
-  "dataClass": any;
-  "id": any;
-  "idempotencyKey": any;
-  "locator": any;
-  "stage": any;
-  "status": any;
-  "supersededByArtifactId": any;
-  "updatedAt": any;
+  "actor": string;
+  "artifactType": "METHODOLOGY_REQUIREMENTS" | "PROTOCOL_PLAN" | "SEARCH_LOG" | "SCREENING_RESULT" | "CHARTING_DATA" | "SYNTHESIS" | "ARGUMENT_MAP" | "MANUSCRIPT";
+  "attemptNo": number;
+  "contentHash": string;
+  "createdAt": string;
+  "dataClass": "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "RESTRICTED";
+  "id": string;
+  "idempotencyKey": string;
+  "locator": string;
+  "stage": "METHODOLOGY_SELECTION" | "PROTOCOL_PLANNING" | "SOURCE_SEARCH" | "SCREENING" | "CHARTING" | "SYNTHESIS" | "ARGUMENT_CONSTRUCTION" | "PROSE_DRAFTING";
+  "status": "ACTIVE" | "SUPERSEDED" | "FAILED";
+  "supersededByArtifactId": string;
+  "updatedAt": string;
 }
 
 export interface ResearchRunDisclosureEntryResponse {
   [key: string]: any;
-  "actor": any;
-  "createdAt": any;
-  "decisionLogId": any;
-  "disclosureId": any;
-  "family": any;
-  "id": any;
-  "locator": any;
-  "modelLabel": any;
-  "rationaleEntryId": any;
-  "reviewCommentId": any;
-  "sectionKey": any;
-  "summary": any;
-  "uncertaintyCategory": any;
-  "updatedAt": any;
+  "actor": string;
+  "createdAt": string;
+  "decisionLogId": string;
+  "disclosureId": string;
+  "family": "AI_GENERATED_PART" | "UNRESOLVED_UNCERTAINTY";
+  "id": string;
+  "locator": string;
+  "modelLabel": string;
+  "rationaleEntryId": string;
+  "reviewCommentId": string;
+  "sectionKey": string;
+  "summary": string;
+  "uncertaintyCategory": "SCIENTIFIC" | "ACCESS_GAP" | "WORKFLOW_ERROR" | "UNRESOLVED_REVIEW";
+  "updatedAt": string;
 }
 
 export interface ResearchRunDisclosureResponse {
   [key: string]: any;
-  "actor": any;
-  "aiPartsDeclaredNone": any;
-  "createdAt": any;
-  "finalArtifactId": any;
-  "finalAttemptNo": any;
-  "humanApprovalsDeclaredNone": any;
-  "id": any;
-  "status": any;
-  "uncertaintyDeclaredNone": any;
-  "updatedAt": any;
+  "actor": string;
+  "aiPartsDeclaredNone": boolean;
+  "createdAt": string;
+  "finalArtifactId": string;
+  "finalAttemptNo": number;
+  "humanApprovalsDeclaredNone": boolean;
+  "id": string;
+  "status": "CURRENT" | "STALE";
+  "uncertaintyDeclaredNone": boolean;
+  "updatedAt": string;
 }
 
 export interface ResearchRunGateDecisionLogResponse {
   [key: string]: any;
-  "artifactAttemptNo": any;
-  "createdAt": any;
-  "decidedAt": any;
-  "decisionActor": any;
-  "decisionOutcome": any;
-  "gatePoint": any;
-  "guardedStage": any;
-  "id": any;
-  "policyBasis": any;
-  "questionKey": any;
-  "rationaleSummary": any;
-  "recommendationOptionId": any;
-  "recommendationProvenance": any;
-  "recommendationSummary": any;
-  "selectedOptionId": any;
-  "sourceActionId": any;
-  "updatedAt": any;
+  "artifactAttemptNo": number;
+  "createdAt": string;
+  "decidedAt": string;
+  "decisionActor": string;
+  "decisionOutcome": "APPROVED" | "REJECTED" | "AUTO_ACCEPTED";
+  "gatePoint": "METHOD_DECISION" | "PROTOCOL_DECISION" | "SEARCH_DECISION" | "SYNTHESIS_DECISION" | "WRITING_DECISION";
+  "guardedStage": "METHODOLOGY_SELECTION" | "PROTOCOL_PLANNING" | "SOURCE_SEARCH" | "SCREENING" | "CHARTING" | "SYNTHESIS" | "ARGUMENT_CONSTRUCTION" | "PROSE_DRAFTING";
+  "id": string;
+  "policyBasis": string;
+  "questionKey": string;
+  "rationaleSummary": string;
+  "recommendationOptionId": string;
+  "recommendationProvenance": "AGENT" | "SYSTEM_POLICY" | "HUMAN_REVIEWER";
+  "recommendationSummary": string;
+  "selectedOptionId": string;
+  "sourceActionId": string;
+  "updatedAt": string;
 }
 
 export interface ResearchRunGateResponse {
   [key: string]: any;
-  "behavior": any;
-  "createdAt": any;
-  "decisionOutcome": any;
-  "gatePoint": any;
-  "guardedStageExit": any;
-  "id": any;
-  "policyBasis": any;
-  "rationaleSummary": any;
-  "resolvedByActor": any;
-  "selectedOptionId": any;
-  "status": any;
-  "updatedAt": any;
+  "behavior": "REQUIRE_HUMAN" | "AUTONOMOUS_DEFAULT" | "DISABLED";
+  "createdAt": string;
+  "decisionOutcome": "APPROVED" | "REJECTED" | "AUTO_ACCEPTED";
+  "gatePoint": "METHOD_DECISION" | "PROTOCOL_DECISION" | "SEARCH_DECISION" | "SYNTHESIS_DECISION" | "WRITING_DECISION";
+  "guardedStageExit": "METHODOLOGY_SELECTION" | "PROTOCOL_PLANNING" | "SOURCE_SEARCH" | "SCREENING" | "CHARTING" | "SYNTHESIS" | "ARGUMENT_CONSTRUCTION" | "PROSE_DRAFTING";
+  "id": string;
+  "policyBasis": string;
+  "rationaleSummary": string;
+  "resolvedByActor": string;
+  "selectedOptionId": string;
+  "status": "PENDING" | "RESOLVED";
+  "updatedAt": string;
 }
 
 export interface ResearchRunMethodologySelectionResponse {
   [key: string]: any;
-  "actor": any;
-  "catalogVersion": any;
-  "createdAt": any;
-  "id": any;
-  "methodKey": any;
-  "methodLabel": any;
-  "profileVersion": any;
-  "supersededAt": any;
+  "actor": string;
+  "catalogVersion": string;
+  "createdAt": string;
+  "id": string;
+  "methodKey": string;
+  "methodLabel": string;
+  "profileVersion": string;
+  "supersededAt": string;
 }
 
 export interface ResearchRunMethodologySourceResponse {
   [key: string]: any;
-  "actor": any;
-  "createdAt": any;
-  "id": any;
-  "required": any;
-  "selectionId": any;
-  "sourceLabel": any;
-  "sourceRef": any;
-  "state": any;
-  "updatedAt": any;
+  "actor": string;
+  "createdAt": string;
+  "id": string;
+  "required": boolean;
+  "selectionId": string;
+  "sourceLabel": string;
+  "sourceRef": string;
+  "state": "ATTEMPTED" | "OBTAINED" | "READ" | "BLOCKED";
+  "updatedAt": string;
 }
 
 export interface ResearchRunRationaleEntryResponse {
   [key: string]: any;
-  "actor": any;
-  "artifactId": any;
-  "artifactType": any;
-  "attemptNo": any;
-  "confidenceSummary": any;
-  "createdAt": any;
-  "evidenceBasis": any;
-  "evidenceLocator": any;
-  "gatePoint": any;
-  "id": any;
-  "kind": any;
-  "provenance": any;
-  "rationaleSummary": any;
-  "recordedAt": any;
-  "stage": any;
-  "subjectKey": any;
-  "updatedAt": any;
+  "actor": string;
+  "artifactId": string;
+  "artifactType": "METHODOLOGY_REQUIREMENTS" | "PROTOCOL_PLAN" | "SEARCH_LOG" | "SCREENING_RESULT" | "CHARTING_DATA" | "SYNTHESIS" | "ARGUMENT_MAP" | "MANUSCRIPT";
+  "attemptNo": number;
+  "confidenceSummary": string;
+  "createdAt": string;
+  "evidenceBasis": "METHODOLOGY_SOURCE" | "USER_DECISION" | "CITED_SOURCE" | "FULL_TEXT_SPAN" | "CHARTED_CELL" | "EVIDENCE_MATRIX_CELL" | "ARGUMENT_MAP_PREMISE" | "MANUSCRIPT_CITATION" | "POLICY_DEFAULT" | "EXPLICIT_LIMITATION";
+  "evidenceLocator": string;
+  "gatePoint": "METHOD_DECISION" | "PROTOCOL_DECISION" | "SEARCH_DECISION" | "SYNTHESIS_DECISION" | "WRITING_DECISION";
+  "id": string;
+  "kind": "METHODOLOGY_CHOICE" | "SEARCH_DECISION" | "EXCLUSION" | "CHARTED_VALUE" | "SYNTHESIS_CLAIM" | "WRITING_CLAIM";
+  "provenance": "HUMAN" | "AGENT_RECOMMENDATION" | "AUTONOMOUS_DEFAULT" | "IMPORTED_ARTIFACT" | "ADAPTER";
+  "rationaleSummary": string;
+  "recordedAt": string;
+  "stage": "METHODOLOGY_SELECTION" | "PROTOCOL_PLANNING" | "SOURCE_SEARCH" | "SCREENING" | "CHARTING" | "SYNTHESIS" | "ARGUMENT_CONSTRUCTION" | "PROSE_DRAFTING";
+  "subjectKey": string;
+  "updatedAt": string;
 }
 
 export interface ResearchRunRequest {
   [key: string]: any;
-  "autonomyLevel"?: any;
+  "autonomyLevel"?: "COPILOT" | "AUTONOMOUS";
   "gateOverrides"?: Record<string, any>;
-  "intendedOutput"?: any;
-  "uid": any;
+  "intendedOutput"?: "SCOPING_REVIEW" | "SYSTEMATIC_REVIEW" | "SYSTEMATIC_MAP" | "CRITICAL_REVIEW" | "NARRATIVE_REVIEW" | "TARGETED_RELATED_WORK" | "TAXONOMY_PAPER" | "OTHER";
+  "uid": string;
 }
 
 export interface ResearchRunResponse {
   [key: string]: any;
   "allowedTools": string[];
-  "autonomyLevel": any;
-  "budgetCostUsdMicros": any;
-  "budgetTokens": any;
-  "budgetWallClockMinutes": any;
-  "createdAt": any;
-  "currentStage": any;
+  "autonomyLevel": "COPILOT" | "AUTONOMOUS";
+  "budgetCostUsdMicros": number;
+  "budgetTokens": number;
+  "budgetWallClockMinutes": number;
+  "createdAt": string;
+  "currentStage": "METHODOLOGY_SELECTION" | "PROTOCOL_PLANNING" | "SOURCE_SEARCH" | "SCREENING" | "CHARTING" | "SYNTHESIS" | "ARGUMENT_CONSTRUCTION" | "PROSE_DRAFTING";
   "egressPolicy": ResearchEgressAllowance[];
-  "id": any;
-  "intendedOutput": any;
-  "observedCostUsdMicros": any;
-  "observedTokens": any;
-  "ownerActor": any;
-  "privacyConstraints": any;
-  "projectIdentifier": any;
-  "startedAt": any;
-  "status": any;
-  "stoppedAt": any;
-  "uid": any;
-  "updatedAt": any;
+  "id": string;
+  "intendedOutput": "SCOPING_REVIEW" | "SYSTEMATIC_REVIEW" | "SYSTEMATIC_MAP" | "CRITICAL_REVIEW" | "NARRATIVE_REVIEW" | "TARGETED_RELATED_WORK" | "TAXONOMY_PAPER" | "OTHER";
+  "observedCostUsdMicros": number;
+  "observedTokens": number;
+  "ownerActor": string;
+  "privacyConstraints": string;
+  "projectIdentifier": string;
+  "startedAt": string;
+  "status": "IN_PROGRESS" | "BLOCKED" | "STOPPED" | "FAILED" | "COMPLETED";
+  "stoppedAt": string;
+  "uid": string;
+  "updatedAt": string;
 }
 
 export interface ResearchRunReviewCommentResponse {
   [key: string]: any;
-  "authorActor": any;
-  "body": any;
-  "createdAt": any;
-  "id": any;
-  "provenance": any;
-  "resolutionSummary": any;
-  "resolvedByActor": any;
-  "status": any;
-  "targetArtifactId": any;
-  "targetDecisionLogId": any;
-  "targetGatePoint": any;
-  "targetStage": any;
-  "targetType": any;
-  "updatedAt": any;
+  "authorActor": string;
+  "body": string;
+  "createdAt": string;
+  "id": string;
+  "provenance": "HUMAN_REVIEW" | "AGENT_RECOMMENDATION" | "SYSTEM_CHECK";
+  "resolutionSummary": string;
+  "resolvedByActor": string;
+  "status": "OPEN" | "RESOLVED";
+  "targetArtifactId": string;
+  "targetDecisionLogId": string;
+  "targetGatePoint": "METHOD_DECISION" | "PROTOCOL_DECISION" | "SEARCH_DECISION" | "SYNTHESIS_DECISION" | "WRITING_DECISION";
+  "targetStage": "METHODOLOGY_SELECTION" | "PROTOCOL_PLANNING" | "SOURCE_SEARCH" | "SCREENING" | "CHARTING" | "SYNTHESIS" | "ARGUMENT_CONSTRUCTION" | "PROSE_DRAFTING";
+  "targetType": "RUN" | "GATE_POINT" | "STAGE" | "ARTIFACT" | "DECISION_LOG";
+  "updatedAt": string;
 }
 
 export interface ResearchRunSnapshotResponse {
   [key: string]: any;
   "artifactReadiness": ArtifactReadiness[];
   "cost": Cost;
-  "currentStage": any;
+  "currentStage": "METHODOLOGY_SELECTION" | "PROTOCOL_PLANNING" | "SOURCE_SEARCH" | "SCREENING" | "CHARTING" | "SYNTHESIS" | "ARGUMENT_CONSTRUCTION" | "PROSE_DRAFTING";
   "lastError": LastError;
   "pendingGates": PendingGate[];
-  "projectIdentifier": any;
-  "runId": any;
+  "projectIdentifier": string;
+  "runId": string;
   "sourceCounts": SourceCounts;
-  "status": any;
-  "uid": any;
+  "status": "IN_PROGRESS" | "BLOCKED" | "STOPPED" | "FAILED" | "COMPLETED";
+  "uid": string;
 }
 
 export interface ResolvePackRequest {
   [key: string]: any;
-  "packId": any;
-  "versionConstraint"?: any;
+  "packId": string;
+  "versionConstraint"?: string;
 }
 
 export interface ResolveReviewCommentRequest {
   [key: string]: any;
-  "resolutionSummary"?: any;
+  "resolutionSummary"?: string;
 }
 
 export interface ResolvedPackResponse {
   [key: string]: any;
-  "compatible": any;
+  "compatible": boolean;
   "entry": PackRegistryEntryResponse;
-  "resolvedChecksum": any;
+  "resolvedChecksum": string;
   "resolvedDependencies": ResolvedPackResponse[];
-  "resolvedSource": any;
-  "resolvedVersion": any;
+  "resolvedSource": string;
+  "resolvedVersion": string;
 }
 
 export interface RiskControlMappingRequest {
   [key: string]: any;
-  "controlId"?: any;
-  "controlRole": any;
-  "mappingObjective"?: any;
-  "mappingScope"?: any;
+  "controlId"?: string;
+  "controlRole": "PREVENTIVE" | "DETECTIVE" | "CORRECTIVE" | "DETERRENT" | "COMPENSATING" | "RECOVERY" | "DIRECTIVE";
+  "mappingObjective"?: string;
+  "mappingScope"?: string;
   "methodologyInfluence"?: Record<string, any>;
-  "operationalAssetId"?: any;
-  "riskScenarioId"?: any;
-  "scopedImplementationId"?: any;
-  "threatModelId"?: any;
+  "operationalAssetId"?: string;
+  "riskScenarioId"?: string;
+  "scopedImplementationId"?: string;
+  "threatModelId"?: string;
 }
 
 export interface RiskControlMappingResponse {
   [key: string]: any;
-  "controlId": any;
-  "controlRole": any;
-  "createdAt": any;
-  "id": any;
-  "mappingObjective": any;
-  "mappingScope": any;
+  "controlId": string;
+  "controlRole": "PREVENTIVE" | "DETECTIVE" | "CORRECTIVE" | "DETERRENT" | "COMPENSATING" | "RECOVERY" | "DIRECTIVE";
+  "createdAt": string;
+  "id": string;
+  "mappingObjective": string;
+  "mappingScope": string;
   "methodologyInfluence": Record<string, any>;
-  "operationalAssetId": any;
-  "projectId": any;
-  "riskScenarioId": any;
-  "scopedImplementationId": any;
-  "threatModelId": any;
-  "updatedAt": any;
+  "operationalAssetId": string;
+  "projectId": string;
+  "riskScenarioId": string;
+  "scopedImplementationId": string;
+  "threatModelId": string;
+  "updatedAt": string;
 }
 
 export interface RiskScenarioLinkRequest {
   [key: string]: any;
-  "linkType": any;
-  "targetEntityId"?: any;
-  "targetIdentifier"?: any;
-  "targetTitle"?: any;
-  "targetType": any;
-  "targetUrl"?: any;
+  "linkType": "MITIGATED_BY" | "EXPLOITS" | "AFFECTS" | "EVIDENCED_BY" | "GOVERNED_BY" | "ASSESSED_IN" | "REGISTERED_IN" | "OBSERVED_IN" | "ASSOCIATED";
+  "targetEntityId"?: string;
+  "targetIdentifier"?: string;
+  "targetTitle"?: string;
+  "targetType": "THREAT_MODEL" | "VULNERABILITY" | "CONTROL" | "FINDING" | "EVIDENCE" | "AUDIT_RECORD" | "RISK_REGISTER_RECORD" | "RISK_ASSESSMENT_RESULT" | "TREATMENT_PLAN" | "METHODOLOGY_PROFILE" | "OBSERVATION" | "ASSET" | "REQUIREMENT" | "EXTERNAL";
+  "targetUrl"?: string;
 }
 
 export interface RiskScenarioLinkResponse {
   [key: string]: any;
-  "createdAt": any;
-  "id": any;
-  "linkType": any;
-  "riskScenarioId": any;
-  "targetEntityId": any;
-  "targetIdentifier": any;
-  "targetTitle": any;
-  "targetType": any;
-  "targetUrl": any;
-  "updatedAt": any;
+  "createdAt": string;
+  "id": string;
+  "linkType": "MITIGATED_BY" | "EXPLOITS" | "AFFECTS" | "EVIDENCED_BY" | "GOVERNED_BY" | "ASSESSED_IN" | "REGISTERED_IN" | "OBSERVED_IN" | "ASSOCIATED";
+  "riskScenarioId": string;
+  "targetEntityId": string;
+  "targetIdentifier": string;
+  "targetTitle": string;
+  "targetType": "THREAT_MODEL" | "VULNERABILITY" | "CONTROL" | "FINDING" | "EVIDENCE" | "AUDIT_RECORD" | "RISK_REGISTER_RECORD" | "RISK_ASSESSMENT_RESULT" | "TREATMENT_PLAN" | "METHODOLOGY_PROFILE" | "OBSERVATION" | "ASSET" | "REQUIREMENT" | "EXTERNAL";
+  "targetUrl": string;
+  "updatedAt": string;
 }
 
 export interface RiskScenarioRequest {
   [key: string]: any;
-  "asset": any;
-  "effect": any;
-  "method": any;
-  "threat": any;
-  "timeHorizon": any;
-  "title": any;
-  "uid": any;
+  "asset": string;
+  "effect": string;
+  "method": string;
+  "threat": string;
+  "timeHorizon": string;
+  "title": string;
+  "uid": string;
 }
 
 export interface RiskScenarioResponse {
   [key: string]: any;
-  "asset": any;
-  "createdAt": any;
-  "createdBy": any;
-  "effect": any;
-  "fairSentence": any;
-  "graphNodeId": any;
-  "id": any;
-  "method": any;
-  "projectIdentifier": any;
-  "status": any;
-  "threat": any;
-  "timeHorizon": any;
-  "title": any;
-  "uid": any;
-  "updatedAt": any;
+  "asset": string;
+  "createdAt": string;
+  "createdBy": string;
+  "effect": string;
+  "fairSentence": string;
+  "graphNodeId": string;
+  "id": string;
+  "method": string;
+  "projectIdentifier": string;
+  "status": "DRAFT" | "ACTIVE" | "ARCHIVED";
+  "threat": string;
+  "timeHorizon": string;
+  "title": string;
+  "uid": string;
+  "updatedAt": string;
 }
 
 export interface RiskScenarioStatusTransitionRequest {
   [key: string]: any;
-  "status": any;
+  "status": "DRAFT" | "ACTIVE" | "ARCHIVED";
 }
 
 export interface ScenarioSummary {
   [key: string]: any;
-  "id": any;
-  "title": any;
-  "uid": any;
+  "id": string;
+  "title": string;
+  "uid": string;
 }
 
 export interface ScopedControlImplementationRequest {
   [key: string]: any;
-  "controlId": any;
-  "implementationScope"?: any;
-  "name": any;
-  "operationalAssetId"?: any;
-  "uid": any;
+  "controlId": string;
+  "implementationScope"?: string;
+  "name": string;
+  "operationalAssetId"?: string;
+  "uid": string;
 }
 
 export interface ScopedControlImplementationResponse {
   [key: string]: any;
-  "controlId": any;
-  "controlUid": any;
-  "createdAt": any;
-  "id": any;
-  "implementationScope": any;
-  "name": any;
-  "operationalAssetId": any;
-  "uid": any;
-  "updatedAt": any;
+  "controlId": string;
+  "controlUid": string;
+  "createdAt": string;
+  "id": string;
+  "implementationScope": string;
+  "name": string;
+  "operationalAssetId": string;
+  "uid": string;
+  "updatedAt": string;
 }
 
 export interface SectionContentRequest {
   [key: string]: any;
-  "contentType": any;
-  "requirementId"?: any;
-  "sortOrder"?: any;
-  "textContent"?: any;
+  "contentType": "REQUIREMENT" | "TEXT_BLOCK";
+  "requirementId"?: string;
+  "sortOrder"?: number;
+  "textContent"?: string;
 }
 
 export interface SectionContentResponse {
   [key: string]: any;
-  "contentType": any;
-  "createdAt": any;
-  "id": any;
-  "requirementId": any;
-  "requirementUid": any;
-  "sectionId": any;
-  "sortOrder": any;
-  "textContent": any;
-  "updatedAt": any;
+  "contentType": string;
+  "createdAt": string;
+  "id": string;
+  "requirementId": string;
+  "requirementUid": string;
+  "sectionId": string;
+  "sortOrder": number;
+  "textContent": string;
+  "updatedAt": string;
 }
 
 export interface SectionNode {
   [key: string]: any;
   "content": ContentItem[];
-  "description": any;
-  "id": any;
-  "sortOrder": any;
-  "title": any;
+  "description": string;
+  "id": string;
+  "sortOrder": number;
+  "title": string;
 }
 
 export interface SectionRequest {
   [key: string]: any;
-  "contentSummary": any;
-  "sectionKey": any;
-  "sectionKind": any;
-  "sourceRole"?: any;
+  "contentSummary": string;
+  "sectionKey": string;
+  "sectionKind": "PCC_SCOPE_FRAMING" | "INFORMATION_SOURCES" | "SEARCH_STRATEGY" | "ELIGIBILITY_CRITERIA" | "DATABASES_SEARCH_STRINGS" | "SCREENING" | "DATA_EXTRACTION" | "CHARTING" | "RISK_OF_BIAS_POSTURE" | "SYNTHESIS_PLAN" | "SYNTHESIS_REPORTING" | "REPORTING_STANDARD" | "CERTAINTY_CLAIM_LIMITS" | "CONSULTATION_POSTURE" | "CRITICAL_APPRAISAL_DECISION" | "PROTOCOL_REGISTRATION" | "MAPPING_QUESTIONS" | "SEARCH_SCREENING_PLAN" | "CODING_MAP_SCHEMA" | "CLASSIFICATION_PROVENANCE" | "VISUALIZATION_OUTPUT" | "CLAIM_LIMITS" | "THEORETICAL_FRAME" | "SELECTION_RATIONALE" | "APPRAISAL_CRITIQUE_DIMENSIONS" | "SYNTHESIS_ARGUMENT_POSTURE" | "INCLUSION_LIMITS" | "BOUNDED_PURPOSE" | "SEED_SOURCE_STRATEGY" | "INCLUSION_RATIONALE" | "COMPARISON_DIMENSIONS" | "NON_EXHAUSTIVENESS_DISCLOSURE" | "META_CHARACTERISTIC" | "UNIT_OF_ANALYSIS" | "SOURCE_ROLES" | "STARTING_CONCEPTS" | "CONSTRUCTION_PROCEDURE" | "ITERATION_LOG_PROTOCOL" | "ENDING_CONDITIONS" | "EVALUATION_PLAN" | "VALIDITY_THREATS" | "METHOD_LIMITS" | "NON_CLAIMS";
+  "sourceRole"?: "TAXONOMY_INSTANCE_CORPUS" | "BACKGROUND_FRAMING" | "METHODOLOGY_LITERATURE" | "VALIDATION_EVALUATION";
 }
 
 export interface SectionResponse {
   [key: string]: any;
-  "createdAt": any;
-  "description": any;
-  "documentId": any;
-  "id": any;
-  "parentId": any;
-  "sortOrder": any;
-  "title": any;
-  "updatedAt": any;
+  "createdAt": string;
+  "description": string;
+  "documentId": string;
+  "id": string;
+  "parentId": string;
+  "sortOrder": number;
+  "title": string;
+  "updatedAt": string;
 }
 
 export interface SectionTreeResponse {
   [key: string]: any;
   "children": SectionTreeResponse[];
-  "createdAt": any;
-  "description": any;
-  "id": any;
-  "parentId": any;
-  "sortOrder": any;
-  "title": any;
-  "updatedAt": any;
+  "createdAt": string;
+  "description": string;
+  "id": string;
+  "parentId": string;
+  "sortOrder": number;
+  "title": string;
+  "updatedAt": string;
 }
 
 export interface SecurityTraceResponse {
@@ -2561,15 +2561,15 @@ export interface SecurityTraceResponse {
   "assets": TracedAsset[];
   "controls": TracedControl[];
   "requirements": TracedRequirement[];
-  "sourceId": any;
-  "sourceTitle": any;
-  "sourceType": any;
-  "sourceUid": any;
+  "sourceId": string;
+  "sourceTitle": string;
+  "sourceType": "THREAT_MODEL" | "RISK_SCENARIO";
+  "sourceUid": string;
 }
 
 export interface SelectMethodologyRequest {
   [key: string]: any;
-  "methodKey": any;
+  "methodKey": string;
 }
 
 export interface SessionResponse {
@@ -2581,74 +2581,74 @@ export interface SessionResponse {
 
 export interface SimilarityPairResponse {
   [key: string]: any;
-  "score": any;
-  "title1": any;
-  "title2": any;
-  "uid1": any;
-  "uid2": any;
+  "score": number;
+  "title1": string;
+  "title2": string;
+  "uid1": string;
+  "uid2": string;
 }
 
 export interface SimilarityResultResponse {
   [key: string]: any;
-  "embeddedCount": any;
+  "embeddedCount": number;
   "pairs": SimilarityPairResponse[];
-  "pairsAnalyzed": any;
-  "threshold": any;
-  "totalRequirements": any;
+  "pairsAnalyzed": number;
+  "threshold": number;
+  "totalRequirements": number;
 }
 
 export interface SortObject {
   [key: string]: any;
-  "empty": any;
-  "sorted": any;
-  "unsorted": any;
+  "empty": boolean;
+  "sorted": boolean;
+  "unsorted": boolean;
 }
 
 export interface SourceCounts {
   [key: string]: any;
-  "accessGaps": any;
-  "candidateSources": any;
-  "chartedFullText": any;
-  "screenedExcluded": any;
-  "screenedIncluded": any;
+  "accessGaps": number;
+  "candidateSources": number;
+  "chartedFullText": number;
+  "screenedExcluded": number;
+  "screenedIncluded": number;
 }
 
 export interface SourceLinkRequest {
   [key: string]: any;
-  "locator"?: any;
-  "sourceId": any;
+  "locator"?: string;
+  "sourceId": string;
 }
 
 export interface SourceLinkResponse {
   [key: string]: any;
-  "locator": any;
-  "sourceId": any;
-  "sourceRef": any;
+  "locator": string;
+  "sourceId": string;
+  "sourceRef": string;
 }
 
 export interface StationYieldRow {
   [key: string]: any;
-  "evaluableAttempts": any;
-  "firstPassDenominator": any;
-  "firstPassNumerator": any;
-  "firstPassYield": any;
+  "evaluableAttempts": number;
+  "firstPassDenominator": number;
+  "firstPassNumerator": number;
+  "firstPassYield": number;
   "iterationsToGreen": Record<string, any>;
-  "reworkAttempts": any;
-  "stationId": any;
-  "unresolvedRuns": any;
+  "reworkAttempts": number;
+  "stationId": string;
+  "unresolvedRuns": number;
 }
 
 export interface StatusDriftResponse {
   [key: string]: any;
-  "draftRequirementsScanned": any;
+  "draftRequirementsScanned": number;
   "findings": FindingRef[];
-  "minimumConfidence": any;
+  "minimumConfidence": "LOW" | "MEDIUM" | "HIGH";
 }
 
 export interface StatusTransitionRequest {
   [key: string]: any;
-  "reason"?: any;
-  "status": any;
+  "reason"?: string;
+  "status": "DRAFT" | "ACTIVE" | "DEPRECATED" | "ARCHIVED";
 }
 
 export interface SubgraphRequest {
@@ -2661,8 +2661,8 @@ export interface SubgraphResponse {
   "edges": GraphEdgeResponse[];
   "nodes": GraphVisualizationNodeResponse[];
   "rootNodeIds": string[];
-  "totalEdges": any;
-  "totalNodes": any;
+  "totalEdges": number;
+  "totalNodes": number;
 }
 
 export interface SweepReportResponse {
@@ -2672,13 +2672,13 @@ export interface SweepReportResponse {
   "coverageGaps": Record<string, any>;
   "crossWaveViolations": CrossWaveViolationRef[];
   "cycles": CycleResponse[];
-  "hasProblems": any;
+  "hasProblems": boolean;
   "orphans": RequirementRef[];
-  "projectIdentifier": any;
+  "projectIdentifier": string;
   "qualityGateResults": QualityGateEvaluationResponse;
   "statusDrift": FindingRef[];
-  "timestamp": any;
-  "totalProblems": any;
+  "timestamp": string;
+  "totalProblems": number;
 }
 
 export type SyncError = string;
@@ -2686,496 +2686,496 @@ export type SyncError = string;
 export interface SyncResultResponse {
   [key: string]: any;
   "errors": SyncError[];
-  "issuesCreated": any;
-  "issuesFetched": any;
-  "issuesUpdated": any;
-  "linksUpdated": any;
-  "syncedAt": any;
-  "syncId": any;
+  "issuesCreated": number;
+  "issuesFetched": number;
+  "issuesUpdated": number;
+  "linksUpdated": number;
+  "syncedAt": string;
+  "syncId": string;
 }
 
 export interface TestCaseFolderRequest {
   [key: string]: any;
-  "description"?: any;
-  "parentFolderId"?: any;
-  "sortOrder"?: any;
-  "title": any;
+  "description"?: string;
+  "parentFolderId"?: string;
+  "sortOrder"?: number;
+  "title": string;
 }
 
 export interface TestCaseFolderResponse {
   [key: string]: any;
-  "createdAt": any;
-  "description": any;
-  "id": any;
-  "parentFolderId": any;
-  "projectIdentifier": any;
-  "sortOrder": any;
-  "title": any;
-  "updatedAt": any;
+  "createdAt": string;
+  "description": string;
+  "id": string;
+  "parentFolderId": string;
+  "projectIdentifier": string;
+  "sortOrder": number;
+  "title": string;
+  "updatedAt": string;
 }
 
 export interface TestCaseGherkinRequest {
   [key: string]: any;
-  "source": any;
+  "source": string;
 }
 
 export interface TestCaseGherkinResponse {
   [key: string]: any;
-  "createdAt": any;
-  "id": any;
-  "source": any;
-  "testCaseId": any;
-  "updatedAt": any;
+  "createdAt": string;
+  "id": string;
+  "source": string;
+  "testCaseId": string;
+  "updatedAt": string;
 }
 
 export interface TestCaseLeaf {
   [key: string]: any;
-  "format": any;
-  "priority": any;
-  "status": any;
-  "type": any;
-  "uid": any;
+  "format": "STEP_BASED" | "GHERKIN";
+  "priority": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  "status": "DRAFT" | "APPROVED" | "DEPRECATED" | "ARCHIVED";
+  "type": "MANUAL" | "AUTOMATED" | "HYBRID";
+  "uid": string;
 }
 
 export interface TestCaseRequest {
   [key: string]: any;
-  "description"?: any;
-  "estimatedDurationSeconds"?: any;
-  "format"?: any;
-  "parentFolderId"?: any;
-  "postconditions"?: any;
-  "preconditions"?: any;
-  "priority": any;
-  "sortOrder"?: any;
-  "title": any;
-  "type": any;
-  "uid": any;
+  "description"?: string;
+  "estimatedDurationSeconds"?: number;
+  "format"?: "STEP_BASED" | "GHERKIN";
+  "parentFolderId"?: string;
+  "postconditions"?: string;
+  "preconditions"?: string;
+  "priority": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  "sortOrder"?: number;
+  "title": string;
+  "type": "MANUAL" | "AUTOMATED" | "HYBRID";
+  "uid": string;
 }
 
 export interface TestCaseResponse {
   [key: string]: any;
-  "createdAt": any;
-  "description": any;
-  "estimatedDurationSeconds": any;
-  "format": any;
-  "id": any;
-  "parentFolderId": any;
-  "postconditions": any;
-  "preconditions": any;
-  "priority": any;
-  "projectIdentifier": any;
-  "sortOrder": any;
-  "status": any;
-  "title": any;
-  "type": any;
-  "uid": any;
-  "updatedAt": any;
+  "createdAt": string;
+  "description": string;
+  "estimatedDurationSeconds": number;
+  "format": "STEP_BASED" | "GHERKIN";
+  "id": string;
+  "parentFolderId": string;
+  "postconditions": string;
+  "preconditions": string;
+  "priority": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  "projectIdentifier": string;
+  "sortOrder": number;
+  "status": "DRAFT" | "APPROVED" | "DEPRECATED" | "ARCHIVED";
+  "title": string;
+  "type": "MANUAL" | "AUTOMATED" | "HYBRID";
+  "uid": string;
+  "updatedAt": string;
 }
 
 export interface TestCaseStatusTransitionRequest {
   [key: string]: any;
-  "status": any;
+  "status": "DRAFT" | "APPROVED" | "DEPRECATED" | "ARCHIVED";
 }
 
 export interface TestCaseStepRequest {
   [key: string]: any;
-  "action": any;
-  "actualResult"?: any;
-  "expectedResult": any;
-  "stepNumber": any;
+  "action": string;
+  "actualResult"?: string;
+  "expectedResult": string;
+  "stepNumber": number;
 }
 
 export interface TestCaseStepResponse {
   [key: string]: any;
-  "action": any;
-  "actualResult": any;
-  "createdAt": any;
-  "expectedResult": any;
-  "id": any;
-  "stepNumber": any;
-  "testCaseId": any;
-  "updatedAt": any;
+  "action": string;
+  "actualResult": string;
+  "createdAt": string;
+  "expectedResult": string;
+  "id": string;
+  "stepNumber": number;
+  "testCaseId": string;
+  "updatedAt": string;
 }
 
 export interface TestCaseTreeNodeResponse {
   [key: string]: any;
   "children": TestCaseTreeNodeResponse[];
-  "description": any;
-  "id": any;
-  "kind": any;
-  "parentFolderId": any;
-  "sortOrder": any;
+  "description": string;
+  "id": string;
+  "kind": string;
+  "parentFolderId": string;
+  "sortOrder": number;
   "testCase": TestCaseLeaf;
-  "title": any;
+  "title": string;
 }
 
 export interface TestPlanRequest {
   [key: string]: any;
-  "build"?: any;
-  "description"?: any;
-  "endDate"?: any;
-  "name": any;
-  "product"?: any;
-  "startDate"?: any;
-  "uid": any;
-  "version"?: any;
+  "build"?: string;
+  "description"?: string;
+  "endDate"?: string;
+  "name": string;
+  "product"?: string;
+  "startDate"?: string;
+  "uid": string;
+  "version"?: string;
 }
 
 export interface TestPlanResponse {
   [key: string]: any;
-  "build": any;
-  "createdAt": any;
-  "description": any;
-  "endDate": any;
-  "id": any;
-  "name": any;
-  "product": any;
-  "projectIdentifier": any;
-  "startDate": any;
-  "status": any;
-  "uid": any;
-  "updatedAt": any;
-  "version": any;
+  "build": string;
+  "createdAt": string;
+  "description": string;
+  "endDate": string;
+  "id": string;
+  "name": string;
+  "product": string;
+  "projectIdentifier": string;
+  "startDate": string;
+  "status": "DRAFT" | "ACTIVE" | "IN_PROGRESS" | "COMPLETED" | "ARCHIVED";
+  "uid": string;
+  "updatedAt": string;
+  "version": string;
 }
 
 export interface TestPlanStatusTransitionRequest {
   [key: string]: any;
-  "status": any;
+  "status": "DRAFT" | "ACTIVE" | "IN_PROGRESS" | "COMPLETED" | "ARCHIVED";
 }
 
 export interface TestRunCaseResultResponse {
   [key: string]: any;
-  "createdAt": any;
-  "id": any;
-  "notes": any;
-  "snapshotOrder": any;
-  "status": any;
-  "testCaseId": any;
-  "testCaseTitle": any;
-  "testCaseUid": any;
-  "testRunId": any;
-  "updatedAt": any;
+  "createdAt": string;
+  "id": string;
+  "notes": string;
+  "snapshotOrder": number;
+  "status": "NOT_RUN" | "PASSED" | "FAILED" | "BLOCKED" | "SKIPPED";
+  "testCaseId": string;
+  "testCaseTitle": string;
+  "testCaseUid": string;
+  "testRunId": string;
+  "updatedAt": string;
 }
 
 export interface TestRunRequest {
   [key: string]: any;
-  "build"?: any;
-  "endAt"?: any;
-  "environment"?: any;
-  "name": any;
-  "startAt"?: any;
-  "testPlanId": any;
-  "testSuiteId": any;
-  "uid": any;
-  "version"?: any;
+  "build"?: string;
+  "endAt"?: string;
+  "environment"?: string;
+  "name": string;
+  "startAt"?: string;
+  "testPlanId": string;
+  "testSuiteId": string;
+  "uid": string;
+  "version"?: string;
 }
 
 export interface TestRunResponse {
   [key: string]: any;
-  "build": any;
-  "createdAt": any;
-  "currentCaseResultId": any;
-  "currentStepResultId": any;
-  "endAt": any;
-  "environment": any;
-  "id": any;
-  "name": any;
-  "projectIdentifier": any;
-  "startAt": any;
-  "status": any;
-  "testPlanId": any;
-  "testPlanUid": any;
-  "testSuiteId": any;
-  "testSuiteUid": any;
-  "uid": any;
-  "updatedAt": any;
-  "version": any;
+  "build": string;
+  "createdAt": string;
+  "currentCaseResultId": string;
+  "currentStepResultId": string;
+  "endAt": string;
+  "environment": string;
+  "id": string;
+  "name": string;
+  "projectIdentifier": string;
+  "startAt": string;
+  "status": "PLANNED" | "IN_PROGRESS" | "COMPLETED" | "ABORTED" | "ARCHIVED";
+  "testPlanId": string;
+  "testPlanUid": string;
+  "testSuiteId": string;
+  "testSuiteUid": string;
+  "uid": string;
+  "updatedAt": string;
+  "version": string;
 }
 
 export interface TestRunStatusTransitionRequest {
   [key: string]: any;
-  "status": any;
+  "status": "PLANNED" | "IN_PROGRESS" | "COMPLETED" | "ABORTED" | "ARCHIVED";
 }
 
 export interface TestRunStepResultResponse {
   [key: string]: any;
-  "actionSnapshot": any;
-  "comment": any;
-  "createdAt": any;
-  "executedAt": any;
-  "expectedResultSnapshot": any;
-  "id": any;
-  "snapshotOrder": any;
-  "status": any;
-  "stepNumberSnapshot": any;
-  "testCaseStepId": any;
-  "testRunCaseResultId": any;
-  "updatedAt": any;
+  "actionSnapshot": string;
+  "comment": string;
+  "createdAt": string;
+  "executedAt": string;
+  "expectedResultSnapshot": string;
+  "id": string;
+  "snapshotOrder": number;
+  "status": "NOT_RUN" | "PASSED" | "FAILED" | "BLOCKED" | "SKIPPED";
+  "stepNumberSnapshot": number;
+  "testCaseStepId": string;
+  "testRunCaseResultId": string;
+  "updatedAt": string;
 }
 
 export interface TestRunTesterAssignmentResponse {
   [key: string]: any;
-  "createdAt": any;
-  "id": any;
-  "testerName": any;
-  "testRunId": any;
-  "updatedAt": any;
+  "createdAt": string;
+  "id": string;
+  "testerName": string;
+  "testRunId": string;
+  "updatedAt": string;
 }
 
 export interface TestSuiteMemberResponse {
   [key: string]: any;
-  "createdAt": any;
-  "id": any;
-  "position": any;
-  "testCaseId": any;
-  "testCaseUid": any;
-  "testSuiteId": any;
-  "updatedAt": any;
+  "createdAt": string;
+  "id": string;
+  "position": number;
+  "testCaseId": string;
+  "testCaseUid": string;
+  "testSuiteId": string;
+  "updatedAt": string;
 }
 
 export interface TestSuiteRequest {
   [key: string]: any;
-  "criteriaFolderId"?: any;
-  "criteriaFormat"?: any;
-  "criteriaPriority"?: any;
-  "criteriaStatus"?: any;
-  "criteriaTextSearch"?: any;
-  "criteriaType"?: any;
-  "description"?: any;
-  "name": any;
-  "populationMode": any;
-  "uid": any;
+  "criteriaFolderId"?: string;
+  "criteriaFormat"?: "STEP_BASED" | "GHERKIN";
+  "criteriaPriority"?: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  "criteriaStatus"?: "DRAFT" | "APPROVED" | "DEPRECATED" | "ARCHIVED";
+  "criteriaTextSearch"?: string;
+  "criteriaType"?: "MANUAL" | "AUTOMATED" | "HYBRID";
+  "description"?: string;
+  "name": string;
+  "populationMode": "STATIC" | "REQUIREMENTS_BASED" | "QUERY_BASED";
+  "uid": string;
 }
 
 export interface TestSuiteResponse {
   [key: string]: any;
-  "createdAt": any;
-  "criteriaFolderId": any;
-  "criteriaFormat": any;
-  "criteriaPriority": any;
-  "criteriaStatus": any;
-  "criteriaTextSearch": any;
-  "criteriaType": any;
-  "description": any;
-  "id": any;
-  "name": any;
-  "populationMode": any;
-  "projectIdentifier": any;
-  "uid": any;
-  "updatedAt": any;
+  "createdAt": string;
+  "criteriaFolderId": string;
+  "criteriaFormat": "STEP_BASED" | "GHERKIN";
+  "criteriaPriority": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  "criteriaStatus": "DRAFT" | "APPROVED" | "DEPRECATED" | "ARCHIVED";
+  "criteriaTextSearch": string;
+  "criteriaType": "MANUAL" | "AUTOMATED" | "HYBRID";
+  "description": string;
+  "id": string;
+  "name": string;
+  "populationMode": "STATIC" | "REQUIREMENTS_BASED" | "QUERY_BASED";
+  "projectIdentifier": string;
+  "uid": string;
+  "updatedAt": string;
 }
 
 export interface TestSuiteSourceRequirementResponse {
   [key: string]: any;
-  "createdAt": any;
-  "id": any;
-  "requirementId": any;
-  "requirementUid": any;
-  "testSuiteId": any;
-  "updatedAt": any;
+  "createdAt": string;
+  "id": string;
+  "requirementId": string;
+  "requirementUid": string;
+  "testSuiteId": string;
+  "updatedAt": string;
 }
 
 export interface ThreatModelLinkRequest {
   [key: string]: any;
-  "linkType": any;
-  "targetEntityId"?: any;
-  "targetIdentifier"?: any;
-  "targetTitle"?: any;
-  "targetType": any;
-  "targetUrl"?: any;
+  "linkType": "AFFECTS" | "EXPLOITS" | "MITIGATED_BY" | "ASSESSED_IN" | "OBSERVED_IN" | "DOCUMENTED_IN" | "ASSOCIATED";
+  "targetEntityId"?: string;
+  "targetIdentifier"?: string;
+  "targetTitle"?: string;
+  "targetType": "ASSET" | "REQUIREMENT" | "CONTROL" | "RISK_SCENARIO" | "OBSERVATION" | "RISK_ASSESSMENT_RESULT" | "VERIFICATION_RESULT" | "FINDING" | "ARCHITECTURE_MODEL" | "CODE" | "ISSUE" | "EVIDENCE" | "EXTERNAL";
+  "targetUrl"?: string;
 }
 
 export interface ThreatModelLinkResponse {
   [key: string]: any;
-  "createdAt": any;
-  "id": any;
-  "linkType": any;
-  "targetEntityId": any;
-  "targetIdentifier": any;
-  "targetTitle": any;
-  "targetType": any;
-  "targetUrl": any;
-  "threatModelId": any;
-  "updatedAt": any;
+  "createdAt": string;
+  "id": string;
+  "linkType": "AFFECTS" | "EXPLOITS" | "MITIGATED_BY" | "ASSESSED_IN" | "OBSERVED_IN" | "DOCUMENTED_IN" | "ASSOCIATED";
+  "targetEntityId": string;
+  "targetIdentifier": string;
+  "targetTitle": string;
+  "targetType": "ASSET" | "REQUIREMENT" | "CONTROL" | "RISK_SCENARIO" | "OBSERVATION" | "RISK_ASSESSMENT_RESULT" | "VERIFICATION_RESULT" | "FINDING" | "ARCHITECTURE_MODEL" | "CODE" | "ISSUE" | "EVIDENCE" | "EXTERNAL";
+  "targetUrl": string;
+  "threatModelId": string;
+  "updatedAt": string;
 }
 
 export interface ThreatModelRequest {
   [key: string]: any;
-  "effect": any;
-  "narrative"?: any;
-  "stride"?: any;
-  "threatEvent": any;
-  "threatSource": any;
-  "title": any;
-  "uid": any;
+  "effect": string;
+  "narrative"?: string;
+  "stride"?: "SPOOFING" | "TAMPERING" | "REPUDIATION" | "INFORMATION_DISCLOSURE" | "DENIAL_OF_SERVICE" | "ELEVATION_OF_PRIVILEGE";
+  "threatEvent": string;
+  "threatSource": string;
+  "title": string;
+  "uid": string;
 }
 
 export interface ThreatModelResponse {
   [key: string]: any;
-  "createdAt": any;
-  "createdBy": any;
-  "effect": any;
-  "graphNodeId": any;
-  "id": any;
-  "narrative": any;
-  "projectIdentifier": any;
-  "status": any;
-  "stride": any;
-  "threatEvent": any;
-  "threatSource": any;
-  "title": any;
-  "uid": any;
-  "updatedAt": any;
+  "createdAt": string;
+  "createdBy": string;
+  "effect": string;
+  "graphNodeId": string;
+  "id": string;
+  "narrative": string;
+  "projectIdentifier": string;
+  "status": "DRAFT" | "ACTIVE" | "ARCHIVED";
+  "stride": "SPOOFING" | "TAMPERING" | "REPUDIATION" | "INFORMATION_DISCLOSURE" | "DENIAL_OF_SERVICE" | "ELEVATION_OF_PRIVILEGE";
+  "threatEvent": string;
+  "threatSource": string;
+  "title": string;
+  "uid": string;
+  "updatedAt": string;
 }
 
 export interface ThreatModelStatusTransitionRequest {
   [key: string]: any;
-  "status": any;
+  "status": "DRAFT" | "ACTIVE" | "ARCHIVED";
 }
 
 export interface ThreatSummary {
   [key: string]: any;
-  "id": any;
-  "title": any;
-  "uid": any;
+  "id": string;
+  "title": string;
+  "uid": string;
 }
 
 export interface TimelineEntryResponse {
   [key: string]: any;
-  "actor": any;
+  "actor": string;
   "changeCategory": ChangeCategory;
   "changes": Record<string, any>;
-  "entityId": any;
-  "reason"?: any;
-  "revisionNumber": any;
-  "revisionType": any;
+  "entityId": string;
+  "reason"?: string;
+  "revisionNumber": number;
+  "revisionType": string;
   "snapshot": Record<string, any>;
-  "timestamp": any;
-  "truncated": any;
+  "timestamp": string;
+  "truncated": boolean;
 }
 
 export interface ToolUsageRow {
   [key: string]: any;
-  "count": any;
-  "errorRate": any;
-  "p50Ms": any;
-  "p95Ms": any;
-  "p99Ms": any;
-  "tool": any;
+  "count": number;
+  "errorRate": number;
+  "p50Ms": number;
+  "p95Ms": number;
+  "p99Ms": number;
+  "tool": string;
 }
 
 export interface TraceabilityLinkChange {
   [key: string]: any;
-  "changeType": any;
+  "changeType": "ADDED" | "REMOVED" | "MODIFIED";
   "fieldChanges": Record<string, any>;
-  "linkId": any;
+  "linkId": string;
   "snapshot": Record<string, any>;
 }
 
 export interface TraceabilityLinkHistoryResponse {
   [key: string]: any;
-  "actor": any;
-  "reason": any;
-  "revisionNumber": any;
-  "revisionType": any;
+  "actor": string;
+  "reason": string;
+  "revisionNumber": number;
+  "revisionType": string;
   "snapshot": TraceabilityLinkSnapshot;
-  "timestamp": any;
+  "timestamp": string;
 }
 
 export interface TraceabilityLinkRequest {
   [key: string]: any;
-  "artifactIdentifier": any;
-  "artifactTitle"?: any;
-  "artifactType": any;
-  "artifactUrl"?: any;
-  "linkType": any;
+  "artifactIdentifier": string;
+  "artifactTitle"?: string;
+  "artifactType": "GITHUB_ISSUE" | "PULL_REQUEST" | "CODE_FILE" | "ADR" | "CONFIG" | "POLICY" | "TEST" | "SPEC" | "PROOF" | "DOCUMENTATION" | "RISK_SCENARIO" | "CONTROL";
+  "artifactUrl"?: string;
+  "linkType": "IMPLEMENTS" | "TESTS" | "DOCUMENTS" | "CONSTRAINS" | "VERIFIES";
 }
 
 export interface TraceabilityLinkResponse {
   [key: string]: any;
-  "artifactIdentifier": any;
-  "artifactTitle": any;
-  "artifactType": any;
-  "artifactUrl": any;
-  "createdAt": any;
-  "id": any;
-  "lastSyncedAt": any;
-  "linkType": any;
-  "requirementId": any;
-  "syncStatus": any;
-  "updatedAt": any;
+  "artifactIdentifier": string;
+  "artifactTitle": string;
+  "artifactType": "GITHUB_ISSUE" | "PULL_REQUEST" | "CODE_FILE" | "ADR" | "CONFIG" | "POLICY" | "TEST" | "SPEC" | "PROOF" | "DOCUMENTATION" | "RISK_SCENARIO" | "CONTROL";
+  "artifactUrl": string;
+  "createdAt": string;
+  "id": string;
+  "lastSyncedAt": string | null;
+  "linkType": "IMPLEMENTS" | "TESTS" | "DOCUMENTS" | "CONSTRAINS" | "VERIFIES";
+  "requirementId": string;
+  "syncStatus": "SYNCED" | "STALE" | "BROKEN";
+  "updatedAt": string;
 }
 
 export interface TraceabilityLinkSnapshot {
   [key: string]: any;
-  "artifactIdentifier": any;
-  "artifactTitle": any;
-  "artifactType": any;
-  "artifactUrl": any;
-  "createdAt": any;
-  "id": any;
-  "linkType": any;
-  "requirementId": any;
-  "syncStatus": any;
+  "artifactIdentifier": string;
+  "artifactTitle": string;
+  "artifactType": "GITHUB_ISSUE" | "PULL_REQUEST" | "CODE_FILE" | "ADR" | "CONFIG" | "POLICY" | "TEST" | "SPEC" | "PROOF" | "DOCUMENTATION" | "RISK_SCENARIO" | "CONTROL";
+  "artifactUrl": string;
+  "createdAt": string;
+  "id": string;
+  "linkType": "IMPLEMENTS" | "TESTS" | "DOCUMENTS" | "CONSTRAINS" | "VERIFIES";
+  "requirementId": string;
+  "syncStatus": "SYNCED" | "STALE" | "BROKEN";
 }
 
 export interface TracedArtifact {
   [key: string]: any;
-  "artifactIdentifier": any;
-  "artifactTitle": any;
-  "artifactType": any;
-  "artifactUrl": any;
-  "createdAt": any;
-  "id": any;
-  "lastSyncedAt": any;
-  "linkType": any;
-  "requirementId": any;
-  "syncStatus": any;
-  "updatedAt": any;
+  "artifactIdentifier": string;
+  "artifactTitle": string;
+  "artifactType": "GITHUB_ISSUE" | "PULL_REQUEST" | "CODE_FILE" | "ADR" | "CONFIG" | "POLICY" | "TEST" | "SPEC" | "PROOF" | "DOCUMENTATION" | "RISK_SCENARIO" | "CONTROL";
+  "artifactUrl": string;
+  "createdAt": string;
+  "id": string;
+  "lastSyncedAt": string;
+  "linkType": "IMPLEMENTS" | "TESTS" | "DOCUMENTS" | "CONSTRAINS" | "VERIFIES";
+  "requirementId": string;
+  "syncStatus": "SYNCED" | "STALE" | "BROKEN";
+  "updatedAt": string;
 }
 
 export interface TracedAsset {
   [key: string]: any;
-  "archivedAt": any;
-  "assetType": any;
-  "businessContext": any;
-  "createdAt": any;
-  "criticality": any;
-  "description": any;
-  "environment": any;
-  "graphNodeId": any;
-  "id": any;
-  "knowledgeState": any;
+  "archivedAt": string;
+  "assetType": "APPLICATION" | "SERVICE" | "SYSTEM" | "DATABASE" | "NETWORK" | "HOST" | "CONTAINER" | "IDENTITY" | "DATA_STORE" | "ENDPOINT" | "INTEGRATION" | "WORKLOAD" | "THIRD_PARTY" | "BOUNDARY" | "OTHER";
+  "businessContext": string;
+  "createdAt": string;
+  "criticality": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  "description": string;
+  "environment": "PRODUCTION" | "STAGING" | "DEVELOPMENT" | "TEST" | "NON_PRODUCTION" | "OTHER";
+  "graphNodeId": string;
+  "id": string;
+  "knowledgeState": "UNKNOWN" | "PROVISIONAL" | "CONFIRMED";
   "metadata": Record<string, any>;
-  "name": any;
-  "owner": any;
-  "projectIdentifier": any;
-  "scopeDesignation": any;
-  "steward": any;
-  "subtype": any;
-  "uid": any;
-  "updatedAt": any;
+  "name": string;
+  "owner": string;
+  "projectIdentifier": string;
+  "scopeDesignation": "IN_SCOPE" | "OUT_OF_SCOPE";
+  "steward": string;
+  "subtype": string;
+  "uid": string;
+  "updatedAt": string;
 }
 
 export interface TracedControl {
   [key: string]: any;
-  "category": any;
-  "controlFunction": any;
-  "createdAt": any;
-  "description": any;
+  "category": string;
+  "controlFunction": "PREVENTIVE" | "DETECTIVE" | "CORRECTIVE" | "COMPENSATING";
+  "createdAt": string;
+  "description": string;
   "effectiveness": Record<string, any>;
-  "graphNodeId": any;
-  "id": any;
-  "implementationScope": any;
+  "graphNodeId": string;
+  "id": string;
+  "implementationScope": string;
   "methodologyFactors": Record<string, any>;
-  "objective": any;
-  "owner": any;
-  "projectIdentifier": any;
-  "source": any;
-  "status": any;
-  "title": any;
-  "uid": any;
-  "updatedAt": any;
+  "objective": string;
+  "owner": string;
+  "projectIdentifier": string;
+  "source": string;
+  "status": "DRAFT" | "PROPOSED" | "IMPLEMENTED" | "OPERATIONAL" | "DEPRECATED" | "RETIRED";
+  "title": string;
+  "uid": string;
+  "updatedAt": string;
 }
 
 export interface TracedRequirement {
@@ -3186,50 +3186,50 @@ export interface TracedRequirement {
 
 export interface TracedRequirementDetail {
   [key: string]: any;
-  "archivedAt": any;
-  "createdAt": any;
-  "graphNodeId": any;
-  "id": any;
-  "priority": any;
-  "projectIdentifier": any;
-  "rationale": any;
-  "requirementType": any;
-  "statement": any;
-  "status": any;
-  "title": any;
-  "uid": any;
-  "updatedAt": any;
-  "wave": any;
+  "archivedAt": string;
+  "createdAt": string;
+  "graphNodeId": string;
+  "id": string;
+  "priority": "MUST" | "SHOULD" | "COULD" | "WONT";
+  "projectIdentifier": string;
+  "rationale": string;
+  "requirementType": "FUNCTIONAL" | "NON_FUNCTIONAL" | "CONSTRAINT" | "INTERFACE";
+  "statement": string;
+  "status": "DRAFT" | "ACTIVE" | "DEPRECATED" | "ARCHIVED";
+  "title": string;
+  "uid": string;
+  "updatedAt": string;
+  "wave": number;
 }
 
 export interface TrustPolicyResponse {
   [key: string]: any;
-  "createdAt": any;
-  "defaultOutcome": any;
-  "description": any;
-  "enabled": any;
-  "id": any;
-  "name": any;
-  "priority": any;
-  "projectIdentifier": any;
+  "createdAt": string;
+  "defaultOutcome": "TRUSTED" | "REJECTED" | "UNKNOWN";
+  "description": string;
+  "enabled": boolean;
+  "id": string;
+  "name": string;
+  "priority": number;
+  "projectIdentifier": string;
   "rules": TrustPolicyRule[];
-  "updatedAt": any;
+  "updatedAt": string;
 }
 
 export interface TrustPolicyRule {
   [key: string]: any;
-  "field": any;
-  "operator": any;
-  "outcome": any;
-  "value": any;
+  "field": "publisher" | "packId" | "packType" | "version" | "sourceUrl" | "checksum" | "verifiedChecksum" | "checksumVerified" | "signatureVerified" | "signerTrusted";
+  "operator": "EQUALS" | "NOT_EQUALS" | "CONTAINS" | "MATCHES_PATTERN" | "IN_LIST";
+  "outcome": "TRUSTED" | "REJECTED" | "UNKNOWN";
+  "value": string;
 }
 
 export interface TrustPolicyRuleRequest {
   [key: string]: any;
-  "field": any;
-  "operator": any;
-  "outcome": any;
-  "value": any;
+  "field": "publisher" | "packId" | "packType" | "version" | "sourceUrl" | "checksum" | "verifiedChecksum" | "checksumVerified" | "signatureVerified" | "signerTrusted";
+  "operator": "EQUALS" | "NOT_EQUALS" | "CONTAINS" | "MATCHES_PATTERN" | "IN_LIST";
+  "outcome": "TRUSTED" | "REJECTED" | "UNKNOWN";
+  "value": string;
 }
 
 export interface UnmappedControlsResponse {
@@ -3249,375 +3249,375 @@ export interface UnmappedThreatsResponse {
 
 export interface UpdateAdrRequest {
   [key: string]: any;
-  "consequences"?: any;
-  "context"?: any;
-  "decision"?: any;
-  "decisionDate"?: any;
-  "supersededBy"?: any;
-  "title"?: any;
+  "consequences"?: string;
+  "context"?: string;
+  "decision"?: string;
+  "decisionDate"?: string;
+  "supersededBy"?: string;
+  "title"?: string;
 }
 
 export interface UpdateAssetExternalIdRequest {
   [key: string]: any;
-  "collectedAt"?: any;
-  "confidence"?: any;
+  "collectedAt"?: string;
+  "confidence"?: string;
 }
 
 export interface UpdateAssetRelationRequest {
   [key: string]: any;
-  "collectedAt"?: any;
-  "confidence"?: any;
-  "description"?: any;
-  "externalSourceId"?: any;
-  "knowledgeState"?: any;
-  "sourceSystem"?: any;
+  "collectedAt"?: string;
+  "confidence"?: string;
+  "description"?: string;
+  "externalSourceId"?: string;
+  "knowledgeState"?: "UNKNOWN" | "PROVISIONAL" | "CONFIRMED";
+  "sourceSystem"?: string;
 }
 
 export interface UpdateAssetRequest {
   [key: string]: any;
-  "assetType"?: any;
-  "businessContext"?: any;
-  "clearBusinessContext"?: any;
-  "clearCriticality"?: any;
-  "clearEnvironment"?: any;
-  "clearMetadata"?: any;
-  "clearOwner"?: any;
-  "clearScopeDesignation"?: any;
-  "clearSteward"?: any;
-  "clearSubtype"?: any;
-  "criticality"?: any;
-  "description"?: any;
-  "environment"?: any;
-  "knowledgeState"?: any;
+  "assetType"?: "APPLICATION" | "SERVICE" | "SYSTEM" | "DATABASE" | "NETWORK" | "HOST" | "CONTAINER" | "IDENTITY" | "DATA_STORE" | "ENDPOINT" | "INTEGRATION" | "WORKLOAD" | "THIRD_PARTY" | "BOUNDARY" | "OTHER";
+  "businessContext"?: string;
+  "clearBusinessContext"?: boolean;
+  "clearCriticality"?: boolean;
+  "clearEnvironment"?: boolean;
+  "clearMetadata"?: boolean;
+  "clearOwner"?: boolean;
+  "clearScopeDesignation"?: boolean;
+  "clearSteward"?: boolean;
+  "clearSubtype"?: boolean;
+  "criticality"?: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  "description"?: string;
+  "environment"?: "PRODUCTION" | "STAGING" | "DEVELOPMENT" | "TEST" | "NON_PRODUCTION" | "OTHER";
+  "knowledgeState"?: "UNKNOWN" | "PROVISIONAL" | "CONFIRMED";
   "metadata"?: Record<string, any>;
-  "name"?: any;
-  "owner"?: any;
-  "scopeDesignation"?: any;
-  "steward"?: any;
-  "subtype"?: any;
+  "name"?: string;
+  "owner"?: string;
+  "scopeDesignation"?: "IN_SCOPE" | "OUT_OF_SCOPE";
+  "steward"?: string;
+  "subtype"?: string;
 }
 
 export interface UpdateAssetSubtypeSchemaRequest {
   [key: string]: any;
-  "clearDescription"?: any;
-  "clearSchemaBody"?: any;
-  "description"?: any;
+  "clearDescription"?: boolean;
+  "clearSchemaBody"?: boolean;
+  "description"?: string;
   "schemaBody"?: Record<string, any>;
 }
 
 export interface UpdateAuditRequest {
   [key: string]: any;
-  "auditType"?: any;
-  "clearObjectives"?: any;
-  "clearPhases"?: any;
-  "clearTeamMembers"?: any;
+  "auditType"?: "INTERNAL" | "EXTERNAL" | "REGULATORY" | "SPECIAL";
+  "clearObjectives"?: boolean;
+  "clearPhases"?: boolean;
+  "clearTeamMembers"?: boolean;
   "objectives"?: string[];
   "phases"?: AuditPhaseDto[];
-  "scopeDescription"?: any;
+  "scopeDescription"?: string;
   "teamMembers"?: string[];
-  "title"?: any;
+  "title"?: string;
 }
 
 export interface UpdateControlRequest {
   [key: string]: any;
-  "category"?: any;
-  "controlFunction"?: any;
-  "description"?: any;
+  "category"?: string;
+  "controlFunction"?: "PREVENTIVE" | "DETECTIVE" | "CORRECTIVE" | "COMPENSATING";
+  "description"?: string;
   "effectiveness"?: Record<string, any>;
-  "implementationScope"?: any;
+  "implementationScope"?: string;
   "methodologyFactors"?: Record<string, any>;
-  "objective"?: any;
-  "owner"?: any;
-  "source"?: any;
-  "title"?: any;
+  "objective"?: string;
+  "owner"?: string;
+  "source"?: string;
+  "title"?: string;
 }
 
 export interface UpdateControlTestRequest {
   [key: string]: any;
-  "actualResults"?: any;
-  "conclusion"?: any;
-  "expectedResults"?: any;
-  "methodology"?: any;
-  "notes"?: any;
-  "testDate"?: any;
-  "testerIdentity"?: any;
-  "testSteps"?: any;
+  "actualResults"?: string;
+  "conclusion"?: "EFFECTIVE" | "INEFFECTIVE" | "NOT_TESTED";
+  "expectedResults"?: string;
+  "methodology"?: "INQUIRY" | "OBSERVATION" | "INSPECTION" | "RE_PERFORMANCE";
+  "notes"?: string;
+  "testDate"?: string;
+  "testerIdentity"?: string;
+  "testSteps"?: string;
 }
 
 export interface UpdateDocumentRequest {
   [key: string]: any;
-  "description"?: any;
-  "title"?: any;
-  "version"?: any;
+  "description"?: string;
+  "title"?: string;
+  "version"?: string;
 }
 
 export interface UpdateFindingRequest {
   [key: string]: any;
-  "clearDueDate"?: any;
-  "clearOwner"?: any;
-  "clearRootCauseAnalysis"?: any;
-  "description"?: any;
-  "dueDate"?: any;
-  "findingType"?: any;
-  "owner"?: any;
-  "rootCauseAnalysis"?: any;
-  "severity"?: any;
-  "title"?: any;
+  "clearDueDate"?: boolean;
+  "clearOwner"?: boolean;
+  "clearRootCauseAnalysis"?: boolean;
+  "description"?: string;
+  "dueDate"?: string;
+  "findingType"?: "AUDIT_FINDING" | "CONTROL_DEFICIENCY" | "POLICY_VIOLATION" | "VULNERABILITY" | "EXCEPTION_ESCALATION";
+  "owner"?: string;
+  "rootCauseAnalysis"?: string;
+  "severity"?: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFORMATIONAL";
+  "title"?: string;
 }
 
 export interface UpdateMethodologySourceStateRequest {
   [key: string]: any;
-  "state": any;
+  "state": "ATTEMPTED" | "OBTAINED" | "READ" | "BLOCKED";
 }
 
 export interface UpdateObservationRequest {
   [key: string]: any;
-  "confidence"?: any;
-  "evidenceRef"?: any;
-  "expiresAt"?: any;
-  "observationValue"?: any;
+  "confidence"?: string;
+  "evidenceRef"?: string;
+  "expiresAt"?: string;
+  "observationValue"?: string;
 }
 
 export interface UpdatePackRegistryEntryRequest {
   [key: string]: any;
-  "checksum"?: any;
+  "checksum"?: string;
   "compatibility"?: Record<string, any>;
   "dependencies"?: PackDependencyRequest[];
-  "description"?: any;
+  "description"?: string;
   "provenance"?: Record<string, any>;
-  "publisher"?: any;
+  "publisher"?: string;
   "registryMetadata"?: Record<string, any>;
   "signatureInfo"?: Record<string, any>;
-  "sourceUrl"?: any;
+  "sourceUrl"?: string;
 }
 
 export interface UpdateProjectRequest {
   [key: string]: any;
-  "description"?: any;
-  "name"?: any;
+  "description"?: string;
+  "name"?: string;
 }
 
 export interface UpdateQualityGateRequest {
   [key: string]: any;
-  "description"?: any;
-  "enabled"?: any;
-  "metricParam"?: any;
-  "metricType"?: any;
-  "name"?: any;
-  "operator"?: any;
-  "scopeStatus"?: any;
-  "threshold"?: any;
+  "description"?: string;
+  "enabled"?: boolean;
+  "metricParam"?: string;
+  "metricType"?: "COVERAGE" | "ORPHAN_COUNT" | "COMPLETENESS";
+  "name"?: string;
+  "operator"?: "GTE" | "LTE" | "EQ" | "GT" | "LT";
+  "scopeStatus"?: "DRAFT" | "ACTIVE" | "DEPRECATED" | "ARCHIVED";
+  "threshold"?: number;
 }
 
 export interface UpdateRequirementRequest {
   [key: string]: any;
-  "priority"?: any;
-  "rationale"?: any;
-  "requirementType"?: any;
-  "statement"?: any;
-  "title"?: any;
-  "wave"?: any;
+  "priority"?: "MUST" | "SHOULD" | "COULD" | "WONT";
+  "rationale"?: string;
+  "requirementType"?: "FUNCTIONAL" | "NON_FUNCTIONAL" | "CONSTRAINT" | "INTERFACE";
+  "statement"?: string;
+  "title"?: string;
+  "wave"?: number;
 }
 
 export interface UpdateRiskControlMappingRequest {
   [key: string]: any;
-  "controlRole"?: any;
-  "mappingObjective"?: any;
-  "mappingScope"?: any;
+  "controlRole"?: "PREVENTIVE" | "DETECTIVE" | "CORRECTIVE" | "DETERRENT" | "COMPENSATING" | "RECOVERY" | "DIRECTIVE";
+  "mappingObjective"?: string;
+  "mappingScope"?: string;
   "methodologyInfluence"?: Record<string, any>;
 }
 
 export interface UpdateRiskScenarioRequest {
   [key: string]: any;
-  "asset"?: any;
-  "effect"?: any;
-  "method"?: any;
-  "threat"?: any;
-  "timeHorizon"?: any;
-  "title"?: any;
+  "asset"?: string;
+  "effect"?: string;
+  "method"?: string;
+  "threat"?: string;
+  "timeHorizon"?: string;
+  "title"?: string;
 }
 
 export interface UpdateScopedControlImplementationRequest {
   [key: string]: any;
-  "implementationScope"?: any;
-  "name"?: any;
-  "operationalAssetId"?: any;
+  "implementationScope"?: string;
+  "name"?: string;
+  "operationalAssetId"?: string;
 }
 
 export interface UpdateSectionContentRequest {
   [key: string]: any;
-  "sortOrder"?: any;
-  "textContent"?: any;
+  "sortOrder"?: number;
+  "textContent"?: string;
 }
 
 export interface UpdateSectionRequest {
   [key: string]: any;
-  "description"?: any;
-  "sortOrder"?: any;
-  "title"?: any;
+  "description"?: string;
+  "sortOrder"?: number;
+  "title"?: string;
 }
 
 export interface UpdateTestCaseFolderRequest {
   [key: string]: any;
-  "clearDescription"?: any;
-  "description"?: any;
-  "title"?: any;
+  "clearDescription"?: boolean;
+  "description"?: string;
+  "title"?: string;
 }
 
 export interface UpdateTestCaseGherkinRequest {
   [key: string]: any;
-  "source": any;
+  "source": string;
 }
 
 export interface UpdateTestCaseRequest {
   [key: string]: any;
-  "clearDescription"?: any;
-  "clearEstimatedDuration"?: any;
-  "clearPostconditions"?: any;
-  "clearPreconditions"?: any;
-  "description"?: any;
-  "estimatedDurationSeconds"?: any;
-  "postconditions"?: any;
-  "preconditions"?: any;
-  "priority"?: any;
-  "title"?: any;
-  "type"?: any;
+  "clearDescription"?: boolean;
+  "clearEstimatedDuration"?: boolean;
+  "clearPostconditions"?: boolean;
+  "clearPreconditions"?: boolean;
+  "description"?: string;
+  "estimatedDurationSeconds"?: number;
+  "postconditions"?: string;
+  "preconditions"?: string;
+  "priority"?: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  "title"?: string;
+  "type"?: "MANUAL" | "AUTOMATED" | "HYBRID";
 }
 
 export interface UpdateTestCaseStepRequest {
   [key: string]: any;
-  "action"?: any;
-  "actualResult"?: any;
-  "clearActualResult"?: any;
-  "expectedResult"?: any;
-  "stepNumber"?: any;
+  "action"?: string;
+  "actualResult"?: string;
+  "clearActualResult"?: boolean;
+  "expectedResult"?: string;
+  "stepNumber"?: number;
 }
 
 export interface UpdateTestPlanRequest {
   [key: string]: any;
-  "build"?: any;
-  "clearBuild"?: any;
-  "clearDescription"?: any;
-  "clearEndDate"?: any;
-  "clearProduct"?: any;
-  "clearStartDate"?: any;
-  "clearVersion"?: any;
-  "description"?: any;
-  "endDate"?: any;
-  "name"?: any;
-  "product"?: any;
-  "startDate"?: any;
-  "version"?: any;
+  "build"?: string;
+  "clearBuild"?: boolean;
+  "clearDescription"?: boolean;
+  "clearEndDate"?: boolean;
+  "clearProduct"?: boolean;
+  "clearStartDate"?: boolean;
+  "clearVersion"?: boolean;
+  "description"?: string;
+  "endDate"?: string;
+  "name"?: string;
+  "product"?: string;
+  "startDate"?: string;
+  "version"?: string;
 }
 
 export interface UpdateTestRunCaseResultRequest {
   [key: string]: any;
-  "clearNotes"?: any;
-  "notes"?: any;
-  "status"?: any;
+  "clearNotes"?: boolean;
+  "notes"?: string | null;
+  "status"?: "NOT_RUN" | "PASSED" | "FAILED" | "BLOCKED" | "SKIPPED";
 }
 
 export interface UpdateTestRunCursorRequest {
   [key: string]: any;
-  "clearCursor"?: any;
-  "currentCaseResultId"?: any;
-  "currentStepResultId"?: any;
+  "clearCursor"?: boolean;
+  "currentCaseResultId"?: string;
+  "currentStepResultId"?: string | null;
 }
 
 export interface UpdateTestRunRequest {
   [key: string]: any;
-  "build"?: any;
-  "clearBuild"?: any;
-  "clearEndAt"?: any;
-  "clearEnvironment"?: any;
-  "clearStartAt"?: any;
-  "clearVersion"?: any;
-  "endAt"?: any;
-  "environment"?: any;
-  "name"?: any;
-  "startAt"?: any;
-  "version"?: any;
+  "build"?: string;
+  "clearBuild"?: boolean;
+  "clearEndAt"?: boolean;
+  "clearEnvironment"?: boolean;
+  "clearStartAt"?: boolean;
+  "clearVersion"?: boolean;
+  "endAt"?: string;
+  "environment"?: string;
+  "name"?: string;
+  "startAt"?: string;
+  "version"?: string;
 }
 
 export interface UpdateTestRunStepResultRequest {
   [key: string]: any;
-  "clearComment"?: any;
-  "clearExecutedAt"?: any;
-  "comment"?: any;
-  "executedAt"?: any;
-  "status"?: any;
+  "clearComment"?: boolean;
+  "clearExecutedAt"?: boolean;
+  "comment"?: string | null;
+  "executedAt"?: string;
+  "status"?: "NOT_RUN" | "PASSED" | "FAILED" | "BLOCKED" | "SKIPPED";
 }
 
 export interface UpdateTestSuiteRequest {
   [key: string]: any;
-  "clearCriteriaFolderId"?: any;
-  "clearCriteriaFormat"?: any;
-  "clearCriteriaPriority"?: any;
-  "clearCriteriaStatus"?: any;
-  "clearCriteriaTextSearch"?: any;
-  "clearCriteriaType"?: any;
-  "clearDescription"?: any;
-  "criteriaFolderId"?: any;
-  "criteriaFormat"?: any;
-  "criteriaPriority"?: any;
-  "criteriaStatus"?: any;
-  "criteriaTextSearch"?: any;
-  "criteriaType"?: any;
-  "description"?: any;
-  "name"?: any;
-  "populationMode"?: any;
+  "clearCriteriaFolderId"?: boolean;
+  "clearCriteriaFormat"?: boolean;
+  "clearCriteriaPriority"?: boolean;
+  "clearCriteriaStatus"?: boolean;
+  "clearCriteriaTextSearch"?: boolean;
+  "clearCriteriaType"?: boolean;
+  "clearDescription"?: boolean;
+  "criteriaFolderId"?: string;
+  "criteriaFormat"?: "STEP_BASED" | "GHERKIN";
+  "criteriaPriority"?: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  "criteriaStatus"?: "DRAFT" | "APPROVED" | "DEPRECATED" | "ARCHIVED";
+  "criteriaTextSearch"?: string;
+  "criteriaType"?: "MANUAL" | "AUTOMATED" | "HYBRID";
+  "description"?: string;
+  "name"?: string;
+  "populationMode"?: "STATIC" | "REQUIREMENTS_BASED" | "QUERY_BASED";
 }
 
 export interface UpdateThreatModelRequest {
   [key: string]: any;
-  "clearNarrative"?: any;
-  "clearStride"?: any;
-  "effect"?: any;
-  "narrative"?: any;
-  "stride"?: any;
-  "threatEvent"?: any;
-  "threatSource"?: any;
-  "title"?: any;
+  "clearNarrative"?: boolean;
+  "clearStride"?: boolean;
+  "effect"?: string;
+  "narrative"?: string;
+  "stride"?: "SPOOFING" | "TAMPERING" | "REPUDIATION" | "INFORMATION_DISCLOSURE" | "DENIAL_OF_SERVICE" | "ELEVATION_OF_PRIVILEGE";
+  "threatEvent"?: string;
+  "threatSource"?: string;
+  "title"?: string;
 }
 
 export interface UpdateTrustPolicyRequest {
   [key: string]: any;
-  "defaultOutcome"?: any;
-  "description"?: any;
-  "enabled"?: any;
-  "name"?: any;
-  "priority"?: any;
+  "defaultOutcome"?: "TRUSTED" | "REJECTED" | "UNKNOWN";
+  "description"?: string;
+  "enabled"?: boolean;
+  "name"?: string;
+  "priority"?: number;
   "rules"?: TrustPolicyRuleRequest[];
 }
 
 export interface UpdateUserEnabledRequest {
   [key: string]: any;
-  "enabled": any;
+  "enabled": boolean;
 }
 
 export interface UpdateUserRoleRequest {
   [key: string]: any;
-  "role": any;
+  "role": "USER" | "ADMIN";
 }
 
 export interface UpdateVerificationResultRequest {
   [key: string]: any;
-  "assuranceLevel"?: any;
+  "assuranceLevel"?: "L0" | "L1" | "L2" | "L3";
   "evidence"?: Record<string, any>;
-  "expiresAt"?: any;
-  "property"?: any;
-  "prover"?: any;
-  "requirementId"?: any;
-  "result"?: any;
-  "targetId"?: any;
-  "verifiedAt"?: any;
+  "expiresAt"?: string;
+  "property"?: string;
+  "prover"?: string;
+  "requirementId"?: string;
+  "result"?: "PROVEN" | "REFUTED" | "TIMEOUT" | "UNKNOWN" | "ERROR";
+  "targetId"?: string;
+  "verifiedAt"?: string;
 }
 
 export interface UserResponse {
   [key: string]: any;
-  "enabled": any;
-  "role": any;
-  "username": any;
+  "enabled": boolean;
+  "role": "USER" | "ADMIN";
+  "username": string;
 }
 
 export interface UsersListResponse {
@@ -3627,125 +3627,125 @@ export interface UsersListResponse {
 
 export interface VerificationResultRequest {
   [key: string]: any;
-  "assuranceLevel": any;
+  "assuranceLevel": "L0" | "L1" | "L2" | "L3";
   "evidence"?: Record<string, any>;
-  "expiresAt"?: any;
-  "property"?: any;
-  "prover": any;
-  "requirementId"?: any;
-  "result": any;
-  "targetId"?: any;
-  "verifiedAt": any;
+  "expiresAt"?: string;
+  "property"?: string;
+  "prover": string;
+  "requirementId"?: string;
+  "result": "PROVEN" | "REFUTED" | "TIMEOUT" | "UNKNOWN" | "ERROR";
+  "targetId"?: string;
+  "verifiedAt": string;
 }
 
 export interface VerificationResultResponse {
   [key: string]: any;
-  "assuranceLevel": any;
-  "createdAt": any;
+  "assuranceLevel": "L0" | "L1" | "L2" | "L3";
+  "createdAt": string;
   "evidence": Record<string, any>;
-  "expiresAt": any;
-  "graphNodeId": any;
-  "id": any;
-  "projectIdentifier": any;
-  "property": any;
-  "prover": any;
-  "requirementId": any;
-  "result": any;
-  "targetId": any;
-  "updatedAt": any;
-  "verifiedAt": any;
+  "expiresAt": string;
+  "graphNodeId": string;
+  "id": string;
+  "projectIdentifier": string;
+  "property": string;
+  "prover": string;
+  "requirementId": string;
+  "result": "PROVEN" | "REFUTED" | "TIMEOUT" | "UNKNOWN" | "ERROR";
+  "targetId": string;
+  "updatedAt": string;
+  "verifiedAt": string;
 }
 
 export interface WaveStatsResponse {
   [key: string]: any;
   "byStatus": Record<string, any>;
-  "total": any;
-  "wave": any;
+  "total": number;
+  "wave": number;
 }
 
 export interface WorkOrderItemResponse {
   [key: string]: any;
   "blockedBy": string[];
-  "blockingStatus": any;
-  "id": any;
-  "order": any;
-  "priority": any;
-  "status": any;
-  "title": any;
-  "uid": any;
-  "wave": any;
+  "blockingStatus": string;
+  "id": string;
+  "order": number;
+  "priority": string;
+  "status": string;
+  "title": string;
+  "uid": string;
+  "wave": number;
 }
 
 export interface WorkOrderResponse {
   [key: string]: any;
-  "totalBlocked": any;
-  "totalRequirements": any;
-  "totalUnblocked": any;
-  "totalUnconstrained": any;
+  "totalBlocked": number;
+  "totalRequirements": number;
+  "totalUnblocked": number;
+  "totalUnconstrained": number;
   "waves": WorkOrderWaveResponse[];
 }
 
 export interface WorkOrderWaveResponse {
   [key: string]: any;
-  "blocked": any;
+  "blocked": number;
   "items": WorkOrderItemResponse[];
-  "total": any;
-  "unblocked": any;
-  "unconstrained": any;
-  "wave": any;
+  "total": number;
+  "unblocked": number;
+  "unconstrained": number;
+  "wave": number;
 }
 
 export interface WorkflowRunAggregateResponse {
   [key: string]: any;
-  "abandonedRuns": any;
-  "activeRuns": any;
-  "closedCostProxy": any;
-  "closedRuns": any;
-  "costProxyPerClosedRun": any;
-  "costProxyPerMergedRun": any;
-  "cycleTimeP50Min": any;
-  "cycleTimeP95Min": any;
-  "cycleTimeP99Min": any;
-  "escalatedRuns": any;
-  "from": any;
-  "mergedCostProxy": any;
-  "mergedRuns": any;
+  "abandonedRuns": number;
+  "activeRuns": number;
+  "closedCostProxy": number;
+  "closedRuns": number;
+  "costProxyPerClosedRun": number | null;
+  "costProxyPerMergedRun": number | null;
+  "cycleTimeP50Min": number | null;
+  "cycleTimeP95Min": number | null;
+  "cycleTimeP99Min": number | null;
+  "escalatedRuns": number;
+  "from": string;
+  "mergedCostProxy": number;
+  "mergedRuns": number;
   "phaseHotspots": PhaseHotspotResponse[];
-  "supersededRuns": any;
-  "to": any;
-  "totalCostProxy": any;
-  "totalModelInvocations": any;
-  "totalRuns": any;
-  "totalTokenUsage": any;
-  "totalWallClockMinutes": any;
+  "supersededRuns": number;
+  "to": string;
+  "totalCostProxy": number;
+  "totalModelInvocations": number;
+  "totalRuns": number;
+  "totalTokenUsage": number;
+  "totalWallClockMinutes": number;
 }
 
 export interface WorkflowRunResponse {
   [key: string]: any;
-  "branch": any;
-  "costCurrency": any;
-  "costProxy": any;
-  "createdAt": any;
-  "endedAt": any;
-  "finalState": any;
-  "graphNodeId": any;
-  "id": any;
-  "issueNumber": any;
-  "model": any;
-  "modelInvocationCount": any;
-  "outcome": any;
-  "prNumber": any;
-  "project": any;
-  "provenance": any;
-  "provider": any;
-  "repo": any;
+  "branch": string;
+  "costCurrency": string;
+  "costProxy": number;
+  "createdAt": string;
+  "endedAt": string | null;
+  "finalState": "RUNNING" | "READY_FOR_REVIEW" | "MERGED" | "CLOSED" | "ESCALATED" | "ABANDONED" | "SUPERSEDED" | "FAILED";
+  "graphNodeId": string;
+  "id": string;
+  "issueNumber": number;
+  "model": string;
+  "modelInvocationCount": number;
+  "outcome": "MERGED" | "CLOSED_WITHOUT_MERGE" | "NONE";
+  "prNumber": number | null;
+  "project": string;
+  "provenance": "ISSUE_THREAD" | "TEMPORAL_VISIBILITY" | "MANUAL_IMPORT" | "LIVE_EMISSION";
+  "provider": string;
+  "repo": string;
   "requirementUids": string[];
-  "runtimeDriver": any;
-  "startedAt": any;
-  "tokenUsage": any;
-  "updatedAt": any;
-  "wallClockMinutes": any;
-  "workflowType": any;
+  "runtimeDriver": string;
+  "startedAt": string;
+  "tokenUsage": number;
+  "updatedAt": string;
+  "wallClockMinutes": number;
+  "workflowType": string;
 }
 
 export interface PagedResponse<T> {

@@ -58,6 +58,21 @@ function schemaType(schema) {
   if (schema.$ref) {
     return refName(schema.$ref);
   }
+  // OpenAPI 3.1 nullability: `type` may be `"null"` or an array such as `["string", "null"]`.
+  if (schema.type === "null") {
+    return "null";
+  }
+  if (Array.isArray(schema.type)) {
+    const hasNull = schema.type.includes("null");
+    const nonNull = schema.type.filter((t) => t !== "null");
+    const base =
+      nonNull.length === 0
+        ? "never"
+        : nonNull.length === 1
+          ? schemaType({ ...schema, type: nonNull[0] })
+          : nonNull.map((t) => schemaType({ ...schema, type: t })).join(" | ");
+    return hasNull ? `${base} | null` : base;
+  }
   if (schema.enum) {
     return unionFromValues(schema.enum);
   }
@@ -118,30 +133,44 @@ const schemaDeclarationOverrides = {
   SyncError: "export type SyncError = string;",
 };
 
+// Per-field type overrides. Two kinds:
+//   1. Enum precision: springdoc emits a bare `string` for some enum-backed fields; pin the union.
+//   2. Runtime nullability: springdoc does not emit nullability, but some response fields are null
+//      at runtime (boxed Java types with no value yet). Pin them to `T | null` so the generated
+//      client is honest and consumers null-check them. Each entry is verified against the backend
+//      record it projects.
 const exactPropertyTypes = {
   "TimelineEntryResponse.changeCategory": "ChangeCategory",
   "GraphVisualizationNodeResponse.entityType": "GraphEntityType",
   "GraphEdgeResponse.sourceEntityType": "GraphEntityType",
   "GraphEdgeResponse.targetEntityType": "GraphEntityType",
   // gateState is null for bulk list entries and executions whose gate state cannot be queried
-  // (GC-O009 (b), #1279). springdoc emits a bare $ref (non-null) for it; this override keeps the
-  // generated client honest about the intentionally-nullable field.
+  // (GC-O009 (b), #1279). springdoc emits a bare $ref (non-null) for it.
   "WorkflowExecutionResponse.gateState": "GateStateResponse | null",
-  // GC-Q015 clause (d): precisely type the console's ProjectResponse so `use-projects.ts` can drop
-  // its hand-mirror. springdoc emits these as untyped, and the generator's default `any` fallback
-  // is deliberately conservative to avoid asserting a non-null shape for the many DTO fields whose
-  // runtime nullability the OpenAPI contract does not yet capture (a GC-O014 contract-quality
-  // concern). These overrides mirror the non-null Project fields the console actually consumes.
-  "ProjectResponse.id": "string",
-  "ProjectResponse.identifier": "string",
-  "ProjectResponse.name": "string",
-  "ProjectResponse.description": "string",
-  "ProjectResponse.createdAt": "string",
-  "ProjectResponse.updatedAt": "string",
-  // GC-Q015 clause (a): the console's session read is a first-party contract; type its scalar
-  // fields precisely (roles already resolves to string[] as an array).
-  "SessionResponse.displayName": "string",
-  "SessionResponse.canAdminister": "boolean",
+  // Analysis summaries/violations carry a requirement status; the backend projects it as
+  // Status.name() so springdoc emits a bare string. Pin it to the Status union.
+  "RequirementSummaryResponse.status": "Status",
+  "ConsistencyViolationResponse.sourceStatus": "Status",
+  "ConsistencyViolationResponse.targetStatus": "Status",
+  // Runtime-nullable response fields (boxed Java types with no value yet). Verified against their
+  // backend records: a run may have no PR/end time; aggregates and hotspots have no cycle/cost data
+  // for an empty window; a traceability link may be unsynced or unarchived.
+  "WorkflowRunResponse.prNumber": "number | null",
+  "WorkflowRunResponse.endedAt": "string | null",
+  "WorkflowRunAggregateResponse.cycleTimeP50Min": "number | null",
+  "WorkflowRunAggregateResponse.cycleTimeP95Min": "number | null",
+  "WorkflowRunAggregateResponse.cycleTimeP99Min": "number | null",
+  "WorkflowRunAggregateResponse.costProxyPerMergedRun": "number | null",
+  "WorkflowRunAggregateResponse.costProxyPerClosedRun": "number | null",
+  "PhaseHotspotResponse.maxCycleIndex": "number | null",
+  "TraceabilityLinkResponse.archivedAt": "string | null",
+  "TraceabilityLinkResponse.lastSyncedAt": "string | null",
+  "RequirementResponse.archivedAt": "string | null",
+  // Request fields the backend accepts as null to unset/clear: a cursor with a selected case but no
+  // step, and a note cleared alongside its clearNotes flag.
+  "UpdateTestRunCursorRequest.currentStepResultId": "string | null",
+  "UpdateTestRunCaseResultRequest.notes": "string | null",
+  "UpdateTestRunStepResultRequest.comment": "string | null",
 };
 
 function propertyType(schemaName, propName, propSchema) {
@@ -159,7 +188,11 @@ function propertyType(schemaName, propName, propSchema) {
   if (propSchema?.$ref) {
     return refName(propSchema.$ref);
   }
-  return "any";
+  // Resolve every concrete OpenAPI shape (string/number/boolean/enum, and 3.1 null-unions) to a
+  // precise TypeScript type instead of collapsing to `any`. Only a schema that declares no
+  // resolvable type stays `any`, so genuinely free-form fields keep their permissive shape.
+  const resolved = schemaType(propSchema);
+  return resolved === "unknown" ? "any" : resolved;
 }
 
 function emitSchemaDeclaration(name, schema) {
