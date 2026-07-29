@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
 import com.keplerops.groundcontrol.domain.projects.repository.ProjectRepository;
 import com.keplerops.groundcontrol.domain.requirements.model.Requirement;
@@ -19,7 +20,9 @@ import com.keplerops.groundcontrol.domain.requirements.service.GitHubIssueData;
 import com.keplerops.groundcontrol.domain.requirements.service.GitHubPullRequestData;
 import com.keplerops.groundcontrol.domain.requirements.state.ArtifactType;
 import com.keplerops.groundcontrol.domain.requirements.state.LinkType;
+import com.keplerops.groundcontrol.domain.requirements.state.Status;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,6 +30,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -93,6 +97,9 @@ class SyncIntegrationTest extends BaseIntegrationTest {
     @Autowired
     private ProjectRepository projectRepository;
 
+    @Autowired
+    private ObjectMapper objectMapper;
+
     private Project testProject;
 
     @BeforeEach
@@ -150,5 +157,37 @@ class SyncIntegrationTest extends BaseIntegrationTest {
         assertThat(updatedLinks).hasSize(1);
         assertThat(updatedLinks.get(0).getArtifactUrl()).isEqualTo("https://github.com/test/repo/issues/1");
         assertThat(updatedLinks.get(0).getArtifactTitle()).isEqualTo("#1 - Setup CI [CLOSED]");
+    }
+
+    @Test
+    void mcpTraceabilityRequest_thenSync_updatesThePersistedLink() throws Exception {
+        var requirement = new Requirement(testProject, "SYNC-MCP-001", "MCP-created issue", "Statement");
+        requirement.transitionStatus(Status.ACTIVE);
+        requirement = requirementRepository.save(requirement);
+
+        // This is the exact REST shape emitted by createGitHubIssueFromRequirement; its Node
+        // contract test independently asserts that issue 431 is serialized as "431", not "#431".
+        var mcpRequest = Map.of(
+                "artifactType", "GITHUB_ISSUE",
+                "artifactIdentifier", "1",
+                "artifactUrl", "https://github.com/test/repo/issues/1",
+                "artifactTitle", "MCP-created issue",
+                "linkType", "IMPLEMENTS");
+        mockMvc.perform(post("/api/v1/requirements/" + requirement.getId() + "/traceability")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(mcpRequest)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.artifactIdentifier", is("1")));
+
+        mockMvc.perform(post("/api/v1/admin/sync/github").param("owner", "test").param("repo", "repo"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.linksUpdated", is(1)));
+
+        var links = traceabilityLinkRepository.findByRequirementId(requirement.getId());
+        assertThat(links).singleElement().satisfies(link -> {
+            assertThat(link.getArtifactIdentifier()).isEqualTo("1");
+            assertThat(link.getArtifactUrl()).isEqualTo("https://github.com/test/repo/issues/1");
+            assertThat(link.getArtifactTitle()).isEqualTo("#1 - Setup CI [CLOSED]");
+        });
     }
 }

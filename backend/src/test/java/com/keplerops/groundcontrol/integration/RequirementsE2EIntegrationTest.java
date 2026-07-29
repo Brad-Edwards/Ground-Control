@@ -46,8 +46,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * End-to-end requirements flow against the full Flyway migration set applied by
- * {@link BaseIntegrationTest} — through V210, which adds canonical station binding for resolvable
- * ADR-061 phases in live and audit rows (issue #1439). It exercises the API and the audited
+ * {@link BaseIntegrationTest} — through V211, which normalizes legacy GitHub traceability
+ * identifiers without rewriting audit history (issue #250). It exercises the API and the audited
  * persistence spine those migrations build, so a migration that breaks the end-to-end path fails
  * here rather than only in the migration smoke test.
  */

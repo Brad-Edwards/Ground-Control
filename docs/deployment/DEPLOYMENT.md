@@ -46,6 +46,22 @@ make dev                           # Spring Boot dev server on :8000
 
 Flyway migrations run automatically on application startup - there is no separate migration step.
 
+### V211 GitHub traceability repair
+
+V211 normalizes legacy `#<positive decimal>` identifiers for `GITHUB_ISSUE`
+and `PULL_REQUEST` traceability links. Startup fails closed when both the legacy
+and canonical spellings already exist for the same requirement, artifact type,
+and link type; inspect and resolve those distinct links deliberately before
+retrying the deployment. The migration preserves Envers audit rows and leaves
+other malformed values unchanged.
+
+After V211 starts successfully, invoke the existing authenticated
+`POST /api/v1/admin/graph/materialize` operation once. The relational tables
+are authoritative, but `artifactIdentifier` contributes to derivative AGE node
+identity, so a previously published graph must be rebuilt after normalization.
+Use an authenticated admin client that sends credentials in HTTP headers
+without placing tokens in command arguments.
+
 ### Docker Compose Services
 
 The `docker-compose.yml` in the project root runs infrastructure only. Spring Boot runs on the host.

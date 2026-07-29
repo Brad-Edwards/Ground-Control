@@ -136,7 +136,7 @@ class RiskScenarioServiceFindTraceTest {
                     rs, RiskScenarioLinkTargetType.REQUIREMENT, reqId, null, RiskScenarioLinkType.AFFECTS);
             setField(reqLink, "id", UUID.randomUUID());
 
-            var artifact = new TraceabilityLink(req, ArtifactType.PULL_REQUEST, "PR-42", LinkType.IMPLEMENTS);
+            var artifact = new TraceabilityLink(req, ArtifactType.PULL_REQUEST, "42", LinkType.IMPLEMENTS);
             setField(artifact, "id", UUID.randomUUID());
 
             when(riskScenarioRepository.findByIdAndProjectId(rs.getId(), projectId))
@@ -171,7 +171,7 @@ class RiskScenarioServiceFindTraceTest {
             assertThat(trace.requirements().get(0).requirement().getUid()).isEqualTo("GC-H003");
             assertThat(trace.requirements().get(0).artifacts()).hasSize(1);
             assertThat(trace.requirements().get(0).artifacts().get(0).getArtifactIdentifier())
-                    .isEqualTo("PR-42");
+                    .isEqualTo("42");
         }
 
         @Test

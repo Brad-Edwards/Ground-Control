@@ -404,7 +404,10 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "209",
                         // V210 (#1439, ADR-090 amendment): canonical station binding backfill for
                         // resolvable ADR-061 phases in live and Envers rows.
-                        "210");
+                        "210",
+                        // V211 (#250): fail-closed normalization of legacy #<number> GitHub
+                        // traceability identifiers without rewriting Envers history.
+                        "211");
     }
 
     @Test
