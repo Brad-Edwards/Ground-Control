@@ -350,8 +350,9 @@ describe("runImplementMechanical verify", () => {
   });
 
   it("injects no requirement UID override when none is requested (#1434)", async () => {
-    // The issue branch already carries its UID here, so the repository gate
-    // keeps deriving requirement context the way it always has.
+    // With no requested UID and no single in-scope requirement resolvable from
+    // the issue, the gate keeps deriving requirement context the way it always
+    // has — no override injected.
     const commands = [];
     await runImplementMechanical({
       action: "verify",
