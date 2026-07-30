@@ -24,6 +24,7 @@ import {
   recordWorkflowRunEvent,
   importWorkflowRunCost,
   listWorkflowRuns,
+  getWorkflowActivity,
   listWorkflowRunEvents,
   aggregateWorkflowRuns,
   crossProjectAggregateWorkflowRuns,
@@ -42,6 +43,7 @@ export const GC_WORKFLOW_RUN_ACTIONS = [
   "record_event",
   "import_cost",
   "list",
+  "activity",
   "list_events",
   "aggregate",
   "cross_project_aggregate",
@@ -296,6 +298,7 @@ export const GC_WORKFLOW_RUN_DESCRIPTION =
   `record_event: append a phase event; requires run_id, project, phase, event_type, occurred_at, provenance (project scopes the run lookup). ` +
   `import_cost: attach cost/token metadata; requires run_id and project (project scopes the run lookup). ` +
   `list: list recent runs for a project; accepts project, limit. ` +
+  `activity: bounded current activity plus recent terminal runs for one project; requires project. ` +
   `list_events: phase events for one run, oldest first; requires run_id and project, accepts limit. ` +
   `measurement: ADR-090 process variables for one project — per-station first-pass yield, iterations to green, rework, and finding counts by reviewer/detector, category, severity, and disposition; requires project, accepts from/to. Every ratio ships with its numerator, denominator, and unresolved count. ` +
   `record_finding_disposition: move one gate finding to a terminal disposition (FIXED / WONTFIX / NOT_APPLICABLE); requires finding_id, project, disposition. ` +
@@ -334,6 +337,10 @@ export async function gcWorkflowRunToolHandler(args, { adminEnabled = false } = 
     }
     case "list": {
       return listWorkflowRuns({ project: args.project, limit: args.limit });
+    }
+    case "activity": {
+      reqArg(args, "project", "activity");
+      return getWorkflowActivity({ project: args.project });
     }
     case "list_events": {
       // Event-level retrieval for one run (issue #1435). The aggregate only reports per-phase hot

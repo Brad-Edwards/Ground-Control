@@ -333,6 +333,18 @@ The report contract is derived evidence: each finding carries the DRAFT requirem
   process-local, matching ADR-030's single-backend topology; the identifier-only notification is
   the seam a multi-instance deployment replaces with a broker or outbox.
 
+- Live Activity read projection (issue #1437, ADR-061 #1437 amendment). `GET
+  /api/v1/workflow-runs/activity?project=…` composes a bounded project snapshot from the existing
+  `WorkflowRun`, ADR-061 lifecycle/station events, ADR-036 routing observations, and subordinate
+  gate-finding counts. Repository batch queries select one latest observation per run/station, and
+  `WorkflowActivityService` joins them to station-catalogue titles/order without N+1 reads. The
+  response exposes its server `asOf`, open total/truncation, effective attention threshold, open
+  rows, and a bounded recent-terminal band. The React page derives elapsed/attention display from
+  one server-anchored clock, invalidates the snapshot for either existing SSE frame, and polls only
+  when push is degraded. The attention flag means "no lifecycle transition observed within the
+  configured duration"; it is not durable state, a lease, process liveness, stale-run reaping, or a
+  control surface.
+
 - Gate outcome and finding measurement (issue #1355, ADR-090 amendment). The station-result
   axis is now persisted on the ADR-061 write path, and the findings a station observed are
   subordinate rows on `workflow_gate_finding`, written in the same transaction as the terminal

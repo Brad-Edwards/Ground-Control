@@ -5,6 +5,7 @@ import com.keplerops.groundcontrol.domain.workflowtelemetry.PhaseEventType;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.StationResult;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowPhaseEvent;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -38,6 +39,49 @@ public interface WorkflowPhaseEventRepository extends JpaRepository<WorkflowPhas
      */
     List<WorkflowPhaseEvent> findByRunIdAndProjectOrderByOccurredAtAscIdAsc(
             UUID runId, String project, Pageable pageable);
+
+    @Query(
+            value =
+                    """
+                    SELECT DISTINCT ON (e.run_id) e.*
+                      FROM workflow_phase_event e
+                     WHERE e.project = :project
+                       AND e.run_id IN (:runIds)
+                       AND e.emitter = 'ADR061_WORKFLOW_TELEMETRY'
+                     ORDER BY e.run_id, e.occurred_at DESC, e.id DESC
+                    """,
+            nativeQuery = true)
+    List<WorkflowPhaseEvent> findLatestLifecycleEvents(
+            @Param("project") String project, @Param("runIds") Collection<UUID> runIds);
+
+    @Query(
+            value =
+                    """
+                    SELECT DISTINCT ON (e.run_id, e.station_id) e.*
+                      FROM workflow_phase_event e
+                     WHERE e.project = :project
+                       AND e.run_id IN (:runIds)
+                       AND e.emitter = 'ADR061_WORKFLOW_TELEMETRY'
+                       AND e.station_id IS NOT NULL
+                     ORDER BY e.run_id, e.station_id, e.occurred_at DESC, e.id DESC
+                    """,
+            nativeQuery = true)
+    List<WorkflowPhaseEvent> findLatestStationAttempts(
+            @Param("project") String project, @Param("runIds") Collection<UUID> runIds);
+
+    @Query(
+            value =
+                    """
+                    SELECT DISTINCT ON (e.run_id) e.*
+                      FROM workflow_phase_event e
+                     WHERE e.project = :project
+                       AND e.run_id IN (:runIds)
+                       AND e.emitter = 'ADR036_STEP_JSONL'
+                     ORDER BY e.run_id, e.occurred_at DESC, e.id DESC
+                    """,
+            nativeQuery = true)
+    List<WorkflowPhaseEvent> findLatestRoutingObservations(
+            @Param("project") String project, @Param("runIds") Collection<UUID> runIds);
 
     /**
      * Project-scoped read for the mixed graph, resolving its UUID to the immutable identifier.

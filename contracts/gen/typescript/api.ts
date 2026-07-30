@@ -895,6 +895,19 @@ export interface FindingStatusTransitionRequest {
   "status": "OPEN" | "REMEDIATION_IN_PROGRESS" | "REMEDIATION_COMPLETE" | "VERIFIED_CLOSED";
 }
 
+export interface GateAttemptResponse {
+  [key: string]: any;
+  "cycleIndex": number | null;
+  "durationMs": number | null;
+  "eventType": "STARTED" | "COMPLETED" | "FAILED" | "ESCALATED" | "SKIPPED" | null;
+  "findingCount": number;
+  "findingsDropped": number;
+  "occurredAt": string | null;
+  "stationId": string;
+  "stationResult": "PASS" | "FAIL" | "SKIPPED_STATION" | "CANCELLED" | "NOT_EVALUABLE" | "UNOBSERVED";
+  "stationTitle": string;
+}
+
 export interface GateDecisionRequest {
   [key: string]: any;
   "gatePoint": "METHOD_DECISION" | "PROTOCOL_DECISION" | "SEARCH_DECISION" | "SYNTHESIS_DECISION" | "WRITING_DECISION";
@@ -1316,6 +1329,18 @@ export interface ObservationResponse {
   "observedAt": string;
   "source": string;
   "updatedAt": string;
+}
+
+export interface OpenRunResponse {
+  [key: string]: any;
+  "currentCycle": number | null;
+  "currentPhase": string | null;
+  "currentPhaseSince": string | null;
+  "currentPhaseTitle": string | null;
+  "gates": GateAttemptResponse[];
+  "routing": RoutingObservationResponse | null;
+  "run": RunSummaryResponse;
+  "stallThresholdMs": number;
 }
 
 export interface OperationAuthorizationDecisionRequest {
@@ -2463,6 +2488,36 @@ export interface RiskScenarioResponse {
 export interface RiskScenarioStatusTransitionRequest {
   [key: string]: any;
   "status": "DRAFT" | "ACTIVE" | "ARCHIVED";
+}
+
+export interface RoutingObservationResponse {
+  [key: string]: any;
+  "expectedModel": string | null;
+  "model": string | null;
+  "modelMatchesExpected": boolean | null;
+  "occurredAt": string;
+  "stage": string;
+  "stepAlias": string | null;
+  "tier": "LOW" | "MEDIUM" | "HIGH" | "NOT_APPLICABLE" | "UNOBSERVED" | null;
+}
+
+export interface RunSummaryResponse {
+  [key: string]: any;
+  "branch": string | null;
+  "costCurrency": string | null;
+  "costProxy": number | null;
+  "endedAt": string | null;
+  "finalState": "RUNNING" | "READY_FOR_REVIEW" | "MERGED" | "CLOSED" | "ESCALATED" | "ABANDONED" | "SUPERSEDED" | "FAILED";
+  "id": string;
+  "issueNumber": number | null;
+  "outcome": "MERGED" | "CLOSED_WITHOUT_MERGE" | "NONE";
+  "prNumber": number | null;
+  "project": string;
+  "repo": string | null;
+  "runtimeDriver": string | null;
+  "startedAt": string | null;
+  "tokenUsage": number | null;
+  "workflowType": string;
 }
 
 export interface ScenarioSummary {
@@ -3693,6 +3748,15 @@ export interface WorkOrderWaveResponse {
   "unblocked": number;
   "unconstrained": number;
   "wave": number;
+}
+
+export interface WorkflowActivityResponse {
+  [key: string]: any;
+  "observedAt": string;
+  "openRuns": OpenRunResponse[];
+  "openRunsTruncated": boolean;
+  "openRunTotal": number;
+  "recentlyFinished": RunSummaryResponse[];
 }
 
 export interface WorkflowRunAggregateResponse {

@@ -5,6 +5,7 @@ import { useSession } from "@/hooks/use-session";
 import { cn } from "@/lib/utils";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
+  Activity,
   FileText,
   FlaskConical,
   FolderOpen,
@@ -81,6 +82,7 @@ function projectNavGroups(base: string): NavGroupDef[] {
     {
       label: "Workflow",
       items: [
+        { to: `${base}/activity`, label: "Live Activity", icon: Activity },
         { to: `${base}/workflow-runs`, label: "Workflow Runs", icon: Workflow },
       ],
     },

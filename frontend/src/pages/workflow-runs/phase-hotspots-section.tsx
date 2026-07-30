@@ -1,10 +1,6 @@
 import { MetricCard } from "@/components/ui/metric-card";
 import type { StreamStatus } from "@/hooks/use-workflow-run-stream";
-import type {
-  WorkflowRunFinalState,
-  WorkflowRunPhaseHotspot,
-  WorkflowRunResponse,
-} from "@/types/api";
+import type { WorkflowRunPhaseHotspot, WorkflowRunResponse } from "@/types/api";
 import {
   OutcomeBadge,
   SectionHeading,
@@ -187,29 +183,22 @@ export function CostProxiesSection({
 }
 
 // ---------------------------------------------------------------------------
-// Active workflow status section
+// Historical run records
 // ---------------------------------------------------------------------------
 
-const ACTIVE_STATES = new Set<WorkflowRunFinalState>([
-  "RUNNING",
-  "READY_FOR_REVIEW",
-]);
-
-export function ActiveRunsSection({
+export function RunRecordsSection({
   runs,
 }: Readonly<{ runs: WorkflowRunResponse[] }>) {
-  const activeRuns = runs.filter((r) => ACTIVE_STATES.has(r.finalState));
-
   return (
-    <section className="space-y-3" aria-labelledby="active-runs-heading">
+    <section className="space-y-3" aria-labelledby="run-records-heading">
       <SectionHeading
-        id="active-runs-heading"
-        title="Active workflow status"
-        detail={`${activeRuns.length} run${activeRuns.length === 1 ? "" : "s"} currently in-flight or awaiting review.`}
+        id="run-records-heading"
+        title="Recent run records"
+        detail={`${runs.length} newest historical record${runs.length === 1 ? "" : "s"}, including open and terminal runs.`}
       />
-      {activeRuns.length === 0 ? (
+      {runs.length === 0 ? (
         <div className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-          No active runs at this time.
+          No workflow runs have been recorded.
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border bg-card">
@@ -226,7 +215,7 @@ export function ActiveRunsSection({
               </tr>
             </thead>
             <tbody>
-              {activeRuns.map((run) => (
+              {runs.map((run) => (
                 <tr
                   key={run.id}
                   className="border-b border-border last:border-0 hover:bg-muted/30"

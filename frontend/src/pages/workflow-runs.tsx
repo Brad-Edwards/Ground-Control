@@ -12,9 +12,9 @@ import {
   ThroughputSection,
 } from "./workflow-runs/format-enum";
 import {
-  ActiveRunsSection,
   CostProxiesSection,
   PhaseHotspotsSection,
+  RunRecordsSection,
   StreamStatusBadge,
 } from "./workflow-runs/phase-hotspots-section";
 
@@ -53,7 +53,7 @@ export function WorkflowRuns() {
         <div>
           <h1 className="text-2xl font-semibold">Workflow Runs</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Throughput, cycle time, cost economics, and live run status for
+            Throughput, cycle time, cost economics, and historical records for
             AI-driven workflow executions.
           </p>
         </div>
@@ -113,7 +113,7 @@ export function WorkflowRuns() {
             totalTokenUsage={aggregate.totalTokenUsage}
           />
 
-          <ActiveRunsSection runs={runs} />
+          <RunRecordsSection runs={runs} />
         </>
       )}
     </div>

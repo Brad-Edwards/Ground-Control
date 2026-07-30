@@ -27,6 +27,7 @@ import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.CapabilityTier;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.PhaseEventEmitter;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.RecordPhaseEventCommand;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowActivityService;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowMeasurementService;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowTelemetryService;
 import java.util.List;
@@ -56,6 +57,9 @@ class WorkflowRunControllerTest {
 
     @MockitoBean
     private WorkflowMeasurementService measurementService;
+
+    @MockitoBean
+    private WorkflowActivityService activityService;
 
     @MockitoBean
     private ProjectService projectService;

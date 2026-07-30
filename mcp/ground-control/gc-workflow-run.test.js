@@ -118,6 +118,7 @@ describe("GC_WORKFLOW_RUN_ACTIONS constant", () => {
     assert.deepEqual(
       [...GC_WORKFLOW_RUN_ACTIONS].sort(),
       [
+        "activity",
         "aggregate",
         "cross_project_aggregate",
         "import_cost",

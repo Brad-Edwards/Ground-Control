@@ -1,5 +1,11 @@
 # Documentation style
 
+> **Sync note for issue #1437 (2026-07-30, Live Activity):** Added a bounded project-scoped
+> activity read projection and console page, with configuration and API/architecture documentation
+> in ADR-061, ADR-054, `docs/API.md`, `docs/architecture/ARCHITECTURE.md`, and
+> `docs/deployment/DEPLOYMENT.md`. The documentation-coverage classifier, `outcome_required`
+> mapping, Vale rules, installer, `.vale.ini`, and this file's style rules are unchanged.
+
 > **Sync note for issue #1462 (2026-07-28, completion project inference):** The
 > MCP completion assertion now infers `project` from `repo_path`'s
 > `.ground-control.yaml` when omitted and preserves backend `project_required`

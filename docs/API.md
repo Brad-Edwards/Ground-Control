@@ -1174,6 +1174,29 @@ buffering and compression for this route and keep its read timeout above the hea
 never-ending response would simply burn the tool's timeout. Agents use `GET /workflow-runs` and
 `GET /workflow-runs/{runId}/events` for bounded snapshots.
 
+**GET `/workflow-runs/activity`** (issue #1437, ADR-061 #1437 amendment): requires `project` and
+returns the bounded snapshot used by the Live Activity console. It inherits the same authenticated,
+project-scoped access path as the other workflow-run reads. It is not exposed through `gc_query`;
+agents use the bounded `gc_workflow_run` `activity` action instead.
+
+The response is
+`{observedAt, openRunTotal, openRunsTruncated, openRuns, recentlyFinished}`. Each open row contains a
+scalar run summary, the latest ADR-061 lifecycle phase/title/time and its reported
+`currentCycle`, the effective `stallThresholdMs`, the latest ADR-036 routing observation, and the
+latest attempt for each observed
+catalogue station. Gate attempts report `{stationId, stationTitle, eventType, stationResult,
+cycleIndex, occurredAt, durationMs, findingCount, findingsDropped}`. Nullable facts are unobserved;
+clients must not invent a phase, verdict, route, timestamp, or process-liveness claim. The gate
+array includes every station in current catalogue order; a station without an attempt has
+`stationResult=UNOBSERVED` and null event/time fields.
+
+Open means the recorded run state is `RUNNING`, `READY_FOR_REVIEW`, or `ESCALATED`. A duration beyond
+`stallThresholdMs` is presentation-only attention: it does not change run state, establish a lease,
+or prove the producer is dead. `recentlyFinished` is a small terminal band; the complete historical
+record stays available from `GET /workflow-runs`. Bounds are configured with
+`groundcontrol.workflow-telemetry.activity.stall-threshold` (default `30m`),
+`max-open-runs` (default `100`, range 1 to 500), and `recent-runs` (default `8`, range 1 to 50).
+
 **GET aggregate query parameters:** `project` (required for `/aggregate`), plus
 optional `repo`, `runtime`, `requirement`, `workflowType`, `outcome`, and
 `from`/`to` (ISO 8601). If `from`/`to` are both omitted the window is the last 30

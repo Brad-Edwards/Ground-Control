@@ -56,6 +56,7 @@ export * from "./lib/pr-body.js";
 export * from "./lib/api-controls-2.js";
 export * from "./lib/api-controls-3.js";
 export * from "./lib/operational-asset-api-functions.js";
+// Includes the bounded project-scoped Live Activity snapshot added by issue #1437.
 export * from "./lib/api-workflow-run.js";
 export * from "./lib/api-history.js";
 export * from "./lib/api-session.js";

@@ -60,4 +60,14 @@ class StationCatalogStageResolutionTest {
         assertThat(catalog.isLifecycleMarkerPhase("traceability_reconcile")).isTrue();
         assertThat(catalog.resolveStationForPhase("traceability_reconcile")).isEmpty();
     }
+
+    @Test
+    void presentationMetadataComesFromCatalogueOrderAndAliases() {
+        assertThat(catalog.stationOrder())
+                .startsWith("issue_branch_resolution", "architecture_preflight", "completion_gate");
+        assertThat(catalog.stationTitle("codex_review")).isEqualTo("Codex review");
+        assertThat(catalog.displayNameForPhase("preflight")).isEqualTo("Architecture preflight");
+        assertThat(catalog.displayNameForPhase("plan")).isEqualTo("Plan published");
+        assertThat(catalog.displayNameForPhase("unknown_phase")).isEqualTo("unknown_phase");
+    }
 }

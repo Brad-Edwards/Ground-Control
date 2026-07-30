@@ -249,25 +249,18 @@ describe("WorkflowRuns — data loaded", () => {
     expect(screen.getByText("Cost / closed run")).toBeTruthy();
   });
 
-  it("renders active runs table for RUNNING and READY_FOR_REVIEW states", () => {
+  it("keeps open and terminal records in the historical table", () => {
     render(<WorkflowRuns />);
 
-    expect(
-      screen.getAllByText("Active workflow status").length,
-    ).toBeGreaterThan(0);
-    // Both active and ready-for-review appear; merged does not
+    expect(screen.getAllByText("Recent run records").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Running").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Ready For Review").length).toBeGreaterThan(0);
-    // The merged run should NOT appear in the active section
     expect(screen.getAllByText("feature/telemetry").length).toBeGreaterThan(0);
     expect(screen.getAllByText("feature/ready").length).toBeGreaterThan(0);
-    // feature/done belongs to merged run — verify merged run IS excluded
-    expect(screen.queryByText("feature/done")).toBeNull();
+    expect(screen.getByText("feature/done")).toBeTruthy();
   });
 
-  it("excludes a failed run from the active table and keeps its badge styled", () => {
-    // FAILED is terminal (issue #1435): a run that failed is not in flight, and a state with no
-    // badge entry would render an unstyled label rather than reading as an end state.
+  it("keeps a failed run reachable in history with its terminal badge", () => {
     mockUseRuns.mockReturnValue({
       data: [activeRun, failedRun],
       isLoading: false,
@@ -277,8 +270,8 @@ describe("WorkflowRuns — data loaded", () => {
 
     render(<WorkflowRuns />);
 
-    expect(screen.queryByText("feature/failed")).toBeNull();
-    expect(screen.queryByLabelText("Final state: FAILED")).toBeNull();
+    expect(screen.getByText("feature/failed")).toBeTruthy();
+    expect(screen.getByLabelText("Final state: FAILED")).toBeTruthy();
   });
 
   it("renders filters panel with all filter fields", () => {
@@ -406,7 +399,9 @@ describe("WorkflowRuns — empty state", () => {
     expect(screen.getByText("Throughput")).toBeTruthy();
     expect(screen.getByText(/no cycle-time data available/i)).toBeTruthy();
     expect(screen.getByText(/no phase data available/i)).toBeTruthy();
-    expect(screen.getByText(/no active runs/i)).toBeTruthy();
+    expect(
+      screen.getByText(/no workflow runs have been recorded/i),
+    ).toBeTruthy();
   });
 });
 

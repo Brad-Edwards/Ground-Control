@@ -156,6 +156,9 @@ describe("useWorkflowRunStream status", () => {
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: workflowRunKeys.aggregatePrefix(PROJECT),
     });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: workflowRunKeys.activity(PROJECT),
+    });
   });
 
   it("reports degraded on transport error so the caller re-arms polling", async () => {
@@ -277,6 +280,27 @@ describe("useWorkflowRunStream cache reconciliation", () => {
         queryKey: workflowRunKeys.aggregatePrefix(PROJECT),
       }),
     );
+  });
+
+  it("invalidates the bounded activity snapshot for either live frame type", async () => {
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    renderHook(() => useWorkflowRunStream(PROJECT), { wrapper });
+
+    latestSource().emit("workflow-run", run());
+    latestSource().emit("phase-event", phaseEvent());
+
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: workflowRunKeys.activity(PROJECT),
+      }),
+    );
+    expect(
+      invalidate.mock.calls.filter(
+        ([options]) =>
+          JSON.stringify(options?.queryKey) ===
+          JSON.stringify(workflowRunKeys.activity(PROJECT)),
+      ),
+    ).toHaveLength(2);
   });
 });
 

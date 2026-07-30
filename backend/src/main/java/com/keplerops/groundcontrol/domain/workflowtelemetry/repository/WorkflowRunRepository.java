@@ -3,6 +3,7 @@ package com.keplerops.groundcontrol.domain.workflowtelemetry.repository;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowRun;
 import jakarta.persistence.LockModeType;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -56,6 +57,27 @@ public interface WorkflowRunRepository extends JpaRepository<WorkflowRun, UUID> 
 
     /** Recent runs for one project, newest first; for the active-status table and run list. */
     List<WorkflowRun> findByProjectOrderByCreatedAtDesc(String project, Pageable pageable);
+
+    long countByProjectAndFinalStateIn(
+            String project, Collection<com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowRunState> states);
+
+    @Query("SELECT r FROM WorkflowRun r WHERE r.project = :project AND r.finalState IN :states "
+            + "ORDER BY r.createdAt DESC, r.id DESC")
+    List<WorkflowRun> findByProjectAndFinalStateInOrderByCreatedAtDesc(
+            @Param("project") String project,
+            @Param("states") Collection<com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowRunState> states,
+            Pageable pageable);
+
+    /**
+     * Last observed terminal runs. {@code endedAt} is not trusted to exist on historical rows, so
+     * the deterministic fallback preserves them rather than manufacturing a finish timestamp.
+     */
+    @Query("SELECT r FROM WorkflowRun r WHERE r.project = :project AND r.finalState IN :states "
+            + "ORDER BY COALESCE(r.endedAt, r.updatedAt, r.createdAt) DESC, r.id DESC")
+    List<WorkflowRun> findRecentTerminalRuns(
+            @Param("project") String project,
+            @Param("states") Collection<com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowRunState> states,
+            Pageable pageable);
 
     /**
      * Still-open runs for the same work item on a different branch (issue #1435). A new live attempt

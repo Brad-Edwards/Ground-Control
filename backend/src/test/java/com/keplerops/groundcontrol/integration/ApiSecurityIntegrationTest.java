@@ -68,6 +68,13 @@ class ApiSecurityIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
+    void anonymousWorkflowActivitySnapshot_returns401() throws Exception {
+        mockMvc.perform(get("/api/v1/workflow-runs/activity").param("project", "ground-control"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code", is("authentication_required")));
+    }
+
+    @Test
     void userTokenReadingApiV1_returns200() throws Exception {
         mockMvc.perform(get("/api/v1/requirements").header("Authorization", USER_TOKEN))
                 .andExpect(status().isOk());

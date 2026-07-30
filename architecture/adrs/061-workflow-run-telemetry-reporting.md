@@ -98,7 +98,7 @@ still fall in a window.
 - **REST** (`/api/v1/workflow-runs**`): record/upsert run, append phase event,
   import cost, list runs, project-scoped aggregate, admin cross-project aggregate.
 - **MCP**: `gc_workflow_run` (action-discriminated: record / record_event /
-  import_cost / list / aggregate / cross_project_aggregate) and
+  import_cost / list / activity / aggregate / cross_project_aggregate) and
   `gc_workflow_run_ingest` (bridge ingestion from the issue thread). The two
   project-scoped read paths are added to the `gc_query` allowlist (ADR-035); POST
   and admin paths stay off it. GitHub reads for the bridge stay in the MCP server,
@@ -405,6 +405,52 @@ or cache, workflow control/signalling, run leases/stale-run reaping, or
 multi-tenant project membership. Reconsider the transport only if measured
 event volume, bidirectional control, or multi-instance delivery invalidates the
 single-process, low-volume SSE assumptions.
+
+## Amendment (issue #1437, 2026-07-30): bounded Live Activity projection
+
+The console gains a project-scoped Live Activity workspace over the existing
+ADR-061 store. It is an operations read model, not workflow control and not a
+replacement for the historical Workflow Runs reporting page.
+
+`GET /api/v1/workflow-runs/activity?project={identifier}` returns one bounded,
+server-timestamped snapshot. Open rows are runs whose recorded state is
+`RUNNING`, `READY_FOR_REVIEW`, or `ESCALATED`; the response includes the total
+open count and a truncation flag when the configured row cap is reached. A
+second bounded band contains recently terminal runs so a transition does not
+make the run disappear, and the complete record remains reachable through
+`GET /workflow-runs`.
+
+For every returned open run, the database selects the latest ADR-061 lifecycle
+event, the latest ADR-036 routing observation, and the latest event for each
+catalogued station in project-scoped batch queries. Observation time followed
+by stable event id defines "latest"; cycle index is reported, not used as event
+recency. The run-level current cycle comes only from that latest lifecycle
+event; station-local attempt cycles are never combined into a synthetic run
+cycle. The station catalogue remains the authority for ordering and display
+names. A `STARTED` station event is shown as executing only while it is that
+station's latest observation. Terminal station rows carry their explicit
+`stationResult`, duration, cycle, persisted finding count, and
+`findingsDropped`; no browser-side station catalogue or inferred verdict is
+introduced. Every station in the current catalogue appears in the strip; one
+with no durable attempt is explicitly `UNOBSERVED` with nullable event/time
+facts instead of being omitted or fabricated.
+
+The response includes `asOf` and the effective threshold for each open row.
+The browser advances one clock from that server timestamp and may flag a row
+after no lifecycle transition has been observed for the configured duration.
+This is an attention flag only. It does not mutate the run, prove a process is
+alive or dead, create a lease, reap stale rows, or turn a paused
+`READY_FOR_REVIEW`/`ESCALATED` state into a running-state claim. Missing phase,
+route, or timestamp facts render as unobserved.
+
+Bounds live under validated
+`groundcontrol.workflow-telemetry.activity.*` configuration:
+`stall-threshold`, `max-open-runs`, and `recent-runs`. The existing
+project-scoped SSE event shapes are unchanged; either event invalidates the
+activity snapshot, while connection/reconnection refetches and the existing
+30-second degraded polling path preserve the best-effort delivery semantics.
+The route inherits the existing authenticated project-scoped API boundary and
+adds no cross-project or anonymous access surface.
 
 ## Relationship to other ADRs
 
