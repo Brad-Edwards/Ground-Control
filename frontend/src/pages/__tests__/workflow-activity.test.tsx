@@ -30,7 +30,7 @@ const mockUseActivity = vi.mocked(useWorkflowActivity);
 const mockUseStream = vi.mocked(useWorkflowRunStream);
 
 const snapshot: WorkflowActivityResponse = {
-  asOf: "2026-07-30T10:20:00Z",
+  observedAt: "2026-07-30T10:20:00Z",
   openRunTotal: 1,
   openRunsTruncated: false,
   openRuns: [
@@ -208,7 +208,7 @@ describe("WorkflowActivity", () => {
     mockUseActivity.mockReturnValue({
       data: {
         ...snapshot,
-        asOf: "2026-07-30T10:40:00Z",
+        observedAt: "2026-07-30T10:40:00Z",
         openRuns: [
           {
             ...openRun,

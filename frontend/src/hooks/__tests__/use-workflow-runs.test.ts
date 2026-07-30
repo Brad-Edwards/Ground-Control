@@ -100,7 +100,7 @@ const mockAggregate: WorkflowRunAggregateResponse = {
 };
 
 const mockActivity: WorkflowActivityResponse = {
-  asOf: "2026-07-30T10:00:00Z",
+  observedAt: "2026-07-30T10:00:00Z",
   openRunTotal: 0,
   openRunsTruncated: false,
   openRuns: [],

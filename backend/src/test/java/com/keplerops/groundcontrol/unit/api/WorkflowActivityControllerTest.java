@@ -85,7 +85,7 @@ class WorkflowActivityControllerTest {
 
         mockMvc.perform(get("/api/v1/workflow-runs/activity").param("project", "ground-control"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.asOf", is("2026-07-30T12:00:00Z")))
+                .andExpect(jsonPath("$.observedAt", is("2026-07-30T12:00:00Z")))
                 .andExpect(jsonPath("$.openRunTotal", is(4)))
                 .andExpect(jsonPath("$.openRunsTruncated", is(true)))
                 .andExpect(jsonPath("$.openRuns", hasSize(1)))

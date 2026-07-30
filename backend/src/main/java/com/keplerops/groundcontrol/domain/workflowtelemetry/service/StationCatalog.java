@@ -35,6 +35,7 @@ public final class StationCatalog {
 
     private static final String ALIASES_FIELD = "aliases";
     private static final String LIFECYCLE_MARKERS_FIELD = "lifecycle_markers";
+    private static final String MARKER_ID_FIELD = "marker_id";
     private static final String STATION_ID_FIELD = "station_id";
     private static final String STATIONS_FIELD = "stations";
 
@@ -88,7 +89,7 @@ public final class StationCatalog {
         this.stationIds = ids(root, STATIONS_FIELD, STATION_ID_FIELD);
         this.stationOrder = orderedIds(root, STATIONS_FIELD, STATION_ID_FIELD);
         this.stationTitles = titles(root, STATIONS_FIELD, STATION_ID_FIELD);
-        this.markerIds = ids(root, LIFECYCLE_MARKERS_FIELD, "marker_id");
+        this.markerIds = ids(root, LIFECYCLE_MARKERS_FIELD, MARKER_ID_FIELD);
         this.markerTitlesByPhase = markerTitlesByPhase(root);
         this.stationByStage = stationByStage(root);
         this.stationByPhase = stationByPhase(root);
@@ -138,7 +139,7 @@ public final class StationCatalog {
     private static Map<String, String> markerTitlesByPhase(JsonNode root) {
         var found = new LinkedHashMap<String, String>();
         for (var marker : root.path(LIFECYCLE_MARKERS_FIELD)) {
-            var id = marker.path("marker_id").asText(null);
+            var id = marker.path(MARKER_ID_FIELD).asText(null);
             var title = marker.path("title").asText(null);
             if (id == null || id.isBlank() || title == null || title.isBlank()) {
                 continue;
@@ -192,7 +193,7 @@ public final class StationCatalog {
     private static Set<String> markerPhases(JsonNode root) {
         var phases = new LinkedHashSet<String>();
         for (var marker : root.path(LIFECYCLE_MARKERS_FIELD)) {
-            var markerId = marker.path("marker_id").asText(null);
+            var markerId = marker.path(MARKER_ID_FIELD).asText(null);
             if (markerId != null && !markerId.isBlank()) {
                 phases.add(markerId);
             }

@@ -3752,7 +3752,7 @@ export interface WorkOrderWaveResponse {
 
 export interface WorkflowActivityResponse {
   [key: string]: any;
-  "asOf": string;
+  "observedAt": string;
   "openRuns": OpenRunResponse[];
   "openRunsTruncated": boolean;
   "openRunTotal": number;

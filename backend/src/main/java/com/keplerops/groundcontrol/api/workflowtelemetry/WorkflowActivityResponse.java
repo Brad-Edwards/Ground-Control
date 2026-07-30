@@ -14,7 +14,7 @@ import java.util.List;
 
 /** Project-scoped, bounded snapshot for the Live Activity workspace (issue #1437). */
 public record WorkflowActivityResponse(
-        Instant asOf,
+        Instant observedAt,
         long openRunTotal,
         boolean openRunsTruncated,
         List<OpenRunResponse> openRuns,

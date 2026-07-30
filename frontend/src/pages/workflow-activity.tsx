@@ -226,7 +226,7 @@ export function WorkflowActivity() {
   const { data, isLoading, isError, error } = useWorkflowActivity(projectId, {
     live: status === "live",
   });
-  const now = useSnapshotClock(data?.asOf);
+  const now = useSnapshotClock(data?.observedAt);
   const orderedOpenRuns = [...(data?.openRuns ?? [])].sort(
     (left, right) =>
       Number(Boolean(attentionLabel(right, now))) -

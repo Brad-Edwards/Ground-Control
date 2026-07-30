@@ -1180,7 +1180,7 @@ project-scoped access path as the other workflow-run reads. It is not exposed th
 agents use the bounded `gc_workflow_run` `activity` action instead.
 
 The response is
-`{asOf, openRunTotal, openRunsTruncated, openRuns, recentlyFinished}`. Each open row contains a
+`{observedAt, openRunTotal, openRunsTruncated, openRuns, recentlyFinished}`. Each open row contains a
 scalar run summary, the latest ADR-061 lifecycle phase/title/time and its reported
 `currentCycle`, the effective `stallThresholdMs`, the latest ADR-036 routing observation, and the
 latest attempt for each observed
@@ -1195,7 +1195,7 @@ Open means the recorded run state is `RUNNING`, `READY_FOR_REVIEW`, or `ESCALATE
 or prove the producer is dead. `recentlyFinished` is a small terminal band; the complete historical
 record stays available from `GET /workflow-runs`. Bounds are configured with
 `groundcontrol.workflow-telemetry.activity.stall-threshold` (default `30m`),
-`max-open-runs` (default `100`, range 1–500), and `recent-runs` (default `8`, range 1–50).
+`max-open-runs` (default `100`, range 1 to 500), and `recent-runs` (default `8`, range 1 to 50).
 
 **GET aggregate query parameters:** `project` (required for `/aggregate`), plus
 optional `repo`, `runtime`, `requirement`, `workflowType`, `outcome`, and

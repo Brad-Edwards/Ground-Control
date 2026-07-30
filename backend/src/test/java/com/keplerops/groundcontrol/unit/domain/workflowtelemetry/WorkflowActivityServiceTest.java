@@ -21,6 +21,7 @@ import com.keplerops.groundcontrol.domain.workflowtelemetry.repository.WorkflowR
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.StationCatalog;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowActivityProperties;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowActivityService;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowActivitySnapshot;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -96,13 +97,22 @@ class WorkflowActivityServiceTest {
 
         var snapshot = service.snapshot(PROJECT);
 
+        assertSnapshotSummary(snapshot, terminal);
+        var row = snapshot.openRuns().getFirst();
+        assertOpenRun(row, running);
+        assertGateProgress(row);
+        assertBoundedQueries();
+    }
+
+    private static void assertSnapshotSummary(WorkflowActivitySnapshot snapshot, WorkflowRun terminal) {
         assertThat(snapshot.asOf()).isEqualTo(AS_OF);
         assertThat(snapshot.openRunTotal()).isEqualTo(5);
         assertThat(snapshot.openRunsTruncated()).isTrue();
         assertThat(snapshot.openRuns()).hasSize(2);
         assertThat(snapshot.recentlyFinished()).containsExactly(terminal);
+    }
 
-        var row = snapshot.openRuns().getFirst();
+    private static void assertOpenRun(WorkflowActivitySnapshot.OpenRun row, WorkflowRun running) {
         assertThat(row.run()).isSameAs(running);
         assertThat(row.currentPhase()).isEqualTo("completion_gate");
         assertThat(row.currentPhaseTitle()).isEqualTo("Completion gate");
@@ -113,6 +123,9 @@ class WorkflowActivityServiceTest {
         assertThat(row.routing().tier()).isEqualTo(CapabilityTier.HIGH);
         assertThat(row.routing().model()).isEqualTo("claude-opus-4-8");
         assertThat(row.gates()).hasSize(2);
+    }
+
+    private static void assertGateProgress(WorkflowActivitySnapshot.OpenRun row) {
         assertThat(row.gates().getFirst()).satisfies(gate -> {
             assertThat(gate.stationId()).isEqualTo("completion_gate");
             assertThat(gate.stationResult()).isEqualTo(StationResult.UNOBSERVED);
@@ -126,7 +139,9 @@ class WorkflowActivityServiceTest {
             assertThat(gate.findingCount()).isEqualTo(4);
             assertThat(gate.findingsDropped()).isEqualTo(2);
         });
+    }
 
+    private void assertBoundedQueries() {
         var openPage = ArgumentCaptor.forClass(Pageable.class);
         verify(runRepository).findByProjectAndFinalStateInOrderByCreatedAtDesc(eqProject(), any(), openPage.capture());
         assertThat(openPage.getValue().getPageSize()).isEqualTo(properties.getMaxOpenRuns());

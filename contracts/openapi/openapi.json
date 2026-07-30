@@ -13744,7 +13744,7 @@
       },
       "WorkflowActivityResponse": {
         "properties": {
-          "asOf": {
+          "observedAt": {
             "format": "date-time",
             "type": "string"
           },

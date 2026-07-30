@@ -21,7 +21,7 @@ describe("gcWorkflowRunToolHandler — activity action", () => {
     const calls = [];
     globalThis.fetch = async (url, options) => {
       calls.push({ url: url.toString(), method: options?.method ?? "GET" });
-      return new Response(JSON.stringify({ asOf: "2026-07-30T12:00:00Z", openRuns: [] }), {
+      return new Response(JSON.stringify({ observedAt: "2026-07-30T12:00:00Z", openRuns: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });

@@ -5,19 +5,21 @@ import { useEffect, useState } from "react";
 export type OpenActivityRun = WorkflowActivityResponse["openRuns"][number];
 export type GateAttempt = OpenActivityRun["gates"][number];
 
-export function useSnapshotClock(asOf: string | undefined): number {
-  const [now, setNow] = useState(() => (asOf ? Date.parse(asOf) : Date.now()));
+export function useSnapshotClock(observedAt: string | undefined): number {
+  const [now, setNow] = useState(() =>
+    observedAt ? Date.parse(observedAt) : Date.now(),
+  );
 
   useEffect(() => {
-    if (!asOf) return;
-    const serverAt = Date.parse(asOf);
+    if (!observedAt) return;
+    const serverAt = Date.parse(observedAt);
     const receivedAt = Date.now();
     setNow(serverAt);
     const timer = window.setInterval(() => {
       setNow(serverAt + Math.max(0, Date.now() - receivedAt));
     }, 1_000);
     return () => window.clearInterval(timer);
-  }, [asOf]);
+  }, [observedAt]);
 
   return now;
 }
