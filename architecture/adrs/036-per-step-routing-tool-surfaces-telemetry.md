@@ -457,6 +457,24 @@ Two coordinated changes:
 cycle wrappers and watch tools, is bridge work toward GC-O009; the
 start/poll/cancel triple is the shape a Temporal activity handle takes.
 
+**2026-07-30 (issue #943): idempotent async-only cycle boundary.** The public
+`gc_codex_review_cycle` and `gc_test_quality_review_cycle` registrations no
+longer expose a synchronous path. Omitted or true `async` starts a background
+job; false is refused. Each start requires a bounded `idempotency_key` scoped
+with a server-derived fingerprint to the authorized canonical repository,
+issue, and reviewer. Same-key/same-input retries return the retained running or
+terminal job, changed input returns `job_idempotency_conflict`, and distinct
+keys are single-flight within that reviewer scope. Authorization and safe Git
+configuration checks happen before job lookup, so a retained idempotency hit
+cannot bypass repository identity. Cycle jobs are registered non-cancellable:
+the current abort signal reaches the reviewer child but cannot prove rollback
+after findings, cycle, station, or decision records begin posting. A
+`job_not_found` result therefore requires issue-thread refresh before a new
+logical attempt; the in-memory registry never claims exactly once recovery
+across process loss. The synchronous internal cycle executors, durable posting
+order, marker families, cap counters, terminal result envelope, and closed
+telemetry shape are unchanged.
+
 **Amendment: renderer summary byte caps (#964).** Two of the three durable-record renderer tools in this ADR's surface family (`gc_render_pr_body` and `gc_post_final_report`) now enforce reject-not-truncate byte caps on their caller-controlled summary fields (`PR_BODY_SUMMARY_MAX = 1200`, `FINAL_REPORT_SUMMARY_MAX = 800`, `FINAL_REPORT_PLAIN_ENGLISH_OUTCOME_MAX = 600`, `FINAL_REPORT_REVIEW_SUMMARY_MAX = 240` for `reviews[].summary`). `gc_post_decision_record`'s schema is unchanged; its caller-controlled prose fields already had per-field caps. The canonical succinctness rule is in `skills/implement/steps/_review-loop-rules.md § Update succinctness (canonical)` and is referenced from all three renderer tool descriptions. `buildFinalReport` no longer emits placeholder lines in the In-scope requirements or Reviews sections when those inputs are empty.
 
 **Amendment: issue close mechanism (#862 typed-action-items PR).** The /implement Step 18 no longer runs `gh issue close`. The GitHub issue closes via `Closes #<issue-number>` in the PR body (rendered by `gc_render_pr_body` in Step 9) when the user merges the PR. Step 18 only removes the `in-progress` label set in Step 1. Closing from the agent decoupled the close event from the merge: an unmerged or rolled-back PR would leave a closed issue with no shipped code (GitHub does not re-open issues on revert). Step 19 (final report) is correspondingly tightened: traceability reconciliation (Steps 15 through 17) is an explicit precondition, and no earlier step surfaces a user-facing "complete" signal (prior escalations are for input, not for "done"). The /quickfix sibling lane is updated in lockstep.

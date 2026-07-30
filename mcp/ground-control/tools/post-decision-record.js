@@ -10,6 +10,8 @@ import {
   FINAL_REPORT_PLAIN_ENGLISH_OUTCOME_MAX,
   FINAL_REPORT_REVIEW_SUMMARY_MAX,
   FINAL_REPORT_SUMMARY_MAX,
+  ASYNC_JOB_IDEMPOTENCY_KEY_MAX,
+  ASYNC_JOB_IDEMPOTENCY_KEY_RE,
   PR_BODY_CHANGE_CLASSES,
   PR_BODY_SUMMARY_MAX,
   TELEMETRY_OUTCOMES,
@@ -24,11 +26,13 @@ import {
   runRenderPrBody,
   runTestQualityReviewCycle,
   runWatchCiRun,
-  startAsyncJob,
+  runReviewCycleTransport,
 } from "../lib.js";
-import { ASYNC_REVIEW_PARAM_DESC } from "./query.js";
 import { ok, err } from "./respond.js";
 
+const ASYNC_REVIEW_CYCLE_PARAM_DESC =
+  "Review-cycle tools are async-only. Omit this field or pass true to return a gc_codex_job " +
+  "handle immediately. Passing false returns review_cycle_async_required and never runs synchronously.";
 
 export function registerPostDecisionRecord(server, ctx) {
   server.tool(
@@ -377,7 +381,7 @@ export function registerPostDecisionRecord(server, ctx) {
 
   server.tool(
     "gc_codex_review_cycle",
-    "Pre-push codex-review cycle wrapper. Runs gc_codex_review (uncommitted=true) AND auto-posts the canonical per-cycle decision record (every finding gets decision='fix' with auto-rationale, the only decision the cycle tool can record without user authorization). Returns a compact envelope: {ok, reviewer, cycle, cap, status, next_action, findings_summary, findings_record_url, decision_record_url, diff_mode, review_coverage}. `diff_mode` is 'inline' when the complete diff fit one prompt and 'manifest' when it did not; `review_coverage` reports how much of it was reviewed {strategy, chunks_total, chunks_completed, files_total, files_covered, complete}. An over-cap diff is reviewed as bounded server-supplied slices inside this SAME logical cycle — slices never count as cycles (issue #1414). A cycle whose slices did not all return a valid reviewer envelope comes back ok=false, status='post_failed', error='review_coverage_incomplete' with no durable record written and no cycle consumed. Verbatim review prose and per-finding bodies stay server-side via the underlying review's findings record — they never reach the agent through this tool. The subagent that drives the loop calls this tool once per cycle; on next_action='fix_findings_and_reinvoke' it fixes, self-verifies locally, re-stages, and re-invokes. wontfix / not-applicable decisions still require an explicit gc_post_decision_record call after user authorization.",
+    "Async-only pre-push codex-review cycle wrapper. Requires one bounded idempotency_key per logical attempt, returns a gc_codex_job handle immediately, runs gc_codex_review (uncommitted=true), and auto-posts the canonical per-cycle decision record. Reuse the same key when the start response is lost; changed input conflicts and concurrent distinct starts for the same repository, issue, and reviewer are refused. Poll gc_codex_job for the compact terminal result: {ok, reviewer, cycle, cap, status, next_action, findings_summary, findings_record_url, decision_record_url, diff_mode, review_coverage}. Verbatim review prose remains server-side.",
     {
       repo_path: z.string(),
       issue_number: z.number().int().positive(),
@@ -386,9 +390,14 @@ export function registerPostDecisionRecord(server, ctx) {
       override_cap: z.boolean().optional(),
       override_reason: z.string().nullable().optional(),
       auto_grant: z.boolean().optional(),
-      async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
+      async: z.boolean().optional().describe(ASYNC_REVIEW_CYCLE_PARAM_DESC),
+      idempotency_key: z
+        .string()
+        .min(1)
+        .max(ASYNC_JOB_IDEMPOTENCY_KEY_MAX)
+        .regex(ASYNC_JOB_IDEMPOTENCY_KEY_RE),
     },
-    async ({ repo_path, issue_number, base_branch, uncommitted, override_cap, override_reason, auto_grant, async: asyncMode }) => {
+    async ({ repo_path, issue_number, base_branch, uncommitted, override_cap, override_reason, auto_grant, async: asyncMode, idempotency_key }) => {
       try {
         const params = {
           repoPath: repo_path,
@@ -399,20 +408,22 @@ export function registerPostDecisionRecord(server, ctx) {
           overrideReason: override_reason ?? null,
           autoGrant: Boolean(auto_grant),
         };
-        if (asyncMode) {
-          return ok(JSON.stringify(startAsyncJob(
-            "codex_review_cycle",
-            (signal) => runCodexReviewCycle({ ...params, signal }),
-          ), null, 2));
-        }
-        return ok(JSON.stringify(await runCodexReviewCycle(params), null, 2));
+        return ok(JSON.stringify(await runReviewCycleTransport({
+          reviewer: "codex",
+          repoPath: repo_path,
+          issueNumber: issue_number,
+          idempotencyKey: idempotency_key,
+          asyncMode,
+          cycleInput: params,
+          runCycle: runCodexReviewCycle,
+        }), null, 2));
       } catch (e) { return err(e); }
     },
   );
 
   server.tool(
     "gc_test_quality_review_cycle",
-    "Pre-push test-quality review cycle wrapper. Runs gc_test_quality_review AND auto-posts the canonical per-cycle decision record (reviewer='test-quality', every finding decision='fix' with auto-rationale). Same compact envelope shape as gc_codex_review_cycle. Verbatim reviewer prose stays server-side. Skips automatically when the diff has no test files (the underlying review handles that).",
+    "Async-only pre-push test-quality review cycle wrapper. Requires one bounded idempotency_key per logical attempt, returns a gc_codex_job handle immediately, runs gc_test_quality_review, and auto-posts the canonical per-cycle decision record. Reuse the same key when the start response is lost; changed input conflicts and concurrent distinct starts for the same repository, issue, and reviewer are refused. Poll gc_codex_job for the same compact terminal result as gc_codex_review_cycle. Verbatim reviewer prose remains server-side.",
     {
       repo_path: z.string(),
       issue_number: z.number().int().positive(),
@@ -421,9 +432,14 @@ export function registerPostDecisionRecord(server, ctx) {
       override_reason: z.string().nullable().optional(),
       auto_grant: z.boolean().optional(),
       model: z.string().optional(),
-      async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
+      async: z.boolean().optional().describe(ASYNC_REVIEW_CYCLE_PARAM_DESC),
+      idempotency_key: z
+        .string()
+        .min(1)
+        .max(ASYNC_JOB_IDEMPOTENCY_KEY_MAX)
+        .regex(ASYNC_JOB_IDEMPOTENCY_KEY_RE),
     },
-    async ({ repo_path, issue_number, base_branch, override_cap, override_reason, auto_grant, model, async: asyncMode }) => {
+    async ({ repo_path, issue_number, base_branch, override_cap, override_reason, auto_grant, model, async: asyncMode, idempotency_key }) => {
       try {
         const params = {
           repoPath: repo_path,
@@ -434,13 +450,15 @@ export function registerPostDecisionRecord(server, ctx) {
           autoGrant: Boolean(auto_grant),
           model,
         };
-        if (asyncMode) {
-          return ok(JSON.stringify(startAsyncJob(
-            "test_quality_review_cycle",
-            (signal) => runTestQualityReviewCycle({ ...params, signal }),
-          ), null, 2));
-        }
-        return ok(JSON.stringify(await runTestQualityReviewCycle(params), null, 2));
+        return ok(JSON.stringify(await runReviewCycleTransport({
+          reviewer: "test-quality",
+          repoPath: repo_path,
+          issueNumber: issue_number,
+          idempotencyKey: idempotency_key,
+          asyncMode,
+          cycleInput: params,
+          runCycle: runTestQualityReviewCycle,
+        }), null, 2));
       } catch (e) { return err(e); }
     },
   );

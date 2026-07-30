@@ -1,5 +1,4 @@
 import { execFile as execFileCb } from "node:child_process";
-import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -29,6 +28,7 @@ import {
   runImplementPreCommit,
   resolveWorkflowPolicyCommand,
   startAsyncJob,
+  asyncJobInputFingerprint,
   implementGateEnvironment,
 } from "./lib.js";
 import { createWorkflowRunLifecycleEmitter } from "./workflow-run-lifecycle.js";
@@ -108,27 +108,6 @@ export const GC_IMPLEMENT_MECHANICAL_DESCRIPTION =
   "the bound value to every repo-authored gate as ACES_REQUIREMENT_UID, so a governance gate still receives requirement " +
   "identity on an issue branch that carries no UID. " +
   "A phase either completes or returns agent_required=true with a bounded repair reason; it never invokes an agent.";
-
-function normalizedFingerprintValue(value) {
-  if (Array.isArray(value)) {
-    return value.map(normalizedFingerprintValue);
-  }
-  if (value != null && typeof value === "object") {
-    return Object.fromEntries(
-      Object.keys(value)
-        .filter((key) => value[key] !== undefined)
-        .sort()
-        .map((key) => [key, normalizedFingerprintValue(value[key])]),
-    );
-  }
-  return value;
-}
-
-function mechanicalInputFingerprint(args) {
-  return createHash("sha256")
-    .update(JSON.stringify(normalizedFingerprintValue(args)))
-    .digest("hex");
-}
 
 function asyncTransportFailure(action, error, message, nextAction) {
   return {
@@ -291,7 +270,7 @@ export async function gcImplementMechanicalToolHandler(args, overrides = {}) {
       idempotencyKey: args.idempotency_key,
       idempotencyNamespace:
         `repo:${canonicalRepoPath}:issue:${args.issue_number}:action:${args.action}`,
-      fingerprint: mechanicalInputFingerprint(normalizedArgs),
+      fingerprint: asyncJobInputFingerprint(normalizedArgs),
       executionScope: checkoutBound ? `implement_mechanical_checkout:${canonicalRepoPath}` : null,
       singleFlight: checkoutBound,
       cancellable: false,

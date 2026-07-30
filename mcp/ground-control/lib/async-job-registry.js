@@ -19,6 +19,7 @@
 // agent re-runs with the same logical-attempt key. Terminal jobs are retained
 // for a bounded TTL, and total capacity is bounded without evicting live work.
 
+import { createHash } from "node:crypto";
 import { detectSensitiveBodyContent } from "./grc-legacy-compat-2.js";
 
 export const ASYNC_JOB_TTL_MS = 30 * 60 * 1000;
@@ -48,7 +49,8 @@ function _asyncJobNotFound() {
     error: "job_not_found",
     message:
       `No active job matches that bounded handle. It may have expired after ${ASYNC_JOB_TTL_MS} ms, ` +
-      "or the MCP server may have restarted. Re-run the originating tool with the same logical-attempt input.",
+      "or the MCP server may have restarted. For a review-cycle job, refresh and reconcile the " +
+      "authoritative issue thread before another attempt; otherwise follow the originating tool's retry contract.",
   };
 }
 
@@ -152,6 +154,27 @@ function _validateAsyncJobOptions(options) {
     singleFlight,
     cancellable,
   };
+}
+
+function _normalizedFingerprintValue(value) {
+  if (Array.isArray(value)) {
+    return value.map(_normalizedFingerprintValue);
+  }
+  if (value != null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.keys(value)
+        .filter((key) => value[key] !== undefined)
+        .sort()
+        .map((key) => [key, _normalizedFingerprintValue(value[key])]),
+    );
+  }
+  return value;
+}
+
+export function asyncJobInputFingerprint(value) {
+  return createHash("sha256")
+    .update(JSON.stringify(_normalizedFingerprintValue(value)))
+    .digest("hex");
 }
 
 // Start one generic async job. `kind` is a stable label echoed in poll
