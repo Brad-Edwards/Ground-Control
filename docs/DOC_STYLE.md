@@ -502,3 +502,10 @@ documented in the MCP README and the tool descriptions, while the workflow
 contract is synchronized in ADR-021, ADR-029, ADR-031, ADR-036, ADR-054, and the
 workflow documents. It changes no documentation classification, Vale rule, or
 style rule.
+
+The #1434 follow-up that auto-resolves an issue's sole in-scope requirement UID
+for the mechanical repository gates (`authorizeRequestedRequirementUid` in
+`mcp/ground-control/lib.js`) follows the same convention: it changes the
+requirement-governance environment carried into the gate subprocess, not any
+reference-doc prose or contract surface. It changes no documentation
+classification, Vale rule, or style rule.
