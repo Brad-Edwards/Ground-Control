@@ -19,6 +19,7 @@ import com.keplerops.groundcontrol.api.requirements.RequirementController;
 import com.keplerops.groundcontrol.domain.exception.AuthenticationException;
 import com.keplerops.groundcontrol.domain.exception.AuthorizationException;
 import com.keplerops.groundcontrol.domain.exception.ConflictException;
+import com.keplerops.groundcontrol.domain.exception.DomainValidationException;
 import com.keplerops.groundcontrol.domain.exception.GroundControlException;
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.projects.model.Project;
@@ -114,7 +115,7 @@ class RequirementControllerTraceabilityTest {
     class Traceability {
 
         private static TraceabilityLink createLink(Requirement req) {
-            var link = new TraceabilityLink(req, ArtifactType.GITHUB_ISSUE, "GH-123", LinkType.IMPLEMENTS);
+            var link = new TraceabilityLink(req, ArtifactType.GITHUB_ISSUE, "123", LinkType.IMPLEMENTS);
             setField(link, "id", UUID.randomUUID());
             setField(link, "createdAt", Instant.now());
             setField(link, "updatedAt", Instant.now());
@@ -130,7 +131,7 @@ class RequirementControllerTraceabilityTest {
             mockMvc.perform(get("/api/v1/requirements/" + req.getId() + "/traceability"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$[0].artifactType", is("GITHUB_ISSUE")))
-                    .andExpect(jsonPath("$[0].artifactIdentifier", is("GH-123")))
+                    .andExpect(jsonPath("$[0].artifactIdentifier", is("123")))
                     .andExpect(jsonPath("$[0].linkType", is("IMPLEMENTS")));
         }
 
@@ -145,12 +146,34 @@ class RequirementControllerTraceabilityTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(Map.of(
                                     "artifactType", "GITHUB_ISSUE",
-                                    "artifactIdentifier", "GH-123",
+                                    "artifactIdentifier", "123",
                                     "linkType", "IMPLEMENTS"))))
                     .andExpect(status().isCreated())
                     .andExpect(jsonPath("$.artifactType", is("GITHUB_ISSUE")))
-                    .andExpect(jsonPath("$.artifactIdentifier", is("GH-123")))
+                    .andExpect(jsonPath("$.artifactIdentifier", is("123")))
                     .andExpect(jsonPath("$.linkType", is("IMPLEMENTS")));
+        }
+
+        @Test
+        void createLink_invalidGitHubIdentifier_returnsStandard422Envelope() throws Exception {
+            var reqId = UUID.randomUUID();
+            doThrow(new DomainValidationException(
+                            "GITHUB_ISSUE artifact identifier must be a positive decimal integer.",
+                            "invalid_artifact_identifier",
+                            Map.of("artifactType", "GITHUB_ISSUE", "expectedFormat", "positive decimal integer")))
+                    .when(traceabilityService)
+                    .createLink(eq(reqId), any(CreateTraceabilityLinkCommand.class));
+
+            mockMvc.perform(post("/api/v1/requirements/" + reqId + "/traceability")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of(
+                                    "artifactType", "GITHUB_ISSUE",
+                                    "artifactIdentifier", "#42",
+                                    "linkType", "DOCUMENTS"))))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.error.code", is("invalid_artifact_identifier")))
+                    .andExpect(jsonPath("$.error.detail.artifactType", is("GITHUB_ISSUE")))
+                    .andExpect(jsonPath("$.error.detail.expectedFormat", is("positive decimal integer")));
         }
 
         @Test

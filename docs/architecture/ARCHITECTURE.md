@@ -170,7 +170,7 @@ GitHubIssueSync, RequirementImport, plus the ADR-085 identity family
 `RolePermissionAssignment`, `RoleGrant`, `ProjectAccessGrant`) - all JPA with
 Envers auditing.
 
-**Services:** RequirementService (9 methods), TraceabilityService (forward and reverse artifact lookup), ImportService (StrictDoc parser + idempotent import), GitHubIssueSyncService (CLI-based GitHub sync), AnalysisService (cycle/orphan/coverage/impact/cross-wave; status drift belongs here as read-only analysis), AgeGraphService (Apache AGE graph materialization + Cypher queries).
+**Services:** RequirementService (9 methods), TraceabilityService (forward and reverse artifact lookup, with canonical positive-decimal identity enforcement for GitHub issues and pull requests), ImportService (StrictDoc parser + idempotent import), GitHubIssueSyncService (CLI-based GitHub sync), AnalysisService (cycle/orphan/coverage/impact/cross-wave; status drift belongs here as read-only analysis), AgeGraphService (Apache AGE graph materialization + Cypher queries).
 
 **Requirement UID allocation (ADR-060, issues #532, #1052):** `RequirementUidAllocator` assigns the next free `{PREFIX}-{N}` UID atomically per project via `pg_advisory_xact_lock`, reading the current high-water mark from `findMaxUidSuffix` (archived rows included, so no suffix is ever recycled). `TraceabilityService.findByArtifact` accepts an optional `projectId` to scope the reverse lookup to a single project; this prevents cross-project issue-number collisions from returning or flagging another project's `GITHUB_ISSUE` links.
 

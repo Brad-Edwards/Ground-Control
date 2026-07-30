@@ -171,6 +171,14 @@ Canonical conventions:
 
 Do not introduce alternate encodings for the same artifact (`#42`, `owner/repo#42`, `file:...`, `adr:021`) in new data. Self-referential dogfooding must reuse this existing link model rather than adding a GC-specific traceability abstraction.
 
+`TraceabilityService` enforces the issue and pull-request convention on every
+create path, including internal unchecked creates, and on reverse lookup.
+Migration V211 repairs only the historical producer spelling `#<positive
+decimal>`. It fails before updating when the canonical row already exists for
+the same requirement, artifact type, and link type; it does not guess at other
+malformed values or rewrite `traceability_link_audit`, which remains the record
+of what was originally stored.
+
 | Field | Type | Constraints | Notes |
 |-------|------|-------------|-------|
 | id | UUID | PK, generated | |

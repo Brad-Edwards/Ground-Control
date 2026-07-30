@@ -19,6 +19,21 @@ interface TraceabilityFormProps {
   loading?: boolean;
 }
 
+const IDENTIFIER_PLACEHOLDERS: Record<ArtifactType, string> = {
+  GITHUB_ISSUE: "e.g. 42",
+  PULL_REQUEST: "e.g. 42",
+  CODE_FILE: "e.g. backend/src/main/java/Example.java",
+  ADR: "e.g. ADR-011",
+  CONFIG: "e.g. config/application.yml",
+  POLICY: "e.g. policies/access-control.rego",
+  TEST: "e.g. backend/src/test/java/ExampleTest.java",
+  SPEC: "e.g. docs/specs/traceability.md",
+  PROOF: "e.g. proofs/traceability.tla",
+  DOCUMENTATION: "e.g. docs/architecture/ARCHITECTURE.md",
+  RISK_SCENARIO: "e.g. RS-001",
+  CONTROL: "e.g. CTRL-001",
+};
+
 export function TraceabilityForm({
   onSubmit,
   onCancel,
@@ -77,7 +92,7 @@ export function TraceabilityForm({
           className={inputClass}
           value={artifactIdentifier}
           onChange={(e) => setArtifactIdentifier(e.target.value)}
-          placeholder="e.g. autarchy-ai/Ground-Control#42"
+          placeholder={IDENTIFIER_PLACEHOLDERS[artifactType]}
           required
         />
       </FormField>

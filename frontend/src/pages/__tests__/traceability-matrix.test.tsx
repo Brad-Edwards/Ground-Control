@@ -88,7 +88,7 @@ const composed: PagedResponse<RequirementWithLinksResponse> = {
           requirementId: "req-1",
           linkType: "IMPLEMENTS",
           artifactType: "PULL_REQUEST",
-          artifactIdentifier: "PR-42",
+          artifactIdentifier: "42",
           artifactTitle: "Implement login",
         }),
         link({
@@ -177,7 +177,7 @@ describe("TraceabilityMatrix", () => {
                   requirementId: "req-3",
                   linkType: "IMPLEMENTS",
                   artifactType: "PULL_REQUEST",
-                  artifactIdentifier: "PR-7",
+                  artifactIdentifier: "7",
                 }),
               ],
             },

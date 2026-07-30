@@ -359,7 +359,7 @@ class ThreatModelControllerTest {
         setField(req, "createdAt", NOW);
         setField(req, "updatedAt", NOW);
 
-        var artifact = new TraceabilityLink(req, ArtifactType.PULL_REQUEST, "PR-42", LinkType.IMPLEMENTS);
+        var artifact = new TraceabilityLink(req, ArtifactType.PULL_REQUEST, "42", LinkType.IMPLEMENTS);
         setField(artifact, "id", UUID.fromString("00000000-0000-0000-0000-000000000400"));
         setField(artifact, "createdAt", NOW);
         setField(artifact, "updatedAt", NOW);
@@ -388,7 +388,7 @@ class ThreatModelControllerTest {
                 .andExpect(jsonPath("$.requirements", hasSize(1)))
                 .andExpect(jsonPath("$.requirements[0].requirement.uid", is("GC-H003")))
                 .andExpect(jsonPath("$.requirements[0].artifacts", hasSize(1)))
-                .andExpect(jsonPath("$.requirements[0].artifacts[0].artifactIdentifier", is("PR-42")));
+                .andExpect(jsonPath("$.requirements[0].artifacts[0].artifactIdentifier", is("42")));
     }
 
     @Test

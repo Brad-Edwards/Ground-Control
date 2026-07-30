@@ -263,7 +263,7 @@ class AuditServiceDiffTest {
         void throwsNotFoundWhenRequirementDoesNotOwnLink() {
             var ownerId = UUID.randomUUID();
             var owner = makeRequirementWithId("REQ-OWNER", ownerId);
-            var link = new TraceabilityLink(owner, ArtifactType.GITHUB_ISSUE, "GH-123", LinkType.IMPLEMENTS);
+            var link = new TraceabilityLink(owner, ArtifactType.GITHUB_ISSUE, "123", LinkType.IMPLEMENTS);
             var linkId = UUID.randomUUID();
             setField(link, "id", linkId);
             when(traceabilityLinkRepository.findById(linkId)).thenReturn(Optional.of(link));
