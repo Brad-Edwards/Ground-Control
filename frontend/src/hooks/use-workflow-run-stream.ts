@@ -120,6 +120,11 @@ export function useWorkflowRunStream(projectIdentifier: string): {
         queryKey: workflowRunKeys.aggregatePrefix(projectIdentifier),
       });
     };
+    const invalidateActivity = () => {
+      void queryClient.invalidateQueries({
+        queryKey: workflowRunKeys.activity(projectIdentifier),
+      });
+    };
 
     /** A frame we cannot trust is a reason to resynchronize over REST, never to write to the cache. */
     const rejectFrame = () => {
@@ -129,6 +134,7 @@ export function useWorkflowRunStream(projectIdentifier: string): {
         queryKey: workflowRunKeys.runs(projectIdentifier),
       });
       invalidateAggregates();
+      invalidateActivity();
     };
 
     const handleRun = (event: MessageEvent<string>) => {
@@ -148,6 +154,7 @@ export function useWorkflowRunStream(projectIdentifier: string): {
         (existing) => upsertNewestFirst(existing, payload),
       );
       invalidateAggregates();
+      invalidateActivity();
     };
 
     const handlePhaseEvent = (event: MessageEvent<string>) => {
@@ -171,6 +178,7 @@ export function useWorkflowRunStream(projectIdentifier: string): {
         );
       }
       invalidateAggregates();
+      invalidateActivity();
     };
 
     source.addEventListener("workflow-run", handleRun as EventListener);
@@ -182,6 +190,7 @@ export function useWorkflowRunStream(projectIdentifier: string): {
         queryKey: workflowRunKeys.runs(projectIdentifier),
       });
       invalidateAggregates();
+      invalidateActivity();
     };
     source.onerror = () => {
       // EventSource retries on its own; report degraded so the caller re-arms interval polling

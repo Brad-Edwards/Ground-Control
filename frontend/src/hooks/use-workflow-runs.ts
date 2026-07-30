@@ -1,6 +1,7 @@
 import { workflowRunKeys } from "@/hooks/workflow-run-keys";
 import { apiFetch } from "@/lib/api-client";
 import type {
+  WorkflowActivityResponse,
   WorkflowRunAggregateResponse,
   WorkflowRunResponse,
 } from "@/types/api";
@@ -44,6 +45,21 @@ export function useWorkflowRuns(
     queryFn: () =>
       apiFetch<WorkflowRunResponse[]>("/workflow-runs", {
         params: { project: projectIdentifier, limit: "50" },
+      }),
+    enabled: !!projectIdentifier,
+    refetchInterval: fallbackInterval(live),
+  });
+}
+
+export function useWorkflowActivity(
+  projectIdentifier: string,
+  { live }: LiveOptions = {},
+) {
+  return useQuery({
+    queryKey: workflowRunKeys.activity(projectIdentifier),
+    queryFn: () =>
+      apiFetch<WorkflowActivityResponse>("/workflow-runs/activity", {
+        params: { project: projectIdentifier },
       }),
     enabled: !!projectIdentifier,
     refetchInterval: fallbackInterval(live),

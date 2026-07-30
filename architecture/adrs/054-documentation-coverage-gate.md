@@ -8,6 +8,14 @@ accepted
 
 2026-05-23
 
+> **Sync note for issue #1437 (2026-07-30, Live Activity):** Added the project-scoped
+> `GET /api/v1/workflow-runs/activity` read projection, its generated OpenAPI/TypeScript contract,
+> deployment configuration, and console workspace. Documentation lives in ADR-061, `docs/API.md`,
+> `docs/architecture/ARCHITECTURE.md`, and `docs/deployment/DEPLOYMENT.md`. This uses the existing
+> `public_api`, `configuration`, and architecture coverage classes; the documentation-coverage
+> classifier, `outcome_required` mapping, Vale rules, installer, and `.vale.ini` are unchanged, and
+> no new documentation classification or style rule is established.
+
 > **Sync note for issue #1462 (2026-07-28, completion project inference):** Added
 > `resolveAssertProject` and structured `project_required` propagation in
 > `mcp/ground-control/lib.js` so `gc_assert_traceability_reconciled` and

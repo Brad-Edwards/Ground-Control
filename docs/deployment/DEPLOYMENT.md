@@ -788,6 +788,12 @@ To roll back to a prior version, use `make rollback VERSION=<version-or-digest>`
 
 The credential block (`GROUNDCONTROL_SECURITY_CREDENTIALS_*`) and any other ADR-026 / GC-P011 access-control envs go in this same file. See the ADR-026 cutover playbook above for the full credential shape.
 
+Live Activity uses non-secret optional bounds inherited by the backend:
+`GC_ACTIVITY_STALL_THRESHOLD` (default `30m`), `GC_ACTIVITY_MAX_OPEN_RUNS` (default `100`), and
+`GC_ACTIVITY_RECENT_RUNS` (default `8`). Set them in `/opt/gc/.env` only when the deployment needs
+different presentation sensitivity or snapshot sizes. The stall threshold changes an attention
+label only; it does not change workflow state, liveness, or cleanup behavior.
+
 #### 3. Deploy script
 
 ```bash

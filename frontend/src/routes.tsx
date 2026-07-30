@@ -46,6 +46,11 @@ const WorkflowRuns = lazy(() =>
     default: m.WorkflowRuns,
   })),
 );
+const WorkflowActivity = lazy(() =>
+  import("@/pages/workflow-activity").then((m) => ({
+    default: m.WorkflowActivity,
+  })),
+);
 
 function NotFound() {
   return (
@@ -101,6 +106,7 @@ export function AppRoutes() {
           <Route path="test-runs/:runId/run" element={<TestRunRunner />} />
           <Route path="graph" element={<Graph />} />
           <Route path="analysis" element={<Analysis />} />
+          <Route path="activity" element={<WorkflowActivity />} />
           <Route path="workflow-runs" element={<WorkflowRuns />} />
           <Route path="admin" element={<Admin />} />
           <Route path="*" element={<NotFound />} />

@@ -18,6 +18,7 @@ import com.keplerops.groundcontrol.api.workflowtelemetry.stream.WorkflowRunStrea
 import com.keplerops.groundcontrol.domain.exception.NotFoundException;
 import com.keplerops.groundcontrol.domain.exception.ServiceUnavailableException;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowActivityService;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowMeasurementService;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowTelemetryService;
 import org.junit.jupiter.api.Test;
@@ -41,6 +42,9 @@ class WorkflowRunStreamControllerTest {
 
     @MockitoBean
     private WorkflowMeasurementService measurementService;
+
+    @MockitoBean
+    private WorkflowActivityService activityService;
 
     @MockitoBean
     private ProjectService projectService;

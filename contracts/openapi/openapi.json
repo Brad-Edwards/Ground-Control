@@ -3402,6 +3402,58 @@
         ],
         "type": "object"
       },
+      "GateAttemptResponse": {
+        "properties": {
+          "cycleIndex": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "durationMs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "eventType": {
+            "enum": [
+              "STARTED",
+              "COMPLETED",
+              "FAILED",
+              "ESCALATED",
+              "SKIPPED"
+            ],
+            "type": "string"
+          },
+          "findingCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "findingsDropped": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "stationId": {
+            "type": "string"
+          },
+          "stationResult": {
+            "enum": [
+              "PASS",
+              "FAIL",
+              "SKIPPED_STATION",
+              "CANCELLED",
+              "NOT_EVALUABLE",
+              "UNOBSERVED"
+            ],
+            "type": "string"
+          },
+          "stationTitle": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "GateDecisionRequest": {
         "properties": {
           "gatePoint": {
@@ -4848,6 +4900,41 @@
           "updatedAt": {
             "format": "date-time",
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "OpenRunResponse": {
+        "properties": {
+          "currentCycle": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "currentPhase": {
+            "type": "string"
+          },
+          "currentPhaseSince": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "currentPhaseTitle": {
+            "type": "string"
+          },
+          "gates": {
+            "items": {
+              "$ref": "#/components/schemas/GateAttemptResponse"
+            },
+            "type": "array"
+          },
+          "routing": {
+            "$ref": "#/components/schemas/RoutingObservationResponse"
+          },
+          "run": {
+            "$ref": "#/components/schemas/RunSummaryResponse"
+          },
+          "stallThresholdMs": {
+            "format": "int64",
+            "type": "integer"
           }
         },
         "type": "object"
@@ -9266,6 +9353,111 @@
         ],
         "type": "object"
       },
+      "RoutingObservationResponse": {
+        "properties": {
+          "expectedModel": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "modelMatchesExpected": {
+            "type": "boolean"
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "stepAlias": {
+            "type": "string"
+          },
+          "tier": {
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH",
+              "NOT_APPLICABLE",
+              "UNOBSERVED"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RunSummaryResponse": {
+        "properties": {
+          "branch": {
+            "type": "string"
+          },
+          "costCurrency": {
+            "type": "string"
+          },
+          "costProxy": {
+            "type": "number"
+          },
+          "endedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "finalState": {
+            "enum": [
+              "RUNNING",
+              "READY_FOR_REVIEW",
+              "MERGED",
+              "CLOSED",
+              "ESCALATED",
+              "ABANDONED",
+              "SUPERSEDED",
+              "FAILED"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "issueNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "outcome": {
+            "enum": [
+              "MERGED",
+              "CLOSED_WITHOUT_MERGE",
+              "NONE"
+            ],
+            "type": "string"
+          },
+          "prNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "project": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "runtimeDriver": {
+            "type": "string"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "tokenUsage": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "workflowType": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ScenarioSummary": {
         "properties": {
           "id": {
@@ -13546,6 +13738,34 @@
           "wave": {
             "format": "int32",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "WorkflowActivityResponse": {
+        "properties": {
+          "asOf": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "openRuns": {
+            "items": {
+              "$ref": "#/components/schemas/OpenRunResponse"
+            },
+            "type": "array"
+          },
+          "openRunsTruncated": {
+            "type": "boolean"
+          },
+          "openRunTotal": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "recentlyFinished": {
+            "items": {
+              "$ref": "#/components/schemas/RunSummaryResponse"
+            },
+            "type": "array"
           }
         },
         "type": "object"
@@ -29968,6 +30188,36 @@
               }
             },
             "description": "Created"
+          }
+        },
+        "tags": [
+          "workflow-run-controller"
+        ]
+      }
+    },
+    "/api/v1/workflow-runs/activity": {
+      "get": {
+        "operationId": "activity",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "project",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowActivityResponse"
+                }
+              }
+            },
+            "description": "OK"
           }
         },
         "tags": [

@@ -293,6 +293,9 @@ export async function importWorkflowRunCost(runId, data, project) {
 export async function listWorkflowRuns({ project, limit } = {}) {
   return request("GET", "/api/v1/workflow-runs", { params: { project, limit } });
 }
+export async function getWorkflowActivity({ project } = {}) {
+  return request("GET", "/api/v1/workflow-runs/activity", { params: { project } });
+}
 export async function listWorkflowRunEvents(runId, { project, limit } = {}) {
   return request("GET", `/api/v1/workflow-runs/${encodeURIComponent(runId)}/events`, {
     params: { project, limit },

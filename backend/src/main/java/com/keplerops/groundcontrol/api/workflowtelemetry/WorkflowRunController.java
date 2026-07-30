@@ -9,6 +9,7 @@ import com.keplerops.groundcontrol.domain.workflowtelemetry.service.GateFindingC
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.ImportRunCostCommand;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.RecordPhaseEventCommand;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.RecordWorkflowRunCommand;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowActivityService;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowMeasurementService;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowRunFilter;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowTelemetryService;
@@ -48,16 +49,19 @@ public class WorkflowRunController {
 
     private final WorkflowTelemetryService telemetryService;
     private final WorkflowMeasurementService measurementService;
+    private final WorkflowActivityService activityService;
     private final ProjectService projectService;
     private final WorkflowRunStreamHub streamHub;
 
     public WorkflowRunController(
             WorkflowTelemetryService telemetryService,
             WorkflowMeasurementService measurementService,
+            WorkflowActivityService activityService,
             ProjectService projectService,
             WorkflowRunStreamHub streamHub) {
         this.telemetryService = telemetryService;
         this.measurementService = measurementService;
+        this.activityService = activityService;
         this.projectService = projectService;
         this.streamHub = streamHub;
     }
@@ -88,6 +92,16 @@ public class WorkflowRunController {
     public SseEmitter stream(@RequestParam(required = false) String project) {
         var projectIdentifier = projectService.requireProjectIdentifier(project);
         return streamHub.subscribe(projectIdentifier, currentPrincipal());
+    }
+
+    /**
+     * Bounded project activity projection. “Current” means last observed ADR-061 transition; the
+     * response's threshold is an attention heuristic, never a workflow lease or control signal.
+     */
+    @GetMapping("/activity")
+    public WorkflowActivityResponse activity(@RequestParam(required = false) String project) {
+        var projectIdentifier = projectService.requireProjectIdentifier(project);
+        return WorkflowActivityResponse.from(activityService.snapshot(projectIdentifier));
     }
 
     /**

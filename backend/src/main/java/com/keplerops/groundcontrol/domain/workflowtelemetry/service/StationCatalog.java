@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -44,7 +45,10 @@ public final class StationCatalog {
     private static final String ADR061_PHASE_ALIAS = "adr061_phase";
 
     private final Set<String> stationIds;
+    private final List<String> stationOrder;
+    private final Map<String, String> stationTitles;
     private final Set<String> markerIds;
+    private final Map<String, String> markerTitlesByPhase;
 
     /**
      * ADR-036 routing stage → canonical station id, built from every station's {@code adr036_stage}
@@ -82,7 +86,10 @@ public final class StationCatalog {
             throw new IllegalStateException("Could not load the station catalogue: " + resourcePath, e);
         }
         this.stationIds = ids(root, STATIONS_FIELD, STATION_ID_FIELD);
+        this.stationOrder = orderedIds(root, STATIONS_FIELD, STATION_ID_FIELD);
+        this.stationTitles = titles(root, STATIONS_FIELD, STATION_ID_FIELD);
         this.markerIds = ids(root, LIFECYCLE_MARKERS_FIELD, "marker_id");
+        this.markerTitlesByPhase = markerTitlesByPhase(root);
         this.stationByStage = stationByStage(root);
         this.stationByPhase = stationByPhase(root);
         this.markerPhases = markerPhases(root);
@@ -103,6 +110,48 @@ public final class StationCatalog {
             }
         }
         return Set.copyOf(found);
+    }
+
+    private static List<String> orderedIds(JsonNode root, String arrayField, String idField) {
+        var found = new java.util.ArrayList<String>();
+        for (var entry : root.path(arrayField)) {
+            var id = entry.path(idField).asText(null);
+            if (id != null && !id.isBlank()) {
+                found.add(id);
+            }
+        }
+        return List.copyOf(found);
+    }
+
+    private static Map<String, String> titles(JsonNode root, String arrayField, String idField) {
+        var found = new LinkedHashMap<String, String>();
+        for (var entry : root.path(arrayField)) {
+            var id = entry.path(idField).asText(null);
+            var title = entry.path("title").asText(null);
+            if (id != null && !id.isBlank() && title != null && !title.isBlank()) {
+                found.put(id, title);
+            }
+        }
+        return Map.copyOf(found);
+    }
+
+    private static Map<String, String> markerTitlesByPhase(JsonNode root) {
+        var found = new LinkedHashMap<String, String>();
+        for (var marker : root.path(LIFECYCLE_MARKERS_FIELD)) {
+            var id = marker.path("marker_id").asText(null);
+            var title = marker.path("title").asText(null);
+            if (id == null || id.isBlank() || title == null || title.isBlank()) {
+                continue;
+            }
+            found.put(id, title);
+            for (var alias : marker.path(ALIASES_FIELD).path(ADR061_PHASE_ALIAS)) {
+                var phase = alias.asText(null);
+                if (phase != null && !phase.isBlank()) {
+                    found.put(phase, title);
+                }
+            }
+        }
+        return Map.copyOf(found);
     }
 
     private static Map<String, String> stationByStage(JsonNode root) {
@@ -222,5 +271,22 @@ public final class StationCatalog {
     /** The catalogue's station ids, for error messages that can name the valid set. */
     public Set<String> stationIds() {
         return stationIds;
+    }
+
+    /** Catalogue order for presentation; callers never duplicate it as a UI-owned station enum. */
+    public List<String> stationOrder() {
+        return stationOrder;
+    }
+
+    /** Human title for one canonical station id; unknown ids stay explicit rather than fabricated. */
+    public String stationTitle(String stationId) {
+        return stationTitles.getOrDefault(stationId, stationId);
+    }
+
+    /** Human title for a lifecycle phase, resolved through station or marker catalogue aliases. */
+    public String displayNameForPhase(String phase) {
+        return resolveStationForPhase(phase)
+                .map(this::stationTitle)
+                .orElseGet(() -> markerTitlesByPhase.getOrDefault(phase, phase));
     }
 }

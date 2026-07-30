@@ -15,6 +15,9 @@ export const workflowRunKeys = {
   runEvents: (projectIdentifier: string, runId: string) =>
     ["workflow-run-events", projectIdentifier, runId] as const,
 
+  activity: (projectIdentifier: string) =>
+    ["workflow-run-activity", projectIdentifier] as const,
+
   aggregate: (projectIdentifier: string, filters: WorkflowRunFilters = {}) =>
     [
       "workflow-run-aggregate",

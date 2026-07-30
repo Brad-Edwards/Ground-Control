@@ -2,6 +2,7 @@ package com.keplerops.groundcontrol.domain.workflowtelemetry.repository;
 
 import com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowGateFinding;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -26,6 +27,16 @@ public interface WorkflowGateFindingRepository extends JpaRepository<WorkflowGat
 
     boolean existsByPhaseEventId(UUID phaseEventId);
 
+    @Query(
+            """
+            select f.phaseEventId as phaseEventId, count(f) as findingCount
+              from WorkflowGateFinding f
+             where f.project = :project and f.phaseEventId in :phaseEventIds
+             group by f.phaseEventId
+            """)
+    List<PhaseEventFindingCount> countByPhaseEventIds(
+            @Param("project") String project, @Param("phaseEventIds") Collection<UUID> phaseEventIds);
+
     /**
      * Finding counts by reviewer/detector, category, severity, and disposition.
      *
@@ -49,4 +60,10 @@ public interface WorkflowGateFindingRepository extends JpaRepository<WorkflowGat
 
     /** Findings for one run, used to report per-run open-disposition coverage. */
     List<WorkflowGateFinding> findByRunIdAndProject(UUID runId, String project);
+
+    interface PhaseEventFindingCount {
+        UUID getPhaseEventId();
+
+        long getFindingCount();
+    }
 }

@@ -78,7 +78,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [058](058-derivation-first-continuous-grc.md) | Derivation-First Continuous GRC | Superseded by ADR-089 for active product and workflow behavior |
 | [059](059-mcp-usage-telemetry.md) | MCP Tool Usage Telemetry | Accepted |
 | [060](060-requirement-uid-identity.md) | Requirement UID identity | Accepted |
-| [061](061-workflow-run-telemetry-reporting.md) | Workflow-Run Telemetry & Economics Reporting Surface | Accepted (amended 2026-07-26, #1435) |
+| [061](061-workflow-run-telemetry-reporting.md) | Workflow-Run Telemetry & Economics Reporting Surface | Accepted (amended 2026-07-30, #1437) |
 | [062](062-age-graph-projection-snapshot-publication.md) | AGE Graph Projection Snapshot Publication | Accepted |
 | [063](063-release-deployment-model.md) | Release & Deployment Model | Accepted (amended 2026-07-15, GC-P027/#1399 Release Please ownership) |
 | [064](064-research-run-lifecycle-and-stage-gating.md) | Research Run Lifecycle and Stage Gating | Accepted |

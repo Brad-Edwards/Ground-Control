@@ -21,6 +21,7 @@ import com.keplerops.groundcontrol.domain.workflowtelemetry.FindingDisposition;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.FindingSourceKind;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowGateFinding;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.StationYieldCalculator;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowActivityService;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowMeasurementService;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowTelemetryService;
 import java.time.Instant;
@@ -46,6 +47,9 @@ class WorkflowMeasurementControllerTest {
 
     @MockitoBean
     private WorkflowMeasurementService measurementService;
+
+    @MockitoBean
+    private WorkflowActivityService activityService;
 
     @MockitoBean
     private ProjectService projectService;

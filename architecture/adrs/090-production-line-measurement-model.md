@@ -413,6 +413,28 @@ deployment replaces with a broker, outbox, or database notification. That
 replacement is a delivery concern and must not become a reason to fork the
 measurement model.
 
+## Amendment (issue #1437, 2026-07-30): Live Activity is a bounded read projection
+
+The Live Activity workspace and its REST/MCP read surface project the existing
+ADR-061 run, lifecycle, routing, station-attempt, and finding facts. They emit
+no measurement record and create no new workflow, station, result, or liveness
+axis. The REST snapshot and `gc_workflow_run activity` action are bounded and
+project-scoped; both use the same authenticated repository-backed projection.
+
+The gate strip is a catalogue-shaped presentation over the latest durable
+attempt at each station. A catalogue station with no observed attempt is shown
+as `UNOBSERVED`; the projection never derives pass/fail from a lifecycle event,
+operation outcome, run state, or missing row. Routing model and tier come only
+from the latest authoritative ADR-036 observation and remain separate from the
+station result.
+
+“Possibly stalled” is browser-side attention wording derived from the
+server-provided observation time and a validated threshold. It is not a
+heartbeat, lease, timeout, state transition, failure, station result, or
+workflow control signal. `READY_FOR_REVIEW` and `ESCALATED` runs therefore use
+honest waiting/escalation wording instead of being relabelled as running work.
+This leaves the liveness boundary from the #1436 amendment unchanged.
+
 ## Amendment (issue #1438, 2026-07-27): the contract is published
 
 Decision 7 required the model to become a versioned contract; issue #1438
