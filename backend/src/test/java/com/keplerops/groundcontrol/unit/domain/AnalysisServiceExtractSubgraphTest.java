@@ -184,9 +184,9 @@ class AnalysisServiceExtractSubgraphTest {
             UUID bId = UUID.randomUUID();
             var reqA = makeRequirement("REQ-A", aId);
             var reqB = makeRequirement("REQ-B", bId);
-            var linkA = new TraceabilityLink(reqA, ArtifactType.GITHUB_ISSUE, "issue-1", LinkType.IMPLEMENTS);
-            var linkB1 = new TraceabilityLink(reqB, ArtifactType.GITHUB_ISSUE, "issue-2", LinkType.TESTS);
-            var linkB2 = new TraceabilityLink(reqB, ArtifactType.GITHUB_ISSUE, "issue-3", LinkType.DOCUMENTS);
+            var linkA = new TraceabilityLink(reqA, ArtifactType.GITHUB_ISSUE, "1", LinkType.IMPLEMENTS);
+            var linkB1 = new TraceabilityLink(reqB, ArtifactType.GITHUB_ISSUE, "2", LinkType.TESTS);
+            var linkB2 = new TraceabilityLink(reqB, ArtifactType.GITHUB_ISSUE, "3", LinkType.DOCUMENTS);
 
             when(requirementRepository.findByProjectIdAndArchivedAtIsNull(PROJECT_ID))
                     .thenReturn(List.of(reqA, reqB));
