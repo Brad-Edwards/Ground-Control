@@ -60,7 +60,7 @@
       "id": "gc.implement.final-report.review-evidence-present",
       "description": "A final report cannot claim readiness without recorded review evidence.",
       "enforcedBy": [
-        "tools/tests/test_policy.py::test_implement_final_report_schema_requires_review_evidence_invariant"
+        "tools/tests/test_policy_authz_matrix_sync.py::test_implement_final_report_schema_requires_review_evidence_invariant"
       ]
     }
   ]

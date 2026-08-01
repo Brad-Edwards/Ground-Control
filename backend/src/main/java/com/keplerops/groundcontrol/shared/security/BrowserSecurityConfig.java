@@ -155,7 +155,8 @@ public class BrowserSecurityConfig {
             IpAllowlistFilter ipAllowlistFilter,
             ApiAuthenticationEntryPoint apiAuthenticationEntryPoint,
             ApiAccessDeniedHandler apiAccessDeniedHandler,
-            SessionRegistry sessionRegistry)
+            SessionRegistry sessionRegistry,
+            IdentityAuthorizationManager identityAuthorizationManager)
             throws Exception {
 
         if (!properties.isEnabled()) {
@@ -286,7 +287,7 @@ public class BrowserSecurityConfig {
                             "/robots.txt",
                             "/login-assets/**")
                     .permitAll();
-            ApiPathMatrix.applySharedRules(auth, properties);
+            ApiPathMatrix.applySharedRules(auth, properties, identityAuthorizationManager);
             // Everything else — root, /index.html, /assets/**, and SPA client routes —
             // requires a session. Spring's DelegatingAuthenticationEntryPoint redirects
             // to /login for non-API paths and emits JSON 401 for /api/v1/** (covered by

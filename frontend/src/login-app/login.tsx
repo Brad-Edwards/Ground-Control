@@ -73,6 +73,10 @@ export function Login({ setRedirectorForTests }: LoginProps) {
 
   const [hasError, setHasError] = useState(searchParams.has("error"));
   const [submitting, setSubmitting] = useState(false);
+  // GC-Q015: a bare `expired=1` flag (set by the SPA api-client on an XHR 401) tells the user their
+  // session ended, distinct from a failed credential attempt. It reflects no server text.
+  const sessionExpired =
+    searchParams.has("expired") && !searchParams.has("error");
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -128,6 +132,11 @@ export function Login({ setRedirectorForTests }: LoginProps) {
           >
             Invalid credentials. Please try again.
           </div>
+        )}
+        {sessionExpired && (
+          <output className="block rounded-md border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning">
+            Your session expired. Please sign in again.
+          </output>
         )}
         <form onSubmit={handleSubmit} className="space-y-4">
           <Field label="Username">

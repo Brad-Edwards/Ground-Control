@@ -457,6 +457,24 @@ Two coordinated changes:
 cycle wrappers and watch tools, is bridge work toward GC-O009; the
 start/poll/cancel triple is the shape a Temporal activity handle takes.
 
+**2026-07-30 (issue #943): idempotent async-only cycle boundary.** The public
+`gc_codex_review_cycle` and `gc_test_quality_review_cycle` registrations no
+longer expose a synchronous path. Omitted or true `async` starts a background
+job; false is refused. Each start requires a bounded `idempotency_key` scoped
+with a server-derived fingerprint to the authorized canonical repository,
+issue, and reviewer. Same-key/same-input retries return the retained running or
+terminal job, changed input returns `job_idempotency_conflict`, and distinct
+keys are single-flight within that reviewer scope. Authorization and safe Git
+configuration checks happen before job lookup, so a retained idempotency hit
+cannot bypass repository identity. Cycle jobs are registered non-cancellable:
+the current abort signal reaches the reviewer child but cannot prove rollback
+after findings, cycle, station, or decision records begin posting. A
+`job_not_found` result therefore requires issue-thread refresh before a new
+logical attempt; the in-memory registry never claims exactly once recovery
+across process loss. The synchronous internal cycle executors, durable posting
+order, marker families, cap counters, terminal result envelope, and closed
+telemetry shape are unchanged.
+
 **Amendment: renderer summary byte caps (#964).** Two of the three durable-record renderer tools in this ADR's surface family (`gc_render_pr_body` and `gc_post_final_report`) now enforce reject-not-truncate byte caps on their caller-controlled summary fields (`PR_BODY_SUMMARY_MAX = 1200`, `FINAL_REPORT_SUMMARY_MAX = 800`, `FINAL_REPORT_PLAIN_ENGLISH_OUTCOME_MAX = 600`, `FINAL_REPORT_REVIEW_SUMMARY_MAX = 240` for `reviews[].summary`). `gc_post_decision_record`'s schema is unchanged; its caller-controlled prose fields already had per-field caps. The canonical succinctness rule is in `skills/implement/steps/_review-loop-rules.md § Update succinctness (canonical)` and is referenced from all three renderer tool descriptions. `buildFinalReport` no longer emits placeholder lines in the In-scope requirements or Reviews sections when those inputs are empty.
 
 **Amendment: issue close mechanism (#862 typed-action-items PR).** The /implement Step 18 no longer runs `gh issue close`. The GitHub issue closes via `Closes #<issue-number>` in the PR body (rendered by `gc_render_pr_body` in Step 9) when the user merges the PR. Step 18 only removes the `in-progress` label set in Step 1. Closing from the agent decoupled the close event from the merge: an unmerged or rolled-back PR would leave a closed issue with no shipped code (GitHub does not re-open issues on revert). Step 19 (final report) is correspondingly tightened: traceability reconciliation (Steps 15 through 17) is an explicit precondition, and no earlier step surfaces a user-facing "complete" signal (prior escalations are for input, not for "done"). The /quickfix sibling lane is updated in lockstep.
@@ -532,11 +550,55 @@ durable evidence, invokes no LLM, and returns `agent_required: true` only with
 a bounded repair reason. Existing routing stages and telemetry's
 operational-only status remain unchanged.
 
+**2026-07-28 (issue #1473, async mechanical execution).**
+The existing in-process review/preflight job registry becomes the shared
+background-job registry; `gc_codex_job` remains the one polling surface.
+`gc_implement_mechanical` gains opt-in background execution for only
+`verify`, `publish`, and `monitor`, the actions whose repository commands or
+remote watchers can outlive one MCP request. `/implement` and `/quickfix` use
+that mode by default for those actions. `bootstrap`, `readiness`, and
+`finalize` remain synchronous.
+
+Each background mechanical start requires a bounded `idempotency_key` for one
+logical attempt. The server fingerprints normalized mechanical input under the
+canonical checkout, issue, and action. Repeating the same key and input reuses
+the running or terminal job; changing input under one key returns
+`job_idempotency_conflict`. Distinct active `verify` and `publish` jobs share a
+single-flight checkout scope, preventing overlapping verification and Git
+mutation after the initiating request returns. The registry has a fixed
+capacity, never evicts running work, and retains terminal results under its
+existing 30-minute TTL.
+
+The job and action envelopes remain separate. `status: "done"` means the
+background function returned; its unchanged `result` may correctly have
+`ok: false` and `agent_required: true` for an expected red gate. Only an
+unexpected rejection produces top-level `status: "failed"`. Stored unexpected
+errors are bounded and sensitive-content scrubbed. Job IDs and idempotency keys
+are bounded at the public schema.
+
+Review and preflight jobs remain cancellable because their child processes
+honor the registry's `AbortSignal`. Mechanical actions do not yet honor abort
+across their entire shell, Git/GitHub, fetch, retry-delay, and polling graph, so
+their job records declare `cancellable: false`; cancel returns
+`job_not_cancellable` and leaves the action running to its ordinary terminal
+result. This is an explicit correctness boundary, not a deferred promise or a
+reason to increase the MCP request timeout. Jobs remain operational,
+process-local waiting state. Existing issue-thread records, synchronization
+attestations, workflow-run lifecycle events, station attempts, routing stages,
+and telemetry retain authority and unchanged semantics.
+
+The test-quality reviewer's child-process ceiling is 30 minutes. A repository-
+scale test cutover exceeded the former ten-minute ceiling while its async job
+was healthy, so the shorter bound incorrectly converted legitimate review work
+into `test_quality_review_engine_failed`. The background job remains
+cancellable through the same `AbortSignal`; the ceiling is only the final
+stuck-child bound and does not replace polling or widen an MCP request timeout.
+
 **2026-07-26 (issue #1414, sliced review inside one async job).** An over-cap
 diff is reviewed as several bounded inline slices, which multiplies the number
 of `codex exec` children a single `gc_codex_review` / `gc_codex_review_cycle`
 call spawns. This stays entirely inside the existing async job model: one
-`startReviewJob` job, one `job_id`, one `gc_codex_job` poll loop, and one
+`startAsyncJob` job, one `job_id`, one `gc_codex_job` poll loop, and one
 abort signal that still kills every child. Slices run sequentially within a
 reviewer so the existing `GC_CODEX_REVIEW_PARALLEL` setting remains the only
 concurrency knob. The deterministic record renderers gain two bounded output
@@ -562,3 +624,39 @@ and `gc_render_pr_body` gains no input and emits no command text (see ADR-029).
 and now resolves and validates the repository context before the hook boundary,
 so an invalid `.ground-control.yaml` cannot fall through to a default hook
 command.
+
+**2026-07-29 (issue #1354, durable step-telemetry sink).** The per-step
+telemetry contract above still holds (`gc_log_step_telemetry`, `telemetry.enabled`
+opt-in, operational-measurement-only, non-gating), but the **sink changes**.
+The forward `.gc/telemetry/<issue>-<sanitized-branch>.jsonl` write is retired:
+`gc_log_step_telemetry` now records each routed step as a durable observation on
+the ADR-061 `WorkflowRun` / `WorkflowPhaseEvent` reporting projection, so a
+completed `/implement` run leaves a queryable per-step record instead of a
+gitignored per-clone file. The binding design lives in ADR-090's 2026-07-29
+amendment ("durable ADR-036 step observations"); this ADR records the
+consequences for its own surface:
+
+- The step record maps onto the ADR-090 production-line measurement model,
+  keyed on work item `(project, repo, issue_number)`, the run's
+  `(project, repo, issue_number, branch)` natural key, the catalogue
+  `station_id` (resolved backend-side from the ADR-036 stage), and the
+  capability `tier`. It is distinguished from a lifecycle/station attempt by an
+  `emitter` value (`ADR036_STEP_JSONL`); lifecycle hot-spot, yield/rework, and
+  context-graph consumers exclude it.
+- The v2 JSONL schema semantics are frozen: the step record's `outcome` stays
+  **operation outcome** and never becomes a station verdict (`station_result`
+  is `UNOBSERVED`), so it cannot by itself produce first-pass yield.
+- `gc_log_step_telemetry` gains `stage` (the ADR-036 stage id, carried as the
+  event `phase`) and a non-negative `attempt` index; `step` (the numbered SKILL
+  step) becomes a non-identity alias. The durable `(run_id, source_id)`
+  identity is namespaced to the ADR-036 emitter
+  (`adr036_step:<stage>:<attempt>`) so it never collides with a live station
+  attempt.
+- The write is strictly fail-open and never falls back to a local authoritative
+  file: a durable record is guaranteed only when `telemetry.enabled` and the
+  authenticated backend is reachable. Existing local JSONL files remain
+  historical input for the `make implement-cost-summary` summarizer; they are
+  not backfilled, dual-written, or promoted to a second source of truth.
+
+The routing table, the tier→model mapping, and the telemetry record's
+operational-only status are otherwise unchanged.

@@ -12,6 +12,10 @@ vi.mock("@/hooks/use-workflow-runs", () => ({
   useWorkflowRuns: vi.fn(),
 }));
 
+vi.mock("@/hooks/use-workflow-run-stream", () => ({
+  useWorkflowRunStream: vi.fn(),
+}));
+
 vi.mock("@/contexts/project-context", () => ({
   useProjectContext: () => ({
     activeProject: { identifier: "ground-control", name: "Ground Control" },
@@ -20,15 +24,14 @@ vi.mock("@/contexts/project-context", () => ({
 
 vi.mock("react-router", async () => {
   const actual =
-    await vi.importActual<typeof import("react-router")>(
-      "react-router",
-    );
+    await vi.importActual<typeof import("react-router")>("react-router");
   return {
     ...actual,
     useParams: () => ({ projectId: "ground-control" }),
   };
 });
 
+import { useWorkflowRunStream } from "@/hooks/use-workflow-run-stream";
 import {
   useWorkflowRunAggregate,
   useWorkflowRuns,
@@ -37,6 +40,7 @@ import { WorkflowRuns } from "../workflow-runs";
 
 const mockUseAggregate = vi.mocked(useWorkflowRunAggregate);
 const mockUseRuns = vi.mocked(useWorkflowRuns);
+const mockUseStream = vi.mocked(useWorkflowRunStream);
 
 const emptyAggregate: WorkflowRunAggregateResponse = {
   from: "2026-06-01T00:00:00Z",
@@ -167,6 +171,11 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+beforeEach(() => {
+  // Default every page test to a connected stream; the transport-state tests override it.
+  mockUseStream.mockReturnValue({ status: "live" });
+});
+
 describe("WorkflowRuns — data loaded", () => {
   beforeEach(() => {
     mockUseAggregate.mockReturnValue({
@@ -240,25 +249,18 @@ describe("WorkflowRuns — data loaded", () => {
     expect(screen.getByText("Cost / closed run")).toBeTruthy();
   });
 
-  it("renders active runs table for RUNNING and READY_FOR_REVIEW states", () => {
+  it("keeps open and terminal records in the historical table", () => {
     render(<WorkflowRuns />);
 
-    expect(
-      screen.getAllByText("Active workflow status").length,
-    ).toBeGreaterThan(0);
-    // Both active and ready-for-review appear; merged does not
+    expect(screen.getAllByText("Recent run records").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Running").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Ready For Review").length).toBeGreaterThan(0);
-    // The merged run should NOT appear in the active section
     expect(screen.getAllByText("feature/telemetry").length).toBeGreaterThan(0);
     expect(screen.getAllByText("feature/ready").length).toBeGreaterThan(0);
-    // feature/done belongs to merged run — verify merged run IS excluded
-    expect(screen.queryByText("feature/done")).toBeNull();
+    expect(screen.getByText("feature/done")).toBeTruthy();
   });
 
-  it("excludes a failed run from the active table and keeps its badge styled", () => {
-    // FAILED is terminal (issue #1435): a run that failed is not in flight, and a state with no
-    // badge entry would render an unstyled label rather than reading as an end state.
+  it("keeps a failed run reachable in history with its terminal badge", () => {
     mockUseRuns.mockReturnValue({
       data: [activeRun, failedRun],
       isLoading: false,
@@ -268,8 +270,8 @@ describe("WorkflowRuns — data loaded", () => {
 
     render(<WorkflowRuns />);
 
-    expect(screen.queryByText("feature/failed")).toBeNull();
-    expect(screen.queryByLabelText("Final state: FAILED")).toBeNull();
+    expect(screen.getByText("feature/failed")).toBeTruthy();
+    expect(screen.getByLabelText("Final state: FAILED")).toBeTruthy();
   });
 
   it("renders filters panel with all filter fields", () => {
@@ -282,6 +284,52 @@ describe("WorkflowRuns — data loaded", () => {
     expect(screen.getByLabelText("Requirement UID")).toBeTruthy();
     expect(screen.getByLabelText("Workflow type")).toBeTruthy();
     expect(screen.getByLabelText("Outcome")).toBeTruthy();
+  });
+});
+
+describe("WorkflowRuns — transport state", () => {
+  beforeEach(() => {
+    mockUseAggregate.mockReturnValue({
+      data: composedAggregate,
+      isLoading: false,
+      isError: false,
+      error: null,
+    } as ReturnType<typeof useWorkflowRunAggregate>);
+    mockUseRuns.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    } as unknown as ReturnType<typeof useWorkflowRuns>);
+  });
+
+  it("says Live and suppresses polling while the stream is connected", () => {
+    mockUseStream.mockReturnValue({ status: "live" });
+
+    render(<WorkflowRuns />);
+
+    expect(screen.getByText("Live")).toBeTruthy();
+    expect(mockUseRuns).toHaveBeenCalledWith("ground-control", { live: true });
+  });
+
+  it("says Polling and re-arms the fallback when the stream drops", () => {
+    // Stream loss must be visible (issue #1436 AC-4): silently showing the last pushed values as
+    // current is the failure this state exists to prevent.
+    mockUseStream.mockReturnValue({ status: "degraded" });
+
+    render(<WorkflowRuns />);
+
+    expect(screen.getByText("Polling")).toBeTruthy();
+    expect(screen.getByText(/refreshing every 30 seconds/i)).toBeTruthy();
+    expect(mockUseRuns).toHaveBeenCalledWith("ground-control", { live: false });
+  });
+
+  it("reports the connecting state before the stream is established", () => {
+    mockUseStream.mockReturnValue({ status: "connecting" });
+
+    render(<WorkflowRuns />);
+
+    expect(screen.getByText("Connecting")).toBeTruthy();
   });
 });
 
@@ -351,7 +399,9 @@ describe("WorkflowRuns — empty state", () => {
     expect(screen.getByText("Throughput")).toBeTruthy();
     expect(screen.getByText(/no cycle-time data available/i)).toBeTruthy();
     expect(screen.getByText(/no phase data available/i)).toBeTruthy();
-    expect(screen.getByText(/no active runs/i)).toBeTruthy();
+    expect(
+      screen.getByText(/no workflow runs have been recorded/i),
+    ).toBeTruthy();
   });
 });
 
@@ -376,7 +426,11 @@ describe("WorkflowRuns — hook contract", () => {
     expect(mockUseAggregate).toHaveBeenCalledWith(
       "ground-control",
       expect.any(Object),
+      expect.any(Object),
     );
-    expect(mockUseRuns).toHaveBeenCalledWith("ground-control");
+    expect(mockUseRuns).toHaveBeenCalledWith(
+      "ground-control",
+      expect.any(Object),
+    );
   });
 });

@@ -1,6 +1,88 @@
 # Contract Changes
 
-Current contract version: 0.7.0
+Current contract version: 0.10.0
+
+## 0.10.0 - 2026-07-28
+
+Gate outcome and finding measurement (issue #1355, ADR-090 amendment, ADR-082
+governance, GC-O014).
+
+- Additive only. No published schema, field, or vocabulary changes, so existing
+  consumers need no migration.
+- Added `gc.measurement.station-catalogue.v2`
+  (`contracts/schemas/measurement/station-catalogue.v2.schema.json`) and its data at
+  `contracts/measurement/gc-station-catalogue-v2.json`. The shape is identical to v1;
+  the version exists because `spotbugs`, `policy`, and `vale` join the station set and
+  a published catalogue is never edited in place. v1 stays on disk unmodified, and v2
+  is a strict superset: no station or marker id is dropped or renamed, so every
+  record already written against v1 still resolves.
+- Added `gc.measurement.gate-finding.v1`
+  (`contracts/schemas/measurement/gate-finding.v1.schema.json`): one finding observed
+  by a station attempt. `additionalProperties: false` with no prose field, so the
+  projection cannot carry titles, bodies, remediation text, paths, line numbers, raw
+  tool output, or stack traces. Category, severity, and classification are optional
+  because a source that cannot attest one must omit it rather than default it.
+- Disposition is a closed vocabulary (`open`, `fixed`, `wontfix`, `not-applicable`)
+  matching ADR-029's decision outcomes exactly. `defer` is absent by construction.
+- `completion_gate` is documented as composite: its child gates report their own
+  verdicts and durations separately rather than being rolled up into it.
+- A breaking station-id or vocabulary change still takes a new schema version; a
+  published version is never edited in place.
+
+## 0.9.0 - 2026-07-27
+
+Versioned measurement contract and station catalogue (issue #1438, ADR-090,
+ADR-082 governance, GC-O014).
+
+- Additive only. No existing schema, field, or vocabulary changes, so the
+  published `gc.workflow.run-record.v1` and `gc.implement.final-report.v1`
+  schemas are untouched and no consumer needs to migrate.
+- Added `gc.measurement.record.v1`
+  (`contracts/schemas/measurement/measurement-record.v1.schema.json`): the shape
+  every ADR-090 emitter maps its native record onto. The three outcome axes are
+  separate properties over separate closed enums that share no value, so
+  operation outcome, station result, and run state cannot be substituted for one
+  another by construction rather than by convention.
+- Added `gc.measurement.station-catalogue.v1`
+  (`contracts/schemas/measurement/station-catalogue.v1.schema.json`) and the
+  catalogue data at `contracts/measurement/gc-station-catalogue-v1.json`.
+  `station_id` is now the authoritative station identity; ADR-061 phase strings,
+  ADR-036 routing stages, issue-thread `gc:phase` values, MCP action names, and
+  SKILL step numbers are declared aliases. Display labels are declared
+  explicitly non-identity, so renaming one is never a breaking change.
+- Stations and lifecycle markers are disjoint sets. `ready_for_review`,
+  `post_merge`, `pre_merge`, `plan`, and `traceability_reconciled` record a
+  transition and inspect nothing, so they are markers and can never carry a
+  station result.
+- A breaking station-id or vocabulary change takes a new schema version; a
+  published version is never edited in place.
+
+## 0.8.0 - 2026-07-27
+
+## 0.8.0 - 2026-07-27
+
+Live workflow-run telemetry transport (issue #1436, ADR-061 amendment, ADR-090
+amendment).
+
+- Additive only; no existing path, field, or vocabulary changes, so
+  `contracts/schemas/workflow/workflow-run-record.v1.schema.json` stays at `v1`
+  and no generated TypeScript interface changes.
+- Added `GET /api/v1/workflow-runs/stream` (project-scoped, `text/event-stream`).
+  Named events are `workflow-run` and `phase-event`; each data frame is the
+  existing `WorkflowRunResponse` or `PhaseEventResponse` JSON, so the stream
+  introduces no second telemetry shape for consumers to reconcile. Heartbeats are
+  SSE comments with no payload.
+- The 200 response is documented as a `oneOf` over those two schemas rather than
+  the `SseEmitter` return type, which would have published a Java transport
+  detail (`{timeout}`) as the apparent response body.
+- Delivery is best-effort and may duplicate: reconcile by entity id and refetch
+  the REST snapshots on connect and reconnect. There is no `Last-Event-ID` replay
+  and no durable backlog. Connections are capped and a consumer that falls behind
+  is disconnected rather than silently skipped, so a client is never left
+  believing a live stream is current while missing an event.
+- No breaking change for existing consumers; a client that ignores the new path
+  is unaffected. `gc_query` denylists the path—it is a browser transport, not
+  an agent read.
 
 ## 0.7.0 - 2026-07-26
 

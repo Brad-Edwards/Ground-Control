@@ -17,6 +17,14 @@ workflow:
   # Exactly one codex cycle and one test-quality cycle per issue. The
   # auto-disposition gate is off, so nothing can grant an over-cap cycle on its
   # own; only an explicit human override_cap does.
+  #
+  # Both blocks also accept non_verdict_retry_limit (#1476), a different axis
+  # from pre_push_cap: it bounds automatic re-attempts when a station renders NO
+  # verdict (timeout, dead engine, unparseable output, incomplete slice
+  # coverage). Those failures write no cycle marker, so a re-attempt never
+  # spends a review cycle. Bounds [0, 2], default 1; set 0 to never re-attempt.
+  # Left unset here because 1 is already the default. A server started before
+  # #1476 rejects the key as unknown, so restart it after upgrading.
   review_disposition:
     enabled: false
     mode: shadow

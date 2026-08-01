@@ -4,277 +4,36 @@ import { apiFetch } from "@/lib/api-client";
 import {
   type ColorScheme,
   type LayoutId,
-  PRIORITY_COLORS,
   RELATION_STYLES,
-  STATUS_COLORS,
   getColorMap,
   getEntityTypeColor,
-  getNodeColor,
-  getSeries,
 } from "@/lib/graph-constants";
 import type {
-  GraphEdgeResponse,
   GraphNeighborhoodResponse,
-  GraphVisualizationNodeResponse,
   GraphVisualizationResponse,
 } from "@/types/api";
-import type cytoscape from "cytoscape";
-import { Filter, Loader2, Maximize, RotateCcw, X } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
-type GraphNodeData = GraphVisualizationNodeResponse;
-type RelationData = GraphEdgeResponse;
-type CytoscapeInstance = cytoscape.Core;
-
-const WAVE_SPACING = 120;
-
-function isRequirementNode(node: GraphNodeData): boolean {
-  return node.entityType === "REQUIREMENT";
-}
-
-function getNodeEntityType(node: GraphNodeData): string {
-  return String(node.entityType ?? "UNKNOWN");
-}
-
-function getStringProperty(node: GraphNodeData, key: string): string {
-  const value = node.properties[key];
-  return typeof value === "string" ? value : "";
-}
-
-function getNumberProperty(node: GraphNodeData, key: string): number {
-  const value = node.properties[key];
-  return typeof value === "number" ? value : 0;
-}
-
-function getNodePriority(node: GraphNodeData): string {
-  return getStringProperty(node, "priority");
-}
-
-function getNodeStatus(node: GraphNodeData): string {
-  return getStringProperty(node, "status");
-}
-
-function getNodeRequirementType(node: GraphNodeData): string {
-  return getStringProperty(node, "requirementType");
-}
-
-function getNodeStatement(node: GraphNodeData): string {
-  return getStringProperty(node, "statement");
-}
-
-function getNodeTitle(node: GraphNodeData): string {
-  const title = getStringProperty(node, "title");
-  return title || node.label || node.uid || getNodeEntityType(node);
-}
-
-function getNodeWave(node: GraphNodeData): number {
-  return getNumberProperty(node, "wave");
-}
-
-function getNodeSeries(node: GraphNodeData): string {
-  if (!isRequirementNode(node)) {
-    return getNodeEntityType(node);
-  }
-  return getSeries(node.uid || node.label);
-}
-
-function getNodeDisplayLabel(node: GraphNodeData): string {
-  if (isRequirementNode(node)) {
-    return (node.label || node.uid || "REQ").replace("GC-", "");
-  }
-  if (getNodeEntityType(node) === "OBSERVATION") {
-    return getStringProperty(node, "observationKey") || node.label || "OBS";
-  }
-  return node.uid || node.label || getNodeTitle(node);
-}
-
-function getNodeLegendKey(
-  node: GraphNodeData,
-  colorScheme: ColorScheme,
-): string {
-  if (!isRequirementNode(node)) {
-    return getNodeEntityType(node);
-  }
-  switch (colorScheme) {
-    case "priority":
-      return getNodePriority(node) || "Unknown";
-    case "status":
-      return getNodeStatus(node) || "Unknown";
-    case "wave":
-      return `Wave ${getNodeWave(node) || 0}`;
-    case "entity":
-      return getNodeEntityType(node);
-    default:
-      return getNodeSeries(node);
-  }
-}
-
-function getNodeDescription(node: GraphNodeData): string {
-  const entityType = getNodeEntityType(node);
-  if (entityType === "REQUIREMENT") {
-    return getNodeStatement(node);
-  }
-  if (entityType === "OPERATIONAL_ASSET") {
-    return getStringProperty(node, "description");
-  }
-  if (entityType === "OBSERVATION") {
-    return getStringProperty(node, "observationValue");
-  }
-  if (entityType === "RISK_SCENARIO") {
-    return getStringProperty(node, "effect");
-  }
-  return "";
-}
-
-function getTooltipValue(data: Record<string, unknown>, key: string): string {
-  const value = data[key];
-  return typeof value === "string" || typeof value === "number"
-    ? String(value)
-    : "";
-}
-
-function firstTooltipString(
-  data: Record<string, unknown>,
-  ...keys: string[]
-): string {
-  for (const key of keys) {
-    const value = data[key];
-    if (typeof value === "string" && value) {
-      return value;
-    }
-  }
-  return "";
-}
-
-const TOOLTIP_FIELDS_BY_ENTITY_TYPE: Record<
-  string,
-  Array<{ label: string; key: string }>
-> = {
-  OPERATIONAL_ASSET: [
-    { label: "Asset Type", key: "assetType" },
-    { label: "Name", key: "assetName" },
-    { label: "Knowledge", key: "knowledgeState" },
-  ],
-  OBSERVATION: [
-    { label: "Category", key: "category" },
-    { label: "Source", key: "source" },
-    { label: "Confidence", key: "confidence" },
-  ],
-  RISK_SCENARIO: [
-    { label: "Status", key: "status" },
-    { label: "Threat", key: "threat" },
-    { label: "Method", key: "method" },
-  ],
-  CONTROL: [
-    { label: "Status", key: "status" },
-    { label: "Owner", key: "owner" },
-    { label: "Category", key: "category" },
-    { label: "Source", key: "source" },
-  ],
-  CONTROL_TEST: [
-    { label: "Methodology", key: "methodology" },
-    { label: "Conclusion", key: "conclusion" },
-    { label: "Tester", key: "testerIdentity" },
-  ],
-  VERIFICATION_RESULT: [
-    { label: "Prover", key: "prover" },
-    { label: "Result", key: "result" },
-    { label: "Assurance", key: "assuranceLevel" },
-  ],
-  THREAT_MODEL: [
-    { label: "Status", key: "status" },
-    { label: "Threat", key: "threatSource" },
-    { label: "Stride", key: "stride" },
-  ],
-  FINDING: [
-    { label: "Status", key: "status" },
-    { label: "Type", key: "findingType" },
-    { label: "Severity", key: "severity" },
-    { label: "Owner", key: "owner" },
-  ],
-  EVIDENCE_ARTIFACT: [
-    { label: "Type", key: "evidenceType" },
-    { label: "Assurance", key: "assuranceLevel" },
-    { label: "Derived by", key: "derivedBy" },
-  ],
-  AUDIT: [
-    { label: "Type", key: "auditType" },
-    { label: "Status", key: "status" },
-    { label: "Created by", key: "createdBy" },
-  ],
-  RISK_CONTROL_MAPPING: [
-    { label: "Role", key: "controlRole" },
-    { label: "Objective", key: "mappingObjective" },
-  ],
-  SCOPED_CONTROL_IMPLEMENTATION: [
-    { label: "Name", key: "name" },
-    { label: "Control", key: "controlUid" },
-  ],
-  DOCUMENT: [
-    { label: "Version", key: "version" },
-    { label: "Created by", key: "createdBy" },
-    { label: "Updated", key: "updatedAt" },
-  ],
-  RESEARCH_RUN: [
-    { label: "Status", key: "status" },
-    { label: "Stage", key: "currentStage" },
-    { label: "Autonomy", key: "autonomyLevel" },
-  ],
-  RESEARCH_ARTIFACT: [
-    { label: "Type", key: "artifactType" },
-    { label: "Stage", key: "stage" },
-    { label: "Status", key: "status" },
-  ],
-  RESEARCH_PROVENANCE_NODE: [
-    { label: "Kind", key: "kind" },
-    { label: "Status", key: "status" },
-    { label: "External ID", key: "externalIdentifier" },
-  ],
-  WORKFLOW_RUN: [
-    { label: "Workflow", key: "workflowType" },
-    { label: "State", key: "finalState" },
-    { label: "Outcome", key: "outcome" },
-  ],
-  WORK_ITEM_REFERENCE: [
-    { label: "Repository", key: "repo" },
-    { label: "Issue", key: "issueNumber" },
-  ],
-  ARTIFACT_REFERENCE: [
-    { label: "Type", key: "artifactType" },
-    { label: "Identifier", key: "artifactIdentifier" },
-  ],
-};
-
-export function getTooltipTags(
-  data: Record<string, unknown>,
-): Array<{ text: string; bg: string }> {
-  const entityType = String(data.entityType ?? "UNKNOWN");
-  const entityColor = getEntityTypeColor(entityType);
-
-  if (entityType === "REQUIREMENT") {
-    return [
-      {
-        text: String(data.priority ?? ""),
-        bg: PRIORITY_COLORS[String(data.priority ?? "")] ?? "#555",
-      },
-      {
-        text: String(data.status ?? ""),
-        bg: STATUS_COLORS[String(data.status ?? "")] ?? "#555",
-      },
-      { text: `Wave ${Number(data.wave ?? 0)}`, bg: "#6c7ee1" },
-      { text: String(data.type ?? ""), bg: "#4ecdc4" },
-    ].filter((tag) => tag.text);
-  }
-
-  return (TOOLTIP_FIELDS_BY_ENTITY_TYPE[entityType] ?? [])
-    .map((field) => {
-      const value = getTooltipValue(data, field.key);
-      return value
-        ? { text: `${field.label}: ${value}`, bg: entityColor }
-        : null;
-    })
-    .filter((tag): tag is { text: string; bg: string } => tag !== null);
-}
+import { GraphControls } from "./graph/graph-controls";
+import { GraphFilters } from "./graph/graph-filters";
+import {
+  type CytoscapeInstance,
+  type GraphNodeData,
+  type RelationData,
+  getNodeEntityType,
+  getNodeLegendKey,
+  getNodePriority,
+  getNodeSeries,
+  getNodeStatus,
+  getNodeWave,
+  isRequirementNode,
+} from "./graph/graph-node-data";
+import { GraphStats } from "./graph/graph-stats";
+import {
+  getTooltipTags,
+  populateGraphTooltip,
+} from "./graph/populate-graph-tooltip";
+import { renderGraphCanvas } from "./graph/render-graph-canvas";
 
 export function Graph() {
   const { activeProject } = useProjectContext();
@@ -497,333 +256,34 @@ export function Graph() {
 
   // Build tooltip content using safe DOM methods
   const populateTooltip = useCallback(
-    (container: HTMLDivElement, d: Record<string, unknown>) => {
-      container.replaceChildren();
-
-      const uidDiv = document.createElement("div");
-      uidDiv.style.cssText =
-        "font-size:11px;color:#6c7ee1;font-weight:600;margin-bottom:4px";
-      uidDiv.textContent = String(d.uid ?? d.entityType ?? d.id ?? "");
-      container.appendChild(uidDiv);
-
-      const titleDiv = document.createElement("div");
-      titleDiv.style.cssText = "font-weight:600;margin-bottom:6px";
-      titleDiv.textContent = String(d.title ?? d.label ?? "");
-      container.appendChild(titleDiv);
-
-      const metaDiv = document.createElement("div");
-      metaDiv.style.cssText =
-        "display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap";
-
-      const typeTag = {
-        text: String(d.entityType ?? "UNKNOWN"),
-        bg: getEntityTypeColor(String(d.entityType ?? "")),
-      };
-      const detailTags = getTooltipTags(d);
-
-      for (const t of [typeTag, ...detailTags].filter((tag) => tag.text)) {
-        const span = document.createElement("span");
-        span.style.cssText = `display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;background:${t.bg}33;color:${t.bg}`;
-        span.textContent = t.text;
-        metaDiv.appendChild(span);
-      }
-      container.appendChild(metaDiv);
-
-      const statement =
-        String(d.entityType ?? "") === "REQUIREMENT"
-          ? firstTooltipString(d, "statement")
-          : firstTooltipString(d, "description", "observationValue", "effect");
-      if (statement) {
-        const stmtDiv = document.createElement("div");
-        stmtDiv.style.cssText =
-          "color:#a1a1aa;font-size:11px;line-height:1.4;max-height:80px;overflow:hidden";
-        stmtDiv.textContent = statement;
-        container.appendChild(stmtDiv);
-      }
-    },
+    (container: HTMLDivElement, d: Record<string, unknown>) =>
+      populateGraphTooltip(container, d),
     [],
   );
 
-  useEffect(() => {
-    if (loading || !containerRef.current || filteredNodes.length === 0) {
-      // Destroy stale graph when filters exclude all nodes
-      if (filteredNodes.length === 0 && cyRef.current) {
-        cyRef.current.destroy();
-        cyRef.current = null;
-      }
-      return;
-    }
-
-    let cancelled = false;
-
-    async function initCytoscape() {
-      const cytoscapeModule = await import("cytoscape");
-      const cytoscape = cytoscapeModule.default;
-      const dagreModule = await import("cytoscape-dagre");
-      // cytoscape-dagre exports differ between ESM/CJS
-      const cytoscapeDagre =
-        "default" in dagreModule
-          ? (dagreModule.default as (cy: typeof cytoscape) => void)
-          : (dagreModule as unknown as (cy: typeof cytoscape) => void);
-      cytoscapeDagre(cytoscape);
-
-      if (cancelled) return;
-
-      const elements = filteredNodes.map((node) => ({
-        data: {
-          id: node.id,
-          domainId: node.domainId,
-          uid: node.uid,
-          label: getNodeDisplayLabel(node),
-          entityType: node.entityType,
-          title: getNodeTitle(node),
-          statement: getNodeStatement(node),
-          description: getNodeDescription(node),
-          priority: getNodePriority(node),
-          status: getNodeStatus(node),
-          type: getNodeRequirementType(node),
-          wave: getNodeWave(node) || 0,
-          series: getNodeSeries(node),
-          category: getStringProperty(node, "category"),
-          assetType: getStringProperty(node, "assetType"),
-          assetName: getStringProperty(node, "name"),
-          knowledgeState: getStringProperty(node, "knowledgeState"),
-          owner: getStringProperty(node, "owner"),
-          source: getStringProperty(node, "source"),
-          confidence: getStringProperty(node, "confidence"),
-          name: getStringProperty(node, "name"),
-          version: getStringProperty(node, "version"),
-          threat: getStringProperty(node, "threat"),
-          threatSource: getStringProperty(node, "threatSource"),
-          threatEvent: getStringProperty(node, "threatEvent"),
-          method: getStringProperty(node, "method"),
-          effect: getStringProperty(node, "effect"),
-          observationValue: getStringProperty(node, "observationValue"),
-          // CONTROL / CONTROL_TEST
-          controlFunction: getStringProperty(node, "controlFunction"),
-          methodology: getStringProperty(node, "methodology"),
-          conclusion: getStringProperty(node, "conclusion"),
-          testerIdentity: getStringProperty(node, "testerIdentity"),
-          controlUid: getStringProperty(node, "controlUid"),
-          // VERIFICATION_RESULT
-          prover: getStringProperty(node, "prover"),
-          result: getStringProperty(node, "result"),
-          assuranceLevel: getStringProperty(node, "assuranceLevel"),
-          // THREAT_MODEL (shares the `effect` property bag with RiskScenario above)
-          stride: getStringProperty(node, "stride"),
-          // FINDING
-          findingType: getStringProperty(node, "findingType"),
-          severity: getStringProperty(node, "severity"),
-          // EVIDENCE_ARTIFACT
-          evidenceType: getStringProperty(node, "evidenceType"),
-          derivedBy: getStringProperty(node, "derivedBy"),
-          // AUDIT
-          auditType: getStringProperty(node, "auditType"),
-          createdBy: getStringProperty(node, "createdBy"),
-          // RISK_CONTROL_MAPPING
-          controlRole: getStringProperty(node, "controlRole"),
-          mappingObjective: getStringProperty(node, "mappingObjective"),
-          // DOCUMENT
-          updatedAt: getStringProperty(node, "updatedAt"),
-          // RESEARCH / ARTIFACT_REFERENCE
-          currentStage: getStringProperty(node, "currentStage"),
-          autonomyLevel: getStringProperty(node, "autonomyLevel"),
-          artifactType: getStringProperty(node, "artifactType"),
-          artifactIdentifier: getStringProperty(node, "artifactIdentifier"),
-          stage: getStringProperty(node, "stage"),
-          kind: getStringProperty(node, "kind"),
-          externalIdentifier: getStringProperty(node, "externalIdentifier"),
-          color: getNodeColor(
-            {
-              entityType: getNodeEntityType(node),
-              uid: node.uid,
-              priority: getNodePriority(node),
-              status: getNodeStatus(node),
-              wave: getNodeWave(node),
-            },
-            colorScheme,
-          ),
-        },
-      }));
-
-      const edges = filteredRelations.map((rel) => {
-        const style = RELATION_STYLES[rel.edgeType] ?? RELATION_STYLES.RELATED;
-        return {
-          data: {
-            id: `e-${rel.id}`,
-            source: rel.sourceId,
-            target: rel.targetId,
-            relType: rel.edgeType,
-            color: style?.color ?? "#95a5a6",
-            lineStyle: style?.style ?? "dotted",
-          },
-        };
-      });
-
-      if (cyRef.current) {
-        cyRef.current.destroy();
-      }
-
-      const isWaveOrdered = layoutId.startsWith("dagre-wave");
-      const isTopBottom =
-        layoutId === "dagre-tb" || layoutId === "dagre-wave-tb";
-      const rankDir = isTopBottom ? "BT" : "RL";
-
-      // cytoscape-dagre layout options extend base LayoutOptions
-      const layoutConfig = {
-        name: "dagre" as const,
-        rankDir,
-        nodeSep: 30,
-        rankSep: isWaveOrdered ? 80 : 60,
-        edgeSep: 10,
-        ...(isWaveOrdered && {
-          transform: (
-            node: cytoscape.NodeSingular,
-            pos: { x: number; y: number },
-          ) => {
-            const wave = (node.data("wave") as number) || 0;
-            if (isTopBottom) {
-              return { x: pos.x, y: -wave * WAVE_SPACING };
-            }
-            return { x: -wave * WAVE_SPACING, y: pos.y };
-          },
-        }),
-      };
-
-      const cy = cytoscape({
-        container: containerRef.current,
-        elements: [...elements, ...edges],
-        style: [
-          {
-            selector: "node",
-            style: {
-              label: "data(label)",
-              "background-color": "data(color)",
-              color: "#e1e4ed",
-              "text-valign": "center",
-              "text-halign": "center",
-              "font-size": "9px",
-              "font-weight": 600,
-              width: 50,
-              height: 26,
-              shape: "round-rectangle",
-              "border-width": 1,
-              "border-color": "data(color)",
-              "text-outline-width": 0,
-              "overlay-padding": 3,
-            },
-          },
-          {
-            selector: "node:selected",
-            style: { "border-width": 2, "border-color": "#fff" },
-          },
-          {
-            selector: "node.highlighted",
-            style: {
-              "border-width": 2,
-              "border-color": "#fff",
-              "z-index": 10,
-            },
-          },
-          {
-            selector: "node.dimmed",
-            style: { opacity: 0.15 },
-          },
-          {
-            selector: "edge",
-            style: {
-              width: 1.2,
-              "line-color": "data(color)",
-              "target-arrow-color": "data(color)",
-              "target-arrow-shape": "triangle",
-              "arrow-scale": 0.7,
-              "curve-style": "bezier",
-              "line-style": "data(lineStyle)" as unknown as
-                | "solid"
-                | "dashed"
-                | "dotted",
-              opacity: 0.6,
-            },
-          },
-          {
-            selector: "edge.highlighted",
-            style: { width: 2.5, opacity: 1, "z-index": 10 },
-          },
-          {
-            selector: "edge.dimmed",
-            style: { opacity: 0.06 },
-          },
-        ],
-        layout: layoutConfig,
-        minZoom: 0.15,
-        maxZoom: 4,
-        wheelSensitivity: 1,
-      });
-
-      cyRef.current = cy;
-
-      const tooltip = tooltipRef.current;
-      if (!tooltip) return;
-
-      cy.on("mouseover", "node", (evt) => {
-        populateTooltip(tooltip, evt.target.data());
-        tooltip.style.display = "block";
-      });
-
-      cy.on("mousemove", "node", (evt) => {
-        const x = evt.originalEvent.clientX;
-        const y = evt.originalEvent.clientY;
-        const pad = 12;
-        let left = x + pad;
-        let top = y + pad;
-        if (left + 360 > window.innerWidth) left = x - 360 - pad;
-        if (top + 200 > window.innerHeight) top = y - 200 - pad;
-        tooltip.style.left = `${left}px`;
-        tooltip.style.top = `${top}px`;
-      });
-
-      cy.on("mouseout", "node", () => {
-        tooltip.style.display = "none";
-      });
-
-      cy.on("tap", "node", (evt) => {
-        const node = evt.target;
-        setSelectedNodeId(String(node.id()));
-        if (node.hasClass("highlighted")) {
-          cy.elements().removeClass("highlighted dimmed");
-          return;
-        }
-        const neighborhood = node.closedNeighborhood();
-        cy.elements().removeClass("highlighted dimmed");
-        cy.elements().not(neighborhood).addClass("dimmed");
-        neighborhood.addClass("highlighted");
-      });
-
-      cy.on("tap", (evt) => {
-        if (evt.target === cy) {
-          setSelectedNodeId("");
-          cy.elements().removeClass("highlighted dimmed");
-        }
-      });
-    }
-
-    initCytoscape();
-
-    return () => {
-      cancelled = true;
-      if (cyRef.current) {
-        cyRef.current.destroy();
-        cyRef.current = null;
-      }
-    };
-  }, [
-    loading,
-    filteredNodes,
-    filteredRelations,
-    colorScheme,
-    layoutId,
-    populateTooltip,
-  ]);
+  useEffect(
+    () =>
+      renderGraphCanvas({
+        colorScheme,
+        containerRef,
+        cyRef,
+        filteredNodes,
+        filteredRelations,
+        layoutId,
+        loading,
+        populateTooltip,
+        setSelectedNodeId,
+        tooltipRef,
+      }),
+    [
+      loading,
+      filteredNodes,
+      filteredRelations,
+      colorScheme,
+      layoutId,
+      populateTooltip,
+    ],
+  );
 
   function handleFit() {
     cyRef.current?.fit(undefined, 30);
@@ -851,7 +311,7 @@ export function Graph() {
             domainId: String(n.data("domainId") ?? ""),
             entityType: n.data("entityType") as GraphNodeData["entityType"],
             projectIdentifier: "",
-            uid: n.data("uid") ? String(n.data("uid")) : null,
+            uid: String(n.data("uid") ?? ""),
             label: String(n.data("label") ?? ""),
             properties: {
               priority: n.data("priority"),
@@ -888,257 +348,48 @@ export function Graph() {
   return (
     <div className="flex h-[calc(100vh-3.5rem)] flex-col">
       {/* Controls */}
-      <div className="flex items-center gap-4 border-b border-border bg-card px-4 py-2">
-        <div className="flex items-center gap-2">
-          <label
-            htmlFor="graph-color-by"
-            className="text-xs text-muted-foreground"
-          >
-            Color by
-          </label>
-          <select
-            id="graph-color-by"
-            value={colorScheme}
-            onChange={(e) => setColorScheme(e.target.value as ColorScheme)}
-            className="rounded border border-input bg-background px-2 py-1 text-xs text-foreground"
-          >
-            <option value="entity">Entity type</option>
-            <option value="series">Series</option>
-            <option value="priority">Priority</option>
-            <option value="status">Status</option>
-            <option value="wave">Wave</option>
-          </select>
-        </div>
-        <div className="flex items-center gap-2">
-          <label
-            htmlFor="graph-layout"
-            className="text-xs text-muted-foreground"
-          >
-            Layout
-          </label>
-          <select
-            id="graph-layout"
-            value={layoutId}
-            onChange={(e) => setLayoutId(e.target.value as LayoutId)}
-            className="rounded border border-input bg-background px-2 py-1 text-xs text-foreground"
-          >
-            <option value="dagre-lr">DAG (left to right)</option>
-            <option value="dagre-tb">DAG (top to bottom)</option>
-            <option value="dagre-wave-lr">Wave-ordered (L-R)</option>
-            <option value="dagre-wave-tb">Wave-ordered (T-B)</option>
-          </select>
-        </div>
-        <button
-          type="button"
-          onClick={handleFit}
-          className="flex items-center gap-1 rounded border border-input bg-background px-2 py-1 text-xs hover:border-primary"
-          title="Fit to screen"
-        >
-          <Maximize className="h-3 w-3" /> Fit
-        </button>
-        <button
-          type="button"
-          onClick={handleReset}
-          className="flex items-center gap-1 rounded border border-input bg-background px-2 py-1 text-xs hover:border-primary"
-          title="Reset filters"
-        >
-          <RotateCcw className="h-3 w-3" /> Reset
-        </button>
-        <button
-          type="button"
-          onClick={runTraversal}
-          disabled={!selectedNodeId || loading}
-          className="flex items-center gap-1 rounded border border-input bg-background px-2 py-1 text-xs hover:border-primary disabled:cursor-not-allowed disabled:opacity-50"
-          title="Traverse two hops from the selected node"
-        >
-          <Maximize className="h-3 w-3" /> Focus selection
-        </button>
-        {viewMode === "traversal" && (
-          <button
-            type="button"
-            onClick={fetchData}
-            className="flex items-center gap-1 rounded border border-input bg-background px-2 py-1 text-xs hover:border-primary"
-            title="Restore the full mixed-entity graph"
-          >
-            <RotateCcw className="h-3 w-3" /> Full graph
-          </button>
-        )}
-      </div>
+      <GraphControls
+        colorScheme={colorScheme}
+        setColorScheme={setColorScheme}
+        layoutId={layoutId}
+        setLayoutId={setLayoutId}
+        handleFit={handleFit}
+        handleReset={handleReset}
+        runTraversal={runTraversal}
+        fetchData={fetchData}
+        selectedNodeId={selectedNodeId}
+        loading={loading}
+        viewMode={viewMode}
+      />
 
       {/* Filters */}
       {!loading && (
-        <div className="flex items-center gap-4 border-b border-border bg-card px-4 py-1.5">
-          <Filter className="h-3.5 w-3.5 text-muted-foreground" />
-          <div className="flex items-center gap-2">
-            <label
-              htmlFor="graph-filter-entity-type"
-              className="text-xs text-muted-foreground"
-            >
-              Entity
-            </label>
-            <select
-              id="graph-filter-entity-type"
-              value={filterEntityType}
-              onChange={(e) => setFilterEntityType(e.target.value)}
-              className="rounded border border-input bg-background px-2 py-0.5 text-xs text-foreground"
-            >
-              <option value="">All</option>
-              {filterOptions.entityTypes.map((entityType) => (
-                <option key={entityType} value={entityType}>
-                  {entityType}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-center gap-2">
-            <label
-              htmlFor="graph-filter-status"
-              className="text-xs text-muted-foreground"
-            >
-              Status
-            </label>
-            <select
-              id="graph-filter-status"
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="rounded border border-input bg-background px-2 py-0.5 text-xs text-foreground"
-            >
-              <option value="">All</option>
-              {filterOptions.statuses.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-center gap-2">
-            <label
-              htmlFor="graph-filter-priority"
-              className="text-xs text-muted-foreground"
-            >
-              Priority
-            </label>
-            <select
-              id="graph-filter-priority"
-              value={filterPriority}
-              onChange={(e) => setFilterPriority(e.target.value)}
-              className="rounded border border-input bg-background px-2 py-0.5 text-xs text-foreground"
-            >
-              <option value="">All</option>
-              {filterOptions.priorities.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-          </div>
-          {filterOptions.series.length > 0 && (
-            <div className="flex items-center gap-2">
-              <label
-                htmlFor="graph-filter-series"
-                className="text-xs text-muted-foreground"
-              >
-                Series
-              </label>
-              <select
-                id="graph-filter-series"
-                value={filterSeries}
-                onChange={(e) => setFilterSeries(e.target.value)}
-                className="rounded border border-input bg-background px-2 py-0.5 text-xs text-foreground"
-              >
-                <option value="">All</option>
-                {filterOptions.series.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-          {filterOptions.waves.length > 0 && (
-            <div className="flex items-center gap-2">
-              <label
-                htmlFor="graph-filter-wave"
-                className="text-xs text-muted-foreground"
-              >
-                Wave
-              </label>
-              <select
-                id="graph-filter-wave"
-                value={filterWave}
-                onChange={(e) => setFilterWave(e.target.value)}
-                className="rounded border border-input bg-background px-2 py-0.5 text-xs text-foreground"
-              >
-                <option value="">All</option>
-                {filterOptions.waves.map((w) => (
-                  <option key={w} value={String(w)}>
-                    {w}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-          {hasFilters && (
-            <button
-              type="button"
-              onClick={clearFilters}
-              className="flex items-center gap-1 rounded border border-input bg-background px-2 py-0.5 text-xs text-muted-foreground hover:border-primary hover:text-foreground"
-            >
-              <X className="h-3 w-3" /> Clear
-            </button>
-          )}
-        </div>
+        <GraphFilters
+          filterOptions={filterOptions}
+          filterEntityType={filterEntityType}
+          setFilterEntityType={setFilterEntityType}
+          filterStatus={filterStatus}
+          setFilterStatus={setFilterStatus}
+          filterPriority={filterPriority}
+          setFilterPriority={setFilterPriority}
+          filterSeries={filterSeries}
+          setFilterSeries={setFilterSeries}
+          filterWave={filterWave}
+          setFilterWave={setFilterWave}
+          hasFilters={hasFilters}
+          clearFilters={clearFilters}
+        />
       )}
 
       {/* Stats */}
       {!loading && (
-        <div className="flex gap-4 border-b border-border bg-card px-4 py-1.5 text-[11px]">
-          <span className="text-muted-foreground">
-            <strong className="text-foreground text-[13px] mr-0.5">
-              {hasFilters
-                ? `${filteredNodes.length} of ${stats.nodes}`
-                : stats.nodes}
-            </strong>
-            nodes
-          </span>
-          <span className="text-muted-foreground">
-            <strong className="text-foreground text-[13px] mr-0.5">
-              {hasFilters
-                ? `${filteredRelations.length} of ${stats.edges}`
-                : stats.edges}
-            </strong>
-            edges
-          </span>
-          <span className="text-muted-foreground">
-            <strong className="text-foreground text-[13px] mr-0.5">
-              {stats.entityTypes}
-            </strong>
-            entity types
-          </span>
-          {stats.requirementCount > 0 && (
-            <>
-              <span className="text-muted-foreground">
-                <strong className="text-foreground text-[13px] mr-0.5">
-                  {stats.series}
-                </strong>
-                series
-              </span>
-              <span className="text-muted-foreground">
-                <strong className="text-foreground text-[13px] mr-0.5">
-                  {stats.waves}
-                </strong>
-                waves
-              </span>
-              <span className="text-muted-foreground">{stats.waveStr}</span>
-            </>
-          )}
-          {selectedNode && (
-            <span className="truncate text-muted-foreground">
-              selected:{" "}
-              <strong className="text-foreground">{selectedNode.id}</strong>
-            </span>
-          )}
-        </div>
+        <GraphStats
+          stats={stats}
+          hasFilters={hasFilters}
+          filteredNodeCount={filteredNodes.length}
+          filteredRelationCount={filteredRelations.length}
+          selectedNodeId={selectedNode ? selectedNode.id : null}
+        />
       )}
 
       {/* Legend */}
@@ -1196,3 +447,5 @@ export function Graph() {
     </div>
   );
 }
+
+export { getTooltipTags };

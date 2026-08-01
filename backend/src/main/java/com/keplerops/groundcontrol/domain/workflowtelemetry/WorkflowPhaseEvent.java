@@ -70,6 +70,78 @@ public class WorkflowPhaseEvent {
     @Column(nullable = false, length = 200)
     private String sourceId;
 
+    /**
+     * Authoritative catalogue station id (issue #1355). {@code phase} stays exactly as written so
+     * history is never rewritten; this is the resolved identity the catalogue declares, with
+     * {@code phase} as one of its aliases. Null on rows written before the catalogue existed.
+     */
+    @Column(length = 100)
+    private String stationId;
+
+    /**
+     * The verdict of what this station inspected (ADR-090 section 3, issue #1355).
+     *
+     * <p>Deliberately separate from {@link #eventType}: {@code COMPLETED} means the phase finished,
+     * not that its inspection passed. Defaults to {@link StationResult#UNOBSERVED} so every row
+     * written before this axis existed reads honestly and stays out of formula denominators, rather
+     * than being backfilled into a pass it never recorded.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 40)
+    private StationResult stationResult = StationResult.UNOBSERVED;
+
+    /**
+     * How many findings the emitter's cap discarded before sending this attempt's batch.
+     *
+     * <p>Zero when nothing was dropped, which is the ordinary case. Persisted rather than logged
+     * because a truncated batch is otherwise indistinguishable from a complete one: the stored count
+     * would read as everything the gate found, and an aggregate built on it would understate the
+     * defect signal by exactly the amount that was hidden.
+     */
+    @Column(nullable = false)
+    private int findingsDropped;
+
+    /**
+     * Which emitter produced this row (ADR-090 amendment, issue #1354). The discriminator that keeps
+     * an ADR-036 routed-step cost observation from being counted as a lifecycle/station attempt:
+     * hot-spot, yield/rework, and graph consumers select {@link PhaseEventEmitter#ADR061_WORKFLOW_TELEMETRY}
+     * only. Every live/lifecycle emission and every row written before this axis existed is that
+     * default value; a step observation is {@link PhaseEventEmitter#ADR036_STEP_JSONL}.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 40)
+    private PhaseEventEmitter emitter = PhaseEventEmitter.ADR061_WORKFLOW_TELEMETRY;
+
+    /**
+     * ADR-036 step-observation facts that have no existing owner on the phase-event row (issue
+     * #1354). All null on a lifecycle/station row; populated only for an {@code ADR036_STEP_JSONL}
+     * emission. {@code stepAlias} is the numbered SKILL step kept purely as a non-identity alias —
+     * the stable {@code phase} (stage id) and the resolved {@code stationId} carry identity.
+     * {@code expectedModel}/{@code modelMatchesExpected} are the tier/model consistency assertion
+     * (ADR-036 schema v2, issue #1181); they are analysis-only and never gate.
+     */
+    @Column(length = 40)
+    private String measurementVersion;
+
+    @Column(length = 40)
+    private String stepAlias;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 40)
+    private CapabilityTier tier;
+
+    @Column(length = 200)
+    private String model;
+
+    @Column(length = 200)
+    private String expectedModel;
+
+    private Boolean modelMatchesExpected;
+
+    private Long inputTokens;
+
+    private Long outputTokens;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -107,6 +179,60 @@ public class WorkflowPhaseEvent {
 
     public void setSourceId(String sourceId) {
         this.sourceId = sourceId;
+    }
+
+    public void setStationId(String stationId) {
+        this.stationId = stationId;
+    }
+
+    /** Null degrades to {@code UNOBSERVED}: an emitter that states nothing has observed nothing. */
+    public void setFindingsDropped(Integer findingsDropped) {
+        this.findingsDropped = findingsDropped == null || findingsDropped < 0 ? 0 : findingsDropped;
+    }
+
+    public int getFindingsDropped() {
+        return findingsDropped;
+    }
+
+    public void setStationResult(StationResult stationResult) {
+        this.stationResult = stationResult == null ? StationResult.UNOBSERVED : stationResult;
+    }
+
+    /** Null degrades to the ADR-061 default: an unstated emitter is a lifecycle/station row. */
+    public void setEmitter(PhaseEventEmitter emitter) {
+        this.emitter = emitter == null ? PhaseEventEmitter.ADR061_WORKFLOW_TELEMETRY : emitter;
+    }
+
+    public void setMeasurementVersion(String measurementVersion) {
+        this.measurementVersion = measurementVersion;
+    }
+
+    public void setStepAlias(String stepAlias) {
+        this.stepAlias = stepAlias;
+    }
+
+    public void setTier(CapabilityTier tier) {
+        this.tier = tier;
+    }
+
+    public void setModel(String model) {
+        this.model = model;
+    }
+
+    public void setExpectedModel(String expectedModel) {
+        this.expectedModel = expectedModel;
+    }
+
+    public void setModelMatchesExpected(Boolean modelMatchesExpected) {
+        this.modelMatchesExpected = modelMatchesExpected;
+    }
+
+    public void setInputTokens(Long inputTokens) {
+        this.inputTokens = inputTokens;
+    }
+
+    public void setOutputTokens(Long outputTokens) {
+        this.outputTokens = outputTokens;
     }
 
     /**
@@ -171,6 +297,50 @@ public class WorkflowPhaseEvent {
 
     public String getSourceId() {
         return sourceId;
+    }
+
+    public String getStationId() {
+        return stationId;
+    }
+
+    public StationResult getStationResult() {
+        return stationResult;
+    }
+
+    public PhaseEventEmitter getEmitter() {
+        return emitter;
+    }
+
+    public String getMeasurementVersion() {
+        return measurementVersion;
+    }
+
+    public String getStepAlias() {
+        return stepAlias;
+    }
+
+    public CapabilityTier getTier() {
+        return tier;
+    }
+
+    public String getModel() {
+        return model;
+    }
+
+    public String getExpectedModel() {
+        return expectedModel;
+    }
+
+    public Boolean getModelMatchesExpected() {
+        return modelMatchesExpected;
+    }
+
+    public Long getInputTokens() {
+        return inputTokens;
+    }
+
+    public Long getOutputTokens() {
+        return outputTokens;
     }
 
     public Instant getCreatedAt() {

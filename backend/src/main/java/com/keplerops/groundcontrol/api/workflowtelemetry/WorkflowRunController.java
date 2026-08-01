@@ -1,18 +1,29 @@
 package com.keplerops.groundcontrol.api.workflowtelemetry;
 
+import com.keplerops.groundcontrol.api.workflowtelemetry.stream.WorkflowRunStreamHub;
 import com.keplerops.groundcontrol.domain.projects.service.ProjectService;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.FindingDisposition;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.FindingSourceKind;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.WorkflowRunOutcome;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.service.GateFindingCommand;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.ImportRunCostCommand;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.RecordPhaseEventCommand;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.RecordWorkflowRunCommand;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowActivityService;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowMeasurementService;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowRunFilter;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowTelemetryService;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,6 +32,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
  * Workflow-run telemetry & economics reporting surface (issue #859, ADR-061).
@@ -36,11 +48,74 @@ import org.springframework.web.bind.annotation.RestController;
 public class WorkflowRunController {
 
     private final WorkflowTelemetryService telemetryService;
+    private final WorkflowMeasurementService measurementService;
+    private final WorkflowActivityService activityService;
     private final ProjectService projectService;
+    private final WorkflowRunStreamHub streamHub;
 
-    public WorkflowRunController(WorkflowTelemetryService telemetryService, ProjectService projectService) {
+    public WorkflowRunController(
+            WorkflowTelemetryService telemetryService,
+            WorkflowMeasurementService measurementService,
+            WorkflowActivityService activityService,
+            ProjectService projectService,
+            WorkflowRunStreamHub streamHub) {
         this.telemetryService = telemetryService;
+        this.measurementService = measurementService;
+        this.activityService = activityService;
         this.projectService = projectService;
+        this.streamHub = streamHub;
+    }
+
+    /**
+     * Live projection of this project's runs and phase events (issue #1436). Resolves the project
+     * before registering, so the connection is scoped exactly as the polling reads above are, and
+     * falls through the existing authenticated {@code /api/v1/**} rule — a stream is not an
+     * access-control exemption.
+     *
+     * <p>Delivery is best-effort: the client refetches the REST snapshots on connect and reconnect
+     * and reconciles by entity id. The stream reports committed telemetry and cannot advance, retry,
+     * or prove the present liveness of a workflow.
+     */
+    @ApiResponse(
+            responseCode = "200",
+            description = "Event stream. Each `workflow-run` or `phase-event` frame carries the same JSON"
+                    + " projection the corresponding REST read returns; heartbeats are SSE comments with no"
+                    + " payload. Delivery is best-effort and may duplicate — reconcile by entity id.",
+            content =
+                    @Content(
+                            mediaType = MediaType.TEXT_EVENT_STREAM_VALUE,
+                            schema =
+                                    @Schema(
+                                            oneOf = {WorkflowRunResponse.class, PhaseEventResponse.class},
+                                            description = "Payload of one named SSE data frame")))
+    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter stream(@RequestParam(required = false) String project) {
+        var projectIdentifier = projectService.requireProjectIdentifier(project);
+        return streamHub.subscribe(projectIdentifier, currentPrincipal());
+    }
+
+    /**
+     * Bounded project activity projection. “Current” means last observed ADR-061 transition; the
+     * response's threshold is an attention heuristic, never a workflow lease or control signal.
+     */
+    @GetMapping("/activity")
+    public WorkflowActivityResponse activity(@RequestParam(required = false) String project) {
+        var projectIdentifier = projectService.requireProjectIdentifier(project);
+        return WorkflowActivityResponse.from(activityService.snapshot(projectIdentifier));
+    }
+
+    /**
+     * Principal for the per-principal connection quota, read on the request thread. It is a quota
+     * key only — the security chain has already authorized this request, and this value is never
+     * treated as authentication on a delivery thread.
+     */
+    private static String currentPrincipal() {
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || authentication.getName() == null) {
+            // Security disabled (dev/test profiles): every caller shares one quota bucket.
+            return WorkflowRunStreamHub.ANONYMOUS_PRINCIPAL;
+        }
+        return authentication.getName();
     }
 
     @PostMapping
@@ -89,8 +164,105 @@ public class WorkflowRunController {
                 request.durationMs(),
                 request.outcome(),
                 request.provenance(),
-                request.sourceId());
+                request.sourceId(),
+                request.stationId(),
+                request.stationResult(),
+                toFindingCommands(request.findings()),
+                request.findingsDropped(),
+                request.emitter(),
+                request.measurementVersion(),
+                request.stepAlias(),
+                request.tier(),
+                request.model(),
+                request.expectedModel(),
+                request.modelMatchesExpected(),
+                request.inputTokens(),
+                request.outputTokens());
         return PhaseEventResponse.from(telemetryService.recordPhaseEvent(command));
+    }
+
+    /**
+     * ADR-090 process variables over a window (issue #1355).
+     *
+     * <p>Project-scoped through {@code ProjectService}, so it falls under the shared authenticated
+     * rule rather than the admin-only cross-project rollup: this reports one project's own line.
+     */
+    @GetMapping("/measurement")
+    public MeasurementAggregateResponse measurement(
+            @RequestParam(required = false) String project,
+            @RequestParam(required = false) Instant from,
+            @RequestParam(required = false) Instant to) {
+        var projectIdentifier = projectService.requireProjectIdentifier(project);
+        var yields = measurementService.aggregateStationYield(projectIdentifier, from, to);
+        var window = measurementService.resolveReportingWindow(from, to);
+
+        var stations = yields.values().stream()
+                .map(y -> new MeasurementAggregateResponse.StationYieldRow(
+                        y.stationId(),
+                        y.firstPassNumerator(),
+                        y.firstPassDenominator(),
+                        y.firstPassYield(),
+                        y.evaluableAttempts(),
+                        y.reworkAttempts(),
+                        y.unresolvedRuns(),
+                        y.iterationsToGreen()))
+                .toList();
+
+        var counts = measurementService.aggregateFindingCounts(projectIdentifier, from, to).stream()
+                .map(r -> new MeasurementAggregateResponse.FindingCountRow(
+                        (String) r[0],
+                        (FindingSourceKind) r[1],
+                        (String) r[2],
+                        (String) r[3],
+                        (String) r[4],
+                        (FindingDisposition) r[5],
+                        (Long) r[6]))
+                .toList();
+
+        return new MeasurementAggregateResponse(
+                window.from(), window.to(), WorkflowMeasurementService.MEASUREMENT_VERSION, stations, counts);
+    }
+
+    /**
+     * Move one finding to a terminal disposition (issue #1355).
+     *
+     * <p>Separate from the detection path on purpose: an emitter observing a finding is not evidence
+     * that anything was decided about it. A disposition that retires a finding without fixing it
+     * must name where it was authorized; the entity enforces that, so the rule cannot be bypassed by
+     * reaching the field another way.
+     */
+    @PostMapping("/findings/{findingId}/disposition")
+    public GateFindingResponse recordFindingDisposition(
+            @PathVariable UUID findingId,
+            @Valid @RequestBody RecordFindingDispositionRequest request,
+            @RequestParam(required = false) String project) {
+        var projectIdentifier = projectService.requireProjectIdentifier(project);
+        return GateFindingResponse.from(measurementService.recordFindingDisposition(
+                findingId, projectIdentifier, request.disposition(), request.authorizationReference()));
+    }
+
+    /**
+     * Map the request's finding batch onto immutable commands.
+     *
+     * <p>Every finding enters as {@code OPEN}: detection and disposition are different moments, and
+     * an emitter observing a finding is not evidence that anything was decided about it. Terminal
+     * dispositions arrive only through the dedicated transition endpoint, which can require the
+     * ADR-029 authorization a {@code wontfix} needs.
+     */
+    private static List<GateFindingCommand> toFindingCommands(List<GateFindingRequest> findings) {
+        if (findings == null) {
+            return null;
+        }
+        return findings.stream()
+                .map(f -> new GateFindingCommand(
+                        f.findingKey(),
+                        f.sourceKind(),
+                        f.sourceId(),
+                        f.category(),
+                        f.severity(),
+                        f.classification(),
+                        FindingDisposition.OPEN))
+                .toList();
     }
 
     /**

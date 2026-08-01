@@ -25,6 +25,11 @@ function initGitRepo(dir) {
   writeFileSync(join(dir, "README"), "x\n");
   execFileSync("git", ["-C", dir, "add", "README"]);
   execFileSync("git", ["-C", dir, "commit", "-q", "-m", "init"]);
+  // A real origin, so fixtures resolve owner/repo the way production does: from the git remote,
+  // which git resolves without consulting GH_REPO. Without it these repos fell through to the
+  // GH_REPO-honouring `gh repo view` fallback, so the tests exercised the env-hijackable path and
+  // could not have caught a caller that depended on it.
+  execFileSync("git", ["-C", dir, "remote", "add", "origin", "https://github.com/fake/repo.git"]);
   return dir;
 }
 

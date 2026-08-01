@@ -13,13 +13,13 @@ import com.keplerops.groundcontrol.domain.workflowtelemetry.repository.WorkflowR
 import com.keplerops.groundcontrol.domain.workflowtelemetry.repository.WorkflowRunRepository.RunRollupRow;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -44,15 +44,11 @@ public class WorkflowTelemetryService {
     /** Default look-back when from/to are omitted. */
     public static final int DEFAULT_WINDOW_DAYS = 30;
 
-    /** Maximum allowed aggregation window in days. */
-    public static final int MAX_WINDOW_DAYS = 366;
-
-    /** Reserved sequence that opens every {@code gc:} workflow marker; never allowed in stored fields. */
-    private static final String RESERVED_MARKER = "<!-- gc:";
-
     private static final String PROJECT_FIELD = "project";
 
     private static final String RUN_NOT_FOUND = "Workflow run not found: ";
+
+    private static final String PHASE_EVENT_NOT_FOUND = "Workflow phase event not found: ";
 
     private static final int MAX_RUN_LIST_SIZE = 200;
 
@@ -61,11 +57,21 @@ public class WorkflowTelemetryService {
 
     private final WorkflowRunRepository runRepository;
     private final WorkflowPhaseEventRepository phaseEventRepository;
+    private final WorkflowMeasurementService measurementService;
+    private final StationCatalog stationCatalog;
+    private final ApplicationEventPublisher eventPublisher;
 
     public WorkflowTelemetryService(
-            WorkflowRunRepository runRepository, WorkflowPhaseEventRepository phaseEventRepository) {
+            WorkflowRunRepository runRepository,
+            WorkflowPhaseEventRepository phaseEventRepository,
+            WorkflowMeasurementService measurementService,
+            StationCatalog stationCatalog,
+            ApplicationEventPublisher eventPublisher) {
         this.runRepository = runRepository;
         this.phaseEventRepository = phaseEventRepository;
+        this.measurementService = measurementService;
+        this.stationCatalog = stationCatalog;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -75,12 +81,12 @@ public class WorkflowTelemetryService {
      */
     @Transactional
     public WorkflowRun recordRun(RecordWorkflowRunCommand command) {
-        requireText(command.project(), PROJECT_FIELD);
-        requireText(command.workflowType(), "workflowType");
+        WorkflowTelemetryValidation.requireText(command.project(), PROJECT_FIELD);
+        WorkflowTelemetryValidation.requireText(command.workflowType(), "workflowType");
         if (command.provenance() == null) {
             throw new DomainValidationException("provenance must not be null");
         }
-        rejectReservedMarkers(
+        WorkflowTelemetryValidation.rejectReservedMarkers(
                 command.project(),
                 command.repo(),
                 command.branch(),
@@ -90,9 +96,9 @@ public class WorkflowTelemetryService {
                 command.model(),
                 command.costCurrency());
         if (command.requirementUids() != null) {
-            command.requirementUids().forEach(uid -> rejectReservedMarkers(uid));
+            command.requirementUids().forEach(uid -> WorkflowTelemetryValidation.rejectReservedMarkers(uid));
         }
-        validateEconomics(
+        WorkflowTelemetryValidation.validateEconomics(
                 command.modelInvocationCount(), command.wallClockMinutes(), command.costProxy(), command.tokenUsage());
 
         var existing = runRepository.findRunForUpdate(
@@ -100,13 +106,13 @@ public class WorkflowTelemetryService {
         WorkflowRun saved;
         if (existing.isPresent()) {
             var run = existing.get();
-            validateChronology(run, command);
-            applyRunCommand(run, command);
+            WorkflowTelemetryValidation.validateChronology(run, command);
+            WorkflowRunCommandMapper.applyRunCommand(run, command);
             saved = runRepository.save(run);
         } else {
-            validateChronology(null, command);
+            WorkflowTelemetryValidation.validateChronology(null, command);
             var run = new WorkflowRun(command.project(), command.workflowType(), command.provenance());
-            applyRunCommand(run, command);
+            WorkflowRunCommandMapper.applyRunCommand(run, command);
             try {
                 // saveAndFlush so a unique-key violation surfaces here, not at commit. The UNIQUE
                 // NULLS NOT DISTINCT index on (project, repo, issue_number, branch) is the backstop
@@ -129,6 +135,7 @@ public class WorkflowTelemetryService {
                 saved.getBranch(),
                 saved.getFinalState(),
                 saved.getProvenance());
+        publishChange(WorkflowTelemetryChangeEvent.run(saved.getProject(), saved.getId()));
         return loadRequirementUids(saved);
     }
 
@@ -155,8 +162,8 @@ public class WorkflowTelemetryService {
         if (command.runId() == null) {
             throw new DomainValidationException("runId must not be null");
         }
-        requireText(command.project(), PROJECT_FIELD);
-        requireText(command.phase(), "phase");
+        WorkflowTelemetryValidation.requireText(command.project(), PROJECT_FIELD);
+        WorkflowTelemetryValidation.requireText(command.phase(), "phase");
         if (command.eventType() == null) {
             throw new DomainValidationException("eventType must not be null");
         }
@@ -166,13 +173,17 @@ public class WorkflowTelemetryService {
         if (command.provenance() == null) {
             throw new DomainValidationException("provenance must not be null");
         }
-        rejectReservedMarkers(command.phase(), command.outcome(), command.sourceId());
+        WorkflowTelemetryValidation.rejectReservedMarkers(command.phase(), command.outcome(), command.sourceId());
         if (command.durationMs() != null && command.durationMs() < 0) {
             throw new DomainValidationException("durationMs must not be negative");
         }
         if (command.cycleIndex() != null && command.cycleIndex() < 0) {
             throw new DomainValidationException("cycleIndex must not be negative");
         }
+        // Resolve emitter + catalogue station + station result for the write (issue #1354); the
+        // step-vs-lifecycle rules live in resolveStepEmission.
+        var emission = WorkflowTelemetryValidation.resolveStepEmission(stationCatalog, command);
+
         // The project-scoped lookup is what authorizes the write; afterwards command.runId() is the
         // proven identity of that run, so the derivation and idempotency lookups key on it directly.
         // It takes the row lock so the ordinal derivation, the existence check, and the insert below
@@ -182,27 +193,51 @@ public class WorkflowTelemetryService {
                 .orElseThrow(() -> new NotFoundException(RUN_NOT_FOUND + command.runId()));
 
         int cycleIndex = resolveCycleIndex(command, command.runId());
-        String sourceId = command.sourceId() != null && !command.sourceId().isBlank()
-                ? command.sourceId()
-                : WorkflowPhaseEvent.deriveSourceId(command.phase(), command.eventType(), cycleIndex);
+        // A step observation's identity is derived server-side and namespaced to the ADR-036 emitter,
+        // so it can never collide with a live station attempt's phase:eventType:cycleIndex and a caller
+        // cannot forge a colliding one (issue #1354).
+        String sourceId;
+        if (emission.isStepObservation()) {
+            sourceId = "adr036_step:" + command.phase() + ":" + cycleIndex;
+        } else if (command.sourceId() != null && !command.sourceId().isBlank()) {
+            sourceId = command.sourceId();
+        } else {
+            sourceId = WorkflowPhaseEvent.deriveSourceId(command.phase(), command.eventType(), cycleIndex);
+        }
 
         var alreadyRecorded = phaseEventRepository.findByRunIdAndSourceId(command.runId(), sourceId);
         if (alreadyRecorded.isPresent()) {
+            // A step observation's measurement facts are immutable, so a replay with different facts is
+            // a conflict; lifecycle rows keep their live-vs-backfill convergence where the first wins.
+            WorkflowTelemetryValidation.assertReplayFactsMatch(alreadyRecorded.get(), command, emission);
+            // The attempt is already recorded, so its batch is too. Re-appending the findings here
+            // would double every count on an at-least-once redelivery.
             return alreadyRecorded.get();
         }
 
-        var event = new WorkflowPhaseEvent(
-                command.runId(),
-                run.getProject(),
-                command.phase(),
+        // Checked before anything is written: the three axes are disjoint by design and nothing
+        // downstream re-derives one from another, so a contradictory combination stored here is
+        // indistinguishable from a real observation forever after.
+        WorkflowTelemetryValidation.validateMeasurement(
+                stationCatalog,
+                emission.stationId(),
+                emission.stationResult(),
                 command.eventType(),
-                command.occurredAt(),
-                command.durationMs(),
-                command.provenance());
-        event.setCycleIndex(cycleIndex);
-        event.setOutcome(command.outcome());
-        event.setSourceId(sourceId);
-        return phaseEventRepository.save(event);
+                command.findings(),
+                command.findingsDropped());
+
+        var event = WorkflowPhaseEventFactory.build(command, run.getProject(), emission, cycleIndex, sourceId);
+        var appended = phaseEventRepository.save(event);
+        // Same transaction as the attempt: a partial batch must never be readable as a complete
+        // gate outcome, so either the attempt and every finding it observed commit together or
+        // neither does.
+        measurementService.persistFindings(appended, command.findings());
+        // Only a genuinely new append is announced. The idempotent (runId, sourceId) hit above
+        // returns early without publishing, so a retry or a backfill of an already-delivered fact
+        // does not re-notify; a subscriber that missed the original resynchronizes on reconnect.
+        publishChange(
+                WorkflowTelemetryChangeEvent.phaseEvent(appended.getProject(), appended.getRunId(), appended.getId()));
+        return appended;
     }
 
     private int resolveCycleIndex(RecordPhaseEventCommand command, UUID runId) {
@@ -223,9 +258,9 @@ public class WorkflowTelemetryService {
         if (command.runId() == null) {
             throw new DomainValidationException("runId must not be null");
         }
-        requireText(command.project(), PROJECT_FIELD);
-        rejectReservedMarkers(command.provider(), command.model(), command.costCurrency());
-        validateEconomics(
+        WorkflowTelemetryValidation.requireText(command.project(), PROJECT_FIELD);
+        WorkflowTelemetryValidation.rejectReservedMarkers(command.provider(), command.model(), command.costCurrency());
+        WorkflowTelemetryValidation.validateEconomics(
                 command.modelInvocationCount(), command.wallClockMinutes(), command.costProxy(), command.tokenUsage());
         var run = runRepository
                 .findByIdAndProject(command.runId(), command.project())
@@ -251,7 +286,9 @@ public class WorkflowTelemetryService {
         if (command.tokenUsage() != null) {
             run.setTokenUsage(command.tokenUsage());
         }
-        return loadRequirementUids(runRepository.save(run));
+        var saved = runRepository.save(run);
+        publishChange(WorkflowTelemetryChangeEvent.run(saved.getProject(), saved.getId()));
+        return loadRequirementUids(saved);
     }
 
     /**
@@ -264,7 +301,7 @@ public class WorkflowTelemetryService {
         if (runId == null) {
             throw new DomainValidationException("runId must not be null");
         }
-        requireText(project, PROJECT_FIELD);
+        WorkflowTelemetryValidation.requireText(project, PROJECT_FIELD);
         // Resolving the run project-scoped is the authorization step; the entity itself is not needed
         // because the event query is scoped on its own denormalized project column.
         var authorized = runRepository
@@ -274,6 +311,33 @@ public class WorkflowTelemetryService {
         int bounded = Math.clamp(limit, 1, MAX_PHASE_EVENT_LIST_SIZE);
         return phaseEventRepository.findByRunIdAndProjectOrderByOccurredAtAscIdAsc(
                 runId, project, PageRequest.of(0, bounded));
+    }
+
+    /**
+     * One run, resolved project-scoped. A caller holding a run id from another project gets
+     * not-found rather than that run, so a run UUID is never on its own an authorization capability.
+     */
+    @Transactional(readOnly = true)
+    public WorkflowRun getRun(UUID runId, String project) {
+        if (runId == null) {
+            throw new DomainValidationException("runId must not be null");
+        }
+        WorkflowTelemetryValidation.requireText(project, PROJECT_FIELD);
+        return loadRequirementUids(runRepository
+                .findByIdAndProject(runId, project)
+                .orElseThrow(() -> new NotFoundException(RUN_NOT_FOUND + runId)));
+    }
+
+    /** One phase event, resolved against the event's own denormalized project column. */
+    @Transactional(readOnly = true)
+    public WorkflowPhaseEvent getPhaseEvent(UUID eventId, String project) {
+        if (eventId == null) {
+            throw new DomainValidationException("eventId must not be null");
+        }
+        WorkflowTelemetryValidation.requireText(project, PROJECT_FIELD);
+        return phaseEventRepository
+                .findByIdAndProject(eventId, project)
+                .orElseThrow(() -> new NotFoundException(PHASE_EVENT_NOT_FOUND + eventId));
     }
 
     /** Recent runs for one project, newest first (bounded). */
@@ -292,8 +356,8 @@ public class WorkflowTelemetryService {
      */
     @Transactional(readOnly = true)
     public RunAggregate aggregate(WorkflowRunFilter filter) {
-        validateWindow(filter.from(), filter.to());
-        rejectReservedMarkers(
+        WorkflowTelemetryValidation.validateWindow(filter.from(), filter.to());
+        WorkflowTelemetryValidation.rejectReservedMarkers(
                 filter.project(), filter.repo(), filter.workflowType(), filter.runtime(), filter.requirement());
 
         RunRollupRow row = runRepository.aggregateRuns(
@@ -354,30 +418,6 @@ public class WorkflowTelemetryService {
     }
 
     /**
-     * Chronology invariant checked before any field is applied: a run cannot end before it started.
-     * The start time may come from the stored run or from this observation, whichever is earlier.
-     */
-    private static void validateChronology(WorkflowRun existing, RecordWorkflowRunCommand command) {
-        if (command.endedAt() == null) {
-            return;
-        }
-        Instant start = earliest(existing == null ? null : existing.getStartedAt(), command.startedAt());
-        if (start != null && command.endedAt().isBefore(start)) {
-            throw new DomainValidationException("endedAt must not be before startedAt");
-        }
-    }
-
-    private static Instant earliest(Instant a, Instant b) {
-        if (a == null) {
-            return b;
-        }
-        if (b == null) {
-            return a;
-        }
-        return a.isBefore(b) ? a : b;
-    }
-
-    /**
      * A fresh live attempt on a different branch of the same work item retires the previous attempt
      * (issue #1435). This is the only abandonment the tool layer can observe: an agent that stops
      * working never emits anything, so without this the earlier run would stay {@code RUNNING}
@@ -407,44 +447,10 @@ public class WorkflowTelemetryService {
                     run.getIssueNumber(),
                     run.getBranch(),
                     saved.getBranch());
-        }
-    }
-
-    private static void applyRunCommand(WorkflowRun run, RecordWorkflowRunCommand command) {
-        // Merge semantics: apply each non-null field of the observation onto the run. setIfPresent
-        // keeps this a flat data-driven mapping rather than a long if-chain.
-        setIfPresent(command.repo(), run::setRepo);
-        setIfPresent(command.issueNumber(), run::setIssueNumber);
-        setIfPresent(command.prNumber(), run::setPrNumber);
-        setIfPresent(command.branch(), run::setBranch);
-        setIfPresent(command.runtimeDriver(), run::setRuntimeDriver);
-        // Monotonic lifecycle fields (issue #1435). A run's start only ever moves earlier, a
-        // terminal state is never reopened by a later or delayed observation, and an end time is
-        // never cleared — otherwise a slow live write or a stale backfill would resurrect a
-        // completed run and corrupt every active-run count and cycle-time percentile.
-        run.setStartedAt(earliest(run.getStartedAt(), command.startedAt()));
-        if (run.getFinalState() == null || !run.getFinalState().isTerminal()) {
-            setIfPresent(command.endedAt(), run::setEndedAt);
-            setIfPresent(command.finalState(), run::setFinalState);
-            setIfPresent(command.outcome(), run::setOutcome);
-        }
-        setIfPresent(command.provenance(), run::setProvenance);
-        setIfPresent(command.provider(), run::setProvider);
-        setIfPresent(command.model(), run::setModel);
-        setIfPresent(command.modelInvocationCount(), run::setModelInvocationCount);
-        setIfPresent(command.wallClockMinutes(), run::setWallClockMinutes);
-        setIfPresent(command.costProxy(), run::setCostProxy);
-        setIfPresent(command.costCurrency(), run::setCostCurrency);
-        setIfPresent(command.tokenUsage(), run::setTokenUsage);
-        var uids = command.requirementUids();
-        if (uids != null && !uids.isEmpty()) {
-            run.setRequirementUids(uids);
-        }
-    }
-
-    private static <T> void setIfPresent(T value, java.util.function.Consumer<T> setter) {
-        if (value != null) {
-            setter.accept(value);
+            // A retired attempt is a state change a watching dashboard must see, not a silent
+            // bookkeeping write: without this the superseded run would sit at RUNNING on screen
+            // until the next poll (issue #1436).
+            publishChange(WorkflowTelemetryChangeEvent.run(run.getProject(), run.getId()));
         }
     }
 
@@ -471,85 +477,12 @@ public class WorkflowTelemetryService {
         return total.divide(BigDecimal.valueOf(count), 4, RoundingMode.HALF_UP);
     }
 
-    private static void requireText(String value, String field) {
-        if (value == null || value.isBlank()) {
-            throw new DomainValidationException(field + " must not be blank");
-        }
+    /**
+     * Announce a committed telemetry change. Spring holds the notification until the surrounding
+     * transaction commits, so a rolled-back write is never announced; see the {@code AFTER_COMMIT}
+     * listener that delivers it (issue #1436).
+     */
+    private void publishChange(WorkflowTelemetryChangeEvent change) {
+        eventPublisher.publishEvent(change);
     }
-
-    private static void rejectReservedMarkers(String... values) {
-        for (String value : values) {
-            if (value != null && value.contains(RESERVED_MARKER)) {
-                throw new DomainValidationException(
-                        "field must not contain a reserved '" + RESERVED_MARKER + "' marker");
-            }
-        }
-    }
-
-    private static void validateEconomics(
-            Integer modelInvocationCount, Integer wallClockMinutes, BigDecimal costProxy, Long tokenUsage) {
-        if (modelInvocationCount != null && modelInvocationCount < 0) {
-            throw new DomainValidationException("modelInvocationCount must not be negative");
-        }
-        if (wallClockMinutes != null && wallClockMinutes < 0) {
-            throw new DomainValidationException("wallClockMinutes must not be negative");
-        }
-        if (costProxy != null && costProxy.signum() < 0) {
-            throw new DomainValidationException("costProxy must not be negative");
-        }
-        if (tokenUsage != null && tokenUsage < 0) {
-            throw new DomainValidationException("tokenUsage must not be negative");
-        }
-    }
-
-    private static void validateWindow(Instant from, Instant to) {
-        if (from == null) {
-            throw new DomainValidationException("from must not be null");
-        }
-        if (to == null) {
-            throw new DomainValidationException("to must not be null");
-        }
-        if (!from.isBefore(to)) {
-            throw new DomainValidationException("from must be before to");
-        }
-        long days = Duration.between(from, to).toDays();
-        if (days > MAX_WINDOW_DAYS) {
-            throw new DomainValidationException(
-                    "time window must not exceed " + MAX_WINDOW_DAYS + " days (requested " + days + " days)");
-        }
-    }
-
-    /** Aggregate reporting result over a scoped window. Cost-per-run ratios are null when the outcome count is zero. */
-    public record RunAggregate(
-            Instant from,
-            Instant to,
-            long totalRuns,
-            long mergedRuns,
-            long closedRuns,
-            long activeRuns,
-            long escalatedRuns,
-            long abandonedRuns,
-            long supersededRuns,
-            Double cycleTimeP50Min,
-            Double cycleTimeP95Min,
-            Double cycleTimeP99Min,
-            BigDecimal totalCostProxy,
-            BigDecimal mergedCostProxy,
-            BigDecimal closedCostProxy,
-            BigDecimal costProxyPerMergedRun,
-            BigDecimal costProxyPerClosedRun,
-            long totalModelInvocations,
-            long totalWallClockMinutes,
-            long totalTokenUsage,
-            List<PhaseHotspot> phaseHotspots) {}
-
-    /** Per-phase hot-spot row: counts, failed/escalation counts, p50/p95 duration, and max cycle index. */
-    public record PhaseHotspot(
-            String phase,
-            long eventCount,
-            long failedCount,
-            long escalatedCount,
-            Long p50Ms,
-            Long p95Ms,
-            Integer maxCycleIndex) {}
 }

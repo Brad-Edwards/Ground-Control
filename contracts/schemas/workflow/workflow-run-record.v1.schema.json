@@ -65,7 +65,7 @@
       "id": "gc.workflow.run-record.phase-state-closed-set",
       "description": "Workflow run state and provenance are closed vocabularies.",
       "enforcedBy": [
-        "tools/tests/test_policy.py::test_workflow_run_record_schema_has_closed_state_vocabulary_invariant"
+        "tools/tests/test_policy_authz_matrix_sync.py::test_workflow_run_record_schema_has_closed_state_vocabulary_invariant"
       ]
     }
   ]

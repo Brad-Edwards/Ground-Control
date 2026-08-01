@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "gc.measurement.station-catalogue.v1",
+  "title": "Station catalogue",
+  "description": "Shape of the authoritative station catalogue (contracts/measurement/gc-station-catalogue-v1.json). A station_id is the identity; every alias value is a way some emitter or surface refers to it. ADR-090 section 2.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "measurement_version",
+    "alias_kinds",
+    "stations",
+    "lifecycle_markers",
+    "non_station_stages"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "gc.measurement.station-catalogue/v1"
+    },
+    "measurement_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string"
+    },
+    "alias_kinds": {
+      "description": "Declared alias source kinds. Modelling aliases by kind is what keeps a display rename from becoming a breaking identity change.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "adr061_phase",
+        "adr036_stage",
+        "issue_thread_marker",
+        "mcp_action",
+        "skill_step",
+        "display_label"
+      ],
+      "patternProperties": {
+        "^[a-z0-9_]+$": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "stations": {
+      "description": "A station is a gate that inspects something and can therefore yield a station result.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "station_id",
+          "title",
+          "inspects",
+          "aliases"
+        ],
+        "properties": {
+          "station_id": {
+            "$ref": "#/$defs/EntryId"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "inspects": {
+            "description": "What this gate examines. A station that inspects nothing is a lifecycle marker, not a station.",
+            "type": "string",
+            "minLength": 1
+          },
+          "aliases": {
+            "$ref": "#/$defs/AliasMap"
+          }
+        }
+      }
+    },
+    "lifecycle_markers": {
+      "description": "A recorded transition that inspects nothing. It can never carry pass/fail, and must never be counted as a station attempt.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "marker_id",
+          "title",
+          "records",
+          "aliases"
+        ],
+        "properties": {
+          "marker_id": {
+            "$ref": "#/$defs/EntryId"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "records": {
+            "type": "string",
+            "minLength": 1
+          },
+          "aliases": {
+            "$ref": "#/$defs/AliasMap"
+          }
+        }
+      }
+    },
+    "non_station_stages": {
+      "description": "ADR-036 routing stages that deliberately map to no station and no marker, each with the reason. Declaring them keeps the drift check total instead of silently ignoring what it cannot resolve.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "adr036_stage",
+          "reason"
+        ],
+        "properties": {
+          "adr036_stage": {
+            "$ref": "#/$defs/EntryId"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "EntryId": {
+      "description": "Stable machine id. Lowercase snake case so it can never be mistaken for a display label.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "AliasMap": {
+      "description": "Alias values grouped by source kind. Every key must be a kind declared in alias_kinds.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "adr061_phase": {
+          "$ref": "#/$defs/AliasList"
+        },
+        "adr036_stage": {
+          "$ref": "#/$defs/AliasList"
+        },
+        "issue_thread_marker": {
+          "$ref": "#/$defs/AliasList"
+        },
+        "mcp_action": {
+          "$ref": "#/$defs/AliasList"
+        },
+        "skill_step": {
+          "$ref": "#/$defs/AliasList"
+        },
+        "display_label": {
+          "$ref": "#/$defs/AliasList"
+        }
+      }
+    },
+    "AliasList": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "x-ground-control-invariants": [
+    {
+      "id": "gc.measurement.station-catalogue.identity-is-authoritative",
+      "description": "Every station id and marker id is unique across both sets, and no alias (kind, value) pair resolves to two different entries. Without this the catalogue would be a second ambiguous vocabulary rather than the resolution of the existing ones.",
+      "enforcedBy": [
+        "tools/tests/test_measurement_catalogue_checks.py::test_station_catalogue_ids_and_aliases_are_unique",
+        "tools/tests/test_measurement_catalogue_checks.py::test_every_catalogue_violation_code_fires_on_its_mutation"
+      ]
+    },
+    {
+      "id": "gc.measurement.station-catalogue.emitters-resolve",
+      "description": "Every station id the MCP emitter writes, every gc:phase marker value, and every ADR-036 routing stage resolves to a declared entry. This is what makes the catalogue authoritative rather than decorative.",
+      "enforcedBy": [
+        "tools/tests/test_measurement_catalogue_checks.py::test_station_catalogue_covers_live_emitter_station_ids",
+        "tools/tests/test_measurement_catalogue_checks.py::test_station_catalogue_covers_issue_thread_phase_markers",
+        "tools/tests/test_measurement_catalogue_checks.py::test_station_catalogue_covers_routing_stages",
+        "tools/tests/test_measurement_catalogue_checks.py::test_every_catalogue_violation_code_fires_on_its_mutation",
+        "tools/tests/test_measurement_catalogue_checks.py::test_every_declared_violation_code_has_a_mutation_case"
+      ]
+    },
+    {
+      "id": "gc.measurement.station-catalogue.stations-inspect",
+      "description": "A station declares what it inspects; a lifecycle marker declares what it records. The two sets are disjoint, so a recorded transition can never be counted as a gate attempt.",
+      "enforcedBy": [
+        "tools/tests/test_measurement_catalogue_checks.py::test_station_catalogue_separates_stations_from_lifecycle_markers"
+      ]
+    }
+  ]
+}

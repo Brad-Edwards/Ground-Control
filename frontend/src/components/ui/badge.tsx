@@ -1,53 +1,82 @@
 import { cn } from "@/lib/utils";
 import type { Priority, RequirementType, Status } from "@/types/api";
 
-const statusColors: Record<Status, string> = {
-  DRAFT: "bg-gray-500/15 text-gray-400",
-  ACTIVE: "bg-green-500/15 text-green-400",
-  DEPRECATED: "bg-orange-500/15 text-orange-400",
-  ARCHIVED: "bg-gray-500/15 text-gray-500",
+/**
+ * Semantic badge variants (GC-Q015 clause (b)). Each variant renders through the semantic state
+ * tokens in {@code main.css} rather than raw Tailwind colours, so state colour is consistent and
+ * WCAG AA across the console. Callers always render a text label alongside the colour, so meaning
+ * never rests on colour alone (clause (e)).
+ */
+export type BadgeVariant =
+  | "neutral"
+  | "info"
+  | "success"
+  | "warning"
+  | "danger"
+  | "evidence";
+
+const variantClasses: Record<BadgeVariant, string> = {
+  neutral: "bg-muted text-muted-foreground",
+  info: "bg-info/15 text-info",
+  success: "bg-success/15 text-success",
+  warning: "bg-warning/15 text-warning",
+  danger: "bg-danger/15 text-danger",
+  evidence: "bg-evidence/15 text-evidence",
 };
 
-const priorityColors: Record<Priority, string> = {
-  MUST: "bg-red-500/15 text-red-400",
-  SHOULD: "bg-yellow-500/15 text-yellow-400",
-  COULD: "bg-blue-500/15 text-blue-400",
-  WONT: "bg-gray-500/15 text-gray-500",
-};
-
-const typeColors: Record<RequirementType, string> = {
-  FUNCTIONAL: "bg-violet-500/15 text-violet-400",
-  NON_FUNCTIONAL: "bg-cyan-500/15 text-cyan-400",
-  CONSTRAINT: "bg-amber-500/15 text-amber-400",
-  INTERFACE: "bg-teal-500/15 text-teal-400",
-};
-
-interface BadgeProps {
-  children: React.ReactNode;
-  className?: string;
+interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
+  variant?: BadgeVariant;
 }
 
-export function Badge({ children, className }: BadgeProps) {
+export function Badge({
+  children,
+  variant = "neutral",
+  className,
+  ...rest
+}: BadgeProps) {
   return (
     <span
       className={cn(
         "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+        variantClasses[variant],
         className,
       )}
+      {...rest}
     >
       {children}
     </span>
   );
 }
 
+export const statusVariants: Record<Status, BadgeVariant> = {
+  DRAFT: "neutral",
+  ACTIVE: "success",
+  DEPRECATED: "warning",
+  ARCHIVED: "neutral",
+};
+
+const priorityVariants: Record<Priority, BadgeVariant> = {
+  MUST: "danger",
+  SHOULD: "warning",
+  COULD: "info",
+  WONT: "neutral",
+};
+
+const typeVariants: Record<RequirementType, BadgeVariant> = {
+  FUNCTIONAL: "info",
+  NON_FUNCTIONAL: "evidence",
+  CONSTRAINT: "warning",
+  INTERFACE: "success",
+};
+
 export function StatusBadge({ status }: { status: Status }) {
-  return <Badge className={statusColors[status]}>{status}</Badge>;
+  return <Badge variant={statusVariants[status]}>{status}</Badge>;
 }
 
 export function PriorityBadge({ priority }: { priority: Priority }) {
-  return <Badge className={priorityColors[priority]}>{priority}</Badge>;
+  return <Badge variant={priorityVariants[priority]}>{priority}</Badge>;
 }
 
 export function TypeBadge({ type }: { type: RequirementType }) {
-  return <Badge className={typeColors[type]}>{type.replace("_", " ")}</Badge>;
+  return <Badge variant={typeVariants[type]}>{type.replace("_", " ")}</Badge>;
 }

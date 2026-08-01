@@ -20,6 +20,10 @@ through Q8.5 use `action="publish"`; and Q10 through Q11 use
 its lightweight close record and requirement-free lifecycle intentionally
 differ from `/implement`. A mechanical failure hands control to the primary
 only for the named repair, after which the same action is retried.
+The three long actions use the same background contract as `/implement`: pass
+`async=true` plus one bounded `idempotency_key` per logical attempt, poll the
+returned handle through `gc_codex_job`, and dispatch on the terminal `result`.
+Reuse a key only after a lost start response; create a new key after a repair.
 
 ## When to pick `/quickfix` vs `/implement`
 
@@ -254,15 +258,14 @@ traceability sections. The /quickfix lane does NOT consume
 `.ground-control.yaml::architecture.vocabulary` itself; that block is
 consumed only by the pre-push reviewers and the preflight (when invoked).
 
-**2026-05-21 (issue #937).** When `--review` is supplied, the optional codex
-and test-quality pre-push reviews (Steps Q6.5 / Q6.6) run as async background
-jobs: `gc_codex_review` / `gc_test_quality_review` are called with
-`async: true` and the job is polled via the new `gc_codex_job` tool, exactly
-as the /implement Step 6.5 / 6.6 prose this lane defers to now describes. The
-cap-1 default, `override_cap` semantics, and the `gc_post_decision_record`
-contract this lane inherits are unchanged - async only changes how the agent
-waits for a review cycle's result, so the multi-minute child process is not
-orphaned by the MCP client's tool-call timeout (issue #893). See ADR-036
+**2026-05-21 (issue #937), hardened by issue #943.** When `--review` is
+supplied, the optional codex and test-quality pre-push cycle wrappers (Steps
+Q6.5 / Q6.6) use the same async-only, idempotent start/poll contract as
+`/implement`: pass one bounded `idempotency_key` per logical attempt, reuse it
+after a lost start response, and poll `gc_codex_job`. A missing job requires
+refreshing the issue thread before selecting a new key; cycle jobs do not
+claim cancellation as rollback. The cap-1 default, `override_cap` semantics,
+and `gc_post_decision_record` contract are unchanged. See ADR-036
 (amendments) for the job model.
 
 **2026-05-26 (issue #989).** A sibling lane, `/integrate`, now exists for preparing queues of approved PRs (GC-O011). The /quickfix and /integrate lanes are disjoint: /quickfix is issue-anchored and accepts the same `gc_post_decision_record` / `gc_post_final_report` contract as /implement; /integrate is repo-scoped and operational-only, with no issue-thread durable record. There is no overlap in trigger conditions or durable-record surfaces.

@@ -12,7 +12,10 @@ When `groundcontrol.security.enabled=true`:
 - Send `Authorization: Bearer <token>` on every `/api/v1/**` request.
 - `/api/v1/admin/**`, `/api/v1/embeddings/**`, `/api/v1/analysis/sweep/**`,
   and `/api/v1/pack-registry/**` require a token whose configured `role`
-  is `ADMIN`. Other `/api/v1/**` paths accept any authenticated token.
+  is `ADMIN`. The narrower `/api/v1/admin/identity/**` namespace also accepts
+  a UUID-backed identity principal with the closed-catalog `IDENTITY_ADMIN`
+  permission; legacy `ROLE_ADMIN` remains a compatibility bridge there until
+  #1411. Other `/api/v1/**` paths accept any authenticated token.
 - `/actuator/health` and `/actuator/info` are anonymous; the OpenAPI
   schema is gated by `groundcontrol.security.openapi-public`.
 - An optional CIDR allowlist (`groundcontrol.security.ip-allowlist`)
@@ -33,6 +36,21 @@ http://localhost:8000/api/v1/
 ```
 
 ## Endpoints
+
+### Session
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| GET | `/session` | - | 200 | Read the current authenticated principal for the console shell (GC-Q015) |
+
+Returns a credential-free `SessionResponse` with `displayName`, a compatibility
+`roles` projection (for example `ROLE_USER` or `ROLE_ADMIN`), and a
+`canAdminister` presentation hint. It carries no session id, CSRF value, or
+credential material. The read is consumed by the SPA shell over the browser
+session and is reachable via `gc_query` for a bearer caller's own principal.
+Capability hints are presentation only; `ApiPathMatrix` and the service layer
+remain the authorization boundary. Returns 401 when the caller is
+unauthenticated.
 
 ### Projects
 
@@ -1003,6 +1021,9 @@ the MCP adapter (not in the `gc_query` allowlist).
 | GET | `/workflow-runs` | - | 200 | List recent runs for a project |
 | GET | `/workflow-runs/{runId}/events` | - | 200 | Phase events for one run, oldest first |
 | GET | `/workflow-runs/aggregate` | - | 200 | Project-scoped reporting aggregate |
+| GET | `/workflow-runs/stream` | - | 200 `text/event-stream` (503 at capacity) | Live project-scoped run/phase-event stream |
+| GET | `/workflow-runs/measurement` | - | 200 | ADR-090 station yield, rework, and finding counts |
+| POST | `/workflow-runs/findings/{findingId}/disposition` | RecordFindingDispositionRequest | 200 | Move one gate finding to a terminal disposition |
 | GET | `/workflow-runs/cross-project-aggregate` | - | 200 (ROLE_ADMIN; 403 otherwise) | Cross-project operator rollup |
 
 This is a reporting read-model, not a workflow engine (ADR-061). All
@@ -1049,10 +1070,132 @@ attempt instead of appending a phantom retry. `sourceId` defaults to
 returns the stored event rather than appending a duplicate, which is what lets live emission and
 `gc_workflow_run_ingest` describe the same attempt without double-counting it.
 
+The same phase-event surface carries the durable **ADR-036 step observation** (issue #1354): a routed
+`/implement` step recorded via `gc_log_step_telemetry`, distinguished by `emitter`
+(`ADR036_STEP_JSONL` vs the default `ADR061_WORKFLOW_TELEMETRY`). Such a row sends `phase` = the
+ADR-036 stage id (the backend resolves the catalogue `stationId` from it and refuses an undeclared
+stage), leaves `stationResult` `UNOBSERVED` (it reports operation outcome only, never a gate verdict),
+and adds the ADR-036 facts `tier` (`LOW` | `MEDIUM` | `HIGH` | `NOT_APPLICABLE` | `UNOBSERVED`),
+`model`, `expectedModel`, `modelMatchesExpected`, `measurementVersion`, `stepAlias`, and optional
+`inputTokens`/`outputTokens`. Its `(runId, sourceId)` is namespaced (`adr036_step:<stage>:<attempt>`)
+so it never collides with a live station attempt. `GET /{runId}/events` returns these rows (the
+queryable per-step record), but the `/aggregate` phase hot-spots and the context-graph projection
+exclude the step emitter so step economics never inflate gate counts.
+
+**GET `/workflow-runs/measurement`** (issue #1355, ADR-090): the production-line process
+variables for one project over a window (`from`/`to`, defaulting to the standard look-back and
+bounded by the same maximum as `/aggregate`). Returns per-station first-pass yield, iterations to
+green, rework, and unresolved runs, plus finding counts grouped by station, reviewer/detector,
+category, severity, and disposition.
+
+Three properties of the response matter more than the numbers:
+
+- Every ratio ships with its `firstPassNumerator`, `firstPassDenominator`, and `unresolvedRuns`,
+  and the response carries `measurementVersion`. A percentage without its coverage is not a process
+  fact: a station inspected twice and one inspected two thousand times must not render alike.
+- `firstPassYield` is `null`, not `0`, when nothing evaluable was measured. "Measured zero" and
+  "nothing was measured" are different claims, and only the first means the gate failed.
+- Only `PASS` and `FAIL` attempts reach the denominators. Skipped, cancelled, not-evaluable, and
+  unobserved attempts stay measurable coverage but are excluded, so an unmeasured gate never reads
+  as a failing one. Legacy events written before the station-result axis existed are `UNOBSERVED`
+  and are excluded on the same basis rather than counted as passes.
+
+**POST `/workflow-runs/findings/{findingId}/disposition`** (issue #1355): records a terminal
+disposition (`FIXED`, `WONTFIX`, `NOT_APPLICABLE`) for one finding. Deliberately separate from the
+detection path: an emitter observing a finding is not evidence that anything was decided about it,
+and the review wrapper's pre-repair `decision: fix` is intent rather than proof. The transition is
+monotonic and idempotent, so re-applying the same terminal value is a no-op, while a conflicting
+terminal claim returns 409 rather than being silently overwritten, because two sources disagreeing
+about whether something was fixed is a fact worth surfacing. `project` scopes the lookup, so a
+finding id alone never authorizes the write.
+
+`authorizationReference` (max 500) names where the decision was recorded, normally the ADR-029 issue
+thread comment. It is **required** for `WONTFIX` and `NOT_APPLICABLE` and **refused** for `FIXED`;
+either mismatch returns 400. The asymmetry follows what each claim can be checked against: a fix is
+substantiated by the station's next attempt, which either reproduces the finding or does not, while
+"we accept this" and "this is a false positive" are assertions no gate re-run can confirm and both
+remove the finding from the escape-rate signal. The rule is enforced on the entity rather than at the
+controller, so it holds for every path into the field, and the reference is carried on the audited
+row so the authority behind a retired finding survives with it.
+
+`findingsDropped` is how many findings the emitter's own cap discarded before sending. It is
+persisted rather than only logged: without it a truncated batch is indistinguishable from a complete
+one, so the stored count reads as everything the gate found and every aggregate built on it
+understates the defect signal by exactly the amount that was hidden. A positive value with no
+delivered batch returns 400, because that describes a lost batch rather than a truncated one.
+
+`stationId` must name an entry in the published station catalogue
+(`contracts/measurement/gc-station-catalogue-v2.json`, copied onto the backend classpath at build
+time so the validator cannot disagree with the contract). An unrecognised id returns 400 rather than
+opening a phantom station that would silently take attempts out of the real station's denominator.
+The combination is validated as well: a lifecycle marker carries no `stationResult` and no
+`findings` because it inspects nothing, a `STARTED` event carries neither because the attempt has not
+finished inspecting, and an event with no `stationId` may report neither. `UNOBSERVED` is not a
+verdict and is accepted anywhere, since it states exactly that nothing was measured.
+
+**POST `/workflow-runs/{runId}/events`** additionally accepts the ADR-090 measurement projection
+(issue #1355): `stationId`, `stationResult`, and a bounded `findings` batch persisted atomically
+with the attempt. `stationResult` is separate from `eventType` by construction, since `COMPLETED` means
+the phase finished, not that its inspection passed, and is omitted rather than guessed when no
+verdict was observed. A `findings` array that is absent means nothing was measured; an empty array
+means the gate ran and found nothing. Finding records carry no title, body, remediation text, path,
+or line: the issue thread remains the narrative record per ADR-029.
+
 **GET `/workflow-runs/{runId}/events`:** requires `project` (which scopes the run lookup, so a run id
 alone never authorizes the read) and accepts `limit` (default 200, capped at 500). Events are
 returned oldest first. This is the event-level view of an in-flight run; `/aggregate` only reports
 per-phase hot spots across a window.
+
+**GET `/workflow-runs/stream`** (issue #1436, ADR-061 #1436 amendment): a project-scoped
+Server-Sent Events stream of committed run and phase-event facts, so a dashboard reflects a phase
+transition without a reload. Requires `project`, resolved through `ProjectService` before the
+connection is registered, and inherits the ordinary authenticated `/api/v1/**` rule. A stream is
+not an access-control exemption, and it grants nothing `GET /workflow-runs` does not.
+
+Named events are `workflow-run` and `phase-event`; their `data` payloads are exactly the
+`WorkflowRunResponse` and `PhaseEventResponse` JSON shapes documented above, so a client reconciles
+them into the same cache its polling reads populate. Heartbeats are SSE comments with no payload.
+
+Delivery is **best-effort and may duplicate**: reconcile by entity id, and refetch the REST
+snapshots on connect and reconnect. There is no `Last-Event-ID` replay and no durable backlog; an
+in-memory notification can be lost if the process dies after the database commit.
+
+Connections are bounded (`groundcontrol.workflow-telemetry.stream.*`): a global cap, a
+per-authenticated-principal cap, a finite emitter lifetime that forces re-authorization on
+reconnect, a heartbeat below that lifetime, and a bounded per-connection queue. Exceeding a cap is
+refused with `503 service_unavailable` in the standard `ErrorResponse` envelope, before the
+event-stream headers commit. A consumer too slow to keep up is **disconnected rather than silently
+skipped**, so a client is never left believing a live stream is current while missing an event;
+it falls back to interval polling and reconnects. Fan-out is process-local, so a multi-instance
+deployment needs a broker behind the change-notification seam. Any reverse proxy must disable
+buffering and compression for this route and keep its read timeout above the heartbeat interval.
+
+`gc_query` **denylists** this path: it is a browser transport, not an agent read, and reading a
+never-ending response would simply burn the tool's timeout. Agents use `GET /workflow-runs` and
+`GET /workflow-runs/{runId}/events` for bounded snapshots.
+
+**GET `/workflow-runs/activity`** (issue #1437, ADR-061 #1437 amendment): requires `project` and
+returns the bounded snapshot used by the Live Activity console. It inherits the same authenticated,
+project-scoped access path as the other workflow-run reads. It is not exposed through `gc_query`;
+agents use the bounded `gc_workflow_run` `activity` action instead.
+
+The response is
+`{observedAt, openRunTotal, openRunsTruncated, openRuns, recentlyFinished}`. Each open row contains a
+scalar run summary, the latest ADR-061 lifecycle phase/title/time and its reported
+`currentCycle`, the effective `stallThresholdMs`, the latest ADR-036 routing observation, and the
+latest attempt for each observed
+catalogue station. Gate attempts report `{stationId, stationTitle, eventType, stationResult,
+cycleIndex, occurredAt, durationMs, findingCount, findingsDropped}`. Nullable facts are unobserved;
+clients must not invent a phase, verdict, route, timestamp, or process-liveness claim. The gate
+array includes every station in current catalogue order; a station without an attempt has
+`stationResult=UNOBSERVED` and null event/time fields.
+
+Open means the recorded run state is `RUNNING`, `READY_FOR_REVIEW`, or `ESCALATED`. A duration beyond
+`stallThresholdMs` is presentation-only attention: it does not change run state, establish a lease,
+or prove the producer is dead. `recentlyFinished` is a small terminal band; the complete historical
+record stays available from `GET /workflow-runs`. Bounds are configured with
+`groundcontrol.workflow-telemetry.activity.stall-threshold` (default `30m`),
+`max-open-runs` (default `100`, range 1 to 500), and `recent-runs` (default `8`, range 1 to 50).
 
 **GET aggregate query parameters:** `project` (required for `/aggregate`), plus
 optional `repo`, `runtime`, `requirement`, `workflowType`, `outcome`, and
@@ -2057,6 +2200,37 @@ admin page operating under the signed-in operator's session.
 | DELETE | `/admin/users/{username}` | (none) | 204, 404, 409 | Delete user. `409 last_admin` refuses deleting the last enabled admin. |
 
 `CreateUserRequest`: `{"username":"<lowercase, 2-64 chars, matches /^[a-z][a-z0-9._-]{1,63}$/>", "password":"<12-200 chars>", "role":"USER"\|"ADMIN"}`. Passwords are BCrypt-hashed server-side; the JSON never echoes the password back. First-admin bootstrap is out of band; see `DEPLOYMENT.md`'s Web UI login section.
+
+### Identity Administration (ADR-085)
+
+The identity/RBAC foundation is separate from the ADR-037 credential store.
+These routes never accept passwords or raw tokens. Collections are pageable;
+access-bearing edges are revoked by lifecycle transition rather than deleted.
+Role grants may be global or project-scoped through the optional `project`
+query parameter. Project-access grants require that parameter.
+
+| Method | Path | Body | Status | Purpose |
+|--------|------|------|--------|---------|
+| GET | `/admin/identity/permissions` | - | 200 | Read the closed, versioned permission catalog |
+| POST / GET | `/admin/identity/users` | `IdentityCreateUserRequest` / - | 201 / 200 | Create or page identity users |
+| GET / PATCH | `/admin/identity/users/{id}` | - / `IdentityUpdateUserRequest` | 200 | Read or transition an identity user |
+| POST / GET | `/admin/identity/groups` | `IdentityCreateGroupRequest` / - | 201 / 200 | Create or page groups |
+| GET / PATCH | `/admin/identity/groups/{id}` | - / `IdentityUpdateGroupRequest` | 200 | Read or transition a group |
+| POST / GET | `/admin/identity/memberships` | `IdentityCreateMembershipRequest` / - | 201 / 200 | Add or page group memberships |
+| POST | `/admin/identity/memberships/{id}/revoke` | - | 200 | Revoke a membership |
+| POST / GET | `/admin/identity/roles` | `IdentityCreateRoleRequest` / - | 201 / 200 | Create or page roles |
+| GET / PATCH | `/admin/identity/roles/{id}` | - / `IdentityUpdateRoleRequest` | 200 | Read or transition a role |
+| POST / GET | `/admin/identity/role-permissions` | `IdentityAssignPermissionRequest` / - | 201 / 200 | Assign or page closed-catalog permissions |
+| POST | `/admin/identity/role-permissions/{id}/revoke` | - | 200 | Revoke a role-permission assignment |
+| POST / GET | `/admin/identity/role-grants` | `IdentityCreateRoleGrantRequest` / - | 201 / 200 | Create or page direct/group role grants |
+| POST | `/admin/identity/role-grants/{id}/revoke` | - | 200 | Revoke a role grant |
+| POST / GET | `/admin/identity/project-access-grants` | `IdentityCreateProjectAccessGrantRequest` / - | 201 / 200 | Create or page direct/group project admission |
+| POST | `/admin/identity/project-access-grants/{id}/revoke` | - | 200 | Revoke project admission |
+
+Every role/project grant request names exactly one of `userId` or `groupId`.
+Project-scoped authorization requires both an effective role path and an
+independent project-access grant. All access-removing mutations reject a
+change that would remove the last effective global identity administrator.
 
 For control packs, use `/pack-registry/import` or `/pack-registry` to persist the
 pack definition first, then call one of these routes with the `packId` and optional

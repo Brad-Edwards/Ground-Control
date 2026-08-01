@@ -41,17 +41,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
-/**
- * GC-RSCH-R004 / GC-RSCH-N002 / GC-RSCH-N004 / ADR-069 — behavioral unit tests
- * for {@link ResearchProvenanceService}. Each test exercises a real behavior of
- * the provenance ledger (idempotent record, rework supersession, self-edge and
- * cycle rejection, content bounding, project scoping, backward chain traversal)
- * rather than asserting a tautology.
- */
+/** Split from ResearchProvenanceServiceTest under issue #1467 for the 500-LOC limit
+ * (docs/CODING_STANDARDS.md). Test bodies are unchanged; fixtures are
+ * repeated because JUnit builds a fresh instance per test class. */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 class ResearchProvenanceServiceTest {
-
     private static final UUID PROJECT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID OTHER_PROJECT_ID = UUID.fromString("00000000-0000-0000-0000-000000000002");
     private static final UUID RUN_ID = UUID.fromString("00000000-0000-0000-0000-000000000010");
@@ -103,6 +98,20 @@ class ResearchProvenanceServiceTest {
     @AfterEach
     void tearDown() {
         ActorHolder.clear();
+    }
+
+    private ResearchProvenanceNode node(
+            ProvenanceNodeKind kind, String subjectKey, UUID id, ProvenanceRecordStatus status) {
+        var n = new ResearchProvenanceNode(run, kind, subjectKey);
+        TestUtil.setField(n, "id", id);
+        TestUtil.setField(n, "status", status);
+        return n;
+    }
+
+    /** A node command carrying only kind + subjectKey, all optional fields null. */
+    private RecordProvenanceNodeCommand nodeCommand(ProvenanceNodeKind kind, String subjectKey) {
+        return new RecordProvenanceNodeCommand(
+                kind, subjectKey, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     // ---- recordNode -------------------------------------------------------
@@ -487,56 +496,5 @@ class ResearchProvenanceServiceTest {
                 .containsExactlyInAnyOrder(rootId, upstreamId);
         assertThat(chain.edges()).hasSize(1);
         assertThat(chain.truncated()).isFalse();
-    }
-
-    @Test
-    void getProvenanceChain_truncatesAtDepthCap() {
-        // Linear chain root <- n1 <- n2 ... ; with depth=1 only the first hop is walked.
-        var rootId = UUID.randomUUID();
-        var n1 = UUID.randomUUID();
-        var root = node(ProvenanceNodeKind.SYNTHESIS_CLAIM, "claim-1", rootId, ProvenanceRecordStatus.ACTIVE);
-        var node1 = node(ProvenanceNodeKind.CHARTING_CELL, "cell-1", n1, ProvenanceRecordStatus.ACTIVE);
-        var e1 = new ResearchProvenanceEdge(run, n1, rootId, ProvenanceEdgeRelation.SUPPORTS);
-        TestUtil.setField(e1, "id", UUID.randomUUID());
-
-        when(nodeRepository.findByIdAndResearchRunId(rootId, RUN_ID)).thenReturn(Optional.of(root));
-        when(nodeRepository.findByIdAndResearchRunId(n1, RUN_ID)).thenReturn(Optional.of(node1));
-        when(edgeRepository.findByResearchRunIdAndToNodeIdAndStatus(RUN_ID, rootId, ProvenanceRecordStatus.ACTIVE))
-                .thenReturn(List.of(e1));
-        // n1 has further upstream, so depth=1 must report truncation.
-        var n2 = UUID.randomUUID();
-        var e2 = new ResearchProvenanceEdge(run, n2, n1, ProvenanceEdgeRelation.SUPPORTS);
-        TestUtil.setField(e2, "id", UUID.randomUUID());
-        when(edgeRepository.findByResearchRunIdAndToNodeIdAndStatus(RUN_ID, n1, ProvenanceRecordStatus.ACTIVE))
-                .thenReturn(List.of(e2));
-
-        var chain = service.getProvenanceChain(PROJECT_ID, RUN_ID, rootId, 1);
-
-        assertThat(chain.maxDepth()).isEqualTo(1);
-        assertThat(chain.truncated()).isTrue();
-        assertThat(chain.nodes()).extracting(ResearchProvenanceNode::getId).contains(rootId, n1);
-    }
-
-    @Test
-    void getProvenanceChain_rejectsUnknownRootNode() {
-        var missing = UUID.randomUUID();
-        when(nodeRepository.findByIdAndResearchRunId(missing, RUN_ID)).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> service.getProvenanceChain(PROJECT_ID, RUN_ID, missing, null))
-                .isInstanceOf(NotFoundException.class);
-    }
-
-    private ResearchProvenanceNode node(
-            ProvenanceNodeKind kind, String subjectKey, UUID id, ProvenanceRecordStatus status) {
-        var n = new ResearchProvenanceNode(run, kind, subjectKey);
-        TestUtil.setField(n, "id", id);
-        TestUtil.setField(n, "status", status);
-        return n;
-    }
-
-    /** A node command carrying only kind + subjectKey, all optional fields null. */
-    private RecordProvenanceNodeCommand nodeCommand(ProvenanceNodeKind kind, String subjectKey) {
-        return new RecordProvenanceNodeCommand(
-                kind, subjectKey, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 }

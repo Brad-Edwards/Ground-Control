@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "gc.measurement.record.v1",
+  "title": "Production-line measurement record",
+  "description": "The shared machine-readable shape every ADR-090 emitter maps its native record onto. This is a contract, not a storage schema: ADR-061, ADR-059 and ADR-036 keep their own stores and authority. A dimension an emitter cannot authoritatively supply is absent — never synthesized, never defaulted, never copied from raw input.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["measurementVersion", "emitter", "observedAt"],
+  "properties": {
+    "measurementVersion": {
+      "description": "Version of this measurement contract the record was produced against.",
+      "type": "string",
+      "const": "gc.measurement/v1"
+    },
+    "emitter": {
+      "description": "Which emitter produced the record. Identifies the source, not the workflow.",
+      "type": "string",
+      "enum": [
+        "adr061_workflow_telemetry",
+        "adr059_mcp_tool_usage",
+        "adr036_step_jsonl",
+        "otel_runtime"
+      ]
+    },
+    "observedAt": {
+      "description": "When the fact occurred, not when it was delivered. A late flush must never distort a duration.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "workItem": { "$ref": "#/$defs/WorkItem" },
+    "runId": {
+      "description": "ADR-061 workflow_run.id. A reporting correlation, not workflow authority and not a distributed trace id.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "stationId": {
+      "description": "Authoritative station id from the station catalogue. A SKILL step number, routing stage, marker value, or UI label is an alias and must be resolved before it reaches this field.",
+      "$ref": "#/$defs/EntryId"
+    },
+    "stationAttempt": {
+      "description": "Ordered attempt for one (run, station). Absent when the emitter cannot order attempts; a source with neither this nor a cycle index cannot contribute to iteration metrics.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "boundaryId": {
+      "description": "Registered architecture/contract boundary this attempt inspected. A file path, package name, or display title is not a boundary id.",
+      "$ref": "#/$defs/EntryId"
+    },
+    "capabilityTier": { "$ref": "#/$defs/CapabilityTier" },
+    "durationMs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "operationOutcome": { "$ref": "#/$defs/OperationOutcome" },
+    "stationResult": { "$ref": "#/$defs/StationResult" },
+    "runState": { "$ref": "#/$defs/RunState" },
+    "runOutcome": { "$ref": "#/$defs/RunOutcome" }
+  },
+  "$defs": {
+    "EntryId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "WorkItem": {
+      "description": "ADR-090 section 2: the exact GitHub-issue tuple. Requirement UIDs and PRs are related references, never replacements, and there is no branch-only or issue-number-only cross-repository join.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project", "repo", "issueNumber"],
+      "properties": {
+        "project": { "type": "string", "minLength": 1 },
+        "repo": { "type": "string", "minLength": 1 },
+        "issueNumber": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "CapabilityTier": {
+      "description": "ADR-036 provider-neutral tier. `unobserved` is not evidence of `low`; `not_applicable` means no model choice applied. Provider and model are separate dimensions.",
+      "type": "string",
+      "enum": ["low", "medium", "high", "not_applicable", "unobserved"]
+    },
+    "OperationOutcome": {
+      "description": "Axis 1 of ADR-090 section 3: whether an emitter operation ran. Never evidence that a gate passed. Shares no value with StationResult, so the two cannot be silently substituted.",
+      "type": "string",
+      "enum": ["ok", "error", "skipped"]
+    },
+    "StationResult": {
+      "description": "Axis 2 of ADR-090 section 3: the verdict of the thing a station inspected. Only this axis feeds yield and rework formulas. It is stated explicitly by the producer — never derived from a tool succeeding, from a phase completing, from a merged PR, or from the absence of a later failure. Legacy records that never carried a result are `unobserved` and are excluded from formula denominators rather than counted as passes.",
+      "type": "string",
+      "enum": [
+        "pass",
+        "fail",
+        "skipped_station",
+        "cancelled",
+        "not_evaluable",
+        "unobserved"
+      ]
+    },
+    "RunState": {
+      "description": "Axis 3 of ADR-090 section 3: the ADR-061 run lifecycle state. `RUNNING` means no terminal observation has been recorded, not that a process is alive.",
+      "type": "string",
+      "enum": [
+        "RUNNING",
+        "READY_FOR_REVIEW",
+        "MERGED",
+        "CLOSED",
+        "ESCALATED",
+        "ABANDONED",
+        "SUPERSEDED",
+        "FAILED"
+      ]
+    },
+    "RunOutcome": {
+      "description": "Axis 3 of ADR-090 section 3: the ADR-061 economic result of a run.",
+      "type": "string",
+      "enum": ["MERGED", "CLOSED_WITHOUT_MERGE", "NONE"]
+    }
+  },
+  "x-ground-control-invariants": [
+    {
+      "id": "gc.measurement.record.outcome-axes-disjoint",
+      "description": "Operation outcome, station result, and run state/outcome are separate properties backed by separate closed enums that share no value. ADR-090 section 3's separation is enforced by construction: `pass` cannot appear on the operation axis, and `ok` cannot appear on the station axis, so no aggregate can conflate a tool succeeding with a gate passing.",
+      "enforcedBy": [
+        "tools/tests/test_measurement_catalogue_checks.py::test_measurement_record_outcome_axes_share_no_value",
+        "tools/tests/test_measurement_catalogue_checks.py::test_measurement_record_declares_three_separate_outcome_properties"
+      ]
+    },
+    {
+      "id": "gc.measurement.record.station-identity-is-catalogued",
+      "description": "stationId is a catalogue station id, so an alias can never be persisted as identity. Every station id the record schema admits is declared in the station catalogue.",
+      "enforcedBy": [
+        "tools/tests/test_measurement_catalogue_checks.py::test_measurement_record_station_id_resolves_against_catalogue"
+      ]
+    },
+    {
+      "id": "gc.measurement.record.absence-over-synthesis",
+      "description": "Only measurementVersion, emitter and observedAt are required. Every correlation and outcome dimension is optional, so an emitter that cannot attest a dimension omits it rather than defaulting it to a value that would read as a real observation.",
+      "enforcedBy": [
+        "tools/tests/test_measurement_catalogue_checks.py::test_measurement_record_requires_only_provenance_fields"
+      ]
+    }
+  ]
+}

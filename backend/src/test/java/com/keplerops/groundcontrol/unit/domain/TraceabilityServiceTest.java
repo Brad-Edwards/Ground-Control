@@ -26,6 +26,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -66,7 +69,7 @@ class TraceabilityServiceTest {
     }
 
     private static TraceabilityLink makeLink(Requirement req) {
-        var link = new TraceabilityLink(req, ArtifactType.GITHUB_ISSUE, "GH-123", LinkType.IMPLEMENTS);
+        var link = new TraceabilityLink(req, ArtifactType.GITHUB_ISSUE, "123", LinkType.IMPLEMENTS);
         setField(link, "id", UUID.randomUUID());
         return link;
     }
@@ -86,19 +89,48 @@ class TraceabilityServiceTest {
             when(traceabilityLinkRepository.save(any(TraceabilityLink.class))).thenAnswer(inv -> inv.getArgument(0));
 
             var cmd = new CreateTraceabilityLinkCommand(
-                    ArtifactType.GITHUB_ISSUE,
-                    "GH-123",
-                    "https://github.com/issue/123",
-                    "Fix bug",
-                    LinkType.IMPLEMENTS);
+                    ArtifactType.GITHUB_ISSUE, "123", "https://github.com/issue/123", "Fix bug", LinkType.IMPLEMENTS);
 
             var result = service.createLink(reqId, cmd);
             assertThat(result).isNotNull();
             assertThat(result.getArtifactType()).isEqualTo(ArtifactType.GITHUB_ISSUE);
-            assertThat(result.getArtifactIdentifier()).isEqualTo("GH-123");
+            assertThat(result.getArtifactIdentifier()).isEqualTo("123");
             assertThat(result.getLinkType()).isEqualTo(LinkType.IMPLEMENTS);
             assertThat(result.getArtifactUrl()).isEqualTo("https://github.com/issue/123");
             assertThat(result.getArtifactTitle()).isEqualTo("Fix bug");
+        }
+
+        @ParameterizedTest
+        @NullAndEmptySource
+        @ValueSource(strings = {" ", "#42", "042", "+42", "0", "-1", "owner/repo#42", "2147483648"})
+        void rejectsNonCanonicalGitHubIssueIdentifiers(String identifier) {
+            var cmd = new CreateTraceabilityLinkCommand(
+                    ArtifactType.GITHUB_ISSUE, identifier, null, null, LinkType.DOCUMENTS);
+
+            assertInvalidArtifactIdentifier(() -> service.createLink(UUID.randomUUID(), cmd));
+        }
+
+        @Test
+        void rejectsNonCanonicalPullRequestIdentifierOnUncheckedCreate() {
+            var cmd = new CreateTraceabilityLinkCommand(
+                    ArtifactType.PULL_REQUEST, "PR-42", null, null, LinkType.IMPLEMENTS);
+
+            assertInvalidArtifactIdentifier(() -> service.createLinkUnchecked(UUID.randomUUID(), cmd));
+        }
+
+        @Test
+        void uncheckedCreateAcceptsCanonicalPullRequestIdentifier() {
+            var reqId = UUID.randomUUID();
+            var req = makeRequirement("REQ-DRAFT");
+            when(requirementRepository.findById(reqId)).thenReturn(Optional.of(req));
+            when(traceabilityLinkRepository.save(any(TraceabilityLink.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            var result = service.createLinkUnchecked(
+                    reqId,
+                    new CreateTraceabilityLinkCommand(
+                            ArtifactType.PULL_REQUEST, "42", null, null, LinkType.IMPLEMENTS));
+
+            assertThat(result.getArtifactIdentifier()).isEqualTo("42");
         }
 
         @Test
@@ -107,7 +139,7 @@ class TraceabilityServiceTest {
             when(requirementRepository.findById(reqId)).thenReturn(Optional.empty());
 
             var cmd = new CreateTraceabilityLinkCommand(
-                    ArtifactType.GITHUB_ISSUE, "GH-123", null, null, LinkType.IMPLEMENTS);
+                    ArtifactType.GITHUB_ISSUE, "123", null, null, LinkType.IMPLEMENTS);
 
             assertThatThrownBy(() -> service.createLink(reqId, cmd)).isInstanceOf(NotFoundException.class);
         }
@@ -169,7 +201,7 @@ class TraceabilityServiceTest {
 
             var result = service.getLinksForRequirement(reqId);
             assertThat(result).hasSize(1);
-            assertThat(result.get(0).getArtifactIdentifier()).isEqualTo("GH-123");
+            assertThat(result.get(0).getArtifactIdentifier()).isEqualTo("123");
         }
 
         @Test
@@ -217,6 +249,12 @@ class TraceabilityServiceTest {
             assertThatThrownBy(() -> service.findByArtifact(ArtifactType.CODE_FILE, "backend/src/Main.java", null))
                     .isInstanceOf(DomainValidationException.class);
         }
+
+        @Test
+        void rejectsNonCanonicalGitHubIdentifierBeforeReverseLookup() {
+            assertInvalidArtifactIdentifier(
+                    () -> service.findByArtifact(ArtifactType.GITHUB_ISSUE, "#42", UUID.randomUUID()));
+        }
     }
 
     @Nested
@@ -252,5 +290,11 @@ class TraceabilityServiceTest {
 
             assertThatThrownBy(() -> service.deleteLink(wrongReqId, linkId)).isInstanceOf(NotFoundException.class);
         }
+    }
+
+    private static void assertInvalidArtifactIdentifier(org.assertj.core.api.ThrowableAssert.ThrowingCallable call) {
+        assertThatThrownBy(call).isInstanceOf(DomainValidationException.class).satisfies(error -> assertThat(
+                        ((DomainValidationException) error).getErrorCode())
+                .isEqualTo("invalid_artifact_identifier"));
     }
 }

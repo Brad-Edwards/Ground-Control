@@ -108,6 +108,15 @@ have headroom. See ADR-036 (amendments) for the async job model and
 `skills/implement/steps/step-02.5 / 06.5 / 06.6` plus `_review-loop-rules.md`
 for the operative start-then-poll loop prose.
 
+**2026-07-30 (issue #943).** The two public review-cycle wrappers strengthen
+that transport into an async-only, idempotent gate. Each logical attempt uses
+one bounded key; retained identical retries return one job, changed input
+conflicts, and distinct attempts are serialized per authorized canonical
+repository, issue, and reviewer. Cycle jobs do not advertise cancellation as
+rollback, and a missing job handle requires refreshing the durable issue
+thread before another attempt. The GC-O007 phases, cap policy, durable record
+order, and terminal review envelope are unchanged.
+
 **Amendment: renderer summary byte caps (#964).** `gc_render_pr_body` and `gc_post_final_report` now enforce reject-not-truncate byte caps on their caller-controlled summary fields (`PR_BODY_SUMMARY_MAX = 1200`, `FINAL_REPORT_SUMMARY_MAX = 800`, `FINAL_REPORT_PLAIN_ENGLISH_OUTCOME_MAX = 600`, `FINAL_REPORT_REVIEW_SUMMARY_MAX = 240` for `reviews[].summary`). `gc_post_decision_record`'s schema is unchanged; its caller-controlled prose fields already carry per-field caps via `REVIEW_NOTES_MAX` / `REVIEW_NOTE_TEXT_MAX` / `FINDING_*_MAX`. The canonical succinctness rule is in `skills/implement/steps/_review-loop-rules.md § Update succinctness (canonical)` and is referenced from all three renderer tool descriptions. `buildFinalReport` omits the In-scope requirements and Reviews sections entirely when their inputs are empty (no placeholder lines).
 
 **Amendment: issue close mechanism (#862 typed-action-items PR).** The /implement Step 18 no longer runs `gh issue close`. The GitHub issue closes via `Closes #<issue-number>` in the PR body (rendered by `gc_render_pr_body` in Step 9) when the user merges the PR. Step 18 only removes the `in-progress` label set in Step 1. Closing from the agent decoupled the close event from the merge: an unmerged or rolled-back PR would leave a closed issue with no shipped code (GitHub does not re-open issues on revert). Step 19 (final report) is correspondingly tightened: traceability reconciliation (Steps 15 through 17) is an explicit precondition, and no earlier step surfaces a user-facing "complete" signal (prior escalations are for input, not for "done"). The /quickfix sibling lane is updated in lockstep.

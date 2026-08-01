@@ -8,6 +8,15 @@ Accepted
 
 2026-03-08
 
+> **Sync note for issue #1282 (2026-07-27, identity foundation):** The
+> `domain/identity/state/` enums are L0 typed values. They contain no transition
+> tables: user, group, role, membership, assignment, and grant lifecycle rules
+> remain in their audited aggregates and services, while `PermissionKey` is the
+> closed catalog consumed by authorization checks. The authorization service,
+> delegation adapter, and last-effective-administrator guard are L1 security
+> boundaries and are covered by focused unit and PostgreSQL integration tests.
+> The identity package is outside the current OpenJML ESC scope.
+
 ## Context
 
 Ground Control requires a **process** governing when and how to apply formal methods - not just a list of tools. ADR-003 (now superseded by ADR-013) established design-by-contract as a principle; this ADR codifies the methodology.
@@ -90,6 +99,7 @@ When in doubt, use L0 during pre-alpha. The bar rises at beta.
 | `domain/evidence/state/EvidenceType.java` | L0 | Pure value enum; semantic role tag on `EvidenceArtifact` (GC-M016 / ADR-044), no transitions or invariants |
 | `domain/evidence/state/EvidenceSourceKind.java` | L0 | Pure value enum; internal-vs-external source-reference discriminator (GC-M016 / ADR-044), with an `isInternal()` predicate but no state transitions |
 | `domain/plugins/state/PluginType.java` | L0 | Pure plugin capability enum; `EVIDENCE_COLLECTOR` identifies GC-S001 evidence adapter registrations, with no transitions or invariants |
+| `domain/identity/state/` | L0 | Typed identity lifecycle values and the closed permission catalog; transition and authorization invariants live in tested aggregates and L1 services |
 | `domain/requirements/service/StatusDriftService.java` | L0 | Read-only derived analysis (ADR-011 §9); a service, not a state machine or security boundary - one-test-per-behavior is sufficient |
 | `domain/exception/` | L0 | Data carriers only |
 | `api/GlobalExceptionHandler` | L0 | Mapping layer, no domain logic |

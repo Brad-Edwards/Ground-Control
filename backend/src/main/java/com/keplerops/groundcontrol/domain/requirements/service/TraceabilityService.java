@@ -46,6 +46,7 @@ public class TraceabilityService {
 
     private TraceabilityLink createLink(
             UUID requirementId, CreateTraceabilityLinkCommand command, boolean enforceActiveCheck) {
+        validateArtifactIdentifier(command.artifactType(), command.artifactIdentifier());
         var requirement = requirementRepository
                 .findById(requirementId)
                 .orElseThrow(() -> new NotFoundException("Requirement not found: " + requirementId));
@@ -85,6 +86,7 @@ public class TraceabilityService {
 
     @Transactional(readOnly = true)
     public List<TraceabilityLink> findByArtifact(ArtifactType artifactType, String artifactIdentifier, UUID projectId) {
+        validateArtifactIdentifier(artifactType, artifactIdentifier);
         if (projectId == null) {
             // The reverse lookup must never run unscoped: a bare artifact identifier (issue
             // number, file path) collides across projects (#1052/#1197). The controller resolves
@@ -96,6 +98,33 @@ public class TraceabilityService {
         }
         return traceabilityLinkRepository.findByArtifactTypeAndArtifactIdentifierAndProjectIdWithRequirement(
                 artifactType, artifactIdentifier, projectId);
+    }
+
+    private static void validateArtifactIdentifier(ArtifactType artifactType, String artifactIdentifier) {
+        if (artifactType != ArtifactType.GITHUB_ISSUE && artifactType != ArtifactType.PULL_REQUEST) {
+            return;
+        }
+        if (artifactIdentifier == null) {
+            throw invalidArtifactIdentifier(artifactType);
+        }
+
+        int number;
+        try {
+            number = Integer.parseInt(artifactIdentifier);
+        } catch (NumberFormatException e) {
+            throw invalidArtifactIdentifier(artifactType);
+        }
+        if (number <= 0 || !Integer.toString(number).equals(artifactIdentifier)) {
+            throw invalidArtifactIdentifier(artifactType);
+        }
+    }
+
+    private static DomainValidationException invalidArtifactIdentifier(ArtifactType artifactType) {
+        return new DomainValidationException(
+                artifactType
+                        + " artifact identifier must be a positive decimal integer without prefixes or leading zeroes.",
+                "invalid_artifact_identifier",
+                Map.of("artifactType", artifactType.name(), "expectedFormat", "positive decimal integer"));
     }
 
     public void deleteLink(UUID requirementId, UUID linkId) {

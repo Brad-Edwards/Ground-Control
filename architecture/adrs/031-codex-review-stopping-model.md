@@ -256,6 +256,17 @@ per-issue cycle cap, the `gc:codex-review-cycle` marker family, the
 exactly as before. Async changes only how the agent waits for a cycle's
 result, never when the loop stops. See ADR-036 (amendments) for the job model.
 
+**2026-07-30 (issue #943): retained attempts are idempotent and serialized.**
+The public Codex and test-quality cycle wrappers are async-only and require a
+bounded idempotency key. Same-key/same-input starts reuse the retained running
+or terminal job; changed input conflicts, and distinct keys cannot race the
+same canonical repository/issue/reviewer scope. The synchronous internal
+executors and every stopping decision remain unchanged under terminal
+`result`. Cycle jobs are non-cancellable because aborting the reviewer cannot
+roll back durable GitHub writes. After `job_not_found`, the caller refreshes
+the issue thread before selecting a new key. Cap counters, marker families,
+override authorization, and clean/findings/capped outcomes are unchanged.
+
 **Amendment: renderer summary byte caps (#964).** `gc_render_pr_body` and `gc_post_final_report` now enforce reject-not-truncate byte caps on their caller-controlled summary fields. `gc_post_decision_record` (the per-cycle decision-record surface this ADR's stopping model writes to) is unchanged at the schema layer; its caller-controlled prose fields (`notes[].text`, finding rationales, titles) already had per-field caps. The canonical succinctness rule lives in `skills/implement/steps/_review-loop-rules.md § Update succinctness (canonical)`.
 
 **Amendment: issue close mechanism (#862 typed-action-items PR).** The /implement Step 18 no longer runs `gh issue close`. The GitHub issue closes via `Closes #<issue-number>` in the PR body (rendered by `gc_render_pr_body` in Step 9) when the user merges the PR. Step 18 only removes the `in-progress` label set in Step 1. Closing from the agent decoupled the close event from the merge: an unmerged or rolled-back PR would leave a closed issue with no shipped code (GitHub does not re-open issues on revert). Step 19 (final report) is correspondingly tightened: traceability reconciliation (Steps 15 through 17) is an explicit precondition, and no earlier step surfaces a user-facing "complete" signal (prior escalations are for input, not for "done"). The /quickfix sibling lane is updated in lockstep.
@@ -419,3 +430,32 @@ post-fix tree, not after every small fix. The stopping model, severity rubric,
 per-cycle caps, per-issue cycle counters, and the reviewer-of-record invariant
 are unchanged. Cross-referenced for the `workflow-guardrail-sync` contract. See
 ADR-021 and ADR-027 (2026-07-26 amendments).
+
+**2026-07-29 (issue #1476 bounded non-verdict re-attempts).** The stopping model
+gains a second, disjoint bound. The review cycle cap bounds how many times a
+station renders a *verdict*; the new per-reviewer
+`non_verdict_retry_limit` bounds how many times a station that rendered *no*
+verdict is automatically re-attempted (bounds `[0, 2]`, default 1; `0` restores
+the previous never-retry behavior). The two never interact: every retry-eligible
+failure class returns before any findings record or cycle marker is written, so
+a re-attempt provably consumes no cycle, no cap override, and no
+auto-disposition grant.
+
+Retry eligibility is an allow-list of stable error codes - engine invocation
+failure (including timeout), unparseable validated output, and incomplete
+reviewer coverage - not a heuristic over messages, because a wrong "retryable"
+would re-run a station that already spent a cycle. Cancellation, cap refusal,
+invalid input or configuration, repository/authorization failure,
+reserved-marker and sensitive-content rejection, and GitHub posting failure are
+never retried; the last of these matters because re-running an engine to retry a
+GitHub write would burn a review for a transport problem.
+
+The retry boundary wraps one complete station attempt, never a slice, poll, or
+durable write: partial work from an incomplete attempt is discarded with that
+attempt and never merged into a later verdict. Measurement follows the same
+split - one ADR-090 station attempt per real execution, `not_evaluable` for each
+non-verdict and `pass`/`fail` for the observed one, with `not_evaluable` outside
+the first-pass-yield and iterations-to-green denominators so an outage never
+reads as rework. Cap evaluators, the per-issue cycle counter, the verbatim
+findings record, the zero-deferral rule, and the human `override_cap` escape are
+unchanged. See ADR-029 (2026-07-29 amendment) for the obligation side.

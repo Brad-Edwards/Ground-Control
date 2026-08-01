@@ -17,10 +17,15 @@ The codex review is THE review pass for the PR - there is no second post-push co
 ## Primary-session procedure
 
 1. Stage everything with `git add -A`.
-2. Call `gc_codex_review_cycle` with `repo_path`, `issue_number`,
-   `uncommitted=true`, and `async=true`.
+2. Generate one bounded `idempotency_key` for this logical cycle attempt. Call
+   `gc_codex_review_cycle` with the key, `repo_path`, `issue_number`,
+   `uncommitted=true`, and `async=true`. Reuse that key only when the start
+   response was lost; use a new key after a terminal attempt and intentional
+   tree change.
 3. Poll `gc_codex_job` until the background review returns its terminal
-   envelope. Restart a missing/expired job; cancel only a genuinely stuck job.
+   envelope. A missing/expired handle requires an issue-thread refresh and
+   durable-record reconciliation before selecting a new key. Cycle jobs are
+   non-cancellable because cancellation cannot roll back GitHub records.
 4. Dispatch on `next_action` exactly as specified by
    [_review-loop-rules.md](_review-loop-rules.md). Fix real findings in this
    session, run proportionate targeted tests while iterating, and do not echo

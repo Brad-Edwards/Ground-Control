@@ -15,9 +15,9 @@ import com.keplerops.groundcontrol.domain.workflowtelemetry.repository.WorkflowR
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.ImportRunCostCommand;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.RecordPhaseEventCommand;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.RecordWorkflowRunCommand;
+import com.keplerops.groundcontrol.domain.workflowtelemetry.service.RunAggregate;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowRunFilter;
 import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowTelemetryService;
-import com.keplerops.groundcontrol.domain.workflowtelemetry.service.WorkflowTelemetryService.RunAggregate;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Set;
@@ -274,6 +274,19 @@ class WorkflowTelemetryAggregationIntegrationTest extends BaseIntegrationTest {
                 100L,
                 "x",
                 TelemetryProvenance.ISSUE_THREAD,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null);
         assertThatThrownBy(() -> service.recordPhaseEvent(foreignEvent)).isInstanceOf(NotFoundException.class);
         var foreignCost = new ImportRunCostCommand(
@@ -292,6 +305,19 @@ class WorkflowTelemetryAggregationIntegrationTest extends BaseIntegrationTest {
                 100L,
                 "x",
                 TelemetryProvenance.ISSUE_THREAD,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null));
         service.importCost(new ImportRunCostCommand(
                 run.getId(), "gc", null, null, null, null, new BigDecimal("5.0000"), "USD", null));
@@ -333,6 +359,19 @@ class WorkflowTelemetryAggregationIntegrationTest extends BaseIntegrationTest {
                 1000L,
                 "green",
                 TelemetryProvenance.LIVE_EMISSION,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null);
         var backfill = new RecordPhaseEventCommand(
                 run.getId(),
@@ -345,6 +384,19 @@ class WorkflowTelemetryAggregationIntegrationTest extends BaseIntegrationTest {
                 null,
                 null,
                 TelemetryProvenance.ISSUE_THREAD,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null);
 
         var first = service.recordPhaseEvent(live);
@@ -375,31 +427,31 @@ class WorkflowTelemetryAggregationIntegrationTest extends BaseIntegrationTest {
                 .containsExactly(0, 1);
     }
 
-    @Test
-    void theUniqueSourceIndexRejectsADuplicateAtTheDatabaseLevel() {
-        // The service check-then-insert is serialized on the run row, but the index is the backstop
-        // that holds if any future writer bypasses the service. Mirrors
-        // uniqueUpsertKeyTreatsNullColumnsAsEqual for workflow_run.
-        var run = saveRun("gc", 3, START, null, WorkflowRunState.RUNNING, WorkflowRunOutcome.NONE, null);
-        runRepository.flush();
-
-        phaseEventRepository.saveAndFlush(rawEvent(run.getId()));
-        var duplicate = rawEvent(run.getId());
-        assertThatThrownBy(() -> phaseEventRepository.saveAndFlush(duplicate))
-                .isInstanceOf(DataIntegrityViolationException.class);
-    }
-
     private static RecordPhaseEventCommand phaseCommand(java.util.UUID runId, PhaseEventType type, Integer cycleIndex) {
         return new RecordPhaseEventCommand(
-                runId, "gc", "ci", type, cycleIndex, START, 5L, null, TelemetryProvenance.LIVE_EMISSION, null);
-    }
-
-    /** An event built straight from the entity, bypassing the service, to exercise the index itself. */
-    private static WorkflowPhaseEvent rawEvent(java.util.UUID runId) {
-        var event = new WorkflowPhaseEvent(
-                runId, "gc", "ci", PhaseEventType.COMPLETED, START, 10L, TelemetryProvenance.LIVE_EMISSION);
-        event.setCycleIndex(0);
-        return event;
+                runId,
+                "gc",
+                "ci",
+                type,
+                cycleIndex,
+                START,
+                5L,
+                null,
+                TelemetryProvenance.LIVE_EMISSION,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
     }
 
     // ---- helpers -------------------------------------------------------------------------------

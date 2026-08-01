@@ -1,0 +1,293 @@
+package com.keplerops.groundcontrol.domain.workflowtelemetry.service;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.stereotype.Component;
+
+/**
+ * The ADR-090 station catalogue as the backend knows it (issue #1355).
+ *
+ * <p>Loaded from {@code classpath:measurement/gc-station-catalogue-v2.json}, which the build copies
+ * from {@code contracts/measurement/} rather than a committed second copy: a mirrored catalogue can
+ * drift, and a validator that disagrees with the contract it enforces is worse than no validator.
+ *
+ * <p>Its purpose is to keep the yield series honest. Station ids are the grouping key for every
+ * process variable in the model, so a typo does not fail — it opens a new station with one attempt
+ * in it and quietly removes that attempt from the real station's denominator. Nothing downstream
+ * can tell that apart from a station that genuinely ran once.
+ *
+ * <p>Fail-closed at startup, following {@code MethodologyCatalog}: an absent or malformed catalogue
+ * is an {@link IllegalStateException} rather than an empty set that would accept every id.
+ */
+@Component
+public final class StationCatalog {
+
+    static final String DEFAULT_RESOURCE = "measurement/gc-station-catalogue-v2.json";
+
+    private static final String ALIASES_FIELD = "aliases";
+    private static final String LIFECYCLE_MARKERS_FIELD = "lifecycle_markers";
+    private static final String MARKER_ID_FIELD = "marker_id";
+    private static final String STATION_ID_FIELD = "station_id";
+    private static final String STATIONS_FIELD = "stations";
+
+    /** The catalogue alias kind that names an ADR-036 routing stage (issue #1354). */
+    private static final String ADR036_STAGE_ALIAS = "adr036_stage";
+
+    /** The catalogue alias kind that names an ADR-061 persisted phase (issue #1439). */
+    private static final String ADR061_PHASE_ALIAS = "adr061_phase";
+
+    private final Set<String> stationIds;
+    private final List<String> stationOrder;
+    private final Map<String, String> stationTitles;
+    private final Set<String> markerIds;
+    private final Map<String, String> markerTitlesByPhase;
+
+    /**
+     * ADR-036 routing stage → canonical station id, built from every station's {@code adr036_stage}
+     * aliases (ADR-090 amendment, issue #1354). A durable step observation carries {@code phase =
+     * stage_id}; this is where the backend, not the emitter, resolves the catalogue station so the
+     * two can never disagree.
+     */
+    private final Map<String, String> stationByStage;
+
+    /** ADR-061 phase or direct station id → canonical station id. */
+    private final Map<String, String> stationByPhase;
+
+    /** Direct marker ids and their ADR-061 phase aliases. */
+    private final Set<String> markerPhases;
+
+    /**
+     * Every ADR-036 stage the catalogue declares — as a station alias, a lifecycle-marker alias, or a
+     * declared non-station stage. A stage in this set that resolves to no station is honest
+     * modelling (a marker or non-station inspects nothing); a stage NOT in this set is an undeclared
+     * phantom the write path refuses rather than opening a station nobody catalogued.
+     */
+    private final Set<String> knownStages;
+
+    @Autowired
+    public StationCatalog() {
+        this(DEFAULT_RESOURCE);
+    }
+
+    /** Explicit-resource overload so tests can exercise the fail-closed paths against fixtures. */
+    public StationCatalog(String resourcePath) {
+        JsonNode root;
+        try (var stream = new ClassPathResource(resourcePath).getInputStream()) {
+            root = new ObjectMapper().readTree(stream);
+        } catch (IOException | RuntimeException e) {
+            throw new IllegalStateException("Could not load the station catalogue: " + resourcePath, e);
+        }
+        this.stationIds = ids(root, STATIONS_FIELD, STATION_ID_FIELD);
+        this.stationOrder = orderedIds(root, STATIONS_FIELD, STATION_ID_FIELD);
+        this.stationTitles = titles(root, STATIONS_FIELD, STATION_ID_FIELD);
+        this.markerIds = ids(root, LIFECYCLE_MARKERS_FIELD, MARKER_ID_FIELD);
+        this.markerTitlesByPhase = markerTitlesByPhase(root);
+        this.stationByStage = stationByStage(root);
+        this.stationByPhase = stationByPhase(root);
+        this.markerPhases = markerPhases(root);
+        this.knownStages = knownStages(root, stationByStage);
+        if (stationIds.isEmpty()) {
+            // An empty set would accept nothing, but an empty *parse* means the shape changed and
+            // the catalogue was read as vacuous. Refusing to start is the only honest response.
+            throw new IllegalStateException("Station catalogue " + resourcePath + " declares no stations");
+        }
+    }
+
+    private static Set<String> ids(JsonNode root, String arrayField, String idField) {
+        var found = new LinkedHashSet<String>();
+        for (var entry : root.path(arrayField)) {
+            var id = entry.path(idField).asText(null);
+            if (id != null && !id.isBlank()) {
+                found.add(id);
+            }
+        }
+        return Set.copyOf(found);
+    }
+
+    private static List<String> orderedIds(JsonNode root, String arrayField, String idField) {
+        var found = new java.util.ArrayList<String>();
+        for (var entry : root.path(arrayField)) {
+            var id = entry.path(idField).asText(null);
+            if (id != null && !id.isBlank()) {
+                found.add(id);
+            }
+        }
+        return List.copyOf(found);
+    }
+
+    private static Map<String, String> titles(JsonNode root, String arrayField, String idField) {
+        var found = new LinkedHashMap<String, String>();
+        for (var entry : root.path(arrayField)) {
+            var id = entry.path(idField).asText(null);
+            var title = entry.path("title").asText(null);
+            if (id != null && !id.isBlank() && title != null && !title.isBlank()) {
+                found.put(id, title);
+            }
+        }
+        return Map.copyOf(found);
+    }
+
+    private static Map<String, String> markerTitlesByPhase(JsonNode root) {
+        var found = new LinkedHashMap<String, String>();
+        for (var marker : root.path(LIFECYCLE_MARKERS_FIELD)) {
+            var id = marker.path(MARKER_ID_FIELD).asText(null);
+            var title = marker.path("title").asText(null);
+            if (id == null || id.isBlank() || title == null || title.isBlank()) {
+                continue;
+            }
+            found.put(id, title);
+            for (var alias : marker.path(ALIASES_FIELD).path(ADR061_PHASE_ALIAS)) {
+                var phase = alias.asText(null);
+                if (phase != null && !phase.isBlank()) {
+                    found.put(phase, title);
+                }
+            }
+        }
+        return Map.copyOf(found);
+    }
+
+    private static Map<String, String> stationByStage(JsonNode root) {
+        var byStage = new LinkedHashMap<String, String>();
+        for (var station : root.path(STATIONS_FIELD)) {
+            var stationId = station.path(STATION_ID_FIELD).asText(null);
+            if (stationId == null || stationId.isBlank()) {
+                continue;
+            }
+            for (var alias : station.path(ALIASES_FIELD).path(ADR036_STAGE_ALIAS)) {
+                var stage = alias.asText(null);
+                if (stage != null && !stage.isBlank()) {
+                    byStage.put(stage, stationId);
+                }
+            }
+        }
+        return Map.copyOf(byStage);
+    }
+
+    private static Map<String, String> stationByPhase(JsonNode root) {
+        var byPhase = new LinkedHashMap<String, String>();
+        for (var station : root.path(STATIONS_FIELD)) {
+            var stationId = station.path(STATION_ID_FIELD).asText(null);
+            if (stationId == null || stationId.isBlank()) {
+                continue;
+            }
+            byPhase.put(stationId, stationId);
+            for (var alias : station.path(ALIASES_FIELD).path(ADR061_PHASE_ALIAS)) {
+                var phase = alias.asText(null);
+                if (phase != null && !phase.isBlank()) {
+                    byPhase.put(phase, stationId);
+                }
+            }
+        }
+        return Map.copyOf(byPhase);
+    }
+
+    private static Set<String> markerPhases(JsonNode root) {
+        var phases = new LinkedHashSet<String>();
+        for (var marker : root.path(LIFECYCLE_MARKERS_FIELD)) {
+            var markerId = marker.path(MARKER_ID_FIELD).asText(null);
+            if (markerId != null && !markerId.isBlank()) {
+                phases.add(markerId);
+            }
+            for (var alias : marker.path(ALIASES_FIELD).path(ADR061_PHASE_ALIAS)) {
+                var phase = alias.asText(null);
+                if (phase != null && !phase.isBlank()) {
+                    phases.add(phase);
+                }
+            }
+        }
+        return Set.copyOf(phases);
+    }
+
+    private static Set<String> knownStages(JsonNode root, Map<String, String> stationByStage) {
+        var stages = new LinkedHashSet<>(stationByStage.keySet());
+        for (var marker : root.path(LIFECYCLE_MARKERS_FIELD)) {
+            for (var alias : marker.path(ALIASES_FIELD).path(ADR036_STAGE_ALIAS)) {
+                var stage = alias.asText(null);
+                if (stage != null && !stage.isBlank()) {
+                    stages.add(stage);
+                }
+            }
+        }
+        for (var nonStation : root.path("non_station_stages")) {
+            var stage = nonStation.path(ADR036_STAGE_ALIAS).asText(null);
+            if (stage != null && !stage.isBlank()) {
+                stages.add(stage);
+            }
+        }
+        return Set.copyOf(stages);
+    }
+
+    /** Whether the id names a station the catalogue defines — something that inspects and reports. */
+    public boolean isStation(String stationId) {
+        return stationId != null && stationIds.contains(stationId);
+    }
+
+    /** Whether the id names a lifecycle marker, which inspects nothing and can carry no verdict. */
+    public boolean isMarker(String stationId) {
+        return stationId != null && markerIds.contains(stationId);
+    }
+
+    /**
+     * Resolve an ADR-036 routing stage to its catalogue station id (issue #1354). Empty means the
+     * stage is a declared marker or non-station — it correctly maps to no station — OR the stage is
+     * undeclared; callers distinguish those with {@link #isKnownStage(String)}.
+     */
+    public Optional<String> resolveStationForStage(String stageId) {
+        if (stageId == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(stationByStage.get(stageId));
+    }
+
+    /**
+     * Resolve an ADR-061 phase to its canonical station id. Direct station ids and declared
+     * {@code adr061_phase} aliases are equivalent inputs; markers and unknown phases resolve empty.
+     */
+    public Optional<String> resolveStationForPhase(String phase) {
+        if (phase == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(stationByPhase.get(phase));
+    }
+
+    /** Whether an ADR-061 phase names a lifecycle marker rather than an inspecting station. */
+    public boolean isLifecycleMarkerPhase(String phase) {
+        return phase != null && markerPhases.contains(phase);
+    }
+
+    /** Whether the catalogue declares this ADR-036 stage at all (station, marker, or non-station). */
+    public boolean isKnownStage(String stageId) {
+        return stageId != null && knownStages.contains(stageId);
+    }
+
+    /** The catalogue's station ids, for error messages that can name the valid set. */
+    public Set<String> stationIds() {
+        return stationIds;
+    }
+
+    /** Catalogue order for presentation; callers never duplicate it as a UI-owned station enum. */
+    public List<String> stationOrder() {
+        return stationOrder;
+    }
+
+    /** Human title for one canonical station id; unknown ids stay explicit rather than fabricated. */
+    public String stationTitle(String stationId) {
+        return stationTitles.getOrDefault(stationId, stationId);
+    }
+
+    /** Human title for a lifecycle phase, resolved through station or marker catalogue aliases. */
+    public String displayNameForPhase(String phase) {
+        return resolveStationForPhase(phase)
+                .map(this::stationTitle)
+                .orElseGet(() -> markerTitlesByPhase.getOrDefault(phase, phase));
+    }
+}

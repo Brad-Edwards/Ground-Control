@@ -8,11 +8,15 @@ Accepted
 
 2026-05-03
 
+> **Amended by issue #1462 (2026-07-28):** `gc_assert_traceability_reconciled` and the Step 17 composite `gc_assert_completion` now infer `project` from `repo_path`'s `.ground-control.yaml` when the parameter is omitted (explicit override still wins), and propagate backend `project_required` with its structured `detail` through the completion envelope instead of flattening it into a lookup-failure message. The issue-thread gate model is unchanged: reconciliation still posts the `traceability_reconciled` marker only after successful lookups, failures remain side-effect free, and Phase E still merge-gates the reconciled final report. See `skills/implement/steps/step-17-completion.md` for the Step 17 contract.
+
 > **Style sync for issue #751 (2026-06-14):** Repository-wide Vale cleanup normalized punctuation in workflow prose. This ADR's issue-thread gate model stays the same.
 
 > **Amended by issue #906 (2026-05-13):** Two changes to the review-loop contract this ADR establishes. (1) **Pre-push Codex review default cap drops from 3 to 1** (the cap value lives on the MCP tool as `CODEX_REVIEW_PREPUSH_HARD_CAP` and is now overrideable per-repo via `.ground-control.yaml::workflow.codex_review.pre_push_cap`, bounds `[1, 10]`); the `override_cap=true` + `override_reason=<authorization quote>` escape is unchanged and continues to grant a single over-cap cycle. Empirical rationale: PR #903 (a 4-cycle run) showed cycles 2 and 3 partly compounding the agent's own fix-introduced bugs rather than catching net-new bugs, and CI / SonarCloud / human review cover the residual risk. (2) **Test-quality review moves pre-push** to a new Step 6.6 in the same local-iteration band as the codex pre-push review (former Step 13 is merged out; former Step 14 collapses into Step 10's existing CI watch). Test-quality's default cap also drops to 1 with the same `workflow.test_quality_review.pre_push_cap` override path. The `gc:test-quality-review-cycle` marker family and the `gc_post_decision_record` contract are **unchanged**; what moves is the placement of the step in the workflow, not the durability mechanism. The PR now opens with both AI-assisted reviewers clean; CI + SonarCloud + human reviewer are the only post-push gates. SKILL.md Steps 13 / 14 are intentional tombstones; downstream Step 15 / 18 / 19 numbering is preserved so external references don't track a moving target. See `skills/implement/SKILL.md` Step 6.5 / 6.6 for the operative loop prose and `architecture/notes/quickfix-workflow-lane-preflight.md` for the preflight design context.
 
 > **Amended by issue #937 (2026-05-21):** The pre-push review tools (`gc_codex_review` / `gc_test_quality_review` and their `_cycle` wrappers) and the architecture preflight may run as **async background jobs** (opt-in `async: true`), polled or cancelled via the new `gc_codex_job` tool. The issue-thread durable-record contract this ADR establishes is **unchanged**: every review cycle still posts its verbatim findings record and its `gc_post_decision_record` decision record to the resolved issue thread, and the cycle counter still anchors to the issue thread. Async only decouples the multi-minute child process from a single MCP tool-call so the client's tool-call timeout cannot abandon it and orphan the child (issue #893). See ADR-036 (amendments) for the job model and ADR-031 (amendments) for the codex-review framing.
+
+> **Amended by issue #943 (2026-07-30):** The public `_cycle` wrappers are async-only and require a bounded idempotency key. Retained same-key retries cannot repeat the reviewer or durable posts, while distinct keys are serialized per canonical repository, issue, and reviewer. The issue thread remains authoritative across process loss: `job_not_found` requires a thread refresh before another attempt because a missing process-local handle is not evidence that no marker landed. Cycle jobs do not claim cancellation as rollback for non-transactional GitHub comments. Marker families, posting order, and cap counting are unchanged.
 
 > **Amended by issue #931 (2026-05-19):** The review-cycle payload is now a **verdict envelope**: `verdict` in (`ship`, `ship-with-fixes`, `don't-ship`) + non-empty `architectural_read` + per-finding `blocking[]` + capped `notes[]` (max 2). Block delimiter renamed from `===FINDINGS===` to `===REVIEW===`. One-off findings carry a required `sweep_evidence` field; class findings continue to carry `category.instances`. `gc_post_decision_record` accepts and renders the new shape with verdict + architectural_read rendered before blocking findings; the existing reviewer enum, defer-rejection, marker family, and wontfix authorization rules are unchanged. The principal-engineer recalibration motivation: the workflow now lets a clean review say `verdict: ship` as a first-class outcome instead of forcing reviewers to manufacture findings. See `skills/implement/SKILL.md` Step 6.5 / 6.6 for the operative loop prose and `architecture/notes/ai-review-recalibration-preflight.md` for the binding preflight guidance.
 
@@ -545,3 +549,51 @@ status is not `ok` before any fetch, merge, gate, or PR write, so an invalid
 `.ground-control.yaml` can no longer fall through to default values on the way
 to a durable attestation. Every other marker family, the issue-thread
 durable-record contract, and the single-human-touchpoint contract are unchanged.
+
+**2026-07-29 (issue #1476, station-observation obligations and the v2 marker
+family).** The issue thread gains `gc.implement.execution-obligation/v2`, a
+second execution-obligation marker family carrying an obligation kind, a
+canonical station id, a logical review cycle, and - for the new `reobserved`
+disposition - the id of the durable record it resolves against. v1 could not
+simply gain the disposition: its regex pins a closed disposition set, so a
+reader running older code would not match the resolution marker at all and would
+treat the obligation as permanently open. A distinct schema id makes the
+incompatibility explicit - old readers ignore v2 records rather than misreading
+them. The ledger parses v1 and v2 together; v1 obligations retain their exact
+semantics and authorization checks, and their prose is never reclassified.
+
+A review station that runs but renders no verdict opens a `station_observation`
+obligation, one per issue, station, and logical cycle. This records a missing
+observation, not a defect. `reobserved` closes it, and states only that the gate
+was finally observed: a re-observed verdict that found problems leaves every
+finding subject to the existing `fix` / `wontfix` / `not-applicable` rules, and
+`reobserved` is never added to the review decision-record vocabulary or to any
+finding disposition.
+
+The disposition is tool-attested rather than agent-asserted, because it is the
+one disposition that closes an obligation without user authorization.
+`gc_record_execution_obligation` does not expose it - an agent cannot select it
+or claim tool verification through a flag - and only the station-owning cycle
+wrapper emits it. Replay accepts it only when the marker author is the trusted
+MCP posting identity (the same trusted-login check the review auto-disposition
+grant uses, not a second authorization hierarchy) rather than merely a
+repository writer, the obligation is a `station_observation` for the same
+station and logical cycle, and the referenced observation record exists, was
+posted by that same identity, and is not the marker itself. A resolution failing
+any of these is dropped and its obligation stays open, so both
+`gc_assert_completion` phases keep refusing; dropping rather than erroring keeps
+anyone who can comment from wedging a run with a marker-shaped record.
+
+Durable write order is findings record, then the `reobserved` resolution bound
+to it, then the cycle marker, then the decision record. The cap marker must not
+land before the resolution: the inverse order spends the review cycle while the
+observation obligation is still open, which is exactly the deadlock that
+previously required a human authorization. Any earlier failure leaves the cycle
+unconsumed, so retrying is safe, and writes are idempotent under the
+deterministic obligation identity. Exhausted bounded re-attempts keep the
+obligation open and append an escalation under `hard_external_dependency` naming
+the station, attempt count, and stable failure classes; it never requests a
+`wontfix` decision about a defect nobody observed. `wontfix` authorization is
+unchanged in every respect. The single-human-touchpoint contract (PR merge) and
+the reviewer-of-record invariant are unchanged. See
+`architecture/notes/unobserved-station-recovery-preflight.md`.

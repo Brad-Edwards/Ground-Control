@@ -187,6 +187,17 @@ to override on a per-call basis. The /implement SKILL does not set
 live in `.ground-control.yaml` under a new `review.test_quality.model`
 key, but is not currently implemented.
 
+## Process lifetime
+
+The canonical workflow invokes the review with `async: true` and polls
+`gc_codex_job`, so review duration is not coupled to one MCP request. The
+`claude` child has a 30-minute final safety ceiling; the former ten-minute
+ceiling killed legitimate repository-scale cutover reviews before they could
+return a verdict. Cancelling the background job still aborts the child
+immediately through its `AbortSignal`. A timeout returns
+`test_quality_review_engine_failed` and writes no findings record or cycle
+marker, so retrying does not consume the review cap.
+
 ## Cycle cap mechanism
 
 Server-side hard cap: 3 cycles per issue. Anchored to the GitHub

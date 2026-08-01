@@ -65,7 +65,7 @@ class TraceabilityLinkControllerIntegrationTest extends BaseIntegrationTest {
     private String createLinkAndReturnId(String requirementId) throws Exception {
         var body = Map.of(
                 "artifactType", "GITHUB_ISSUE",
-                "artifactIdentifier", "GH-42",
+                "artifactIdentifier", "42",
                 "artifactUrl", "https://github.com/org/repo/issues/42",
                 "artifactTitle", "Fix the bug",
                 "linkType", "IMPLEMENTS");
@@ -87,7 +87,7 @@ class TraceabilityLinkControllerIntegrationTest extends BaseIntegrationTest {
 
         var body = Map.of(
                 "artifactType", "GITHUB_ISSUE",
-                "artifactIdentifier", "GH-42",
+                "artifactIdentifier", "42",
                 "artifactUrl", "https://github.com/org/repo/issues/42",
                 "artifactTitle", "Fix the bug",
                 "linkType", "IMPLEMENTS");
@@ -98,7 +98,7 @@ class TraceabilityLinkControllerIntegrationTest extends BaseIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id", notNullValue()))
                 .andExpect(jsonPath("$.artifactType", is("GITHUB_ISSUE")))
-                .andExpect(jsonPath("$.artifactIdentifier", is("GH-42")))
+                .andExpect(jsonPath("$.artifactIdentifier", is("42")))
                 .andExpect(jsonPath("$.linkType", is("IMPLEMENTS")))
                 .andExpect(jsonPath("$.syncStatus", is("SYNCED")));
     }
@@ -109,15 +109,17 @@ class TraceabilityLinkControllerIntegrationTest extends BaseIntegrationTest {
         var reqId = createRequirementAndReturnId("REQ-AT-" + type.name());
         activateRequirement(reqId);
 
-        var body = Map.of(
-                "artifactType", type.name(), "artifactIdentifier", "id:" + type.name(), "linkType", "IMPLEMENTS");
+        var artifactIdentifier =
+                type == ArtifactType.GITHUB_ISSUE || type == ArtifactType.PULL_REQUEST ? "42" : "id:" + type.name();
+        var body =
+                Map.of("artifactType", type.name(), "artifactIdentifier", artifactIdentifier, "linkType", "IMPLEMENTS");
 
         mockMvc.perform(post("/api/v1/requirements/" + reqId + "/traceability")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.artifactType", is(type.name())))
-                .andExpect(jsonPath("$.artifactIdentifier", is("id:" + type.name())));
+                .andExpect(jsonPath("$.artifactIdentifier", is(artifactIdentifier)));
     }
 
     @Test
@@ -128,7 +130,7 @@ class TraceabilityLinkControllerIntegrationTest extends BaseIntegrationTest {
 
         mockMvc.perform(get("/api/v1/requirements/" + reqId + "/traceability"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].artifactIdentifier", is("GH-42")));
+                .andExpect(jsonPath("$[0].artifactIdentifier", is("42")));
     }
 
     @Test
@@ -145,7 +147,7 @@ class TraceabilityLinkControllerIntegrationTest extends BaseIntegrationTest {
     void createLink_requirementNotFound_returns404() throws Exception {
         var body = Map.of(
                 "artifactType", "GITHUB_ISSUE",
-                "artifactIdentifier", "GH-42",
+                "artifactIdentifier", "42",
                 "linkType", "IMPLEMENTS");
 
         mockMvc.perform(post("/api/v1/requirements/" + UUID.randomUUID() + "/traceability")

@@ -58,6 +58,23 @@ class ApiSecurityIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
+    void anonymousWorkflowRunStream_returns401() throws Exception {
+        // A stream is not an access-control exemption (issue #1436): it falls through the same
+        // /api/v1/** authenticated() rule, and the refusal is the standard JSON envelope rather
+        // than an opened event-stream that reveals another project's telemetry.
+        mockMvc.perform(get("/api/v1/workflow-runs/stream").param("project", "ground-control"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code", is("authentication_required")));
+    }
+
+    @Test
+    void anonymousWorkflowActivitySnapshot_returns401() throws Exception {
+        mockMvc.perform(get("/api/v1/workflow-runs/activity").param("project", "ground-control"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code", is("authentication_required")));
+    }
+
+    @Test
     void userTokenReadingApiV1_returns200() throws Exception {
         mockMvc.perform(get("/api/v1/requirements").header("Authorization", USER_TOKEN))
                 .andExpect(status().isOk());

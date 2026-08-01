@@ -15,13 +15,18 @@ vi.mock("@/contexts/project-context", () => ({
 
 import { apiFetch } from "@/lib/api-client";
 import type {
+  WorkflowActivityResponse,
   WorkflowRunAggregateResponse,
   WorkflowRunResponse,
 } from "@/types/api";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import { createElement } from "react";
-import { useWorkflowRunAggregate, useWorkflowRuns } from "../use-workflow-runs";
+import {
+  useWorkflowActivity,
+  useWorkflowRunAggregate,
+  useWorkflowRuns,
+} from "../use-workflow-runs";
 
 const mockApiFetch = vi.mocked(apiFetch);
 
@@ -94,6 +99,14 @@ const mockAggregate: WorkflowRunAggregateResponse = {
   ],
 };
 
+const mockActivity: WorkflowActivityResponse = {
+  observedAt: "2026-07-30T10:00:00Z",
+  openRunTotal: 0,
+  openRunsTruncated: false,
+  openRuns: [],
+  recentlyFinished: [],
+};
+
 afterEach(() => {
   vi.clearAllMocks();
 });
@@ -124,6 +137,22 @@ describe("useWorkflowRuns", () => {
     // Should stay in pending/idle since enabled:false
     expect(result.current.isPending).toBe(true);
     expect(mockApiFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("useWorkflowActivity", () => {
+  it("fetches the project-scoped bounded snapshot", async () => {
+    mockApiFetch.mockResolvedValue(mockActivity);
+    const { result } = renderHook(() => useWorkflowActivity("ground-control"), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data).toEqual(mockActivity);
+    expect(mockApiFetch).toHaveBeenCalledWith("/workflow-runs/activity", {
+      params: { project: "ground-control" },
+    });
   });
 });
 
@@ -215,19 +244,99 @@ describe("live refresh", () => {
 
   it("refetches the run list on an interval", async () => {
     mockApiFetch.mockResolvedValue([mockRun]);
-    renderHook(() => useWorkflowRuns("ground-control"), { wrapper: createWrapper() });
+    renderHook(() => useWorkflowRuns("ground-control"), {
+      wrapper: createWrapper(),
+    });
 
     await vi.waitFor(() => expect(mockApiFetch).toHaveBeenCalledTimes(1));
     await vi.advanceTimersByTimeAsync(31_000);
-    await vi.waitFor(() => expect(mockApiFetch.mock.calls.length).toBeGreaterThan(1));
+    await vi.waitFor(() =>
+      expect(mockApiFetch.mock.calls.length).toBeGreaterThan(1),
+    );
   });
 
   it("refetches the aggregate on an interval", async () => {
     mockApiFetch.mockResolvedValue(mockAggregate);
-    renderHook(() => useWorkflowRunAggregate("ground-control"), { wrapper: createWrapper() });
+    renderHook(() => useWorkflowRunAggregate("ground-control"), {
+      wrapper: createWrapper(),
+    });
 
     await vi.waitFor(() => expect(mockApiFetch).toHaveBeenCalledTimes(1));
     await vi.advanceTimersByTimeAsync(31_000);
-    await vi.waitFor(() => expect(mockApiFetch.mock.calls.length).toBeGreaterThan(1));
+    await vi.waitFor(() =>
+      expect(mockApiFetch.mock.calls.length).toBeGreaterThan(1),
+    );
+  });
+
+  it("refetches activity on an interval when the stream is degraded", async () => {
+    mockApiFetch.mockResolvedValue(mockActivity);
+    renderHook(() => useWorkflowActivity("ground-control"), {
+      wrapper: createWrapper(),
+    });
+
+    await vi.waitFor(() => expect(mockApiFetch).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(31_000);
+    await vi.waitFor(() =>
+      expect(mockApiFetch.mock.calls.length).toBeGreaterThan(1),
+    );
+  });
+
+  // Polling is the *fallback* (issue #1436). While the stream is live it must be off, or the page
+  // keeps hammering the API for data the transport is already pushing; the moment the stream drops
+  // it must come back, or the page silently stops updating at all.
+  it("stops polling the run list while the live stream is connected", async () => {
+    mockApiFetch.mockResolvedValue([mockRun]);
+    renderHook(() => useWorkflowRuns("ground-control", { live: true }), {
+      wrapper: createWrapper(),
+    });
+
+    await vi.waitFor(() => expect(mockApiFetch).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    expect(mockApiFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops polling the aggregate while the live stream is connected", async () => {
+    mockApiFetch.mockResolvedValue(mockAggregate);
+    renderHook(
+      () => useWorkflowRunAggregate("ground-control", {}, { live: true }),
+      {
+        wrapper: createWrapper(),
+      },
+    );
+
+    await vi.waitFor(() => expect(mockApiFetch).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    expect(mockApiFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops polling activity while the live stream is connected", async () => {
+    mockApiFetch.mockResolvedValue(mockActivity);
+    renderHook(() => useWorkflowActivity("ground-control", { live: true }), {
+      wrapper: createWrapper(),
+    });
+
+    await vi.waitFor(() => expect(mockApiFetch).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    expect(mockApiFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("resumes polling when the stream degrades", async () => {
+    mockApiFetch.mockResolvedValue([mockRun]);
+    const { rerender } = renderHook(
+      ({ live }: { live: boolean }) =>
+        useWorkflowRuns("ground-control", { live }),
+      { wrapper: createWrapper(), initialProps: { live: true } },
+    );
+
+    await vi.waitFor(() => expect(mockApiFetch).toHaveBeenCalledTimes(1));
+    rerender({ live: false });
+    await vi.advanceTimersByTimeAsync(31_000);
+
+    await vi.waitFor(() =>
+      expect(mockApiFetch.mock.calls.length).toBeGreaterThan(1),
+    );
   });
 });

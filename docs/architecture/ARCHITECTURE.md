@@ -147,13 +147,30 @@ identity tracks the authenticated principal; it writes the principal to MDC
 key `actor_id`, the key `logback-spring.xml`'s production JSON appender
 exports (alongside `request_id` / `tenant_id`). See [ADR-033](../../architecture/adrs/033-authenticated-audit-actor-provenance.md).
 
+ADR-085's identity/RBAC foundation is the first permission-backed exception to
+the legacy two-role matrix. Requests under `/api/v1/admin/identity/**` use an
+`IdentityAuthorizationManager` before the broader `/api/v1/admin/**` matcher:
+a UUID-backed `IdentityPrincipal` must hold the closed-catalog
+`IDENTITY_ADMIN` permission, while existing `ROLE_ADMIN` callers receive a
+narrow compatibility bridge only on that namespace. The domain authorization
+decision is `(identity user UUID, permission key, optional project UUID)`;
+project-scoped decisions require both a direct/group role path and an
+independent direct/group project-access grant. V059 browser users and
+configuration bearer credentials remain authoritative until #1411, so this
+foundation does not silently reinterpret legacy principal names as identity
+rows.
+
 ## What Exists vs. What Doesn't
 
 ### Exists
 
-**Domain entities:** Requirement, RequirementRelation, TraceabilityLink, GitHubIssueSync, RequirementImport - all JPA with Envers auditing.
+**Domain entities:** Requirement, RequirementRelation, TraceabilityLink,
+GitHubIssueSync, RequirementImport, plus the ADR-085 identity family
+(`IdentityUser`, `IdentityGroup`, `GroupMembership`, `IdentityRole`,
+`RolePermissionAssignment`, `RoleGrant`, `ProjectAccessGrant`) - all JPA with
+Envers auditing.
 
-**Services:** RequirementService (9 methods), TraceabilityService (forward and reverse artifact lookup), ImportService (StrictDoc parser + idempotent import), GitHubIssueSyncService (CLI-based GitHub sync), AnalysisService (cycle/orphan/coverage/impact/cross-wave; status drift belongs here as read-only analysis), AgeGraphService (Apache AGE graph materialization + Cypher queries).
+**Services:** RequirementService (9 methods), TraceabilityService (forward and reverse artifact lookup, with canonical positive-decimal identity enforcement for GitHub issues and pull requests), ImportService (StrictDoc parser + idempotent import), GitHubIssueSyncService (CLI-based GitHub sync), AnalysisService (cycle/orphan/coverage/impact/cross-wave; status drift belongs here as read-only analysis), AgeGraphService (Apache AGE graph materialization + Cypher queries).
 
 **Requirement UID allocation (ADR-060, issues #532, #1052):** `RequirementUidAllocator` assigns the next free `{PREFIX}-{N}` UID atomically per project via `pg_advisory_xact_lock`, reading the current high-water mark from `findMaxUidSuffix` (archived rows included, so no suffix is ever recycled). `TraceabilityService.findByArtifact` accepts an optional `projectId` to scope the reverse lookup to a single project; this prevents cross-project issue-number collisions from returning or flagging another project's `GITHUB_ISSUE` links.
 
@@ -167,7 +184,7 @@ exports (alongside `request_id` / `tenant_id`). See [ADR-033](../../architecture
 
 **Protocol plan (GC-RSCH-F008 / GC-RSCH-F009, ADR-083):** `ProtocolPlanAggregate` (`domain/research/service`) records the structured phase-2 protocol plan behind the run's active `PROTOCOL_PLAN` artifact attempt: a `ProtocolPlanCoverage` row resolves each ADR-080 methodology-requirements-contract `REQUIREMENT`/`OPEN_PROTOCOL_QUESTION` entry to exactly one `ProtocolCoverageDisposition` (FILLED / RESOLVED_BY_USER_DECISION / DEFERRED_NON_BLOCKING / NOT_APPLICABLE_WITH_RATIONALE / BLOCKING_DECISION_REQUIRED), classifying `FILLED` answers by `ProtocolAnswerProvenance`; a `ProtocolPlanSection` row records one method-specific output section per `ProtocolSectionKind` (`ProtocolMethodShape` derives which section kinds the selected method profile requires), with `ProtocolSourceRole` legal only on `SOURCE_ROLES` sections of the `taxonomy_development` method. A plan with any `BLOCKING_DECISION_REQUIRED` coverage disposition blocks the `SOURCE_SEARCH` stage from starting. The method key, method profile version, methodology-requirements-contract id/attempt, and artifact attempt are all resolved server-side from the run's active selection and active artifacts, never client-supplied. CRUD lives at `/api/v1/research-runs/{id}/protocol-plan` (record, get); migrations `V184`-`V187` add the plan, plan-audit, coverage, and section tables. The endpoint is allowlisted for `gc_query` MCP reads.
 
-**Frontend:** React 19 / TypeScript SPA served as embedded static resources from the Spring Boot JAR. Views: Dashboard (project health metrics), Requirements Explorer (browse/filter/author), Requirement Detail (fields, relations, traceability, audit), Dependency Graph (Cytoscape.js DAG visualization). The composed GRC Portfolio, Control and Assurance Workspace, Evidence and State Explorer, Threat Modeling Workspace, and Risk Scenario Workspace views (GC-Q009/Q010/Q011/Q012/Q013) are retired product surface (ADR-089, issue #1346); their underlying lower-level aggregates (`ThreatModel`, `RiskScenario`, `Control`, `ControlTest`, `EvidenceArtifact`, risk-control mapping) remain available through their own CRUD/analysis endpoints, just not through a composed workspace view. The console shell, navigation groups, design-system foundations, authenticated-session UX, and workflow-operations interaction patterns are specified in [Console Information Architecture and Design-System Foundations](../../architecture/design/console-ia-design-system.md), which is the construction reference for GC-Q015 and GC-Q016. See [ADR-017](../../architecture/adrs/017-interactive-web-application.md).
+**Frontend:** React 19 / TypeScript SPA served as embedded static resources from the Spring Boot JAR. Views: Dashboard (project health metrics), Requirements Explorer (browse/filter/author), Requirement Detail (fields, relations, traceability, audit), Dependency Graph (Cytoscape.js DAG visualization). The composed GRC Portfolio, Control and Assurance Workspace, Evidence and State Explorer, Threat Modeling Workspace, and Risk Scenario Workspace views (GC-Q009/Q010/Q011/Q012/Q013) are retired product surface (ADR-089, issue #1346); their underlying lower-level aggregates (`ThreatModel`, `RiskScenario`, `Control`, `ControlTest`, `EvidenceArtifact`, risk-control mapping) remain available through their own CRUD/analysis endpoints, just not through a composed workspace view. The console shell, navigation groups, design-system foundations, authenticated-session UX, and workflow-operations interaction patterns are specified in [Console Information Architecture and Design-System Foundations](../../architecture/design/console-ia-design-system.md), which is the construction reference for GC-Q015 and GC-Q016. GC-Q015 implements that reference: a grouped, responsive `AppShell` (rail on desktop, drawer on small screens) with a user menu, a transient notification surface, and semantic design tokens; the day-to-day usage reference is [Console Design System](../frontend/design-system.md). In-app session awareness reads the authenticated principal from `GET /api/v1/session` (`SessionController` → a credential-free `SessionResponse` of display name, a compatibility role projection, and a `canAdminister` presentation hint sourced from the `SecurityContext`); authorization stays enforced by `ApiPathMatrix` and the service layer, and the login bundle remains a separate anonymous asset graph (ADR-037). See [ADR-017](../../architecture/adrs/017-interactive-web-application.md).
 
 **Contract surface (GC-O014 / ADR-082):** `contracts/` is the committed
 contract surface for externally consumed API and workflow shapes. The backend
@@ -243,9 +260,9 @@ The report contract is derived evidence: each finding carries the DRAFT requirem
 
 ### Does not exist yet
 
-- Interactive login / OIDC flows (the REST API access-control boundary exists
-  via ADR-026; browser login UX and external identity-provider integration do
-  not)
+- Identity-backed login, credential ownership, and OIDC flows. The existing
+  ADR-026 bearer and ADR-037 browser stores still authenticate callers; #1411
+  performs the authoritative credential cutover.
 - Redis integration (Redis is in docker-compose.yml but nothing in the app uses it)
 - Multi-tenancy
 - Search
@@ -293,6 +310,87 @@ The report contract is derived evidence: each finding carries the DRAFT requirem
   admin-gated in `ApiPathMatrix`) and the `gc_research_operation_authorization` MCP
   tool. Executors and the sandbox runtime remain out of scope (see "Does not exist
   yet").
+
+- Live workflow-run telemetry transport (issue #1436, ADR-061 #1436 amendment). `GET
+  /api/v1/workflow-runs/stream?project=…` is a project-scoped Server-Sent Events surface over the
+  existing ADR-061 reporting model—a delivery path for committed facts, not a second store,
+  workflow engine, or liveness signal. `WorkflowTelemetryService` publishes an identifier-only
+  `WorkflowTelemetryChangeEvent` from each committed run mutation and phase-event append;
+  `WorkflowRunStreamHub` (`api/workflowtelemetry/stream/`, a `@Component` because `@Service` is
+  reserved for the domain and `SseEmitter` must not enter `domain/`) consumes it on an
+  `AFTER_COMMIT` `@TransactionalEventListener`, reloads the project-scoped projection in a new
+  read-only transaction, and fans out the existing `WorkflowRunResponse` / `PhaseEventResponse`
+  shapes as `workflow-run` and `phase-event` events. `SseEmitter` supplies no backpressure, so the
+  hub enforces a global and per-principal connection cap taken atomically, a finite emitter
+  lifetime, a heartbeat below it, a bounded per-connection FIFO drained by at most one task, and a
+  bounded delivery executor; publishing threads only enqueue, and overflow or send failure
+  disconnects the consumer rather than dropping an update while still calling the stream live.
+  Bounds live in a startup-validated `groundcontrol.workflow-telemetry.stream.*`
+  `@ConfigurationProperties`. The console's `useWorkflowRunStream` reconciles into the existing
+  React Query cache by entity id (aggregates are invalidated, never recomputed in the browser),
+  suppresses the 30-second fallback poll only while connected, and renders `Live` / `Connecting` /
+  `Polling` as *transport* health—never as evidence that a workflow process is alive. Fan-out is
+  process-local, matching ADR-030's single-backend topology; the identifier-only notification is
+  the seam a multi-instance deployment replaces with a broker or outbox.
+
+- Live Activity read projection (issue #1437, ADR-061 #1437 amendment). `GET
+  /api/v1/workflow-runs/activity?project=…` composes a bounded project snapshot from the existing
+  `WorkflowRun`, ADR-061 lifecycle/station events, ADR-036 routing observations, and subordinate
+  gate-finding counts. Repository batch queries select one latest observation per run/station, and
+  `WorkflowActivityService` joins them to station-catalogue titles/order without N+1 reads. The
+  response exposes its server `asOf`, open total/truncation, effective attention threshold, open
+  rows, and a bounded recent-terminal band. The React page derives elapsed/attention display from
+  one server-anchored clock, invalidates the snapshot for either existing SSE frame, and polls only
+  when push is degraded. The attention flag means "no lifecycle transition observed within the
+  configured duration"; it is not durable state, a lease, process liveness, stale-run reaping, or a
+  control surface.
+
+- Gate outcome and finding measurement (issue #1355, ADR-090 amendment). The station-result
+  axis is now persisted on the ADR-061 write path, and the findings a station observed are
+  subordinate rows on `workflow_gate_finding`, written in the same transaction as the terminal
+  event of their attempt. `WorkflowPhaseEvent` keeps `PhaseEventType` as its lifecycle axis and
+  gains `stationId` + `stationResult`; the two answer different questions, so `COMPLETED` still
+  means the phase finished rather than that its inspection passed. Rows written before the axis
+  existed read `UNOBSERVED` and stay out of every formula denominator instead of being backfilled
+  into passes they never recorded. `GET /api/v1/workflow-runs/measurement` reports per-station
+  first-pass yield, iterations to green, rework, and finding counts by reviewer/detector,
+  category, severity, and disposition, each with its numerator, denominator, and unresolved
+  count. The `spotbugs`, `policy`, and `vale` child gates report their own verdicts from the
+  structured artifacts their own runs write, so no canonical gate is executed twice to be
+  measured and the parent command's duration is never divided among them.
+
+- Durable ADR-036 step observations (issue #1354, ADR-090 amendment). `gc_log_step_telemetry`
+  no longer writes a gitignored per-clone JSONL file: it records each routed `/implement` step as
+  a durable observation on the same `WorkflowPhaseEvent` row, distinguished by an `emitter`
+  (`ADR036_STEP_JSONL` vs the default `ADR061_WORKFLOW_TELEMETRY`). The row adds the ADR-036 facts
+  that had no owner (capability `tier`, reported/expected `model` and their consistency flag,
+  optional token counts, `measurement_version`, and the numbered SKILL step as a non-identity
+  `step_alias`) while its `phase` carries the stable ADR-036 stage id and the backend resolves the
+  catalogue `station_id` from it. The observation reports operation outcome only, so `station_result`
+  stays `UNOBSERVED` and it can never produce first-pass yield; a namespaced `(run_id, source_id)`
+  (`adr036_step:<stage>:<attempt>`) keeps it from colliding with a live station attempt. Per-step
+  reads select the emitter from the existing run-scoped event surface, while the phase hot-spot
+  aggregate and the context-graph projection exclude the step emitter so step economics never inflate
+  gate counts or graph edges. The write is fail-open with no local-file fallback.
+
+- Production-line measurement contract (issue #1438, ADR-090, ADR-082, GC-O014). The
+  ADR-090 measurement model is published as versioned contract artifacts rather than ADR
+  prose: `contracts/schemas/measurement/measurement-record.v1.schema.json` is the record
+  shape every emitter maps onto, and
+  `contracts/schemas/measurement/station-catalogue.v1.schema.json` plus the data at
+  `contracts/measurement/gc-station-catalogue-v1.json` publish station identity. A
+  `station_id` is authoritative; ADR-061 `phase` strings, ADR-036 routing stages,
+  issue-thread `gc:phase` values, MCP action names, and SKILL step numbers are aliases
+  declared by kind, and display labels are declared explicitly non-identity so a UI rename
+  is never a breaking contract change. Stations (which inspect something and can yield a
+  station result) and lifecycle markers (which record a transition and inspect nothing)
+  are disjoint sets, so `ready_for_review` or `traceability_reconciled` can never be
+  counted as a gate attempt. The three ADR-090 outcome axes are separate properties over
+  separate closed enums that share no value, so a tool succeeding cannot be read as a gate
+  passing. `run_measurement_catalogue_check` is what makes the catalogue authoritative: it
+  reads the emitter sources directly and fails when an emitted station id, a `gc:phase`
+  marker, or a routing stage resolves to nothing declared. This surface is data and gates
+  only, with no aggregate, endpoint, MCP tool, dashboard, or retention job.
 
 ## Knowledge Ingest Engine (repo-local, out of the product model)
 

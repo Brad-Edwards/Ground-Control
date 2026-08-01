@@ -18,6 +18,63 @@ permissions:
   id-token: write
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Fast-feedback lane (issue #1461, ADR-091). Formatting and compilation are
+  # the two most common breakages; this reports them before any full lane
+  # finishes. `-Pquick` drops Error Prone, Checkstyle, and SpotBugs, all of
+  # which the `build` and `test` gates still run in full.
+  #
+  # Deliberately NOT a required context. A second required gate covering a
+  # subset of an existing gate is a shadow merge authority; the complete suite
+  # stays the single authority. `tools/tests/test_ci_topology.py` enforces both
+  # halves of that: the lane exists, and it is not in the required set.
+  # ---------------------------------------------------------------------------
+  fast-feedback:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@06832c7b30a0129d7fb559bcc6e43d26f6374244 # v4
+      - name: Format and compile
+        run: cd backend && ./gradlew spotlessCheck compileJava compileTestJava -Pquick --no-daemon
+
+  # ---------------------------------------------------------------------------
+  # Frontend verification (issue #1468, ADR-091). Until this lane existed
+  # `frontend/` was only compiled indirectly by the Docker image build, which
+  # runs after merge and runs neither lint nor tests, so nothing gated a
+  # frontend regression. Node 22 matches the `node:22-alpine` frontend stage in
+  # backend/Dockerfile.
+  #
+  # The job id is the required context name: no `name:` override and no matrix,
+  # because a matrix would report `frontend (node-22)` and branch protection
+  # would wait forever on a context that never arrives.
+  # ---------------------------------------------------------------------------
+  frontend:
+    runs-on: ubuntu-latest
+    # This lane installs PR-controlled dependencies and executes npm lifecycle
+    # scripts, so it must not inherit the workflow-level packages/PR/OIDC write
+    # grants. tools/tests/test_ci_topology.py asserts this stays read-only.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: cd frontend && npm ci
+      - name: Lint
+        run: cd frontend && npm run lint
+      - name: Unit tests
+        run: cd frontend && npm test
+      - name: Build
+        run: cd frontend && npm run build
+
   policy:
     runs-on: ubuntu-latest
     permissions:
@@ -42,6 +99,15 @@ jobs:
         run: |
           python3 -m pip install --user pre-commit
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      # Hook environments (including the gitleaks binary) are rebuilt on every
+      # run without this, which is most of the hygiene step's wall time. The key
+      # is the hook-config hash, so a pinning change always misses the cache and
+      # a hit can never serve a hook version other than the pinned one.
+      - name: Cache pre-commit hook environments
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        with:
+          path: ~/.cache/pre-commit
+          key: ${{ runner.os }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
       - name: Pre-commit file hygiene and secret scan
         run: |
           for hook in \
@@ -139,7 +205,6 @@ jobs:
   # ---------------------------------------------------------------------------
   trivy:
     runs-on: ubuntu-latest
-    needs: [policy]
     timeout-minutes: 30
     permissions:
       contents: read
@@ -250,7 +315,6 @@ jobs:
 
   osv-scanner:
     runs-on: ubuntu-latest
-    needs: [policy]
     permissions:
       contents: read
     steps:
@@ -348,11 +412,13 @@ jobs:
           if-no-files-found: error
 
   # ---------------------------------------------------------------------------
-  # Backend — build → test → integration (linear, always runs)
+  # Backend verification. Every lane below starts at t=0 (issue #1461,
+  # ADR-091): none of them downloads an artifact from another, each rebuilds
+  # from a fresh checkout, so a `needs` edge between them is pure serialization.
+  # `tools/tests/test_ci_topology.py` fails if one is reintroduced.
   # ---------------------------------------------------------------------------
   build:
     runs-on: ubuntu-latest
-    needs: [policy]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4
@@ -367,7 +433,6 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-    needs: [build]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4
@@ -386,7 +451,6 @@ jobs:
 
   integration:
     runs-on: ubuntu-latest
-    needs: [build, test]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4
@@ -404,11 +468,10 @@ jobs:
           path: backend/build/reports/tests/integrationTest/
 
   # ---------------------------------------------------------------------------
-  # SonarCloud — runs after test for coverage data, fails CI if quality gate red
+  # SonarCloud — generates its own coverage, fails CI if the quality gate is red
   # ---------------------------------------------------------------------------
   sonar:
     runs-on: ubuntu-latest
-    needs: [test]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -424,10 +487,21 @@ jobs:
           path: ~/.sonar/cache
           key: ${{ runner.os }}-sonar
           restore-keys: ${{ runner.os }}-sonar
-      - name: Build and analyze
+      # Sonar reads exactly two things, both declared in backend/build.gradle.kts:
+      # sonar.java.binaries=build/classes and
+      # sonar.coverage.jacoco.xmlReportPaths=build/reports/jacoco/test/jacocoTestReport.xml.
+      # No SpotBugs or Checkstyle report path is wired into the Sonar properties,
+      # so `./gradlew build sonar` spent the critical path assembling the boot jar
+      # and re-running static analysis that the `build` and `test` gates already
+      # own. Two invocations rather than one: `sonar` has no ordering relation to
+      # the `finalizedBy` JaCoCo report, and analyzing before the report is
+      # written would silently report zero coverage.
+      - name: Generate coverage
+        run: cd backend && ./gradlew test jacocoTestReport --no-daemon
+      - name: Analyze
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: cd backend && ./gradlew build sonar -Dsonar.qualitygate.wait=true --no-daemon
+        run: cd backend && ./gradlew sonar -Dsonar.qualitygate.wait=true --no-daemon
       - name: Fail on new SonarCloud issues
         if: github.ref_type != 'tag'
         env:
@@ -435,11 +509,10 @@ jobs:
         run: python3 tools/sonar/assert_no_new_issues.py --project-key autarchy-ai_Ground-Control
 
   # ---------------------------------------------------------------------------
-  # Verification (branches off test, runs in parallel with integration)
+  # Verification — OpenJML extended static checking over sources
   # ---------------------------------------------------------------------------
   verify:
     runs-on: ubuntu-latest
-    needs: [test]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4
@@ -454,11 +527,10 @@ jobs:
   # MCP–backend write-contract drift gate (issue #1106, ADR-034).
   # Generates the Springdoc OpenAPI spec via Testcontainers, then runs the
   # Node contract test that compares MCP write-tool allowlists against the spec.
-  # Needs only [policy] (same as other static gates) and blocks docker.
+  # Runs independently and blocks docker.
   # ---------------------------------------------------------------------------
   mcp-contract:
     runs-on: ubuntu-latest
-    needs: [policy]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -482,16 +554,35 @@ jobs:
           BASE_REF: origin/${{ github.base_ref || 'dev' }}
         run: node tools/contracts/check-breaking-changes.mjs
       - name: Run MCP contract test
-        run: GC_OPENAPI_SPEC=contracts/openapi/openapi.json node --test mcp/ground-control/openapi-contract.test.js
+        run: GC_OPENAPI_SPEC=contracts/openapi/openapi.json node mcp/ground-control/scripts/run-node-tests.mjs mcp/ground-control/openapi-contract.*.test.js
 
   # ---------------------------------------------------------------------------
-  # Docker — builds after integration, verify, sonar, and mcp-contract all pass.
-  # `sonar` is part of the gate (not just informational): a quality-gate
-  # failure must block deploy, so docker can't proceed without it.
+  # Docker — publishes only behind every verification gate. This list is
+  # exhaustive by necessity (issue #1461): the flat graph above has no
+  # transitive gating left to inherit, so an omission here silently lets an
+  # image ship past a red check. `trivy` and `osv-scanner` were never in the
+  # old transitive closure, which meant an image could be published while a
+  # security scan was red. `tools/tests/test_ci_topology.py` derives the
+  # expected list from the workflow's own job set, so a new lane must be gated
+  # here or explicitly excused in DOCKER_GATE_EXCLUSIONS. `policy-live` is
+  # excluded because GitHub skips a job whose `needs` entry was skipped, and it
+  # is skipped on every ref but `main`.
   # ---------------------------------------------------------------------------
   docker:
     runs-on: ubuntu-latest
-    needs: [integration, verify, sonar, mcp-contract]
+    needs:
+      [
+        policy,
+        build,
+        test,
+        integration,
+        verify,
+        sonar,
+        mcp-contract,
+        trivy,
+        osv-scanner,
+        frontend,
+      ]
     # Branch build coordinates only (:main / :dev / :sha / :latest). Versioned release
     # images (X.Y.Z + digest) are published by release-please.yml on release_created; a
     # GITHUB_TOKEN-created release tag would not retrigger this workflow anyway (GC-P027).

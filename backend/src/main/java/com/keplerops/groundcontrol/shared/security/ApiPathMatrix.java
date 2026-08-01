@@ -36,7 +36,8 @@ final class ApiPathMatrix {
      */
     static void applySharedRules(
             AuthorizeHttpRequestsConfigurer<HttpSecurity>.AuthorizationManagerRequestMatcherRegistry auth,
-            SecurityProperties properties) {
+            SecurityProperties properties,
+            IdentityAuthorizationManager identityAuthorizationManager) {
         auth.requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info")
                 .permitAll()
                 .requestMatchers("/error")
@@ -58,7 +59,9 @@ final class ApiPathMatrix {
                             "/swagger-ui.html")
                     .authenticated();
         }
-        auth.requestMatchers("/api/v1/admin/**")
+        auth.requestMatchers("/api/v1/admin/identity/**")
+                .access(identityAuthorizationManager)
+                .requestMatchers("/api/v1/admin/**")
                 .hasRole(ROLE_ADMIN)
                 .requestMatchers("/api/v1/embeddings/**")
                 .hasRole(ROLE_ADMIN)
