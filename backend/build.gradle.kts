@@ -27,13 +27,17 @@ version = "1.1.0" // x-release-please-version
 // in Boot 3.5.14 still carry fixable CRITICAL/HIGH CVEs, and the CI trivy gate
 // blocks on those, so each is raised to the patch release that fixes them.
 // These are patch bumps inside the BOM's own minor line, not upgrades.
-//   tomcat     10.1.55  CVE-2026-41293 (CRITICAL), -41284, -42498, -43512, -43513, -43515
-//   jackson    2.21.4   CVE-2026-54512, -54513, GHSA-r7wm-3cxj-wff9
-//   postgresql 42.7.12  CVE-2026-42198, CVE-2026-54291
+//   tomcat           10.1.55    CVE-2026-41293 (CRITICAL), -41284, -42498, -43512, -43513, -43515
+//   jackson          2.21.4     CVE-2026-54512, -54513, GHSA-r7wm-3cxj-wff9
+//   postgresql       42.7.12    CVE-2026-42198, CVE-2026-54291
+//   spring-framework 6.2.19     CVE-2026-41850, CVE-2026-41842, CVE-2026-41845
+//   spring-data      2025.0.12  CVE-2026-41695 (spring-data-commons 3.5.12)
 // Drop an entry once the Boot BOM manages a version at or above it.
 extra["tomcat.version"] = "10.1.55"
 extra["jackson-bom.version"] = "2.21.4"
 extra["postgresql.version"] = "42.7.12"
+extra["spring-framework.version"] = "6.2.19"
+extra["spring-data-bom.version"] = "2025.0.12"
 
 sonar {
     properties {
