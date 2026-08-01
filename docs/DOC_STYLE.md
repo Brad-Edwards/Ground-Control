@@ -553,3 +553,11 @@ README and live tool schemas; start-and-poll behavior is synchronized in
 ADR-036, ADR-054, ADR-090, the implement/quickfix skills, and workflow
 documentation. The existing documentation classifier, Vale configuration, and
 style rules are unchanged.
+
+The #1434 follow-up that auto-resolves an issue's sole in-scope requirement UID
+for the mechanical repository gates (`authorizeRequestedRequirementUid` in
+`mcp/ground-control/lib/codex-workflow-3.js`, re-exported by the
+`mcp/ground-control/lib.js` barrel) follows the same convention: it changes the
+requirement-governance environment carried into the gate subprocess, not any
+reference-doc prose or contract surface. It changes no documentation
+classification, Vale rule, or style rule.

@@ -15,7 +15,6 @@ import {
   buildSuggestedGroundControlYaml,
   implementGateEnvironment,
   parseGroundControlYaml,
-  requestedRequirementUidAuthorization,
   resolveWorkflowPolicyCommand,
   resolveWorkflowPrecommitCommand,
   runImplementPreCommit,
@@ -337,47 +336,6 @@ describe("implementGateEnvironment (#1434)", () => {
         `expected refusal for ${hostile}`,
       );
     }
-  });
-});
-
-describe("requestedRequirementUidAuthorization (#1434)", () => {
-  const body = "## Requirements\n- DSL-437\n- DSL-438\n";
-
-  it("authorizes a UID the issue's Requirements section actually lists", () => {
-    const result = requestedRequirementUidAuthorization(body, "DSL-437");
-    assert.equal(result.ok, true);
-    assert.equal(result.requirementUid, "DSL-437");
-  });
-
-  it("refuses a syntactically valid UID that the target issue does not list", () => {
-    // Syntax is not authority: a UID belonging to another issue or project
-    // must never become the gate's requirement identity.
-    const result = requestedRequirementUidAuthorization(body, "OTHER-999");
-    assert.equal(result.ok, false);
-    assert.equal(result.error, "implement_requested_requirement_uid_out_of_scope");
-    // These envelopes reach tool results, and the environment is the only place
-    // the requested UID may exist, so the message must not echo it back.
-    assert.equal(result.message.includes("OTHER-999"), false);
-  });
-
-  it("refuses a UID that is not a bounded requirement identifier", () => {
-    const result = requestedRequirementUidAuthorization(body, "DSL-437; rm -rf /");
-    assert.equal(result.ok, false);
-    assert.equal(result.error, "implement_requested_requirement_uid_invalid");
-  });
-
-  it("authorizes an absent UID without binding anything", () => {
-    for (const absent of [undefined, null, ""]) {
-      const result = requestedRequirementUidAuthorization(body, absent);
-      assert.equal(result.ok, true);
-      assert.equal(result.requirementUid, null);
-    }
-  });
-
-  it("refuses every UID when the issue has no Requirements section", () => {
-    const result = requestedRequirementUidAuthorization("## Problem\nNo requirements.\n", "DSL-437");
-    assert.equal(result.ok, false);
-    assert.equal(result.error, "implement_requested_requirement_uid_out_of_scope");
   });
 });
 

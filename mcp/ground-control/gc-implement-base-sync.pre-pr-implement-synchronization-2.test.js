@@ -127,14 +127,34 @@ function gitOperation(args) {
 
 describe("pre-PR implement synchronization", () => {
 
-  it("injects no requirement UID override when none is requested (#1434)", async () => {
-    // The branch already carries its UID in this case, so the repository gate
-    // must keep deriving requirement context exactly as it did before.
+  it("auto-resolves the issue's sole in-scope requirement UID when none is requested (#1434 follow-up)", async () => {
+    // A branch named for the issue number carries no UID to pass, so the gate
+    // would otherwise fail requirement-context-missing. The issue's single
+    // in-scope requirement is unambiguous context and reaches both gates.
     const { calls, runner } = completeRunner();
     const result = await runSynchronizeImplementBranch(completeInput(), {
       workspaceAuthorizationResolver: workspaceAuthorization,
       commandRunner: runner,
       contextResolver: async () => context(),
+      issueThreadReader: requirementsThreadReader(),
+      syncRecordReader: async () => ({ ok: false, error: "implement_pr_sync_record_missing" }),
+    });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    const gateEnvs = calls
+      .filter(([command]) => command === "bash")
+      .map(([, , options]) => options?.env?.[REQUIREMENT_UID_GATE_ENV_VAR]);
+    assert.deepEqual(gateEnvs, ["DSL-437", "DSL-437"]);
+  });
+
+  it("injects no requirement UID override when the issue lists multiple in-scope requirements (#1434 follow-up)", async () => {
+    // Ambiguous scope must not be guessed: with more than one in-scope
+    // requirement and no requested UID, the gate keeps deriving context as before.
+    const { calls, runner } = completeRunner();
+    const result = await runSynchronizeImplementBranch(completeInput(), {
+      workspaceAuthorizationResolver: workspaceAuthorization,
+      commandRunner: runner,
+      contextResolver: async () => context(),
+      issueThreadReader: requirementsThreadReader("## Requirements\n- DSL-437\n- DSL-438\n"),
       syncRecordReader: async () => ({ ok: false, error: "implement_pr_sync_record_missing" }),
     });
     assert.equal(result.ok, true, JSON.stringify(result));
@@ -142,7 +162,7 @@ describe("pre-PR implement synchronization", () => {
       assert.equal(
         REQUIREMENT_UID_GATE_ENV_VAR in (options?.env ?? {}),
         false,
-        `${command} gate must not receive an unrequested requirement override`,
+        `${command} gate must not receive an ambiguous requirement override`,
       );
     }
   });

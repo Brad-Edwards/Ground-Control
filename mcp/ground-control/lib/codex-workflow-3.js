@@ -5,7 +5,7 @@
 // split along its own dependency layering. lib.js remains the barrel every caller imports.
 
 import { load as parseYaml } from "js-yaml";
-import { requestedRequirementUidAuthorization } from "./codex-workflow-2.js";
+import { extractInScopeRequirementUids, requestedRequirementUidAuthorization } from "./codex-workflow-2.js";
 import { summarizeTraceabilityLinks } from "./codex-workflow.js";
 import { normalizeCrossCuttingConcernsConfig, normalizeExamplePathsConfig, normalizeKnowledgeConfig, normalizeRequirementsConfig, normalizeTelemetryConfig } from "./constants.js";
 import { getOwnerRepo } from "./grc-legacy-compat-3.js";
@@ -122,11 +122,17 @@ export async function authorizeRequestedRequirementUid(
   { repoPath, issueNumber, requestedRequirementUid },
   { issueThreadReader = runGetIssueThread } = {},
 ) {
-  if (requestedRequirementUid == null || requestedRequirementUid === "") {
+  const explicit = requestedRequirementUid != null && requestedRequirementUid !== "";
+  if (!explicit && issueNumber == null) {
     return { ok: true, requirementUid: null };
   }
   const thread = await issueThreadReader({ repoPath, issueNumber });
   if (!thread?.ok) {
+    if (!explicit) {
+      // Auto-resolution is best-effort gate context, not a caller assertion, so
+      // an unreadable issue keeps the prior no-UID behaviour instead of blocking.
+      return { ok: true, requirementUid: null };
+    }
     return {
       ok: false,
       error: thread?.error ?? "implement_requested_requirement_uid_unverifiable",
@@ -135,7 +141,19 @@ export async function authorizeRequestedRequirementUid(
       next_action: "repair_issue_access_and_retry",
     };
   }
-  return requestedRequirementUidAuthorization(thread.body, requestedRequirementUid);
+  if (explicit) {
+    return requestedRequirementUidAuthorization(thread.body, requestedRequirementUid);
+  }
+  // No explicit UID: carry the issue's sole in-scope requirement into the
+  // repository gates so a branch that names the issue number instead of the
+  // requirement UID still gives the governance gate its context. This completes
+  // the #1434 expectation that the UID reach "any mechanical phase that runs
+  // repository gates" (verify, publish, and base-sync completion) — those paths
+  // already export it, but only when a value reaches them, and the caller does
+  // not always have one to pass. Zero (requirement-free) or multiple (ambiguous)
+  // in-scope requirements resolve to no UID, unchanged.
+  const inScope = extractInScopeRequirementUids(thread.body);
+  return { ok: true, requirementUid: inScope.length === 1 ? inScope[0] : null };
 }
 export async function getIssueContext(issueNumber, repo, { cwd } = {}) {
   if (issueNumber == null) return null;

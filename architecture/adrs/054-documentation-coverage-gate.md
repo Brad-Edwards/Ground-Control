@@ -700,3 +700,19 @@ the workflow documents. The documentation-coverage classifier,
 `outcome_required` mapping, Vale rules, installer, and `.vale.ini` are
 unchanged. This amendment records a changed MCP/workflow contract; it adds no
 documentation classification or style rule.
+
+**2026-07-30 (#1434 follow-up: auto-resolve the requirement UID for repository
+gates).** `authorizeRequestedRequirementUid` in
+`mcp/ground-control/lib/codex-workflow-3.js` (re-exported by the
+`mcp/ground-control/lib.js` barrel) now resolves an issue's sole in-scope
+requirement UID from its `## Requirements` section when the caller omits
+`requested_requirement_uid`, so the shared repository gates (`verify`,
+`publish`, and base-sync completion) receive requirement-governance context even
+on a branch named for the issue number rather than the UID. Zero
+(requirement-free) or multiple (ambiguous) in-scope requirements resolve to no
+UID, and an explicit UID is still validated against the issue and still blocks
+on an unreadable issue. This changes only the requirement-context environment
+carried into the gate subprocess. The documentation-coverage classifier
+(`classifyChangedSurface`), its `outcome_required` mapping, the Vale rules,
+`tools/install-vale.sh`, and `.vale.ini` are unchanged; no new documentation
+classification or style rule is established.
