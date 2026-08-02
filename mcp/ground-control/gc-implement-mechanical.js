@@ -3,17 +3,15 @@ import { readFileSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
+import { readRequirementByUid, findTraceabilityByArtifact } from "./lib/requirement-files.js";
 import {
   ASYNC_JOB_IDEMPOTENCY_KEY_MAX,
   ASYNC_JOB_IDEMPOTENCY_KEY_RE,
   authorizeImplementMutationCheckout,
   getRepoGroundControlContext,
-  getRequirementByUid,
-  getTraceabilityByArtifact,
   runPrepareImplementBranch,
   runMarkImplementIssuePickedUp,
   runGetIssueThread,
-  runAssertQualityGates,
   runSynchronizeImplementBranch,
   runWatchCiRun,
   runWatchSonarAnalysis,
@@ -126,12 +124,9 @@ const defaultDeps = {
   runGit: runImplementGitCommand,
   preCommit: runImplementPreCommit,
   getContext: getRepoGroundControlContext,
-  getRequirement: getRequirementByUid,
-  getTraceabilityByArtifact,
   prepareBranch: runPrepareImplementBranch,
   markPickedUp: runMarkImplementIssuePickedUp,
   getIssueThread: runGetIssueThread,
-  assertQuality: runAssertQualityGates,
   synchronize: runSynchronizeImplementBranch,
   watchCi: runWatchCiRun,
   watchSonar: runWatchSonarAnalysis,
@@ -164,6 +159,19 @@ function dispatch(args, deps) {
 }
 export async function runImplementMechanical(args, overrides = {}) {
   const deps = { ...defaultDeps, ...overrides };
+  // Requirements and their traceability are repo-local files now (ADR-093, issue #1500):
+  // docs/requirements/<UID>/requirement.md is the record, read straight from this run's
+  // checkout — there is no backend. Bind the file reader to args.repoPath here, where the
+  // canonical checkout is known; the second `project` argument the call sites still pass is
+  // vestigial (a checkout is one project). Tests inject their own via `overrides`, so only
+  // fill these when an override has not.
+  if (!deps.getRequirement) {
+    deps.getRequirement = (uid) => readRequirementByUid(args.repoPath, uid);
+  }
+  if (!deps.getTraceabilityByArtifact) {
+    deps.getTraceabilityByArtifact = (artifactType, artifactIdentifier) =>
+      findTraceabilityByArtifact(args.repoPath, artifactType, artifactIdentifier);
+  }
   if (!IMPLEMENT_MECHANICAL_ACTIONS.includes(args.action)) {
     return dispatch(args, deps);
   }

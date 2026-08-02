@@ -327,13 +327,6 @@ import { installToolTelemetry } from "./telemetry.js";
 import { registerQuery } from "./tools/query.js";
 import { registerPostDecisionRecord } from "./tools/post-decision-record.js";
 import { registerReviewCapDisposition } from "./tools/review-cap-disposition.js";
-import { registerRequirement } from "./tools/requirement.js";
-import { registerBaseline } from "./tools/baseline.js";
-import { registerTestCase } from "./tools/test-case.js";
-import { registerTestSuite } from "./tools/test-suite.js";
-import { registerResearchRun } from "./tools/research-run.js";
-import { registerResearchProvenance } from "./tools/research-provenance.js";
-import { registerAdmin } from "./tools/admin.js";
 import { ok, err } from "./tools/respond.js";
 
 
@@ -393,13 +386,6 @@ const ctx = { ADMIN_TOOLS_ENABLED };
 registerQuery(server, ctx);
 registerPostDecisionRecord(server, ctx);
 registerReviewCapDisposition(server, ctx);
-registerRequirement(server, ctx);
-registerBaseline(server, ctx);
-registerTestCase(server, ctx);
-registerTestSuite(server, ctx);
-registerResearchRun(server, ctx);
-registerResearchProvenance(server, ctx);
-registerAdmin(server, ctx);
 
 // ============================================================================
 // Startup
@@ -408,11 +394,10 @@ registerAdmin(server, ctx);
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  const adminNote = ADMIN_TOOLS_ENABLED
-    ? "gc_admin + gc_pack + gc_user_admin + gc_identity_admin enabled (GC_MCP_ADMIN=1)"
-    : "admin tools NOT registered (set GC_MCP_ADMIN=1 to enable)";
   console.error(
-    `[ground-control] consolidated MCP surface (ADR-035): ~30 tools (was 215). ${adminNote}. Read-only ad-hoc queries via gc_query.`,
+    "[ground-control] MCP surface over repo-local files (issue #1500): requirements and ADRs live " +
+      "in the repo, no backend and no database. The surviving surface is the /implement workflow " +
+      "mechanics plus the coding-agent↔reviewer separation tools.",
   );
 }
 

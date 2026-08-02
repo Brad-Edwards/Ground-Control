@@ -3,46 +3,23 @@
 
 import { z } from "zod";
 import {
-  ARTIFACT_TYPES,
   CODEX_REVIEW_HARD_CAP,
   CODEX_REVIEW_PREPUSH_HARD_CAP,
-  EXACT_REQUIREMENT_UID_RE,
   KNOWLEDGE_SOURCE_TYPES,
-  LINK_TYPES,
-  STATUSES,
   TEST_QUALITY_REVIEW_HARD_CAP,
   buildCodexReviewOverrideCapDescription,
   buildCodexReviewOverrideReasonDescription,
   buildCodexReviewToolDescription,
-  bulkTransitionStatus,
   createGitHubIssueFromRequirement,
-  createTraceabilityLink,
-  deleteTraceabilityLink,
-  getDashboardStats,
   getRepoGroundControlContext,
-  getRequirementByUid,
-  getTraceabilityByArtifact,
-  getTraceabilityLinks,
-  pick,
-  runAssertQualityGates,
-  runAssertTraceabilityReconciled,
   runCloseIssueAfterMerge,
   runCodexArchitecturePreflight,
   runCodexReview,
   runPostImplementationPlan,
   runTestQualityReview,
   startAsyncJob,
-  transitionStatus,
   writeKnowledgeInbox,
 } from "../lib.js";
-import {
-  GC_QUERY_BODY_BYTE_CAP,
-  GC_QUERY_PATH_ALLOWLIST,
-  GC_QUERY_PATH_DENYLIST,
-  GC_QUERY_TIMEOUT_MS,
-  gcQuerySchema,
-  gcQueryToolHandler,
-} from "../gc-query.js";
 import { ok, err } from "./respond.js";
 
 export const ASYNC_REVIEW_PARAM_DESC =
@@ -56,22 +33,6 @@ export const CODEX_REVIEW_CAPS = { postPushCap: CODEX_REVIEW_HARD_CAP, prepushCa
 
 
 export function registerQuery(server, ctx) {
-  server.registerTool(
-    "gc_query",
-    {
-      description:
-        `Read-only ad-hoc GET against the Ground Control REST API (ADR-035). Use this when no curated tool covers the read you need. ` +
-        `Path must be a relative '/api/v1/...' string under one of the allowlisted prefixes: ${GC_QUERY_PATH_ALLOWLIST.join(", ")}. ` +
-        `Admin prefixes (${GC_QUERY_PATH_DENYLIST.join(", ")}) are rejected. ` +
-        `GET only; pass query params via the structured 'params' object (flat, primitive values only). ` +
-        `Body cap: ${GC_QUERY_BODY_BYTE_CAP} bytes; timeout: ${GC_QUERY_TIMEOUT_MS}ms.`,
-      inputSchema: gcQuerySchema,
-    },
-    async (args) => {
-      try { return ok(JSON.stringify(await gcQueryToolHandler(args), null, 2)); }
-      catch (e) { return err(e); }
-    },
-  );
 
   server.tool(
     "gc_get_repo_ground_control_context",
@@ -79,116 +40,6 @@ export function registerQuery(server, ctx) {
     { repo_path: z.string().describe("Absolute path to the target Git repository") },
     async ({ repo_path }) => {
       try { return ok(JSON.stringify(await getRepoGroundControlContext(repo_path), null, 2)); }
-      catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "gc_dashboard_stats",
-    "Aggregate project health snapshot: requirement counts by status/wave, traceability coverage percentages, recent changes.",
-    { project: z.string().optional().describe("Project identifier (auto-resolved if only one project)") },
-    async ({ project }) => {
-      try { return ok(JSON.stringify(await getDashboardStats(project), null, 2)); }
-      catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "gc_get_requirement",
-    "Get a requirement by its human-readable UID (e.g. 'GC-O007').",
-    {
-      // Same bounded structured-UID contract as every other curated tool that
-      // takes a requirement UID (issue #1425); a bare z.string() here is how the
-      // direct read and the completion tools drifted apart.
-      uid: z.string().regex(EXACT_REQUIREMENT_UID_RE).describe("Requirement UID"),
-      project: z.string().optional(),
-    },
-    async ({ uid, project }) => {
-      try { return ok(JSON.stringify(await getRequirementByUid(uid, project), null, 2)); }
-      catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "gc_get_traceability",
-    "Get all traceability links for a requirement (by UUID).",
-    { id: z.string().uuid().describe("Requirement UUID") },
-    async ({ id }) => {
-      try { return ok(JSON.stringify(await getTraceabilityLinks(id), null, 2)); }
-      catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "gc_get_traceability_by_artifact",
-    "Reverse lookup: find all traceability links for an artifact (file path, issue number, etc.). The backend always scopes the lookup to one project: pass `project` to disambiguate. A single-project backend resolves it automatically; a multi-project backend rejects an absent project with project_required rather than returning another project's links (avoids cross-project issue-number collisions).",
-    {
-      artifact_type: z.enum(ARTIFACT_TYPES),
-      artifact_identifier: z.string(),
-      project: z.string().optional(),
-    },
-    async ({ artifact_type, artifact_identifier, project }) => {
-      try { return ok(JSON.stringify(await getTraceabilityByArtifact(artifact_type, artifact_identifier, project), null, 2)); }
-      catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "gc_create_traceability_link",
-    "Link an artifact to a requirement.",
-    {
-      requirement_id: z.string().uuid(),
-      artifact_type: z.enum(ARTIFACT_TYPES),
-      artifact_identifier: z.string(),
-      link_type: z.enum(LINK_TYPES),
-      artifact_url: z.string().optional(),
-      artifact_title: z.string().optional(),
-    },
-    async (args) => {
-      try {
-        const data = pick(args, ["artifact_type", "artifact_identifier", "link_type", "artifact_url", "artifact_title"]);
-        return ok(JSON.stringify(await createTraceabilityLink(args.requirement_id, data), null, 2));
-      } catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "gc_delete_traceability_link",
-    "Delete a traceability link.",
-    {
-      requirement_id: z.string().uuid(),
-      link_id: z.string().uuid(),
-    },
-    async ({ requirement_id, link_id }) => {
-      try { await deleteTraceabilityLink(requirement_id, link_id); return ok("Deleted"); }
-      catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "gc_transition_status",
-    "Transition a requirement's status. Valid: DRAFT->ACTIVE, DRAFT->DEPRECATED (withdraw work that was never implemented), ACTIVE->DEPRECATED, ACTIVE->ARCHIVED, DEPRECATED->ARCHIVED.",
-    {
-      id: z.string().uuid(),
-      status: z.enum(STATUSES),
-      reason: z.string().optional(),
-    },
-    async ({ id, status, reason }) => {
-      try { return ok(JSON.stringify(await transitionStatus(id, status, reason), null, 2)); }
-      catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "gc_bulk_transition_status",
-    "Transition multiple requirements (by UUID) to the same status. Best-effort: valid succeed, invalid collected as failures.",
-    {
-      ids: z.array(z.string().uuid()).describe("Requirement UUIDs"),
-      status: z.enum(STATUSES),
-      reason: z.string().optional(),
-    },
-    async ({ ids, status, reason }) => {
-      try { return ok(JSON.stringify(await bulkTransitionStatus(ids, status, reason), null, 2)); }
       catch (e) { return err(e); }
     },
   );
@@ -299,56 +150,6 @@ export function registerQuery(server, ctx) {
         return ok(JSON.stringify(await runPostImplementationPlan({
           repoPath: repo_path, issueNumber: issue_number, planBody: plan_body,
           override: Boolean(override), overrideReason: override_reason ?? null,
-        }), null, 2));
-      } catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "gc_assert_traceability_reconciled",
-    "Assert that traceability reconciliation has landed for the issue and post a 'traceability_reconciled' phase marker. Re-fetches each in-scope requirement (status_intent: ACTIVE or DRAFT) and its links from the Ground Control REST API and refuses unless every ACTIVE requirement has an IMPLEMENTS link AND, when the IMPLEMENTS link points at an executable surface (backend/src/main/**, frontend/src/**, mcp/**, tools/policy/**), at least one TESTS link. DRAFT requirements are TESTS-exempt. Empty requirements[] runs the orphaned-link audit instead. When `project` is omitted, it is inferred from `repo_path`'s `.ground-control.yaml`; an explicit `project` overrides the config. Downstream: gc_post_final_report refuses unless this marker exists for the issue. override=true + override_reason allows the user to authorize a skip with a quoted rationale.",
-    {
-      repo_path: z.string(),
-      issue_number: z.number().int().positive(),
-      requirements: z.array(z.object({
-        uid: z.string().regex(EXACT_REQUIREMENT_UID_RE),
-        status_intent: z.enum(["ACTIVE", "DRAFT", "DEPRECATED", "ARCHIVED"]).optional(),
-      })),
-      project: z.string().optional(),
-      touched_files: z.array(z.string()).optional(),
-      override: z.boolean().optional(),
-      override_reason: z.string().optional(),
-    },
-    async ({ repo_path, issue_number, requirements, project, touched_files, override, override_reason }) => {
-      try {
-        return ok(JSON.stringify(await runAssertTraceabilityReconciled({
-          repoPath: repo_path,
-          issueNumber: issue_number,
-          requirements: requirements.map((r) => ({ uid: r.uid, statusIntent: r.status_intent ?? "ACTIVE" })),
-          project: project ?? null,
-          touchedFiles: touched_files ?? [],
-          override: Boolean(override),
-          overrideReason: override_reason ?? null,
-        }), null, 2));
-      } catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "gc_assert_quality_gates",
-    "Assert that the project's enabled quality gates pass. Calls the server-side QualityGateService.evaluate contract (POST /api/v1/quality-gates/evaluate) and refuses (ok:false) when any enabled gate fails, returning failing_gates[] — ONLY the failing gates, each as {name, metric_type, threshold, actual} (plus operator) — so the fix is obvious from the error alone. Callers must pass requirements[]; use [] only as an explicit no-in-scope-requirements declaration. When the active DOCUMENTS coverage gate exists, also verifies every in-scope requirement has a DOCUMENTS traceability link regardless of status; missing links return error='in_scope_documentation_coverage_failed'. Used by the /implement completion gate (Step 6) to block a run on failing project gates or PR-scoped documentation coverage. Enforced metric types: COVERAGE (over IMPLEMENTS / TESTS / DOCUMENTS link coverage), ORPHAN_COUNT, COMPLETENESS.",
-    {
-      project: z.string(),
-      requirements: z.array(z.object({
-        uid: z.string(),
-        status_intent: z.enum(["ACTIVE", "DRAFT", "DEPRECATED", "ARCHIVED"]).optional(),
-      })),
-    },
-    async ({ project, requirements }) => {
-      try {
-        return ok(JSON.stringify(await runAssertQualityGates({
-          project,
-          requirements: requirements.map((r) => ({ uid: r.uid, statusIntent: r.status_intent ?? "ACTIVE" })),
         }), null, 2));
       } catch (e) { return err(e); }
     },

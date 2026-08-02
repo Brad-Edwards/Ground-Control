@@ -14,13 +14,9 @@ import {
   ASYNC_JOB_IDEMPOTENCY_KEY_RE,
   PR_BODY_CHANGE_CLASSES,
   PR_BODY_SUMMARY_MAX,
-  TELEMETRY_OUTCOMES,
-  TELEMETRY_TIERS,
-  classifyChangedSurface,
   runAssertCompletion,
   runCodexReviewCycle,
   runGetIssueThread,
-  runLogStepTelemetry,
   runPostDecisionRecord,
   runPostFinalReport,
   runRenderPrBody,
@@ -275,62 +271,6 @@ export function registerPostDecisionRecord(server, ctx) {
           devStartGate: dev_start_gate ?? null,
           documentation_outcome: documentation_outcome ?? null,
         }), null, 2));
-      } catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "gc_log_step_telemetry",
-    "Record a single durable per-step telemetry observation for a /implement step into the ADR-061 workflow-run projection (ADR-090 amendment, issue #1354), keyed on the measurement model: work item (project/repo/issue), run, station (resolved backend-side from the stage), and capability tier. Supersedes the gitignored `.gc/telemetry` JSONL — no file is written. Operational measurement only, never gating, strictly fail-open (ADR-036): a durable record is guaranteed only when telemetry.enabled and the backend is reachable. Pass `stage` (the ADR-036 stage id, e.g. `completion_gate`) and a non-negative `attempt` index; `step` is the numbered SKILL step kept as a non-identity alias. wall_time_ms is mandatory; input_tokens / output_tokens are optional.",
-    {
-      repo_path: z.string(),
-      issue_number: z.number().int().positive(),
-      branch: z.string().min(1),
-      stage: z.string().min(1),
-      attempt: z.number().int().nonnegative(),
-      step: z.string().min(1).nullable().optional(),
-      tier: z.enum(TELEMETRY_TIERS),
-      model: z.string().min(1),
-      wall_time_ms: z.number().int().nonnegative(),
-      input_tokens: z.number().int().nonnegative().nullable().optional(),
-      output_tokens: z.number().int().nonnegative().nullable().optional(),
-      outcome: z.enum(TELEMETRY_OUTCOMES),
-      ts: z.string().optional(),
-    },
-    async ({ repo_path, issue_number, branch, stage, attempt, step, tier, model, wall_time_ms, input_tokens, output_tokens, outcome, ts }) => {
-      try {
-        return ok(JSON.stringify(await runLogStepTelemetry({
-          repoPath: repo_path,
-          issueNumber: issue_number,
-          branch,
-          stage,
-          attempt,
-          step: step ?? null,
-          tier,
-          model,
-          wallTimeMs: wall_time_ms,
-          inputTokens: input_tokens ?? null,
-          outputTokens: output_tokens ?? null,
-          outcome,
-          ts: ts ?? null,
-        }), null, 2));
-      } catch (e) { return err(e); }
-    },
-  );
-
-  server.tool(
-    "gc_documentation_coverage",
-    "Classify a list of repo-relative changed paths into surface classes and return their documentation targets. Surface classes: workflow, mcp_tool, config_parser, policy, adr, public_api, user_visible, doc, unclassified. outcome_required is true when any path belongs to a class that requires a documented outcome (workflow/mcp_tool/config_parser/policy/adr/public_api/user_visible). suggested_doc_targets is the deduped union of doc_targets across all classifications. Paths are validated for repo-containment — absolute paths and '..' escapes are rejected.",
-    {
-      repo_path: z.string().describe("Absolute path to the target Git repository"),
-      changed_paths: z.array(z.string()).describe("Repo-relative paths to classify"),
-    },
-    ({ repo_path, changed_paths }) => {
-      try {
-        const result = classifyChangedSurface(changed_paths, repo_path);
-        const allTargets = result.classifications.flatMap((c) => c.doc_targets);
-        const suggested_doc_targets = [...new Set(allTargets)];
-        return ok(JSON.stringify({ ok: true, ...result, suggested_doc_targets }, null, 2));
       } catch (e) { return err(e); }
     },
   );

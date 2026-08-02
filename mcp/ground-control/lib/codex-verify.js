@@ -7,7 +7,7 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getRequirementByUid, getTraceabilityLinks } from "./api-controls-3.js";
+import { readRequirementByUid } from "./requirement-files.js";
 import { evaluateCodexVerifyCycleCap, postCodexVerifyCycleMarker, readPriorCodexVerifyCycleCount } from "./codex-verify-cap.js";
 import { buildCodexArchitecturePreflightPrompt, getIssueContext } from "./codex-workflow-3.js";
 import { buildCodexArchitectureExecArgs, findNewWorkingTreeChanges, readGeneratedCodexSummary } from "./codex-workflow.js";
@@ -42,8 +42,16 @@ export async function runCodexArchitecturePreflight({
   let requirement = null;
   let traceabilityLinks = [];
   if (requirementUid) {
-    requirement = await getRequirementByUid(requirementUid, project);
-    traceabilityLinks = await getTraceabilityLinks(requirement.id);
+    // Requirements are repo-local files now (ADR-093, issue #1500). A UID-first run names a
+    // formal requirement, so a missing file is a hard error — the same fail-fast the former
+    // REST 404 gave — not a silent skip that would let preflight reason about nothing.
+    requirement = await readRequirementByUid(repoRoot, requirementUid);
+    if (!requirement) {
+      throw new Error(
+        `requirement ${requirementUid} not found at docs/requirements/${requirementUid}/requirement.md`,
+      );
+    }
+    traceabilityLinks = requirement.traceabilityLinks ?? [];
   }
 
   // `getIssueContext` is bound to `repoRoot` so `gh` resolves the target

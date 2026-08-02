@@ -96,19 +96,10 @@ export async function runVerify(args, deps) {
       "inspect_and_commit_or_revert_gate_generated_changes",
     );
   }
-  const quality = await deps.assertQuality({
-    project: context.project,
-    requirements: args.requirements ?? [],
-  });
-  if (!quality.ok) {
-    return failure(
-      action,
-      quality.error,
-      quality.message,
-      quality.next_action ?? "repair_quality_gate_and_retry",
-      { quality },
-    );
-  }
+  // The backend quality-gate rollup is retired (issue #1500): CI (GitHub) and Sonar
+  // (direct-to-Sonar) are the real quality signals and run in the monitor band. The
+  // verify band's job is the local gates above — completion command, policy, Vale,
+  // and the no-tree-change guard — not a backend aggregation that no longer exists.
   return {
     ok: true,
     action,
@@ -116,7 +107,6 @@ export async function runVerify(args, deps) {
     completion_command: command,
     policy_command: policyCommand,
     policy: "passed",
-    quality,
     next_action: "run_required_agent_reviews_or_publish",
   };
 }

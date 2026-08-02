@@ -1,7 +1,7 @@
 // Split from lib.test.js under issue #1467 for the 500-LOC limit
 // (docs/CODING_STANDARDS.md). Test bodies are unchanged.
 
-import { before, describe, it } from "node:test";
+import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -75,17 +75,6 @@ async function withShimPath(binDir, fn) {
   try { return await fn(); } finally { process.env.PATH = oldPath; }
 }
 
-// gh shim for runPostFinalReport prerequisite tests (issue #1058).
-function makeFinalReportShimRepo({ ghHandler }) {
-  return makeRouteShimRepo({ ghHandler, repoPrefix: "gc-trc-final-", binPrefix: "gc-trc-bin-" });
-}
-
-// `gh api --paginate --slurp` wraps each page's comments array in an outer
-// array; this mirrors that shape for the canned shim responses.
-function slurpComments(comments) {
-  return JSON.stringify([comments]);
-}
-
 // ---------------------------------------------------------------------------
 // Workflow-run telemetry lib helpers (issue #859)
 // ---------------------------------------------------------------------------
@@ -122,127 +111,6 @@ function makeWorkflowRunFetchSpy({ status = 201, body = {} } = {}) {
   };
   return calls;
 }
-
-// ---------------------------------------------------------------------------
-// runPostFinalReport — traceability_reconciled prerequisite (issue #1058)
-// ---------------------------------------------------------------------------
-
-describe("runPostFinalReport traceability_reconciled prerequisite (issue #1058)", () => {
-  it("refuses with phase_prerequisite_missing when no traceability_reconciled marker exists", async () => {
-    const shim = makeFinalReportShimRepo({
-      ghHandler: {
-        routes: [
-          { argv_prefix: ["repo", "view", "--json", GH_NAME_WITH_OWNER], stdout: JSON.stringify({ nameWithOwner: "fake/repo" }) },
-          // Phase markers are believed only from an author with repository permission.
-          { argv_prefix: ["api", "--method", "GET", "/repos/fake/repo/collaborators/tester/permission"], stdout: "write\n" },
-          { argv_prefix: ["api", "--method", "GET", "--paginate", "--slurp"], stdout: slurpComments([]) },
-        ],
-      },
-    });
-    try {
-      await withShimPath(shim.binDir, async () => {
-        const { runPostFinalReport } = await import("./lib.js");
-        const r = await runPostFinalReport({
-          repoPath: shim.repoDir,
-          issueNumber: 1058, prNumber: 42,
-          requirements: [],
-          reviews: [{ reviewer: "codex", summary: "1 cycle, clean" }],
-          ciStatus: "green", sonarStatus: "passed",
-          plainEnglishOutcome: "Maintainers get a human-readable explanation of what changed.",
-        });
-        assert.equal(r.ok, false);
-        assert.equal(r.error, "phase_prerequisite_missing");
-        // ADR-089 §2: grc_reconciled is retired; traceability_reconciled is
-        // the sole final-report prerequisite.
-        assert.ok(r.missing.includes("traceability_reconciled"), `expected traceability_reconciled in missing; got: ${JSON.stringify(r.missing)}`);
-        assert.ok(!r.missing.includes("grc_reconciled"), `grc_reconciled must not appear in missing; got: ${JSON.stringify(r.missing)}`);
-      });
-    } finally {
-      shim.cleanup();
-    }
-  });
-
-  it("override_traceability_gate=true with reason bypasses the prerequisite", async () => {
-    const shim = makeFinalReportShimRepo({
-      ghHandler: {
-        routes: [
-          { argv_prefix: ["repo", "view", "--json", GH_NAME_WITH_OWNER], stdout: JSON.stringify({ nameWithOwner: "fake/repo" }) },
-          // POST to issues/.../comments returns a synthetic posted-comment body
-          { argv_prefix: ["api", "--method", "POST"], stdout: JSON.stringify({ id: 9001, html_url: "https://github.com/fake/repo/issues/1058#issuecomment-9001" }) },
-        ],
-      },
-    });
-    try {
-      await withShimPath(shim.binDir, async () => {
-        const { runPostFinalReport } = await import("./lib.js");
-        const r = await runPostFinalReport({
-          repoPath: shim.repoDir,
-          issueNumber: 1058, prNumber: 42,
-          requirements: [],
-          reviews: [{ reviewer: "codex", summary: "1 cycle, clean" }],
-          ciStatus: "green", sonarStatus: "passed",
-          plainEnglishOutcome: "Maintainers get a human-readable explanation of what changed.",
-          overrideTraceabilityGate: true,
-          overrideTraceabilityReason: "user-authorized post-merge backfill on 2026-05-30",
-        });
-        assert.equal(r.ok, true);
-        assert.equal(r.comment_id, 9001);
-      });
-    } finally {
-      shim.cleanup();
-    }
-  });
-
-  it("override_traceability_gate=true with empty reason refuses with override_missing_reason", async () => {
-    const shim = makeFinalReportShimRepo({ ghHandler: { routes: [] } });
-    try {
-      await withShimPath(shim.binDir, async () => {
-        const { runPostFinalReport } = await import("./lib.js");
-        const r = await runPostFinalReport({
-          repoPath: shim.repoDir,
-          issueNumber: 1058, prNumber: 42,
-          requirements: [],
-          reviews: [{ reviewer: "codex", summary: "x" }],
-          ciStatus: "green", sonarStatus: "passed",
-          plainEnglishOutcome: "Maintainers get a human-readable explanation of what changed.",
-          overrideTraceabilityGate: true, overrideTraceabilityReason: "",
-        });
-        assert.equal(r.ok, false);
-        assert.equal(r.error, "final_report_override_missing_reason");
-      });
-    } finally {
-      shim.cleanup();
-    }
-  });
-
-  it("lane='quickfix' bypasses the traceability prerequisite without override", async () => {
-    const shim = makeFinalReportShimRepo({
-      ghHandler: {
-        routes: [
-          { argv_prefix: ["repo", "view", "--json", GH_NAME_WITH_OWNER], stdout: JSON.stringify({ nameWithOwner: "fake/repo" }) },
-          { argv_prefix: ["api", "--method", "POST"], stdout: JSON.stringify({ id: 9002, html_url: "https://github.com/fake/repo/issues/1058#issuecomment-9002" }) },
-        ],
-      },
-    });
-    try {
-      await withShimPath(shim.binDir, async () => {
-        const { runPostFinalReport } = await import("./lib.js");
-        const r = await runPostFinalReport({
-          repoPath: shim.repoDir,
-          issueNumber: 1058, prNumber: 42,
-          requirements: [],
-          reviews: [],
-          ciStatus: "green", sonarStatus: "passed",
-          lane: "quickfix",
-        });
-        assert.equal(r.ok, true);
-        assert.equal(r.comment_id, 9002);
-      });
-    } finally {
-      shim.cleanup();
-    }
-  });
-});
 
 // ---------------------------------------------------------------------------
 // gc_close_issue_after_merge (issue #1058)
