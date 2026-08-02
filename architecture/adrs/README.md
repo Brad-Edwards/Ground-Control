@@ -110,6 +110,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [090](090-production-line-measurement-model.md) | Production-Line Measurement Model | Accepted (amended 2026-07-28, #1355) |
 | [091](091-ci-verification-topology.md) | CI Verification Topology | Accepted |
 | [092](092-file-size-limit-gate.md) | Enforce the 500-LOC File-Size Limit in Repo Policy | Accepted |
+| [093](093-requirements-specs-as-code.md) | Requirements as Specs-as-Code | Accepted |
 
 Prior ADRs from the old project frame are archived in `archive/architecture/adrs/`.
 
