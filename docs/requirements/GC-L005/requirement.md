@@ -13,7 +13,7 @@ updated_at: 2026-03-14T01:24:26.216933Z
 
 ## Statement
 
-The system shall expose lightweight MCP tools enabling development environment hooks (e.g., Claude Code hooks, IDE plugins) to query whether modified files have existing requirement links and whether those links may be stale, providing real-time traceability feedback during development.
+The system shall expose lightweight MCP tools enabling development environment hooks (for example, Claude Code hooks, IDE plugins) to query whether modified files have existing requirement links and whether those links may be stale, providing real-time traceability feedback during development.
 
 ## Rationale
 

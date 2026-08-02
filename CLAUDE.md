@@ -42,7 +42,7 @@ Domain layer has no Spring web imports.
 
 Ship features, not ceremony. L0 is the default assurance level. Add JML contracts only where invalid input causes silent data corruption (state transitions, security boundaries). One test per significant behavior. See docs/CODING_STANDARDS.md and ADR-012 for the full framework.
 
-When implementing a feature, query Ground Control for related requirements. After completing work, create IMPLEMENTS and TESTS traceability links for any requirements you satisfied.
+Requirements, ADRs, and use cases live as files in the repo (`docs/requirements/`, `architecture/adrs/`) — read and edit them there. Graphify is **available if you want** a code+docs comprehension index (`graphify query/path/explain`, or `make graphify`; see `docs/GRAPHIFY.md`) — it is not required.
 
 ## Code Review
 

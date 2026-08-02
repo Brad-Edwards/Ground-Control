@@ -15,7 +15,7 @@ updated_at: 2026-07-12T16:35:41.562915Z
 
 The assessment lane shall be schedulable and event-triggered, not only manually invoked.
 
-(a) Cron-style schedules per project (e.g., quarterly full reassessment) shall be supported.
+(a) Cron-style schedules per project (for example, quarterly full reassessment) shall be supported.
 
 (b) Event triggers shall include, at minimum: control-pack version changes, methodology-profile changes, rule-pack/query-pack pin changes, KRI breach signals, arrival of a risk assessment's reassessmentRequiredAt, and drift exceeding policy thresholds (GC-GRC-019).
 

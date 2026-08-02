@@ -26,6 +26,9 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# Graphify — disposable, rebuildable code+docs index (issue #1500, ADR-094); never committed.
+graphify-out/
+
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.

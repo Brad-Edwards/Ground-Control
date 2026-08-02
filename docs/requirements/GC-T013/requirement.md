@@ -13,7 +13,7 @@ updated_at: 2026-08-02T18:39:44.325080Z
 
 ## Statement
 
-The system shall support FAIR-aligned scenario scoping for cyber risk scenarios using explicit threat, asset, method, effect, and time-horizon components, including support for expressing scenarios in the form '[threat] impacts [asset] via [method], causing [effect(s)]'. The system shall distinguish true risk scenarios from control deficiencies, vulnerabilities, audit findings, or generic concerns that do not yet constitute analyzable loss scenarios.
+The system shall support FAIR-aligned scenario scoping for cyber risk scenarios using explicit threat, asset, method, effect, and time-horizon components, including support for expressing scenarios in the form '[threat] impacts [asset] via [method], causing [effects]'. The system shall distinguish true risk scenarios from control deficiencies, vulnerabilities, audit findings, or generic concerns that do not yet constitute analyzable loss scenarios.
 
 ## Rationale
 

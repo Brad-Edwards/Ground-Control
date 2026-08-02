@@ -69,6 +69,10 @@ devmain: ## Open the dev -> main promotion PR titled so the PR-title gate passes
 vale-install: ## Install Vale prose linter (tools/install-vale.sh → .tools/vale/)
 	bash tools/install-vale.sh
 
+graphify: ## (Re)build the disposable Graphify code+docs index (opt-in; see docs/GRAPHIFY.md)
+	@command -v graphify >/dev/null 2>&1 || { echo "graphify not installed — run 'uv tool install graphifyy' (docs/GRAPHIFY.md)"; exit 0; }
+	graphify extract . --code-only --update
+
 # BASE_REF defaults to origin/dev for local invocation. CI sets it to
 # origin/<base-branch> for the current pull_request event.
 vale-lint: vale-install ## Run Vale on .md docs touched in the diff vs BASE_REF (default origin/dev)

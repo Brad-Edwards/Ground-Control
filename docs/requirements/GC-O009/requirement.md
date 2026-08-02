@@ -22,7 +22,7 @@ The system shall support:
 (b) Human gates — exactly one synchronous human gate: PR merge (ADR-029). GitHub's merge action is the authoritative event, observed by the workflow via webhook or polling, never modeled as a Temporal signal. Operator signals (cancel, retry-from, and the review-cap dispositions the GC-O007 contract defines) are explicit, contract-versioned signals sendable via MCP tools and REST API, requiring authenticated gate authority, project-scope checks, and audit records. No synchronous plan-approval gate exists.
 (c) Workflow visibility — every workflow execution, activity completion, retry, and failure queryable via REST API, MCP tools, and Ground Control's web UI.
 (d) Project-scoped isolation — workflow executions scoped to Ground Control projects via workflow-ID and Search-Attribute partitioning within a single Temporal namespace (ADR-028). Project scoping is not tenant isolation; tenant-to-namespace mapping is deferred to a future tenancy ADR.
-(e) Configurable workflow steps — projects may enable, disable, or replace workflow activities (e.g., skip SonarCloud, use a different review tool) via per-project configuration.
+(e) Configurable workflow steps — projects may enable, disable, or replace workflow activities (for example, skip SonarCloud, use a different review tool) via per-project configuration.
 (f) Configurable LLM provider — activities that call an LLM shall support pluggable providers (Anthropic, OpenAI, local models via Ollama, etc.) per project.
 (g) Workflow telemetry — activity durations, retry counts, finding counts, and outcomes captured by Temporal's built-in visibility and queryable for operational analysis.
 

@@ -13,7 +13,7 @@ updated_at: 2026-07-12T23:08:15.210126Z
 
 ## Statement
 
-The system shall support event-driven evidence collection triggered by webhooks, system events, or threshold violations (e.g., a new user provisioned, a security group changed, a compliance scan failed), collecting evidence immediately when compliance-relevant events occur.
+The system shall support event-driven evidence collection triggered by webhooks, system events, or threshold violations (for example, a new user provisioned, a security group changed, a compliance scan failed), collecting evidence immediately when compliance-relevant events occur.
 
 ## Rationale
 

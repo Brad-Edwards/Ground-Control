@@ -13,7 +13,7 @@ updated_at: 2026-03-13T23:12:47.582548Z
 
 ## Statement
 
-The system shall detect requirement UID mentions (e.g., GC-A001) in GitHub issue bodies, PR descriptions, and comments, and surface these as potential traceability links.
+The system shall detect requirement UID mentions (for example, GC-A001) in GitHub issue bodies, PR descriptions, and comments, and surface these as potential traceability links.
 
 ## Rationale
 

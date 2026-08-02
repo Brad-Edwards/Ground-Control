@@ -13,7 +13,7 @@ updated_at: 2026-03-14T01:24:26.071147Z
 
 ## Statement
 
-The system shall provide a CI/CD-integrable check that compares traceability coverage before and after a proposed change, failing when coverage decreases (e.g., a PR removes an IMPLEMENTS link without replacing it, or deletes a linked test without relinking).
+The system shall provide a CI/CD-integrable check that compares traceability coverage before and after a proposed change, failing when coverage decreases (for example, a PR removes an IMPLEMENTS link without replacing it, or deletes a linked test without relinking).
 
 ## Rationale
 
