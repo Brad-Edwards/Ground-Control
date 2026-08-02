@@ -53,7 +53,7 @@ class RequirementsMarkdownExportRunnerTest {
         runner().run(new DefaultApplicationArguments(
                 "--export-requirements", "--project=ground-control", "--output-dir=" + root));
 
-        assertThat(exitCode).isEqualTo(0);
+        assertThat(exitCode).isZero();
         assertThat(Files.isDirectory(root)).isTrue();
     }
 

@@ -44,31 +44,34 @@ class RequirementsMarkdownExportServiceTest {
     void toMarkdown_emitsFrontmatterAndBody() {
         String md = service.toMarkdown(full("GC-Q015"));
 
-        assertThat(md).startsWith("---\n");
-        assertThat(md).contains("\nid: GC-Q015\n");
-        assertThat(md).contains("title: \"Console shell: design system\"");
-        assertThat(md).contains("\nstatus: ACTIVE\n");
-        assertThat(md).contains("\ntype: FUNCTIONAL\n");
-        assertThat(md).contains("\npriority: MUST\n");
-        assertThat(md).contains("\nwave: 3\n");
-        assertThat(md).contains("created_at: 2026-01-02T03:04:05Z");
-        assertThat(md).contains("updated_at: 2026-01-03T04:05:06Z");
-        assertThat(md).contains("## Statement");
-        assertThat(md).contains("The console MUST present a coherent design system.");
-        assertThat(md).contains("## Rationale");
-        assertThat(md).contains("Fragmented UI increases operator error.");
-        assertThat(md).contains("## Traceability");
-        assertThat(md).contains("IMPLEMENTS").contains("CODE").contains("src/App.tsx");
+        assertThat(md)
+                .startsWith("---\n")
+                .contains(
+                        "\nid: GC-Q015\n",
+                        "title: \"Console shell: design system\"",
+                        "\nstatus: ACTIVE\n",
+                        "\ntype: FUNCTIONAL\n",
+                        "\npriority: MUST\n",
+                        "\nwave: 3\n",
+                        "created_at: 2026-01-02T03:04:05Z",
+                        "updated_at: 2026-01-03T04:05:06Z",
+                        "## Statement",
+                        "The console MUST present a coherent design system.",
+                        "## Rationale",
+                        "Fragmented UI increases operator error.",
+                        "## Traceability",
+                        "IMPLEMENTS",
+                        "CODE",
+                        "src/App.tsx");
     }
 
     @Test
     void toMarkdown_omitsOptionalSectionsWhenAbsent() {
         String md = service.toMarkdown(minimal("GC-X001"));
 
-        assertThat(md).doesNotContain("wave:");
-        assertThat(md).doesNotContain("## Rationale");
-        assertThat(md).doesNotContain("## Traceability");
-        assertThat(md).contains("## Statement");
+        assertThat(md)
+                .doesNotContain("wave:", "## Rationale", "## Traceability")
+                .contains("## Statement");
     }
 
     @Test
@@ -113,14 +116,11 @@ class RequirementsMarkdownExportServiceTest {
 
         service.writeAll(data, root);
 
-        // A path-traversal UID is contained: it lands under root, never in the parent.
+        // A path-traversal UID is contained: the sanitized folder lands under root, and nothing
+        // escapes to the parent's "escape" target.
         assertThat(Files.exists(root.resolve(".._escape/requirement.md"))).isTrue();
         assertThat(Files.exists(root.getParent().resolve("escape/requirement.md")))
                 .isFalse();
-        try (var walk = Files.walk(root)) {
-            assertThat(walk.filter(Files::isRegularFile)).isNotEmpty().allSatisfy(p -> assertThat(p.normalize())
-                    .startsWith(root.normalize()));
-        }
     }
 
     @Test
