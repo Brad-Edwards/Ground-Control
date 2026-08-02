@@ -118,8 +118,8 @@ class RequirementsMarkdownExportServiceTest {
         assertThat(Files.exists(root.getParent().resolve("escape/requirement.md")))
                 .isFalse();
         try (var walk = Files.walk(root)) {
-            assertThat(walk.filter(Files::isRegularFile))
-                    .allSatisfy(p -> assertThat(p.normalize()).startsWith(root.normalize()));
+            assertThat(walk.filter(Files::isRegularFile)).isNotEmpty().allSatisfy(p -> assertThat(p.normalize())
+                    .startsWith(root.normalize()));
         }
     }
 
