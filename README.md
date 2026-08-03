@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/autarchy-ai/Ground-Control/actions/workflows/ci.yml/badge.svg)](https://github.com/autarchy-ai/Ground-Control/actions/workflows/ci.yml)
 
-Ground Control is an **MCP server for the `/implement` workflow** — a gated,
+Ground Control is an **MCP server for the `/implement` workflow**, a gated,
 agentic development loop that gives coding agents full codebase context, from
 use case to implementation, and keeps the coding agent separated from its
 reviewers.
@@ -12,7 +12,7 @@ Requirements, ADRs, and use cases live as **files in the consuming repo**
 backend, database, or web console: the MCP server is the only running service,
 and it reads and writes those files and the GitHub issue thread directly. The
 optional [Graphify](https://github.com/Graphify-Labs/graphify) index is available
-for code+docs comprehension when an agent wants it — it is not required.
+for code+docs comprehension when an agent wants it, it is not required.
 
 > This repository was re-platformed from a graph-native GRC/requirements product
 > to the MCP server alone (issue #1500). The requirements-as-files record is
@@ -22,22 +22,22 @@ for code+docs comprehension when an agent wants it — it is not required.
 ## What the MCP server does
 
 The surviving tool surface (~27 tools, down from 215) is exactly what the
-`/implement` workflow needs, and every tool operates over `gh`/`git`/files — no
+`/implement` workflow needs, and every tool operates over `gh`/`git`/files, no
 backend:
 
-- **Orchestration** — `gc_implement_mechanical` drives the mechanical bands
+- **Orchestration**, `gc_implement_mechanical` drives the mechanical bands
   (bootstrap, verify, publish, monitor, readiness, finalize); `gc_codex_job`
   carries the long async actions; `gc_get_repo_ground_control_context` reads
   `.ground-control.yaml`.
-- **Git / GitHub mechanics** — branch prep, issue pickup, issue-thread reads,
+- **Git / GitHub mechanics**, branch prep, issue pickup, issue-thread reads,
   base sync, synchronized PR creation, PR-body rendering, issue close, and
   issue creation from a requirement file.
-- **CI / quality signals** — `gc_watch_ci_run` (GitHub) and
+- **CI / quality signals**, `gc_watch_ci_run` (GitHub) and
   `gc_watch_sonar_analysis` (direct), read live.
-- **Reviewer separation** — the codex review, architecture-preflight, and
-  verify tools, the test-quality review tools, and the review-cap disposition —
+- **Reviewer separation**, the codex review, architecture-preflight, and
+  verify tools, the test-quality review tools, and the review-cap disposition,
   the coding agent never reviews its own work.
-- **Durable records** — plan, decision records, execution obligations, and the
+- **Durable records**, plan, decision records, execution obligations, and the
   final report all post to the GitHub issue thread (ADR-029).
 
 Requirement status and traceability are recorded by the agent directly in the

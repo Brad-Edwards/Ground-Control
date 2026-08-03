@@ -9,8 +9,8 @@ Ground Control is the MCP server for the `/implement` workflow over repo-local f
 there is no backend, database, or frontend. The server is Node.js ES modules under `mcp/ground-control`.
 
 - Install: `make ground-control-mcp-install` (npm ci in `mcp/ground-control`)
-- Test: `make mcp-test` (the MCP `node --test` suite — the primary test gate)
-- Policy: `make policy` (repo-native ADR/workflow/spec guardrails shared by Claude and Codex — runs the Python policy tests, `bin/policy`, and Vale)
+- Test: `make mcp-test` (the MCP `node --test` suite, the primary test gate)
+- Policy: `make policy` (repo-native ADR/workflow/spec guardrails shared by Claude and Codex, runs the Python policy tests, `bin/policy`, and Vale)
 - Prose lint: `make vale-lint`
 
 Run `make mcp-test` before pushing. If you touched workflow, ADR, MCP, or requirement-spec surfaces, run `make policy` as well.
@@ -19,7 +19,7 @@ Run `make mcp-test` before pushing. If you touched workflow, ADR, MCP, or requir
 
 Ship features, not ceremony. One test per significant behavior. See docs/CODING_STANDARDS.md.
 
-Requirements, ADRs, and use cases live as files in the repo (`docs/requirements/<UID>/requirement.md`, `architecture/adrs/`) — read and edit them there; there is no backend or graph. Graphify is **available if you want** a code+docs comprehension index (`graphify query/path/explain`, or `make graphify`; see `docs/GRAPHIFY.md`) — it is not required.
+Requirements, ADRs, and use cases live as files in the repo (`docs/requirements/<UID>/requirement.md`, `architecture/adrs/`), read and edit them there; there is no backend or graph. Graphify is **available if you want** a code+docs comprehension index (`graphify query/path/explain`, or `make graphify`; see `docs/GRAPHIFY.md`), it is not required.
 
 ## Code Review
 
