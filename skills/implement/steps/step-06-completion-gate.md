@@ -12,10 +12,10 @@ On the normal path call `gc_implement_mechanical` with `action="verify"`,
 Poll the returned `job_id` through `gc_codex_job` until `status="done"`, then
 dispatch on `result`. Reuse the same key only if the start response was lost;
 after repairing a failed gate, create a new key for the new attempt. The action
-runs the configured completion command, the configured policy command, verifies
-that those gates did not mutate the checkout, and calls
-`gc_assert_quality_gates`. Continue only on `ok: true`; a failed envelope
-names the exact gate an agent must repair before retrying the same action.
+runs the configured completion command, the configured policy command, and
+verifies that those gates did not mutate the checkout. Continue only on
+`ok: true`; a failed envelope names the exact gate an agent must repair before
+retrying the same action.
 
 Implementation is NOT ready for commit until ALL of the following are verified:
 
@@ -46,24 +46,12 @@ Implementation is NOT ready for commit until ALL of the following are verified:
    redundant broad reruns; if review fixes later change the tree, the review
    band reruns completion and policy once on its final post-fix state.
 
-5. **Quality gates pass.** The `verify` action invokes
-   `gc_assert_quality_gates` with `project: cfg.project` and the supplied
-   requirements. The tool evaluates the project's enabled quality gates
-   server-side (`QualityGateService.evaluate`) and returns a mechanical
-   pass/fail envelope - this is not an agent judgment call. If the completed
-   result has `ok: false`, the run is **blocked**. Project-level failures return
-   `failing_gates[]` with each failing gate as
-   `{name, metric_type, threshold, actual}` (only the gates that failed), so the
-   metric to fix is obvious from the error alone. When the active `DOCUMENTS`
-   coverage gate exists, the same call also checks every in-scope requirement
-   for a `DOCUMENTS` traceability link regardless of status; missing links
-   return `error: "in_scope_documentation_coverage_failed"` plus
-   `missing_documents[]`. Fix the underlying metric - add the missing
-   IMPLEMENTS / TESTS / DOCUMENTS traceability links, resolve orphaned or
-   incomplete requirements - then retry `verify` with a new key. The enforced
-   metric types are COVERAGE (over IMPLEMENTS / TESTS / DOCUMENTS link
-   coverage), ORPHAN_COUNT, and COMPLETENESS. Do NOT proceed to Phase C while
-   any enabled gate fails.
+5. **The real quality signals are CI and Sonar, checked in the monitor band.**
+   There is no backend quality-gate evaluation (issue #1500): CI (GitHub) and
+   Sonar (direct-to-Sonar) are the authoritative quality signals and are checked
+   at Steps 10/11 after publish. The `verify` action's job here is the local
+   gates above — the completion command (item 1), the policy gate (item 4), and
+   the no-tree-change guard. Do NOT proceed to Phase C while any of those fails.
 
 If any check fails, fix it before proceeding. Do NOT move to Phase C until every check passes.
 

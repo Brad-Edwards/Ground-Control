@@ -173,9 +173,9 @@ If `cfg.sonarcloud` is null, skip; proceed to Step Q18.
 
 ### Steps Q15–Q17: NO Requirement Transitions or Traceability Reconciliation
 
-`/quickfix` runs are scoped to fix-shaped work, not requirement-shaped work - no `gc_transition_status` calls, no `gc_create_traceability_link` reconciliation against in-scope UIDs. The `in_scope_requirements[]` list is by definition empty for a `/quickfix` run.
+`/quickfix` runs are scoped to fix-shaped work, not requirement-shaped work - no requirement status transitions, no traceability reconciliation against in-scope UIDs. The `in_scope_requirements[]` list is by definition empty for a `/quickfix` run.
 
-**Exception: link maintenance on touched files.** If the diff modifies a file that has an existing IMPLEMENTS / TESTS link to some requirement and the behavior moved, update that link per `skills/implement/SKILL.md` Step 16's deletion-and-renaming rules (same `gc_get_traceability_by_artifact` + `gc_delete_traceability_link` + `gc_create_traceability_link` pattern). Default for a typical `/quickfix` run is no link changes; the fix preserves behavior, and the existing links remain valid.
+**Exception: link maintenance on touched files.** If the diff modifies a file that has an existing IMPLEMENTS / TESTS link to some requirement and the behavior moved, update that link per `skills/implement/SKILL.md` Step 16's deletion-and-renaming rules (edit the requirement file's `## Traceability` section). Default for a typical `/quickfix` run is no link changes; the fix preserves behavior, and the existing links remain valid.
 
 If a `/quickfix` run touches files in a way that warrants requirement transitions, that's a signal the run should have been `/implement`. Surface to the user and re-invoke `/implement <same-issue>` rather than partial-completing the requirement work in the lighter lane.
 
@@ -226,8 +226,8 @@ Each drop is intentional and reversible mid-flight by re-invoking `/implement <s
 - **Pre-push codex review** + **pre-push test-quality review** by default - off unless `--review` is supplied. Both still respect the configured cap (default 1) when enabled.
 - **Final-report tool full payload.** `gc_post_final_report` still runs (so its sensitive-content / no-defer / reserved-marker scrubs protect the public close comment on every driver), but with a slim payload: empty `requirements`, empty-or-one-line-per-reviewer `reviews`, no `traceability` block. The structured tool boundary is the only driver-neutral filter; a direct `gh issue comment` would bypass it.
 - **Implement-only outcome requirement.** Issue #1156 makes `plain_english_outcome` mandatory for `/implement` Step 19, but quickfix remains exempt because its closeout is intentionally lightweight and requirement-free.
-- **Requirement status transitions** (`gc_transition_status`) - `/quickfix` runs are requirement-free by definition.
-- **Traceability reconciliation** (`gc_create_traceability_link` / `gc_delete_traceability_link`) - only the touched-file link-maintenance path runs (and even that is rare for a typical `/quickfix` run).
+- **Requirement status transitions** (frontmatter `status:` edits) - `/quickfix` runs are requirement-free by definition.
+- **Traceability reconciliation** (`## Traceability` edits) - only the touched-file link-maintenance path runs (and even that is rare for a typical `/quickfix` run).
 
 ## Upgrading mid-flight
 

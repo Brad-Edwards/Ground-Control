@@ -89,8 +89,8 @@ Each non-behavior is intentional. The lane is mechanical and narrow by design.
 
 - **No automatic merge in default mode.** With `--mode prepare` (the default) the user (maintainer) reviews the readiness ledger and merges. Same single-merge-touchpoint rule as `/implement` (ADR-029). Use `--mode merge` when you want the lane to execute the merge.
 - **No enqueue mode.** Enqueue returns a refusal envelope before any side effect. A further ADR-029 amendment is required to unlock it.
-- **No requirement transitions.** The PRs the lane prepares retain their own `/implement` lifecycle on their own issues. `/integrate` does not call `gc_transition_status` for any requirement UID.
-- **No traceability reconciliation.** `gc_create_traceability_link` and `gc_delete_traceability_link` are not called by this lane. Traceability is the responsibility of the `/implement` run that produced each PR.
+- **No requirement transitions.** The PRs the lane prepares retain their own `/implement` lifecycle on their own issues. `/integrate` does not transition any requirement's status.
+- **No traceability reconciliation.** this lane does not edit any requirement's `## Traceability` section. Traceability is the responsibility of the `/implement` run that produced each PR.
 - **No issue-thread plan post.** There is no `gc_post_implementation_plan` call. Integration runs are repo-scoped; the readiness ledger is surfaced to the maintainer at the terminal, not on a GitHub issue thread.
 - **No AI-assisted reviews.** No `gc_codex_review`, no `gc_test_quality_review`, no `gc_codex_architecture_preflight`. The lane is mechanical; model judgment is not in the loop.
 - **No source authoring.** The lane rebases using `git rebase`. It never edits test files, never removes documentation, never uses `-X theirs` or `-X ours`, and never modifies the completion gate command to force a pass.
