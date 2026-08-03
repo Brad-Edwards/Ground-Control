@@ -13,7 +13,7 @@ import { assertSafeImplementCheckoutConfiguration, authorizeImplementRepoRoot, e
 import { readTrustedImplementSyncRecord } from "./knowledge-capture.js";
 import { getRepoGroundControlContext } from "./repo-vocabulary-2.js";
 import { rejectReservedMarkerSequence } from "./repo-vocabulary.js";
-import { checkPrBodyShape, execFile, execFileWithInput } from "./runtime-primitives.js";
+import { checkPrBodyShape, execFile, execFileWithInput, reviewEngineEnv } from "./runtime-primitives.js";
 import { TEST_QUALITY_REVIEW_FINDINGS_SCHEMA } from "./test-quality-prompt.js";
 import { ReviewerCapConfigError } from "./test-quality-runner.js";
 
@@ -283,8 +283,7 @@ export async function runSingleClaudeTestQualityReview({
     "--allowedTools",
     "Read Glob Grep",
   ];
-  const childEnv = { ...process.env };
-  delete childEnv.ANTHROPIC_API_KEY;
+  const childEnv = reviewEngineEnv();
   const { stdout } = await execFileWithInput("claude", args, {
     input: prompt,
     cwd: repoRoot,

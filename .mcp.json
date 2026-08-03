@@ -4,9 +4,7 @@
       "type": "stdio",
       "command": "node",
       "args": ["/home/atomik/src/Ground-Control/mcp/ground-control/index.js"],
-      "env": {
-        "GC_BASE_URL": "http://red-dragon:8000"
-      }
+      "env": {}
     },
     "citation": {
       "type": "stdio",

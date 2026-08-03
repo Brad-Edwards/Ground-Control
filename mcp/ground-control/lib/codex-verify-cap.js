@@ -10,7 +10,7 @@ import { classifyChangedSurface } from "./doc-coverage.js";
 import { getPullRequestClosingIssues, readIssueCommentBodies } from "./grc-legacy-compat-3.js";
 import { enrichCommentsWithThreadIds } from "./grc-legacy-compat-4.js";
 import { REVIEW_AUTO_DISPOSITION_JUDGE_SCHEMA, buildDispositionJudgePrompt, parseDispositionJudgeOutput, parseNumstatManifest, summarizeFindingsForDisposition } from "./review-cap-disposition.js";
-import { execFile, execFileWithInput } from "./runtime-primitives.js";
+import { execFile, execFileWithInput, reviewEngineEnv } from "./runtime-primitives.js";
 import { TEST_QUALITY_REVIEW_HARD_CAP } from "./test-quality-runner.js";
 
 export const CODEX_VERIFY_HARD_CAP = 2;
@@ -311,8 +311,7 @@ export async function runDispositionJudge({ repoRoot, signalsSnapshot, config, r
     "--allowedTools",
     "Read Glob Grep",
   ];
-  const childEnv = { ...process.env };
-  delete childEnv.ANTHROPIC_API_KEY;
+  const childEnv = reviewEngineEnv();
   const { stdout } = await execFileWithInput("claude", args, {
     input: prompt,
     cwd: repoRoot,
