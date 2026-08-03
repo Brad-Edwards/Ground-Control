@@ -5,6 +5,9 @@
 // split along its own dependency layering. lib.js remains the barrel every caller imports.
 
 import { execFile as execFileCb } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import { CLAUDE_MODEL_BY_TIER, DEFAULT_IMPLEMENT_ROUTING_STAGES, ROUTING_STAGE_NAME_RE, ROUTING_TIERS } from "./repo-vocabulary.js";
 
@@ -232,22 +235,58 @@ export async function execFileWithInput(
   });
 }
 
-// The review engine (`claude`) is spawned as a separate process from the agent,
-// so by default ANTHROPIC_API_KEY is stripped from its environment. Strip it,
-// though, ONLY when the child still has another way to authenticate — Vertex or
-// Bedrock, or a dedicated CLAUDE_CONFIG_DIR profile. If the key is the only auth
-// present, keep it: otherwise the review falls through to a default OAuth
-// profile that is frequently expired, which surfaces as
-// `test_quality_review_engine_failed`. This makes the review inherit whatever
-// auth mode launched the MCP — Vertex vars, a personal config dir, or a bare
-// key — across any repo, folder, or tmux session, whether codex or claude loaded
-// the server.
-export function reviewEngineEnv(baseEnv = process.env) {
-  const env = { ...baseEnv };
-  const hasAlternativeAuth = Boolean(
-    env.CLAUDE_CODE_USE_VERTEX || env.CLAUDE_CODE_USE_BEDROCK || env.CLAUDE_CONFIG_DIR,
+// Default fallback-auth file (issue #1500). A launcher — Codex especially, or
+// any non-interactive shell — may hand the MCP an environment with NO Claude
+// auth (no Vertex/Bedrock vars, no CLAUDE_CONFIG_DIR, no key), so the review
+// `claude` falls through to the default profile, which is frequently expired
+// and surfaces as `test_quality_review_engine_failed`. This user-owned,
+// NON-secret file (`KEY=VALUE` lines) supplies auth in that case.
+export const REVIEW_ENGINE_ENV_FALLBACK = join(homedir(), ".config", "ground-control", "review-env");
+
+function hasClaudeAuth(env) {
+  return Boolean(
+    env.CLAUDE_CODE_USE_VERTEX ||
+      env.CLAUDE_CODE_USE_BEDROCK ||
+      env.CLAUDE_CONFIG_DIR ||
+      env.ANTHROPIC_API_KEY ||
+      env.ANTHROPIC_AUTH_TOKEN,
   );
-  if (hasAlternativeAuth) {
+}
+
+// Build the environment for the review engine (`claude`), which runs as a
+// separate process from the agent. Two rules keep the review authenticated
+// across any repo, folder, tmux session, and launcher (codex or claude):
+//   1. If the inherited environment carries no Claude auth at all, load it from
+//      REVIEW_ENGINE_ENV_FALLBACK (never overriding a value already present, so
+//      an active Vertex or personal mode still wins).
+//   2. Strip ANTHROPIC_API_KEY only when another auth path survives, so the key
+//      can serve as the sole auth when it is all that is present.
+export function reviewEngineEnv(baseEnv = process.env, fallbackPath = REVIEW_ENGINE_ENV_FALLBACK) {
+  const env = { ...baseEnv };
+
+  if (!hasClaudeAuth(env)) {
+    try {
+      for (const line of readFileSync(fallbackPath, "utf8").split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) continue;
+        const eq = trimmed.indexOf("=");
+        if (eq <= 0) continue;
+        const key = trimmed.slice(0, eq).trim();
+        let value = trimmed.slice(eq + 1).trim();
+        if (
+          value.length >= 2 &&
+          ((value[0] === '"' && value.at(-1) === '"') || (value[0] === "'" && value.at(-1) === "'"))
+        ) {
+          value = value.slice(1, -1);
+        }
+        if (env[key] === undefined) env[key] = value;
+      }
+    } catch {
+      // No fallback file, or unreadable: leave the environment as inherited.
+    }
+  }
+
+  if (env.CLAUDE_CODE_USE_VERTEX || env.CLAUDE_CODE_USE_BEDROCK || env.CLAUDE_CONFIG_DIR) {
     delete env.ANTHROPIC_API_KEY;
   }
   return env;

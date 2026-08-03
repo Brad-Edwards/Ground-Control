@@ -7,6 +7,9 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { reviewEngineEnv } from "./lib/runtime-primitives.js";
 
 describe("reviewEngineEnv — review-engine auth follows the launch mode", () => {
@@ -41,5 +44,37 @@ describe("reviewEngineEnv — review-engine auth follows the launch mode", () =>
     const base = { CLAUDE_CODE_USE_VERTEX: "1", ANTHROPIC_API_KEY: "sk-x" };
     reviewEngineEnv(base);
     assert.equal(base.ANTHROPIC_API_KEY, "sk-x");
+  });
+
+  it("loads the fallback file when the inherited env has NO Claude auth", () => {
+    const dir = mkdtempSync(join(tmpdir(), "gc-review-env-"));
+    const fp = join(dir, "review-env");
+    writeFileSync(fp, "# vertex fallback\nCLAUDE_CODE_USE_VERTEX=1\nCLOUD_ML_REGION=global\nGOOGLE_CLOUD_PROJECT=proj-x\n");
+    try {
+      const env = reviewEngineEnv({ PATH: "/usr/bin" }, fp);
+      assert.equal(env.CLAUDE_CODE_USE_VERTEX, "1");
+      assert.equal(env.GOOGLE_CLOUD_PROJECT, "proj-x");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does NOT consult the fallback when the env already has auth", () => {
+    const dir = mkdtempSync(join(tmpdir(), "gc-review-env-"));
+    const fp = join(dir, "review-env");
+    writeFileSync(fp, "GOOGLE_CLOUD_PROJECT=from-fallback\n");
+    try {
+      const env = reviewEngineEnv({ CLAUDE_CONFIG_DIR: "/home/u/.claude-personal" }, fp);
+      assert.equal(env.GOOGLE_CLOUD_PROJECT, undefined);
+      assert.equal(env.CLAUDE_CONFIG_DIR, "/home/u/.claude-personal");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("is a no-op when the env has no auth and the fallback file is absent", () => {
+    const env = reviewEngineEnv({ PATH: "/usr/bin" }, join(tmpdir(), "gc-nonexistent-review-env-file"));
+    assert.equal("ANTHROPIC_API_KEY" in env, false);
+    assert.equal(env.PATH, "/usr/bin");
   });
 });
