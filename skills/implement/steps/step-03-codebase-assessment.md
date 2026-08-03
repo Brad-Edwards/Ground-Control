@@ -32,9 +32,9 @@ Explore the codebase to determine whether the work described in the issue is alr
   ```
 
   For each concern the new code will touch, find and read the project's existing implementation. Use the existing helper. If you genuinely need a new one, justify the new helper in the plan (Step 4) and note why the existing one didn't fit. Re-implementing what's already there is the failure mode the Step 6.5 codex review is designed to catch - catch it here first so you don't spend a review cycle on it.
-- For each requirement in `in_scope_requirements[]`, review its existing traceability links (IMPLEMENTS, TESTS) via `gc_get_traceability` on the requirement UUID. Some or all clauses may already be satisfied.
+- For each requirement in `in_scope_requirements[]`, review its existing traceability links (IMPLEMENTS, TESTS) by reading the `## Traceability` section of `docs/requirements/<UID>/requirement.md`. Some or all clauses may already be satisfied.
 - Reuse the architecture-preflight guidance from Step 2.5 while assessing existing coverage and planning changes.
-- **Documentation coverage (ADR-054).** Call `gc_documentation_coverage` with `repo_path` and the list of paths likely to change. When `outcome_required` is true, include the returned `suggested_doc_targets` in the Step 4 plan so the implementation addresses documentation alongside code.
+- **Documentation coverage (ADR-054).** Identify the docs that the paths likely to change map to (per the ADR-054 surface classes in `mcp/ground-control/lib/doc-coverage.js`) and include those doc targets in the Step 4 plan so the implementation addresses documentation alongside code.
 
 ## Return contract
 

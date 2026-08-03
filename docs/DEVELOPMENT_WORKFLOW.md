@@ -2,6 +2,8 @@
 
 This documents the automated development workflow using the `/implement` skill from Claude Code, Codex, or Cursor CLI. The workflow takes a Ground Control requirement from plan through PR-ready with a single skill invocation.
 
+> **File-based requirement flow (issue #1500).** Ground Control is now the MCP server over repo-local files. The `/implement` Phase E steps edit the requirement file directly: Step 15 sets `status: ACTIVE` in the `docs/requirements/<UID>/requirement.md` frontmatter, and Step 16 records IMPLEMENTS / TESTS entries in its `## Traceability` section. There is no backend, database, or graph.
+
 ## Prerequisites
 
 ### GPG Signing

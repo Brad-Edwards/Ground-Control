@@ -19,7 +19,7 @@ tier: low
    - `test_notes` (optional): extra prose under the Test Plan section.
    - `dev_start_gate` (optional): full Markdown `## Dev-Start Gate` section when the repo's PR template or metadata policy requires it. Reuse the plan's gate fields, adjusted to describe the PR diff.
 
-   - `documentation_outcome` (optional): `{ outcome, rationale? }` where `outcome` ∈ `updated`, `verified_unchanged`, `not_updated_authorized`. Required when `gc_documentation_coverage` returned `outcome_required: true` for this diff. `not_updated_authorized` requires a non-empty `rationale`.
+   - `documentation_outcome` (optional): `{ outcome, rationale? }` where `outcome` ∈ `updated`, `verified_unchanged`, `not_updated_authorized`. Required when the diff touches a documented surface (per ADR-054's surface classes in `mcp/ground-control/lib/doc-coverage.js`). `not_updated_authorized` requires a non-empty `rationale`.
 
    The tool returns `{ ok, body, byte_length }`. Use `body` as the PR description.
 
