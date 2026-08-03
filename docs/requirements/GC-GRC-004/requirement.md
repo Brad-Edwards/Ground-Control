@@ -15,7 +15,7 @@ updated_at: 2026-07-11T23:43:44.555534Z
 
 The unit of GRC modeling shall be the architectural boundary.
 
-(a) Boundaries shall be derived where adapters support it (e.g., layer/package analysis for Java via ArchUnit-style rules, import-graph analysis via CodeQL for other languages).
+(a) Boundaries shall be derived where adapters support it (for example, layer/package analysis for Java via ArchUnit-style rules, import-graph analysis via CodeQL for other languages).
 
 (b) Boundaries shall be declarable in the repository's .ground-control.yaml GRC block for polyglot or underivable surfaces; declared and derived boundaries merge into one canonical, versioned boundary set.
 

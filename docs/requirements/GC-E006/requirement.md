@@ -13,11 +13,11 @@ updated_at: 2026-03-14T01:24:26.193264Z
 
 ## Statement
 
-The system shall support deriving TESTS traceability links by scanning test artifacts for requirement UID references (e.g., in test names, annotations, or comments matching GC-xxxx patterns), enabling automated discovery of test-to-requirement mappings from the codebase itself.
+The system shall support deriving TESTS traceability links by scanning test artifacts for requirement UID references (for example, in test names, annotations, or comments matching GC-xxxx patterns), enabling automated discovery of test-to-requirement mappings from the codebase itself.
 
 ## Rationale
 
-Manually creating TESTS links is error-prone and easily forgotten. If tests reference requirement UIDs by convention (e.g., @TracesTo("GC-A001") or test method names containing the UID), the traceability graph can be populated automatically from the codebase, making test coverage derivable rather than maintained.
+Manually creating TESTS links is error-prone and easily forgotten. If tests reference requirement UIDs by convention (for example, @TracesTo("GC-A001") or test method names containing the UID), the traceability graph can be populated automatically from the codebase, making test coverage derivable rather than maintained.
 
 ## Traceability
 

@@ -13,7 +13,7 @@ updated_at: 2026-03-13T23:12:41.799701Z
 
 ## Statement
 
-The system shall optionally parse commit messages for requirement references (e.g., REQ-xxx or GC-xxx patterns) and create traceability links from commits to referenced requirements.
+The system shall optionally parse commit messages for requirement references (for example, REQ-xxx or GC-xxx patterns) and create traceability links from commits to referenced requirements.
 
 ## Rationale
 

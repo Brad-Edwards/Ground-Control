@@ -13,7 +13,7 @@ updated_at: 2026-05-16T04:45:06.023370Z
 
 ## Statement
 
-The system shall provide coverage gap analysis parameterized by link type, identifying requirements that lack specific traceability links (e.g., requirements with no tests link, no code link, no proof link).
+The system shall provide coverage gap analysis parameterized by link type, identifying requirements that lack specific traceability links (for example, requirements with no tests link, no code link, no proof link).
 
 ## Rationale
 

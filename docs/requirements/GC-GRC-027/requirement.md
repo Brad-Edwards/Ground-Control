@@ -17,7 +17,7 @@ The derivation layer shall provide breadth coverage beyond the CodeQL adapter's 
 
 (a) A Semgrep-based adapter shall provide taint and pattern derivation for languages and surfaces CodeQL does not cover well, and shall accept custom, project- or org-authored rule sets.
 
-(b) Together with the CodeQL adapter, supported languages shall extend to cover the common polyglot set (e.g., Go, Ruby, C#, C/C++, Kotlin, Swift, PHP, Rust) to the extent any available analyzer permits.
+(b) Together with the CodeQL adapter, supported languages shall extend to cover the common polyglot set (for example, Go, Ruby, C#, C/C++, Kotlin, Swift, PHP, Rust) to the extent any available analyzer permits.
 
 (c) When multiple adapters cover the same surface, their facts shall be merged and de-duplicated into the single normalized model, with each retained fact keeping its own provenance.
 

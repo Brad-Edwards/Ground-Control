@@ -13,7 +13,7 @@ updated_at: 2026-03-14T19:45:44.183469Z
 
 ## Statement
 
-The system shall support a structured ADR content model with fields: title, status, context, decision, consequences (positive and negative), alternatives considered, and decision date. The system shall support both system-managed structured ADRs and links to external ADR documents (e.g., Markdown files in a repository). Structured content shall be queryable via REST API and MCP tools for agent consumption.
+The system shall support a structured ADR content model with fields: title, status, context, decision, consequences (positive and negative), alternatives considered, and decision date. The system shall support both system-managed structured ADRs and links to external ADR documents (for example, Markdown files in a repository). Structured content shall be queryable via REST API and MCP tools for agent consumption.
 
 ## Rationale
 

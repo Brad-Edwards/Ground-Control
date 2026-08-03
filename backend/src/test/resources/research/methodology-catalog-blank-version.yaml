@@ -1,8 +1,0 @@
-catalog_version: ""
-methods:
-  - key: scoping
-    label: Scoping review
-    version: "1"
-    required_sources:
-      - ref: AAA111
-        title: "First"

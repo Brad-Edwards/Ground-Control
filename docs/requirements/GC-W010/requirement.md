@@ -13,7 +13,7 @@ updated_at: 2026-04-11T19:01:12.638547Z
 
 ## Statement
 
-The system shall expose all decision analysis capabilities (probabilistic estimation, Monte Carlo simulation, CoD/WSJF, CBAM, calibration tracking, VOI, MCDA, debt quantification, delivery forecasting) through MCP tool interfaces suitable for AI agent orchestration. The interface shall support a conversational workflow where the agent structures analyses, selects appropriate methods, runs computations, and presents results while the human provides domain judgment — confidence intervals, criteria weights, strategic context, and final decision ratification. The agent shall be able to compose multi-step analyses (e.g., estimate CoD, run Monte Carlo, compute VOI, recommend investigation) without requiring the human to manage intermediate state.
+The system shall expose all decision analysis capabilities (probabilistic estimation, Monte Carlo simulation, CoD/WSJF, CBAM, calibration tracking, VOI, MCDA, debt quantification, delivery forecasting) through MCP tool interfaces suitable for AI agent orchestration. The interface shall support a conversational workflow where the agent structures analyses, selects appropriate methods, runs computations, and presents results while the human provides domain judgment — confidence intervals, criteria weights, strategic context, and final decision ratification. The agent shall be able to compose multi-step analyses (for example, estimate CoD, run Monte Carlo, compute VOI, recommend investigation) without requiring the human to manage intermediate state.
 
 ## Rationale
 

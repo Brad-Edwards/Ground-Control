@@ -1,0 +1,14 @@
+# Graphify index scope for Ground Control (issue #1500, ADR-094).
+#
+# .gitignore is respected automatically; these patterns add build/vendor exclusions so the
+# disposable index covers source, specs-as-code (docs/requirements), and docs — not generated,
+# built, or vendored trees. Graphify output itself is never indexed or committed.
+graphify-out/
+**/build/
+**/.gradle/
+**/node_modules/
+**/.venv/
+.tools/
+frontend/dist/
+frontend/coverage/
+**/*.class

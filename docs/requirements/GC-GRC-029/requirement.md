@@ -15,13 +15,13 @@ updated_at: 2026-07-12T16:35:41.563901Z
 
 The system shall provide a software-composition (SCA) and supply-chain derivation adapter implementing the GC-GRC-001 port.
 
-(a) The adapter shall derive the dependency graph and generate or ingest an SBOM (e.g., CycloneDX/SPDX) for the project's package ecosystems and container images.
+(a) The adapter shall derive the dependency graph and generate or ingest an SBOM (for example, CycloneDX/SPDX) for the project's package ecosystems and container images.
 
-(b) Derived facts shall include third-party components as external entities with known-vulnerability associations, license posture, and provenance/integrity signals (e.g., pinning, signatures, lockfile presence).
+(b) Derived facts shall include third-party components as external entities with known-vulnerability associations, license posture, and provenance/integrity signals (for example, pinning, signatures, lockfile presence).
 
 (c) Supply-chain threat categories (vulnerable dependency, unpinned/floating dependency, typosquat/namespace risk, build-tool and CI dependency exposure, container base-image risk) shall be enumerable by the GC-GRC-007 rules over these facts.
 
-(d) The adapter shall reconcile platform dependency alerts (e.g., Dependabot) into the facts model rather than maintaining a separate list, and shall feed the asset/operational-asset graph where components are deployed artifacts.
+(d) The adapter shall reconcile platform dependency alerts (for example, Dependabot) into the facts model rather than maintaining a separate list, and shall feed the asset/operational-asset graph where components are deployed artifacts.
 
 ## Rationale
 

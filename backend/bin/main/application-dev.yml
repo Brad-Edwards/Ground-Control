@@ -1,8 +1,0 @@
-spring:
-  jpa:
-    show-sql: true
-
-logging:
-  level:
-    com.keplerops.groundcontrol: DEBUG
-    org.hibernate.SQL: DEBUG

@@ -1,5 +1,12 @@
 # Documentation style
 
+> **Sync note for issue #1500 (2026-08-03, context-graph teardown):** The backend, frontend, and
+> database were removed; Ground Control is now the MCP server over repo-local files. The
+> documentation-coverage classifier in `mcp/ground-control/lib/doc-coverage.js` dropped its
+> `public_api` (backend) and `user_visible` (frontend) surface classes, whose subjects no longer
+> exist; the surviving classes and the Vale rule set, installer, and `.vale.ini` are unchanged, and
+> no style rule in this file changed.
+
 > **Sync note for issue #1437 (2026-07-30, Live Activity):** Added a bounded project-scoped
 > activity read projection and console page, with configuration and API/architecture documentation
 > in ADR-061, ADR-054, `docs/API.md`, `docs/architecture/ARCHITECTURE.md`, and

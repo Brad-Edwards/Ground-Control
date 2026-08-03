@@ -19,7 +19,7 @@ GRC artifacts shall be stored server-side in Ground Control by default, with rep
 
 (b) Agents shall obtain GRC context through graph links and MCP/REST reads, exactly as for threat models and risks today; no workflow step shall depend on GRC content being present as repo files.
 
-(c) Repo mirroring of any GRC artifact (e.g., rendered DFD diagrams for docs) shall be opt-in per artifact class via the GRC configuration block, default off; the policy shall warn when mirroring sensitive classes in a public repository.
+(c) Repo mirroring of any GRC artifact (for example, rendered DFD diagrams for docs) shall be opt-in per artifact class via the GRC configuration block, default off; the policy shall warn when mirroring sensitive classes in a public repository.
 
 (d) Exported/rendered artifacts shall carry a generation marker tying them to the authoritative server-side version, so drift between a mirror and the graph is detectable.
 

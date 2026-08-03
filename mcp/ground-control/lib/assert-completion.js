@@ -7,7 +7,6 @@
 import { request } from "./api-controls-2.js";
 import { getRequirementByUid, getTraceabilityLinks } from "./api-controls-3.js";
 import { evaluateQualityGates } from "./api-history.js";
-import { runAssertTraceabilityReconciled } from "./assert-traceability.js";
 import { resolvePrForClose } from "./close-issue.js";
 import { runPostFinalReport } from "./doc-coverage-2.js";
 import { getOwnerRepo } from "./grc-legacy-compat-3.js";
@@ -111,10 +110,6 @@ export async function runAssertCompletion(input) {
     summary,
     plainEnglishOutcome,
     documentation_outcome,
-    touchedFiles = [],
-    project = null,
-    override = false,
-    overrideReason = null,
     phase = "post_merge",
   } = input;
 
@@ -293,45 +288,18 @@ export async function runAssertCompletion(input) {
     };
   }
 
-  // Step 1: traceability assertion
-  const trace = await runAssertTraceabilityReconciled({
-    repoPath,
-    issueNumber,
-    requirements: requirements.map((r) => ({
-      uid: r.uid,
-      statusIntent: r.statusIntent ?? r.status ?? "ACTIVE",
-    })),
-    project,
-    touchedFiles,
-    override,
-    overrideReason,
-  });
-  assertions.push({
-    name: "traceability_reconciled",
-    ok: trace.ok,
-    comment_url: trace.comment_url ?? null,
-    comment_id: trace.comment_id ?? null,
-  });
-  if (!trace.ok) {
-    return {
-      ok: false,
-      error: trace.error,
-      message: trace.message,
-      detail: trace.detail ?? null,
-      issue_number: issueNumber,
-      assertions,
-      final_report: null,
-      next_action: trace.next_action ?? null,
-    };
-  }
-
-  // Step 2: final report (use internalVerifiedPhases to avoid read-after-write race)
+  // Traceability reconciliation is retired as an MCP operation (issue #1500): the
+  // requirement files ARE the record now, and the agent edits each in-scope
+  // requirement's frontmatter status (DRAFT→ACTIVE) and `## Traceability` section as
+  // part of its diff, reviewed in the PR like any code. The post-merge final report
+  // therefore depends only on the real gates runPostFinalReport still enforces — CI
+  // green, Sonar pass-or-legit-skipped, the mandatory Codex review, and the
+  // sensitive/defer/reserved-marker scrubs.
   const report = await runPostFinalReport({
     ...subInput,
     repoPath,
     issueNumber,
     prNumber,
-    internalVerifiedPhases: ["traceability_reconciled"],
   });
   if (!report.ok) {
     return {

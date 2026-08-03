@@ -17,7 +17,7 @@ The system shall support bulk status transitions for multiple requirements in a 
 
 ## Rationale
 
-Large-scale reorganizations (e.g., activating an entire wave of requirements) should not require one-at-a-time manual transitions.
+Large-scale reorganizations (for example, activating an entire wave of requirements) should not require one-at-a-time manual transitions.
 
 ## Traceability
 

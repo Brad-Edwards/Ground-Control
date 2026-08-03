@@ -15,13 +15,13 @@ updated_at: 2026-07-11T23:43:44.555584Z
 
 A control identified for a change shall be implemented within that change.
 
-(a) Each implemented control shall carry CODE link(s) to its implementing artifact(s) in the project graph.
+(a) Each implemented control shall carry CODE links to its implementing artifacts in the project graph.
 
-(b) Each implemented control shall carry automated test(s) that fail if the control is removed or bypassed — efficacy tests, not existence tests — linked to the control in the graph.
+(b) Each implemented control shall carry automated tests that fail if the control is removed or bypassed — efficacy tests, not existence tests — linked to the control in the graph.
 
 (c) A control's status shall transition to IMPLEMENTED/OPERATIONAL only when both (a) and (b) are satisfied.
 
-(d) Where a control cannot be implemented in the change (e.g., organizational or infrastructure controls), the gap shall be dispositioned per GC-GRC-015, never silently passed.
+(d) Where a control cannot be implemented in the change (for example, organizational or infrastructure controls), the gap shall be dispositioned per GC-GRC-015, never silently passed.
 
 ## Rationale
 

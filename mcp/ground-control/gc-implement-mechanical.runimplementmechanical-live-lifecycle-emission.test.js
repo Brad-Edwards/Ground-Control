@@ -44,7 +44,6 @@ function baseDeps(overrides = {}) {
     }),
     getTraceabilityByArtifact: async () => [{ id: "link-1" }],
     markPickedUp: async () => ({ ok: true, comment_url: "https://github.test/pickup" }),
-    assertQuality: async () => ({ ok: true, passed_count: 2 }),
     synchronize: async () => ({ ok: true, status: "complete", recordId: RECORD_ID }),
     watchCi: async () => ({ ok: true, conclusion: "success" }),
     watchSonar: async () => ({

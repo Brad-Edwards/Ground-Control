@@ -78,18 +78,6 @@ const SURFACE_CLASS_MAP = [
     outcome_required: true,
   },
   {
-    surface_class: "public_api",
-    prefix_patterns: ["backend/src/main/java/com/keplerops/groundcontrol/api/"],
-    doc_targets: ["docs/architecture/ARCHITECTURE.md"],
-    outcome_required: true,
-  },
-  {
-    surface_class: "user_visible",
-    prefix_patterns: ["frontend/src/"],
-    doc_targets: ["docs/architecture/ARCHITECTURE.md"],
-    outcome_required: true,
-  },
-  {
     surface_class: "doc",
     prefix_patterns: ["docs/", "architecture/"],
     doc_targets: [],

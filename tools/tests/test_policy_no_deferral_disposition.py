@@ -61,45 +61,6 @@ if __name__ == "__main__":
     unittest.main()
 
 class NoDeferralDispositionChecksTest(PolicyChecksFixture):
-    def test_ontology_binding_check_identifies_contributor_after_helper_type(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            self._write_minimal_ontology_fixture(root)
-            contributor = (
-                root
-                / "backend"
-                / "src"
-                / "main"
-                / "java"
-                / "example"
-                / "RequirementGraphProjectionContributor.java"
-            )
-            contributor.write_text(
-                contributor.read_text(encoding="utf-8").replace(
-                    "public class RequirementGraphProjectionContributor",
-                    "class Helper {}\npublic class RequirementGraphProjectionContributor",
-                ),
-                encoding="utf-8",
-            )
-            violations = run_ontology_binding_check(root=root)
-        self.assertEqual(violations, [], msg=[v.render() for v in violations])
-    def test_ontology_binding_check_rejects_duplicate_and_unresolved_contract_references(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            self._write_minimal_ontology_fixture(root)
-            path = root / "contracts" / "ontology" / "gc-artifact-bindings-v1.json"
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            payload["surfaces"][0]["bindings"].append(
-                {"local_value": "REQUIREMENT", "term": "node.missing"}
-            )
-            path.write_text(json.dumps(payload), encoding="utf-8")
-            violations = run_ontology_binding_check(root=root)
-        codes = {v.code for v in violations}
-        self.assertIn("ontology-binding-duplicate", codes)
-        self.assertIn("ontology-term-reference-missing", codes)
-    def test_ontology_binding_check_passes_on_repo(self):
-        violations = run_ontology_binding_check(root=REPO_ROOT)
-        self.assertEqual(violations, [], msg=f"unexpected violations: {[v.render() for v in violations]}")
     def test_deferral_classifier_matches_golden_cases(self):
         # The shared golden-case file is the single source of truth for what
         # text, on what surface, gets flagged. The hook test

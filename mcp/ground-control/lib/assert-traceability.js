@@ -5,7 +5,8 @@
 // split along its own dependency layering. lib.js remains the barrel every caller imports.
 
 import { request } from "./api-controls-2.js";
-import { createTraceabilityLink, getRequirementByUid, getTraceabilityLinks } from "./api-controls-3.js";
+import { getRequirementByUid, getTraceabilityLinks } from "./api-controls-3.js";
+import { readRequirementByUid } from "./requirement-files.js";
 import { createGitHubIssue, formatIssueBody } from "./codex-workflow-3.js";
 import { STATUSES } from "./constants.js";
 import { getOwnerRepo, postPhaseMarker } from "./grc-legacy-compat-3.js";
@@ -78,9 +79,10 @@ export async function createGitHubIssueFromRequirement({ uid, project, repo, rep
   if (typeof uid !== "string" || uid.trim() === "") {
     throw new Error("createGitHubIssueFromRequirement: 'uid' is required");
   }
-  // getRequirementByUid throws RequestError on 404, so a missing requirement
-  // aborts before any GitHub issue is created.
-  const req = await getRequirementByUid(uid, project);
+  // Requirements are repo-local files now (issue #1500): read the requirement from
+  // docs/requirements/<UID>/requirement.md. A missing file aborts before any GitHub
+  // issue is created — the same fail-fast the former REST 404 gave.
+  const req = await readRequirementByUid(repoRoot, uid);
   if (!req || !req.id) {
     throw new Error(`createGitHubIssueFromRequirement: requirement '${uid}' not found`);
   }
@@ -98,31 +100,12 @@ export async function createGitHubIssueFromRequirement({ uid, project, repo, rep
 
   const { url, number } = await createGitHubIssue({ title, body, labels, repo, repoRoot });
 
-  // Auto-link the new issue back to the requirement. ACTIVE requirements are
-  // being implemented (IMPLEMENTS); everything else is being tracked/documented
-  // (DOCUMENTS, per #841). A GitHub issue link is never a TESTS link. Keep this
-  // as one explicit decision next to the orchestration so future DRAFT policy
-  // changes don't touch title/body rendering or GitHub posting.
+  // The link back to the requirement lives in the requirement file's `## Traceability`
+  // section now, not a backend record — the implementing agent records it there as part
+  // of its diff (thin-it, issue #1500). link_type is returned as a hint: ACTIVE
+  // requirements are being implemented (IMPLEMENTS), everything else is tracked (DOCUMENTS).
   const linkType = req.status === "ACTIVE" ? "IMPLEMENTS" : "DOCUMENTS";
-  const result = { url, number, requirement_uid: req.uid, link_type: linkType };
-
-  // Issue creation and link creation are two non-atomic side effects: the issue
-  // already exists by the time the link is attempted. The original defect was a
-  // *silent* success, so a link failure must stay visible (traceability_error)
-  // rather than be swallowed — and must not discard the created issue.
-  try {
-    result.traceability_link = await createTraceabilityLink(req.id, {
-      artifact_type: "GITHUB_ISSUE",
-      artifact_identifier: String(number),
-      link_type: linkType,
-      artifact_url: url,
-      artifact_title: title,
-    });
-  } catch (e) {
-    result.traceability_error = e?.message || String(e);
-  }
-
-  return result;
+  return { url, number, requirement_uid: req.uid, link_type: linkType };
 }
 export async function createGitHubIssueViaApi(data, project) {
   return request("POST", "/api/v1/admin/github/issues", { body: data, params: { project } });

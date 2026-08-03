@@ -17,7 +17,7 @@ The system shall support filtering graph visualizations and graph queries by ent
 
 ## Rationale
 
-As the traceability graph grows beyond requirements to include documents, risks, controls, and other entity types, the graph becomes noisy. Users need to focus on specific entity types (e.g., show only requirements and their relations, or show documents with their requirement associations) without seeing unrelated entities. Without filtering, the graph becomes unusable as entity diversity increases.
+As the traceability graph grows beyond requirements to include documents, risks, controls, and other entity types, the graph becomes noisy. Users need to focus on specific entity types (for example, show only requirements and their relations, or show documents with their requirement associations) without seeing unrelated entities. Without filtering, the graph becomes unusable as entity diversity increases.
 
 ## Traceability
 

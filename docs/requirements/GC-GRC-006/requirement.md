@@ -15,7 +15,7 @@ updated_at: 2026-07-11T23:43:44.555554Z
 
 The system shall provide a project-scoped data-sensitivity label taxonomy forming an information-flow lattice.
 
-(a) A default taxonomy shall ship (e.g., PUBLIC, INTERNAL, CONFIDENTIAL, PII, CREDENTIALS/SECRETS, REGULATED), customizable per project via the GRC configuration surface (GC-GRC-023).
+(a) A default taxonomy shall ship (for example, PUBLIC, INTERNAL, CONFIDENTIAL, PII, CREDENTIALS/SECRETS, REGULATED), customizable per project via the GRC configuration surface (GC-GRC-023).
 
 (b) Labels shall attach to architecture-model elements: flows, data stores, assets, and external interactions.
 

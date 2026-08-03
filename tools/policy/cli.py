@@ -27,7 +27,6 @@ from .workflow_contracts import run_doc_coverage_anchor_contract, run_scan_floor
 from .adr_guard import (
     read_changed_files,
     run_adr_guard,
-    run_controller_contracts,
 )
 from .execution_contract import (
     RELEASE_PLEASE_PR_HEAD_PREFIX,
@@ -44,23 +43,9 @@ from .repo_identity import (
 from .decision_records import (
     run_test_quality_decision_record_contract,
 )
-from .migration_policy import (
-    run_migration_policy,
-)
-from .deploy_artifacts import (
-    run_deploy_artifact_consistency,
-    run_methodology_catalog_drift,
-)
-from .ontology_binding import (
-    run_ontology_binding_check,
-)
-from .enum_contract import (
-    run_enum_contract_check,
-)
 from .workflow_routing import (
     parse_args,
     render_and_exit,
-    run_traceability_reconciliation_gate_contract,
     run_workflow_routing_contract,
     write_violations_json,
 )
@@ -68,22 +53,8 @@ from .version_mirror import (
     run_documentation_coverage_check,
     run_version_mirror_consistency_check,
 )
-from .measurement import (
-    run_measurement_catalogue_check,
-)
 from .authz_matrix import (
     check_pr_body,
-    run_authz_matrix_sync_check,
-    run_contract_invariant_enforcement_check,
-)
-from .ontology_crosswalk import (
-    run_contract_surface_check,
-    run_ontology_crosswalk_check,
-)
-from .ci_contract import (
-    run_ci_strictness_contract,
-    run_deploy_compose_credential_passthrough,
-    run_ghcr_namespace_drift,
 )
 from .requirement_specs import (
     run_requirement_specs_frontmatter_check,
@@ -103,28 +74,19 @@ def main(argv: list[str] | None = None) -> int:
         env_var=args.files_env,
     )
 
+    # After the context-graph teardown (issue #1500) the backend, frontend, DB,
+    # deploy artifacts, and GRC ontology/measurement surfaces are gone, so the
+    # checks that guarded them are retired. What remains is repo-native: ADRs,
+    # the requirement-spec files, the /implement execution + workflow contracts,
+    # reviewer-separation decision records, repo identity, version mirrors, and
+    # the file-size and PR-body contracts.
     violations = []
     violations.extend(run_adr_guard(changed_files, base=args.base))
-    violations.extend(run_controller_contracts(changed_files))
-    violations.extend(run_migration_policy(changed_files, base=args.base))
     violations.extend(run_version_mirror_consistency_check())
-    violations.extend(run_ci_strictness_contract())
-    violations.extend(run_deploy_compose_credential_passthrough())
-    violations.extend(run_ghcr_namespace_drift())
     violations.extend(run_repo_identity_drift())
-    violations.extend(run_deploy_artifact_consistency())
-    violations.extend(run_methodology_catalog_drift())
-    violations.extend(run_enum_contract_check())
-    violations.extend(run_ontology_binding_check())
-    violations.extend(run_ontology_crosswalk_check())
-    violations.extend(run_contract_surface_check())
-    violations.extend(run_contract_invariant_enforcement_check())
-    violations.extend(run_measurement_catalogue_check())
-    violations.extend(run_authz_matrix_sync_check())
     violations.extend(run_workflow_routing_contract())
     violations.extend(run_implement_execution_contract())
     violations.extend(run_test_quality_decision_record_contract())
-    violations.extend(run_traceability_reconciliation_gate_contract())
     violations.extend(run_scan_floor_contract())
     violations.extend(run_doc_coverage_anchor_contract())
     violations.extend(run_file_size_limit_check())

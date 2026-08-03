@@ -21,7 +21,7 @@ The system shall provide a secrets-detection derivation adapter implementing the
 
 (c) A detected live or recently-valid secret introduced by a change shall be a blocking finding through the GC-GRC-012 gate, distinct from a lattice-flow violation.
 
-(d) The adapter shall integrate with, not duplicate, platform secret-scanning where available (e.g., GitHub secret scanning), reconciling external alerts into the same facts model.
+(d) The adapter shall integrate with, not duplicate, platform secret-scanning where available (for example, GitHub secret scanning), reconciling external alerts into the same facts model.
 
 ## Rationale
 

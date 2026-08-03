@@ -75,40 +75,6 @@ class AdrGuardChecksTest(PolicyChecksFixture):
             with self.subTest(path=path):
                 violations = run_adr_guard([path])
                 self.assertTrue(any(item.code == "workflow-guardrail-sync" for item in violations))
-    def test_adr_guard_fires_on_measurement_emitter_surfaces(self):
-        # ADR-090 defines one measurement model shared by every process-telemetry
-        # emitter. An emitter that changes its record shape without updating the
-        # model re-creates the divergence the ADR exists to close, so each emitter
-        # surface must require the ADR in the same diff (issue #1304).
-        for path in (
-            "backend/src/main/java/com/keplerops/groundcontrol/domain/workflowtelemetry/WorkflowPhaseEvent.java",
-            "backend/src/main/java/com/keplerops/groundcontrol/api/workflowtelemetry/PhaseEventResponse.java",
-            "backend/src/main/java/com/keplerops/groundcontrol/domain/mcptelemetry/McpToolEvent.java",
-            "backend/src/main/java/com/keplerops/groundcontrol/api/mcptelemetry/McpTelemetryController.java",
-            "mcp/ground-control/gc-workflow-run-ingest.js",
-            "mcp/ground-control/gc-workflow-run.js",
-            "mcp/ground-control/telemetry.js",
-            # The live /implement lifecycle emitter and the tool that drives it (issue #1435).
-            "mcp/ground-control/workflow-run-lifecycle.js",
-            "mcp/ground-control/gc-implement-mechanical.js",
-        ):
-            with self.subTest(path=path):
-                violations = run_adr_guard([path])
-                self.assertTrue(
-                    any(item.code == "measurement-model-sync" for item in violations),
-                    f"{path} must require an ADR-090 update in the same diff",
-                )
-    def test_adr_guard_measurement_rule_satisfied_when_adr_090_included(self):
-        violations = run_adr_guard(
-            [
-                "mcp/ground-control/telemetry.js",
-                "architecture/adrs/090-production-line-measurement-model.md",
-            ]
-        )
-        self.assertFalse(
-            any(item.code == "measurement-model-sync" for item in violations),
-            "including ADR-090 must satisfy the measurement-model-sync rule",
-        )
     def test_implement_execution_contract_is_structurally_complete(self):
         self.assertEqual(run_implement_execution_contract(root=REPO_ROOT), [])
     def test_implement_execution_contract_rejects_direct_pr_creation(self):

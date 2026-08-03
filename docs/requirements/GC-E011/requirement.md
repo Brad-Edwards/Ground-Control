@@ -13,7 +13,7 @@ updated_at: 2026-03-14T18:38:06.224272Z
 
 ## Statement
 
-The system shall support a configurable artifact type registry that extends the built-in artifact types (GITHUB_ISSUE, CODE_FILE, ADR, CONFIG, POLICY, TEST, SPEC, PROOF, DOCUMENTATION) with project-defined custom types (e.g., THREAT_MODEL, ARCHITECTURE_MODEL, DESIGN_DOCUMENT), enabling projects to classify artifacts with domain-specific granularity without modifying the core system.
+The system shall support a configurable artifact type registry that extends the built-in artifact types (GITHUB_ISSUE, CODE_FILE, ADR, CONFIG, POLICY, TEST, SPEC, PROOF, DOCUMENTATION) with project-defined custom types (for example, THREAT_MODEL, ARCHITECTURE_MODEL, DESIGN_DOCUMENT), enabling projects to classify artifacts with domain-specific granularity without modifying the core system.
 
 ## Rationale
 

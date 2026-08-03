@@ -2,6 +2,8 @@
 
 This directory contains Architecture Decision Records (ADRs) for Ground Control. ADRs capture significant architectural decisions along with their context, rationale, and consequences.
 
+> **Context-graph teardown (issue #1500, 2026-08-03).** Ground Control was re-platformed from a graph-native GRC/requirements product into the MCP server for the `/implement` workflow over repo-local files. The backend, PostgreSQL/Apache AGE database, React frontend, deploy/Docker surface, and the composed GRC/audit/verification/measurement layers were removed. The record of that decision is [ADR-093](093-requirements-specs-as-code.md) (requirements are repo-local files) and [ADR-094](094-graphify-comprehension-index.md) (Graphify is an optional comprehension index). ADRs describing the removed surfaces, the context graph, the GRC aggregates and composed product, the pluggable verification and formal-methods lanes, the production-line measurement model, the REST API access-control and deployment surfaces, and the frontend console, are historical: they document decisions for a system that no longer exists in this repo, superseded by the #1500 re-platform.
+
 ## Format
 
 We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each ADR includes:
@@ -111,6 +113,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [091](091-ci-verification-topology.md) | CI Verification Topology | Accepted |
 | [092](092-file-size-limit-gate.md) | Enforce the 500-LOC File-Size Limit in Repo Policy | Accepted |
 | [093](093-requirements-specs-as-code.md) | Requirements as Specs-as-Code | Accepted |
+| [094](094-graphify-comprehension-index.md) | Graphify Comprehension Index | Accepted |
 
 Prior ADRs from the old project frame are archived in `archive/architecture/adrs/`.
 

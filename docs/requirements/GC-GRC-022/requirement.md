@@ -17,7 +17,7 @@ Where tooling permits, identified sensitive flows shall carry quantitative leaka
 
 (a) Supported metrics shall include min-entropy / channel-capacity style leakage estimates for flows identified by GC-GRC-020, where an analyzer for the language/surface exists.
 
-(b) Estimates shall feed methodology inputs (e.g., FAIR loss-event magnitude and frequency factors) on the linked risk assessments, with provenance and uncertainty metadata stored per the methodology-profile schema.
+(b) Estimates shall feed methodology inputs (for example, FAIR loss-event magnitude and frequency factors) on the linked risk assessments, with provenance and uncertainty metadata stored per the methodology-profile schema.
 
 (c) Absence of a quantitative analyzer for a surface shall be recorded as a capture limit, with qualitative lattice findings (GC-GRC-006) remaining the floor.
 

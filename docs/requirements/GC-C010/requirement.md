@@ -13,7 +13,7 @@ updated_at: 2026-03-25T06:58:43.514388Z
 
 ## Statement
 
-The system shall support configurable validation thresholds as quality gates (e.g., minimum 80% of ACTIVE requirements must have a tests link), with pass/fail results for CI/CD integration.
+The system shall support configurable validation thresholds as quality gates (for example, minimum 80% of ACTIVE requirements must have a tests link), with pass/fail results for CI/CD integration.
 
 ## Rationale
 

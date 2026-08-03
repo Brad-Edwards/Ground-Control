@@ -45,7 +45,6 @@ function baseDeps(overrides = {}) {
     }),
     getTraceabilityByArtifact: async () => [{ id: "link-1" }],
     markPickedUp: async () => ({ ok: true, comment_url: "https://github.test/pickup" }),
-    assertQuality: async () => ({ ok: true, passed_count: 2 }),
     synchronize: async () => ({ ok: true, status: "complete", recordId: RECORD_ID }),
     watchCi: async () => ({ ok: true, conclusion: "success" }),
     watchSonar: async () => ({
@@ -111,7 +110,6 @@ describe("gcImplementMechanicalToolHandler async transport", () => {
       completion_command: "make check",
       policy_command: "make policy",
       policy: "passed",
-      quality: { ok: true, passed_count: 2 },
       next_action: "run_required_agent_reviews_or_publish",
     });
   });

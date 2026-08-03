@@ -19,7 +19,7 @@ The system shall generate auditor-facing compliance posture and evidence artifac
 
 (b) Exports shall report, per framework control: covered / partially covered / gap / accepted-with-disposition, each traceable to the graph elements that substantiate it.
 
-(c) Export formats shall include a machine-readable form (e.g., OSCAL assessment results / CycloneDX VEX where applicable) and a human-readable report; exports shall carry generation markers tying them to the graph snapshot they were produced from.
+(c) Export formats shall include a machine-readable form (for example, OSCAL assessment results / CycloneDX VEX where applicable) and a human-readable report; exports shall carry generation markers tying them to the graph snapshot they were produced from.
 
 (d) Exports shall draw on the existing evidence and audit aggregates and shall not require any GRC content to live in the analyzed repository.
 

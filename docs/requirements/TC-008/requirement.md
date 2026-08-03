@@ -13,7 +13,7 @@ updated_at: 2026-05-18T16:29:36.363537Z
 
 ## Statement
 
-The system shall provide a Test Run entity representing a single execution pass of a test suite, with: unique ID, name, associated test plan, assigned tester(s), environment, build/version, status, start/end timestamps, and individual test case execution results.
+The system shall provide a Test Run entity representing a single execution pass of a test suite, with: unique ID, name, associated test plan, assigned testers, environment, build/version, status, start/end timestamps, and individual test case execution results.
 
 ## Rationale
 

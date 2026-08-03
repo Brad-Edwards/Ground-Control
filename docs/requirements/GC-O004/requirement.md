@@ -13,7 +13,7 @@ updated_at: 2026-03-14T01:24:26.145976Z
 
 ## Statement
 
-Agent operating instructions (e.g., CLAUDE.md, agent system prompts) shall require agents to: (a) query Ground Control for related requirements before beginning implementation work, (b) create IMPLEMENTS traceability links for code they produce, and (c) create TESTS traceability links for tests they write, as part of the standard agent development workflow.
+Agent operating instructions (for example, CLAUDE.md, agent system prompts) shall require agents to: (a) query Ground Control for related requirements before beginning implementation work, (b) create IMPLEMENTS traceability links for code they produce, and (c) create TESTS traceability links for tests they write, as part of the standard agent development workflow.
 
 ## Rationale
 

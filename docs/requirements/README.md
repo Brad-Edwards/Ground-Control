@@ -51,6 +51,6 @@ cd backend && ./gradlew bootRun --args='--export-requirements \
 ```
 
 Run against a read-only view of the database (Flyway disabled) so the export never mutates
-schema. To export another project into its own repository, point `--output-dir` at that
-repository's working copy and copy the folders in; the exporter itself never touches another
+schema. For another project, export to a maintainer-controlled staging directory, then copy the
+resulting folders into that repository out of band. The workflow never selects or writes another
 repository.

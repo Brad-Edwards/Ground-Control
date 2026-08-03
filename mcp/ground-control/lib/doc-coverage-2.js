@@ -10,8 +10,7 @@ import { parseGroundControlYaml } from "./ground-control-config.js";
 import { buildFinalReportMarker, renderCiStatus, renderDocumentationSection, renderSonarStatus } from "./doc-coverage.js";
 import { detectSensitiveBodyContent, extractGhErrorMessage } from "./grc-legacy-compat-2.js";
 import { getOwnerRepo } from "./grc-legacy-compat-3.js";
-import { ensureGitRepo, readCompletedPhases } from "./grc-legacy-compat-4.js";
-import { evaluatePhasePrerequisite } from "./grc-legacy-compat.js";
+import { ensureGitRepo } from "./grc-legacy-compat-4.js";
 import { buildQuickfixCloseComment, validateFinalReportInput } from "./plan-posting.js";
 import { GITHUB_ISSUE_COMMENT_BODY_MAX, rejectReservedMarkerSequence } from "./repo-vocabulary.js";
 import { detectDeferralDisposition, execFile } from "./runtime-primitives.js";
@@ -138,20 +137,6 @@ export async function runPostFinalReport(input) {
       error: "final_report_input_invalid",
       message: validation.errors.join("; "),
       issue_number: rest.issueNumber ?? null,
-    };
-  }
-  // Traceability-override input validation runs cheap (no I/O) so it can
-  // sit alongside the other input checks. The actual phase-marker
-  // prerequisite check runs further down, after every other cheap gate,
-  // because it requires reading the GitHub issue thread.
-  const phaseOverride = rest.overrideTraceabilityGate === true;
-  if (phaseOverride && (typeof rest.overrideTraceabilityReason !== "string" || rest.overrideTraceabilityReason.trim() === "")) {
-    return {
-      ok: false,
-      error: "final_report_override_missing_reason",
-      message:
-        "override_traceability_gate=true requires a non-empty override_traceability_reason quoting the user's authorization to skip the traceability_reconciled prerequisite.",
-      issue_number: rest.issueNumber,
     };
   }
   // A Step 19 final report says "PR ready for user review and merge." That
@@ -370,50 +355,13 @@ export async function runPostFinalReport(input) {
   }
   const repoRoot = await ensureGitRepo(repoPath);
   const { owner, name } = await getOwnerRepo(repoRoot);
-  // Traceability-reconciliation prerequisite (issue #1058). The
-  // /implement workflow's Step 17 calls gc_assert_traceability_reconciled
-  // after verifying Ground Control state; that tool posts the
-  // `traceability_reconciled` phase marker. A final report fired without
-  // the marker means reconciliation either did not run or did not pass —
-  // refuse to render the user-facing "PR ready" comment in that state. The
-  // /quickfix lane is requirement-free by precondition and is explicitly
-  // exempt, mirroring the existing reviews-gate carve-out. The override
-  // path lets the user authorize a skip with a quoted rationale (the
-  // input-shape validation for that override is done earlier).
-  // The pre-merge readiness report (phase="pre_merge", issue #963) is posted
-  // BEFORE Phase E reconciliation runs, so the traceability_reconciled marker
-  // legitimately does not exist yet. Skip the prerequisite gate for it; the
-  // reconciled `gc:final-report` (phase="post_merge") still requires it.
-  if (rest.lane !== "quickfix" && !phaseOverride && rest.phase !== "pre_merge") {
-    const completed = await readCompletedPhases(repoRoot, owner, name, rest.issueNumber);
-    // In-process-only union: used by runAssertCompletion to avoid a GitHub
-    // read-after-write race on markers it just posted. NOT in the MCP schema
-    // so external callers cannot set this; it affects ONLY the phase-marker
-    // prereq check, never CI/Sonar/review/content gates.
-    if (Array.isArray(rest.internalVerifiedPhases)) {
-      for (const p of rest.internalVerifiedPhases) {
-        completed.add(p);
-      }
-    }
-    const decision = evaluatePhasePrerequisite({
-      completed,
-      nextPhase: "final_report",
-      requires: ["traceability_reconciled"],
-      issueNumber: rest.issueNumber,
-    });
-    if (!decision.ok) {
-      return {
-        repo_path: repoRoot,
-        issue_number: rest.issueNumber,
-        ok: false,
-        error: decision.error,
-        message: decision.message,
-        missing: decision.missing,
-        completed: decision.completed,
-        next_action: "run_gc_assert_traceability_reconciled_first",
-      };
-    }
-  }
+  // The traceability-reconciliation prerequisite (former issue #1058) is retired
+  // with the backend (issue #1500): reconciliation is no longer a workflow phase,
+  // so there is no `traceability_reconciled` marker to require. The report's real
+  // gates — CI green, Sonar pass-or-legit-skipped, mandatory Codex review, and the
+  // sensitive/defer/reserved-marker scrubs above — remain the bar for a "PR ready"
+  // record. The agent records requirement status and traceability directly in the
+  // requirement files, reviewed in the PR.
   let apiResponse = null;
   try {
     const { stdout } = await execFile(
