@@ -2,6 +2,8 @@
 
 How to use Ground Control as a requirements-driven development platform: from idea to shipped, traceable, auditable software.
 
+> **Re-platformed (issue #1500).** Ground Control is now the MCP server for the `/implement` workflow over repo-local files, not a graph platform. Requirements live as `docs/requirements/<UID>/requirement.md` files (ADR-093) and ADRs as `architecture/adrs/*.md`; there is no backend, database, or graph. The graph framing below is historical; the repo files are the record.
+
 ## Philosophy
 
 Ground Control treats every artifact in the software lifecycle as a node in a graph: requirements, code files, tests, ADRs, operational assets, verification results. Every relationship is an edge. The graph is the single source of truth (no spreadsheets, no disconnected tools, no traceability theater).
