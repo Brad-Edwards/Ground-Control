@@ -407,18 +407,6 @@ describe("classifyChangedSurface", () => {
     assert.equal(cls.surface_class, "adr");
   });
 
-  it("classifies backend api/ Java paths as public_api surface", () => {
-    const result = classifyChangedSurface(["backend/src/main/java/com/keplerops/groundcontrol/api/FooController.java"], REPO);
-    const cls = result.classifications.find((c) => c.path.includes("FooController"));
-    assert.equal(cls.surface_class, "public_api");
-  });
-
-  it("classifies frontend/src/ paths as user_visible surface", () => {
-    const result = classifyChangedSurface(["frontend/src/App.tsx"], REPO);
-    const cls = result.classifications.find((c) => c.path === "frontend/src/App.tsx");
-    assert.equal(cls.surface_class, "user_visible");
-  });
-
   it("classifies docs/ paths as doc surface with outcome_required=false", () => {
     const result = classifyChangedSurface(["docs/DEVELOPMENT_WORKFLOW.md"], REPO);
     const cls = result.classifications.find((c) => c.path === "docs/DEVELOPMENT_WORKFLOW.md");

@@ -1,1 +1,0 @@
-ALTER TABLE revinfo ADD COLUMN reason TEXT;

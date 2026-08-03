@@ -36,7 +36,6 @@ from .deploy_artifacts import (
     _BLOCK_COMMENT_RE,
     _ENUM_CONSTANT_RE,
     _ENUM_STATE_DIR,
-    _GRAPH_MODEL_DIR,
     _JAVA_ENUM_BODY_RE,
     _LINE_COMMENT_RE,
     _PAREN_GROUP_RE,
@@ -77,13 +76,6 @@ class EnumContract:
 
 
 ENUM_CONTRACT_INVENTORY: tuple[EnumContract, ...] = (
-    EnumContract(
-        "GraphEntityType",
-        f"{_GRAPH_MODEL_DIR}/GraphEntityType.java",
-        "GraphEntityType",
-        "GRAPH_ENTITY_TYPES",
-        None,
-    ),
     EnumContract("RequirementType", f"{_ENUM_STATE_DIR}/RequirementType.java", "RequirementType", "REQUIREMENT_TYPES", "REQUIREMENT_TYPES"),
     EnumContract("RelationType", f"{_ENUM_STATE_DIR}/RelationType.java", "RelationType", "RELATION_TYPES", "RELATION_TYPES"),
     EnumContract("ArtifactType", f"{_ENUM_STATE_DIR}/ArtifactType.java", "ArtifactType", "ARTIFACT_TYPES", "ARTIFACT_TYPES"),
@@ -326,7 +318,7 @@ ONTOLOGY_OWNERS = frozenset({"ground-control"})
 ONTOLOGY_TERM_KINDS = frozenset({"edge", "classification"})
 
 
-ONTOLOGY_SURFACE_KINDS = frozenset({"java-enum", "graph-contributor"})
+ONTOLOGY_SURFACE_KINDS = frozenset({"java-enum"})
 
 
 ONTOLOGY_SOURCE_ROOT = Path("backend/src/main/java")

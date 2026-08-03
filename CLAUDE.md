@@ -5,44 +5,21 @@ Always do the right thing, not the easy thing.
 
 ## Build
 
-This is a Java 21 / Spring Boot 3.4 / Gradle project.
+Ground Control is the MCP server for the `/implement` workflow over repo-local files (issue #1500):
+there is no backend, database, or frontend. The server is Node.js ES modules under `mcp/ground-control`.
 
-- Rapid dev loop: `make rapid` (format + compile, ~3-5 seconds)
-- Test: `make test` (unit tests, no static analysis)
-- Policy: `make policy` (repo-native ADR/workflow guardrails shared by Claude and Codex)
-- Format: `cd backend && ./gradlew spotlessApply`
-- Lint: `cd backend && ./gradlew spotlessCheck`
-- Full check: `make check` (CI-equivalent: build + tests + all static analysis)
-- Full verify: `make verify` (check + integration tests + OpenJML ESC)
-- Run: `cd backend && ./gradlew bootRun`
+- Install: `make ground-control-mcp-install` (npm ci in `mcp/ground-control`)
+- Test: `make mcp-test` (the MCP `node --test` suite — the primary test gate)
+- Policy: `make policy` (repo-native ADR/workflow/spec guardrails shared by Claude and Codex — runs the Python policy tests, `bin/policy`, and Vale)
+- Prose lint: `make vale-lint`
 
-Use `make rapid` for the inner dev loop. Use `make check` before pushing.
-If you touched workflow, ADR, controller, migration, or MCP surfaces, run `make policy` as well.
-
-## Frontend
-
-React 19 / Vite 6 / TypeScript 5 / Tailwind 4 app in `frontend/`.
-
-- Install: `cd frontend && npm install`
-- Dev server: `cd frontend && npm run dev` (proxies `/api` to `:8000`)
-- Build: `cd frontend && npm run build`
-- Lint: `cd frontend && npm run lint`
-- Format: `cd frontend && npm run format`
-
-Or use `make frontend-install`, `make frontend-dev`, `make frontend-build`, etc.
-
-## Package
-
-`com.keplerops.groundcontrol`
-
-Architecture: `api/ -> domain/ <- infrastructure/` (enforced by ArchUnit).
-Domain layer has no Spring web imports.
+Run `make mcp-test` before pushing. If you touched workflow, ADR, MCP, or requirement-spec surfaces, run `make policy` as well.
 
 ## Development Philosophy (Pre-Alpha)
 
-Ship features, not ceremony. L0 is the default assurance level. Add JML contracts only where invalid input causes silent data corruption (state transitions, security boundaries). One test per significant behavior. See docs/CODING_STANDARDS.md and ADR-012 for the full framework.
+Ship features, not ceremony. One test per significant behavior. See docs/CODING_STANDARDS.md.
 
-Requirements, ADRs, and use cases live as files in the repo (`docs/requirements/`, `architecture/adrs/`) — read and edit them there. Graphify is **available if you want** a code+docs comprehension index (`graphify query/path/explain`, or `make graphify`; see `docs/GRAPHIFY.md`) — it is not required.
+Requirements, ADRs, and use cases live as files in the repo (`docs/requirements/<UID>/requirement.md`, `architecture/adrs/`) — read and edit them there; there is no backend or graph. Graphify is **available if you want** a code+docs comprehension index (`graphify query/path/explain`, or `make graphify`; see `docs/GRAPHIFY.md`) — it is not required.
 
 ## Code Review
 

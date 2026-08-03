@@ -1,77 +1,29 @@
-.PHONY: rapid build test test-cov test-quality format lint check integration verify policy policy-tests policy-live \
-       ci-timings \
-       assert-backup-policy test-backup-restore-local vale-install vale-lint \
-       ground-control-mcp-install sync-ground-control-policy scaffold-controller scaffold-audited-entity \
-       scaffold-l2-state-machine sync-packs trigger-pack-sync dev clean up down docker-build smoke frontend-install frontend-dev \
-       frontend-build frontend-lint frontend-format frontend-test deploy deploy-status deploy-manifest deploy-infra \
-       contracts contracts-check contract-breaking mcp-openapi-contract rollback hooks devmain
+.PHONY: ground-control-mcp-install mcp-test graphify vale-install vale-lint \
+       policy policy-tests hooks devmain ci-timings help
 
-# --- Rapid dev loop (< 5s) ---
+# Ground Control is the MCP server for the /implement workflow over repo-local
+# files (issue #1500). Requirements live in docs/requirements/, ADRs in
+# architecture/adrs/; there is no backend, database, or frontend. The MCP node
+# test suite plus the repo policy and prose checks are the verification surface.
 
-rapid: ## Format + compile, no tests or static analysis
-	cd backend && ./gradlew spotlessApply compileJava -Pquick
+# --- MCP server ---
 
-# --- Standard ---
+ground-control-mcp-install: ## Install dependencies for the repo-local Ground Control MCP server
+	npm --prefix mcp/ground-control ci
 
-build: ## Build the project (no tests)
-	cd backend && ./gradlew build -x test -Pquick
+mcp-test: ## Run the MCP server node test suite (primary test gate)
+	npm --prefix mcp/ground-control test
 
-test: ## Run unit tests (no static analysis)
-	cd backend && ./gradlew test -Pquick
-
-test-cov: ## Run tests with coverage report
-	cd backend && ./gradlew test jacocoTestReport
-
-test-quality: ## Run Pitest mutation testing (measures test effectiveness; #931)
-	cd backend && ./gradlew pitest
-
-format: ## Format code with Spotless
-	cd backend && ./gradlew spotlessApply
-
-lint: ## Check formatting
-	cd backend && ./gradlew spotlessCheck
-
-hooks: ## Activate + verify commit-time pre-commit hooks for this clone (ADR-079)
-	bash scripts/install-hooks.sh
-
-# --- Full verification (CI-equivalent) ---
-
-check: ## Full build + tests + static analysis + coverage
-	cd backend && ./gradlew check
-
-integration: ## Integration tests (Testcontainers)
-	cd backend && ./gradlew integrationTest
-
-verify: ## Full CI-equivalent verification
-	cd backend && ./gradlew check integrationTest openjmlEsc
-
-policy-tests: ## Run unit tests for repo policy tooling
-	python3 -m unittest discover -s tools/tests -p 'test_*.py'
-
-contracts: ## Regenerate committed contract artifacts (OpenAPI + generated TypeScript)
-	cd backend && ./gradlew generateContractOpenApi
-	node tools/contracts/generate-contracts.mjs
-
-contracts-check: contracts ## Fail if regenerated contract artifacts differ from committed files
-	git diff --exit-code contracts/ frontend/src/types/api.ts
-
-contract-breaking: ## Check OpenAPI breaking changes against BASE_REF (default origin/dev)
-	node tools/contracts/check-breaking-changes.mjs
-
-mcp-openapi-contract: contracts ## MCP↔backend write-contract drift gate (ADR-034/#1106, ADR-082/#1275)
-	GC_OPENAPI_SPEC=contracts/openapi/openapi.json node mcp/ground-control/scripts/run-node-tests.mjs mcp/ground-control/openapi-contract.*.test.js
-
-devmain: ## Open the dev -> main promotion PR titled so the PR-title gate passes
-	@gh pr create --base main --head dev \
-	  --title "chore(main): promote dev" \
-	  --body "Promotes \`dev\` to \`main\`. Merge with a merge commit — squashing collapses the Conventional Commit subjects Release Please needs and loses this release's CHANGELOG."
-
-vale-install: ## Install Vale prose linter (tools/install-vale.sh → .tools/vale/)
-	bash tools/install-vale.sh
+# --- Comprehension index (opt-in) ---
 
 graphify: ## (Re)build the disposable Graphify code+docs index (opt-in; see docs/GRAPHIFY.md)
 	@command -v graphify >/dev/null 2>&1 || { echo "graphify not installed — run 'uv tool install graphifyy' (docs/GRAPHIFY.md)"; exit 0; }
 	graphify extract . --code-only --update
+
+# --- Prose lint ---
+
+vale-install: ## Install Vale prose linter (tools/install-vale.sh → .tools/vale/)
+	bash tools/install-vale.sh
 
 # BASE_REF defaults to origin/dev for local invocation. CI sets it to
 # origin/<base-branch> for the current pull_request event.
@@ -91,141 +43,27 @@ vale-lint: vale-install ## Run Vale on .md docs touched in the diff vs BASE_REF 
 	fi; \
 	.tools/vale/current/vale --config=.vale.ini $$CHANGED_DOCS
 
-policy: policy-tests assert-backup-policy vale-lint ## Run repo-native policy checks shared by Claude and Codex
+# --- Repo policy ---
+
+policy-tests: ## Run unit tests for repo policy tooling
+	python3 -m unittest discover -s tools/tests -p 'test_*.py'
+
+policy: policy-tests vale-lint ## Run repo-native policy checks shared by Claude and Codex
 	@BASE_REF="$${BASE_REF:-origin/dev}"; \
 	python3 bin/policy --base "$$BASE_REF" --skip-pr-body $${GC_POLICY_JSON:+--json "$$GC_POLICY_JSON"}
 
-assert-backup-policy: ## Assert GC-P021 backup cadence / retention / verification defaults are intact
-	bash scripts/assert-backup-policy.sh
+# --- Repo workflow helpers ---
+
+hooks: ## Activate + verify commit-time pre-commit hooks for this clone (ADR-079)
+	bash scripts/install-hooks.sh
+
+devmain: ## Open the dev -> main promotion PR titled so the PR-title gate passes
+	@gh pr create --base main --head dev \
+	  --title "chore(main): promote dev" \
+	  --body "Promotes \`dev\` to \`main\`. Merge with a merge commit — squashing collapses the Conventional Commit subjects Release Please needs and loses this release's CHANGELOG."
 
 ci-timings: ## Measure CI wall clock and time-to-first-failure from recent runs (ADR-091)
 	python3 tools/ci/measure_ci_timings.py
-
-implement-cost-summary: ## Summarize /implement step telemetry — wall time + token counts (when available) per step / per model (ADR-036)
-	python3 tools/summarize_implement_telemetry.py
-
-test-backup-restore-local: ## Run the self-contained local backup/restore verification loop (requires Docker)
-	bash scripts/test-backup-restore-locally.sh
-
-ground-control-mcp-install: ## Install dependencies for the repo-local Ground Control MCP helpers
-	npm --prefix mcp/ground-control ci
-
-policy-live: ground-control-mcp-install ## Run live Ground Control policy checks (requires GC_BASE_URL)
-	node tools/ground_control/check_adr_drift.mjs
-	node tools/ground_control/check_live_policy.mjs
-
-sync-ground-control-policy: ground-control-mcp-install ## Sync repo policy expectations into Ground Control
-	node tools/ground_control/sync_policy.mjs --apply
-
-sync-packs: ## Import and install cataloged packs into Ground Control (requires GC_BASE_URL and pack-registry token)
-	node tools/packs/sync_packs.mjs
-
-trigger-pack-sync: ## Dispatch the remote pack sync workflow (PROJECT=<id> PACK_IDS=id1,id2 REF=<branch>)
-	./scripts/pack-sync.sh $(if $(PROJECT),--project $(PROJECT),) $(if $(PACK_IDS),--pack-ids $(PACK_IDS),) $(if $(REF),--ref $(REF),)
-
-scaffold-controller: ## Create a controller + WebMvcTest scaffold (NAME=Foo FEATURE=bar)
-	python3 bin/scaffold-controller "$(FEATURE)" "$(NAME)"
-
-scaffold-audited-entity: ## Create an audited entity scaffold (NAME=Foo AREA=bar)
-	python3 bin/scaffold-audited-entity "$(AREA)" "$(NAME)"
-
-scaffold-l2-state-machine: ## Create an L2 state-machine scaffold (NAME=Foo AREA=bar)
-	python3 bin/scaffold-l2-state-machine "$(AREA)" "$(NAME)"
-
-# --- Frontend ---
-
-frontend-install: ## Install frontend dependencies
-	cd frontend && npm install
-
-frontend-dev: ## Start frontend dev server (Vite)
-	cd frontend && npm run dev
-
-frontend-build: ## Build frontend for production
-	cd frontend && npm run build
-
-frontend-lint: ## Lint frontend code (Biome)
-	cd frontend && npm run lint
-
-frontend-format: ## Format frontend code (Biome)
-	cd frontend && npm run format
-
-frontend-test: ## Run frontend unit tests (Vitest)
-	cd frontend && npm test
-
-# --- Infrastructure ---
-
-dev: ## Start development server (loads .env)
-	set -a && [ -f .env ] && . ./.env && set +a && cd backend && ./gradlew bootRun
-
-up: ## Start Docker Compose services (PostgreSQL, Redis)
-	docker compose up -d
-
-down: ## Stop Docker Compose services
-	docker compose down
-
-docker-build: ## Build Docker image (frontend + backend)
-	docker build -f backend/Dockerfile -t ghcr.io/autarchy-ai/ground-control:latest .
-
-smoke: docker-build ## Build Docker image and verify Flyway + health
-	@echo "Starting smoke test..."
-	@docker rm -f gc-smoke-db gc-smoke 2>/dev/null || true
-	@docker run -d --name gc-smoke-db \
-		-e POSTGRES_DB=ground_control \
-		-e POSTGRES_USER=gc \
-		-e POSTGRES_PASSWORD=gc \
-		-p 5433:5432 \
-		--health-cmd "pg_isready -U gc -d ground_control" \
-		--health-interval 2s --health-timeout 5s --health-retries 10 \
-		postgres:16
-	@echo "Waiting for database..."
-	@for i in $$(seq 1 30); do \
-		docker inspect --format='{{.State.Health.Status}}' gc-smoke-db 2>/dev/null | grep -q healthy && break; \
-		sleep 1; \
-	done
-	@docker run -d --name gc-smoke \
-		--network host \
-		-e GC_DATABASE_URL=jdbc:postgresql://localhost:5433/ground_control \
-		-e GC_DATABASE_USER=gc \
-		-e GC_DATABASE_PASSWORD=gc \
-		ghcr.io/autarchy-ai/ground-control:latest
-	@echo "Waiting for application startup..."
-	@PASS=false; for i in $$(seq 1 60); do \
-		HEALTH=$$(curl -sf http://localhost:8000/actuator/health 2>/dev/null) && { \
-			echo "Smoke test passed: $$HEALTH"; PASS=true; break; \
-		}; \
-		sleep 2; \
-	done; \
-	if [ "$$PASS" != "true" ]; then \
-		echo "Smoke test failed after 120s"; \
-		docker logs gc-smoke; \
-	fi; \
-	docker rm -f gc-smoke-db gc-smoke 2>/dev/null || true; \
-	[ "$$PASS" = "true" ]
-
-# --- Deployment (ADR-030: on-prem red-dragon) ---
-
-deploy: ## Manual deploy to red-dragon (syncs artifacts, validates env, rolls out with rollback, publishes deploy state)
-	./scripts/deploy.sh
-
-deploy-status: ## Show the latest published production GitHub Deployment (GC-P023) — answers "what's deployed?" without SSH
-	@dep=$$(gh api "repos/{owner}/{repo}/deployments?environment=production&per_page=1" --jq '.[0].id' 2>/dev/null); \
-	if [ -z "$$dep" ] || [ "$$dep" = "null" ]; then \
-		echo "No production GitHub Deployments found (or gh not authenticated)."; \
-	else \
-		gh api "repos/{owner}/{repo}/deployments/$$dep" --jq '"deployment \(.id)  ref \(.sha[0:12])  created \(.created_at)  by \(.creator.login)"'; \
-		gh api "repos/{owner}/{repo}/deployments/$$dep/statuses?per_page=1" --jq '.[0] | "  state: \(.state)  \(.description // "")"'; \
-	fi
-
-deploy-manifest: ## Regenerate deploy/docker/MANIFEST.sha256 after editing any canonical deploy artifact (GC-P023)
-	cd deploy/docker && sha256sum deploy.sh docker-compose.prod.yml validate-env.sh env.schema > MANIFEST.sha256
-	@echo "Regenerated deploy/docker/MANIFEST.sha256"
-
-rollback: ## Roll production back to a prior version (make rollback VERSION=<x.y.z|digest>)
-	@[ -n "$$VERSION" ] || { echo "ERROR: VERSION is required, e.g. make rollback VERSION=1.0.1"; exit 1; }
-	./scripts/rollback.sh "$$VERSION"
-
-clean: ## Remove build artifacts
-	cd backend && ./gradlew clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
