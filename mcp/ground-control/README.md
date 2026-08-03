@@ -61,13 +61,14 @@ and available on `PATH`.
 
 ## Admin-tool opt-in (`GC_MCP_ADMIN`)
 
-The `gc_admin` and `gc_pack` consolidated tools wrap `/api/v1/admin/**`,
+The `gc_admin`, `gc_pack`, `gc_user_admin`, and `gc_identity_admin`
+consolidated tools wrap `/api/v1/admin/**`,
 `/api/v1/embeddings/**`, `/api/v1/analysis/sweep/**`, and
 `/api/v1/pack-registry/**` operations that require `ROLE_ADMIN` at the
 backend (per ADR-026). To avoid surfacing those write/mutating actions to
 a default MCP session that happens to have an admin bearer token in its
-environment, both tools are registered **only when `GC_MCP_ADMIN=1`** (or
-`true` / `yes`). Without the flag, neither tool appears in the catalog. A
+environment, these tools are registered **only when `GC_MCP_ADMIN=1`** (or
+`true` / `yes`). Without the flag, they do not appear in the catalog. A
 session that needs admin operations sets the env var explicitly:
 
 ```jsonc
@@ -87,6 +88,12 @@ session that needs admin operations sets the env var explicitly:
 
 Backend `ROLE_ADMIN` still enforces authorization; this flag controls only
 which named MCP tools are advertised to the LLM.
+
+`gc_user_admin` remains the V059 compatibility lifecycle tool.
+`gc_identity_admin` is the separate ADR-085 users/groups/roles/grants tool.
+Its strict schema exposes only non-secret lifecycle and authorization data; it
+does not accept or return passwords, raw tokens, credential payloads, or
+caller-supplied actor fields.
 
 ## Tool surface (ADR-035)
 
@@ -164,7 +171,7 @@ under the `workflow` catalog, so it is always available.
   `/api/v1/mcp-tool-usage`,
   `/api/v1/observations`, `/api/v1/projects`, `/api/v1/quality-gates`,
   `/api/v1/relations`, `/api/v1/requirements`, `/api/v1/research-runs`,
-  `/api/v1/risk-scenarios`, `/api/v1/sections`, `/api/v1/test-cases`,
+  `/api/v1/risk-scenarios`, `/api/v1/sections`, `/api/v1/session`, `/api/v1/test-cases`,
   `/api/v1/test-plans`, `/api/v1/test-runs`, `/api/v1/test-suites`, `/api/v1/threat-models`, `/api/v1/timeline`,
   `/api/v1/traceability`,
   `/api/v1/verification-results`,
@@ -237,7 +244,9 @@ be related, linked, or analyzed.
 | `gc_create_github_issue` | `uid` (required), `repo`, `labels`, `extra_body` | Create GitHub issue from requirement and auto-link |
 | `gc_get_repo_ground_control_context` | `repo_path` (required) | Read and validate the repo's `.ground-control.yaml` context (project, workflow, sonarcloud, rules, knowledge). Returns inlined plan_rules content and resolved knowledge paths when those sections are configured. Tolerates and ignores a legacy `grc.*` block (ADR-089)—never returned |
 | `gc_resolve_workflow_route` | `repo_path` (required), `stage` (required), `tier` (optional) | Resolve advisory provider, canonical model id, and capability tier metadata for a workflow stage |
-| `gc_implement_mechanical` | `action`, `repo_path`, `issue_number`; action-specific branch, synchronization, PR, or completion fields; optional `requested_requirement_uid` | Execute contiguous deterministic `/implement` bands (`bootstrap`, `verify`, `publish`, `monitor`, `readiness`, `finalize`) in one call; export the requested requirement UID to repo-authored gates as `ACES_REQUIREMENT_UID`; return `agent_required=true` only for bounded actionable failures |
+| `gc_implement_mechanical` | `action`, `repo_path`, `issue_number`; action-specific branch, synchronization, PR, or completion fields; optional `requested_requirement_uid`; `async` plus `idempotency_key` for long actions | Execute deterministic `/implement` bands (`bootstrap`, `verify`, `publish`, `monitor`, `readiness`, `finalize`); `verify`, `publish`, and `monitor` can return a background-job handle instead of blocking one MCP request; export the requested requirement UID to repo-authored gates as `ACES_REQUIREMENT_UID`; return bounded actionable failures directly in synchronous mode or inside a completed background result |
+| `gc_codex_review_cycle` / `gc_test_quality_review_cycle` | `repo_path`, `issue_number`, bounded `idempotency_key`; reviewer-specific options | Start an async-only pre-push review cycle. Identical retained starts reuse one job, changed input conflicts, and distinct keys are single-flight per repository/issue/reviewer |
+| `gc_codex_job` | `action`, bounded `job_id` | Poll the shared review/preflight/mechanical background registry. A terminal `result` is the originating tool's unchanged envelope. Direct review/preflight jobs may support cancellation; review-cycle and mechanical jobs return `job_not_cancellable` until their complete execution paths honor abort |
 | `gc_synchronize_implement_branch` | `repo_path`, `issue_number`, `branch_name`, `action`; completion also requires `record_id`, `pre_sync_sha`, `fetched_base_sha`, `outcome`; optional `requested_requirement_uid` | Fetch and merge the configured integration branch in the invocation checkout; mechanically run completion and policy on the exact merged tree with the requested requirement identity in their environment; publish it; post an idempotent durable attestation |
 | `gc_create_synchronized_implement_pr` | `repo_path`, `issue_number`, `branch_name`, `record_id`, `title`, `body` | Re-fetch and verify the trusted synchronization attestation, verified tree, local/remote heads, and repository-scoped existing PR identity before creating an `/implement` PR |
 | `gc_codex_architecture_preflight` | `requirement_uid` (required), `repo_path` (required), `project`, `issue_number`, `repo` | Run Codex architecture preflight, update ADR/design guidance when needed, and return guardrails plus changed files |

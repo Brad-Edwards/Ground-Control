@@ -1,0 +1,269 @@
+// Split from index.js under issue #1467 for the 500-LOC limit
+// (docs/CODING_STANDARDS.md). Registration bodies are unchanged.
+
+import { z } from "zod";
+import {
+  CODEX_REVIEW_HARD_CAP,
+  CODEX_REVIEW_PREPUSH_HARD_CAP,
+  KNOWLEDGE_SOURCE_TYPES,
+  TEST_QUALITY_REVIEW_HARD_CAP,
+  buildCodexReviewOverrideCapDescription,
+  buildCodexReviewOverrideReasonDescription,
+  buildCodexReviewToolDescription,
+  createGitHubIssueFromRequirement,
+  getRepoGroundControlContext,
+  runCloseIssueAfterMerge,
+  runCodexArchitecturePreflight,
+  runCodexReview,
+  runPostImplementationPlan,
+  runTestQualityReview,
+  startAsyncJob,
+  writeKnowledgeInbox,
+} from "../lib.js";
+import { ok, err } from "./respond.js";
+
+export const ASYNC_REVIEW_PARAM_DESC =
+  "When true, start the review/preflight as a background job and return " +
+  "{ok,status:'running',job_id} immediately instead of blocking the MCP call. " +
+  "Poll the job with gc_codex_job (action='poll') until status='done', then dispatch " +
+  "on result.next_action exactly as for the synchronous call. Use this in the /implement " +
+  "workflow so a multi-minute review never trips the MCP client's tool-call timeout (issue #937).";
+
+export const CODEX_REVIEW_CAPS = { postPushCap: CODEX_REVIEW_HARD_CAP, prepushCap: CODEX_REVIEW_PREPUSH_HARD_CAP };
+
+
+export function registerQuery(server, ctx) {
+
+  server.tool(
+    "gc_get_repo_ground_control_context",
+    "Read the repo's .ground-control.yaml and return the workflow config: project, github_repo, workflow commands, sonarcloud, knowledge paths, and inlined plan-rules content. Returns validation errors when the file is missing or invalid.",
+    { repo_path: z.string().describe("Absolute path to the target Git repository") },
+    async ({ repo_path }) => {
+      try { return ok(JSON.stringify(await getRepoGroundControlContext(repo_path), null, 2)); }
+      catch (e) { return err(e); }
+    },
+  );
+
+  server.tool(
+    "gc_create_github_issue",
+    "Create a GitHub issue from a requirement and auto-link it back. Required for /implement's UID-first path. The title and body are rendered from the requirement (the body seeds the `## Requirements` section /implement parses); `extra_body` is appended. Auto-link uses IMPLEMENTS for ACTIVE requirements and DOCUMENTS otherwise. If the issue is created but the traceability link fails, the result still returns the issue plus a `traceability_error`.",
+    {
+      uid: z.string(),
+      project: z.string().optional(),
+      repo_path: z.string().describe("Absolute path to the target Git repository; its origin remote is the authoritative repository identity (GC-P026)"),
+      repo: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/).optional().describe("Optional owner/repo assertion; validated against the checkout remote and rejected on mismatch, never used as an alternate destination"),
+      labels: z.array(z.string()).optional(),
+      extra_body: z.string().optional(),
+    },
+    async (args) => {
+      try {
+        return ok(JSON.stringify(await createGitHubIssueFromRequirement({
+          uid: args.uid,
+          project: args.project,
+          repo: args.repo,
+          repoRoot: args.repo_path,
+          labels: args.labels,
+          extraBody: args.extra_body,
+        }), null, 2));
+      } catch (e) { return err(e); }
+    },
+  );
+
+  server.tool(
+    "gc_remember",
+    "Capture a knowledge-base observation from the calling agent. Writes a structured inbox file in the repository's knowledge base and spawns a detached ingest subprocess that integrates the observation into the wiki. Synchronous success means the inbox entry was durably written; wiki integration happens asynchronously and may be retried by later real-time or scheduled runs. Requires the repository's .ground-control.yaml to declare a knowledge block.",
+    {
+      repo_path: z.string().describe("Absolute path to the target Git repository"),
+      note: z.string().min(1).describe("The observation to capture, as free-form text"),
+      source_type: z
+        .enum(KNOWLEDGE_SOURCE_TYPES)
+        .describe(
+          "Source citation type (must match the vocabulary in docs/knowledge/SCHEMA.md)",
+        ),
+      source_ref: z
+        .string()
+        .min(1)
+        .describe(
+          "Source citation reference (short SHA for commit, number for pr/issue, comment id for review, etc.)",
+        ),
+      tags: z
+        .array(z.string())
+        .optional()
+        .describe("Optional list of tags used for index discovery"),
+    },
+    async ({ repo_path, note, source_type, source_ref, tags }) => {
+      try {
+        const result = await writeKnowledgeInbox({
+          repoPath: repo_path,
+          note,
+          sourceType: source_type,
+          sourceRef: source_ref,
+          tags,
+        });
+        return ok(JSON.stringify(result, null, 2));
+      } catch (e) {
+        return err(e);
+      }
+    },
+  );
+
+  server.tool(
+    "gc_codex_architecture_preflight",
+    "Run Codex architecture preflight before implementation. Codex inspects the requirement and/or issue plus the repository, updates ADRs/design guidance when needed, and returns guardrails and changed files. At least one of requirement_uid or issue_number must be supplied. Pass async=true to run it as a background job polled via gc_codex_job.",
+    {
+      requirement_uid: z.string().optional(),
+      repo_path: z.string(),
+      project: z.string().optional(),
+      issue_number: z.number().int().positive().optional(),
+      repo: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9][a-zA-Z0-9._-]*$/).optional(),
+      async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
+    },
+    async ({ requirement_uid, repo_path, project, issue_number, repo, async: asyncMode }) => {
+      try {
+        const params = {
+          requirementUid: requirement_uid, repoPath: repo_path, project,
+          issueNumber: issue_number ?? null, repo: repo ?? null,
+        };
+        if (asyncMode) {
+          return ok(JSON.stringify(startAsyncJob(
+            "architecture_preflight",
+            (signal) => runCodexArchitecturePreflight({ ...params, signal }),
+          ), null, 2));
+        }
+        return ok(JSON.stringify(await runCodexArchitecturePreflight(params), null, 2));
+      } catch (e) { return err(e); }
+    },
+  );
+
+  server.tool(
+    "gc_post_implementation_plan",
+    "Post the implementation plan as a comment on the GitHub issue. Refuses unless a 'preflight' phase marker exists for the issue. Scrubs sensitive content, rejects forged machine blocks / reserved markers, and caps body size. On success writes a 'plan' phase marker.",
+    {
+      repo_path: z.string(),
+      issue_number: z.number().int().positive(),
+      plan_body: z.string().min(1),
+      override: z.boolean().optional(),
+      override_reason: z.string().optional(),
+    },
+    async ({ repo_path, issue_number, plan_body, override, override_reason }) => {
+      try {
+        return ok(JSON.stringify(await runPostImplementationPlan({
+          repoPath: repo_path, issueNumber: issue_number, planBody: plan_body,
+          override: Boolean(override), overrideReason: override_reason ?? null,
+        }), null, 2));
+      } catch (e) { return err(e); }
+    },
+  );
+
+  server.tool(
+    "gc_close_issue_after_merge",
+    "Canonical post-merge close path for the /implement workflow's Phase E (Step 20). Verifies the issue's linked PR is merged (merged_at non-null AND state=MERGED) before running `gh issue close`; refuses otherwise. Idempotent — re-running on an already-closed issue returns ok with already_closed=true. The PR body's `Closes #<n>` keyword remains the GitHub cross-link for sidebar / timeline purposes, but this tool is the gate-enforcing close path. pr_number is optional; when omitted the tool resolves the merged PR for the issue via the GitHub timeline. This tool performs ONLY linked-PR resolution, merge-state verification, and idempotent issue closure — it does not list open issues, rank next-work candidates, or return any recommendation field (ADR-089 §5).",
+    {
+      repo_path: z.string(),
+      issue_number: z.number().int().positive(),
+      pr_number: z.number().int().positive().optional(),
+    },
+    async ({ repo_path, issue_number, pr_number }) => {
+      try {
+        return ok(JSON.stringify(await runCloseIssueAfterMerge({
+          repoPath: repo_path,
+          issueNumber: issue_number,
+          prNumber: pr_number ?? null,
+        }), null, 2));
+      } catch (e) { return err(e); }
+    },
+  );
+
+  server.tool(
+    "gc_codex_review",
+    buildCodexReviewToolDescription(CODEX_REVIEW_CAPS),
+    {
+      repo_path: z.string(),
+      base_branch: z.string().optional(),
+      uncommitted: z.boolean().optional(),
+      pr_number: z.number().int().positive().optional(),
+      issue_number: z.number().int().positive().optional(),
+      override_cap: z.boolean().optional().describe(buildCodexReviewOverrideCapDescription(CODEX_REVIEW_CAPS)),
+      override_reason: z.string().optional().describe(buildCodexReviewOverrideReasonDescription(CODEX_REVIEW_CAPS)),
+      override_phase_gate: z.boolean().optional(),
+      override_phase_reason: z.string().optional(),
+      async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
+    },
+    async ({ repo_path, base_branch, uncommitted, pr_number, issue_number, override_cap, override_reason, override_phase_gate, override_phase_reason, async: asyncMode }) => {
+      try {
+        const params = {
+          repoPath: repo_path, baseBranch: base_branch ?? null,
+          uncommitted: Boolean(uncommitted),
+          prNumber: pr_number != null ? pr_number : null,
+          issueNumber: issue_number != null ? issue_number : null,
+          overrideCap: Boolean(override_cap),
+          overrideReason: override_reason ?? null,
+          overridePhaseGate: Boolean(override_phase_gate),
+          overridePhaseReason: override_phase_reason ?? null,
+        };
+        if (asyncMode) {
+          return ok(JSON.stringify(startAsyncJob(
+            "codex_review",
+            (signal) => runCodexReview({ ...params, signal }),
+          ), null, 2));
+        }
+        return ok(JSON.stringify(await runCodexReview(params), null, 2));
+      } catch (e) { return err(e); }
+    },
+  );
+
+  server.tool(
+    "gc_test_quality_review",
+    `Run the canonical /implement Step 6.6 pre-push test-quality review against the staged + unstaged + ` +
+      `untracked diff vs the base branch. (Issue #906 moved this from the former post-PR Step 13 to ` +
+      `pre-push Step 6.6 so the PR opens with both AI-assisted reviewers clean.) Shells out to the ` +
+      `\`claude\` CLI (Sonnet 5 by default) with the review-tests rubric and the ` +
+      `changed test-file paths, parses the structured JSON output (validated by --json-schema), posts ` +
+      `the durable findings record + cycle marker to the issue thread, and returns a structured ` +
+      `envelope: \`{ ok, finding_count, findings, cycle, cap, next_action, findings_comment_url, ... }\`. ` +
+      `The \`next_action\` field is "fix_findings_and_reinvoke" / "post_clean_decision_record_and_advance_to_phase_c" / ` +
+      `"fix_findings_then_summarize_and_escalate" / "post_summary_and_escalate_to_user" — the parent ` +
+      `/implement workflow reads it as a directive. "fix_findings_then_summarize_and_escalate" is the ` +
+      `last-in-cap action: fix the findings, post the decision record, then summarize and escalate to the ` +
+      `user; it is NOT a normal re-invoke path. Replaces the prior Skill("review-tests") boundary, ` +
+      `which produced prose findings that the autoregressive parent agent kept echoing back to the user ` +
+      `instead of fixing in-turn (issue #884 v1 regression). Default cycle cap: ${TEST_QUALITY_REVIEW_HARD_CAP} per ` +
+      `issue (issue #906; configurable per repo via \`workflow.test_quality_review.pre_push_cap\` in ` +
+      `.ground-control.yaml; bounds [1, 10]); cycle cap+1 requires override_cap=true + override_reason. ` +
+      `Authentication: the CLI invocation strips ANTHROPIC_API_KEY from the subprocess env so claude uses ` +
+      `the host's OAuth session — see docs/DEVELOPMENT_WORKFLOW.md "Test-quality review engine".`,
+    {
+      repo_path: z.string(),
+      base_branch: z.string().optional(),
+      issue_number: z.number().int().positive().optional(),
+      pr_number: z.number().int().positive().optional(),
+      override_cap: z.boolean().optional(),
+      override_reason: z.string().optional(),
+      model: z.string().optional(),
+      async: z.boolean().optional().describe(ASYNC_REVIEW_PARAM_DESC),
+    },
+    async ({ repo_path, base_branch, issue_number, pr_number, override_cap, override_reason, model, async: asyncMode }) => {
+      try {
+        const params = {
+          repoPath: repo_path,
+          // Pass null when not supplied so the runner resolves from
+          // .ground-control.yaml; the runner falls back to "dev" only if
+          // YAML doesn't declare workflow.base_branch.
+          baseBranch: base_branch ?? null,
+          issueNumber: issue_number != null ? issue_number : null,
+          prNumber: pr_number != null ? pr_number : null,
+          overrideCap: Boolean(override_cap),
+          overrideReason: override_reason ?? null,
+          ...(model ? { model } : {}),
+        };
+        if (asyncMode) {
+          return ok(JSON.stringify(startAsyncJob(
+            "test_quality_review",
+            (signal) => runTestQualityReview({ ...params, signal }),
+          ), null, 2));
+        }
+        return ok(JSON.stringify(await runTestQualityReview(params), null, 2));
+      } catch (e) { return err(e); }
+    },
+  );
+}

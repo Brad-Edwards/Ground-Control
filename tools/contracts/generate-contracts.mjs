@@ -3,6 +3,8 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
+import { exactPropertyTypes } from "./contract-property-types.mjs";
+
 const repoRoot = resolve(import.meta.dirname, "../..");
 const buildSpecPath = resolve(repoRoot, "backend/build/contract/openapi.json");
 const committedSpecPath = resolve(repoRoot, "contracts/openapi/openapi.json");
@@ -57,6 +59,21 @@ function schemaType(schema) {
   }
   if (schema.$ref) {
     return refName(schema.$ref);
+  }
+  // OpenAPI 3.1 nullability: `type` may be `"null"` or an array such as `["string", "null"]`.
+  if (schema.type === "null") {
+    return "null";
+  }
+  if (Array.isArray(schema.type)) {
+    const hasNull = schema.type.includes("null");
+    const nonNull = schema.type.filter((t) => t !== "null");
+    const base =
+      nonNull.length === 0
+        ? "never"
+        : nonNull.length === 1
+          ? schemaType({ ...schema, type: nonNull[0] })
+          : nonNull.map((t) => schemaType({ ...schema, type: t })).join(" | ");
+    return hasNull ? `${base} | null` : base;
   }
   if (schema.enum) {
     return unionFromValues(schema.enum);
@@ -118,17 +135,6 @@ const schemaDeclarationOverrides = {
   SyncError: "export type SyncError = string;",
 };
 
-const exactPropertyTypes = {
-  "TimelineEntryResponse.changeCategory": "ChangeCategory",
-  "GraphVisualizationNodeResponse.entityType": "GraphEntityType",
-  "GraphEdgeResponse.sourceEntityType": "GraphEntityType",
-  "GraphEdgeResponse.targetEntityType": "GraphEntityType",
-  // gateState is null for bulk list entries and executions whose gate state cannot be queried
-  // (GC-O009 (b), #1279). springdoc emits a bare $ref (non-null) for it; this override keeps the
-  // generated client honest about the intentionally-nullable field.
-  "WorkflowExecutionResponse.gateState": "GateStateResponse | null",
-};
-
 function propertyType(schemaName, propName, propSchema) {
   const exact = exactPropertyTypes[`${schemaName}.${propName}`];
   if (exact) return exact;
@@ -144,7 +150,11 @@ function propertyType(schemaName, propName, propSchema) {
   if (propSchema?.$ref) {
     return refName(propSchema.$ref);
   }
-  return "any";
+  // Resolve every concrete OpenAPI shape (string/number/boolean/enum, and 3.1 null-unions) to a
+  // precise TypeScript type instead of collapsing to `any`. Only a schema that declares no
+  // resolvable type stays `any`, so genuinely free-form fields keep their permissive shape.
+  const resolved = schemaType(propSchema);
+  return resolved === "unknown" ? "any" : resolved;
 }
 
 function emitSchemaDeclaration(name, schema) {

@@ -8,6 +8,40 @@ accepted
 
 2026-05-23
 
+> **Sync note for issue #1437 (2026-07-30, Live Activity):** Added the project-scoped
+> `GET /api/v1/workflow-runs/activity` read projection, its generated OpenAPI/TypeScript contract,
+> deployment configuration, and console workspace. Documentation lives in ADR-061, `docs/API.md`,
+> `docs/architecture/ARCHITECTURE.md`, and `docs/deployment/DEPLOYMENT.md`. This uses the existing
+> `public_api`, `configuration`, and architecture coverage classes; the documentation-coverage
+> classifier, `outcome_required` mapping, Vale rules, installer, and `.vale.ini` are unchanged, and
+> no new documentation classification or style rule is established.
+
+> **Sync note for issue #1462 (2026-07-28, completion project inference):** Added
+> `resolveAssertProject` and structured `project_required` propagation in
+> `mcp/ground-control/lib.js` so `gc_assert_traceability_reconciled` and
+> `gc_assert_completion` infer `project` from `repo_path`'s
+> `.ground-control.yaml` when the parameter is omitted, preserve backend
+> `project_required` detail through the composite completion envelope, and
+> updated the Step 17 contract in `skills/implement/steps/step-17-completion.md`
+> plus tool descriptions in `mcp/ground-control/index.js`. This is MCP workflow
+> error-propagation and repo-context reuse under ADR-027: the documentation-coverage
+> classifier (`classifyChangedSurface`), the `outcome_required` mapping, the Vale
+> rule set, `tools/install-vale.sh`, `.vale.ini`, and the `docs/DOC_STYLE.md`
+> style rules are all unchanged, and no new documentation-coverage surface class
+> is introduced.
+
+> **Sync note for issue #1282 (2026-07-27, identity administration):**
+> Registered the non-secret `gc_identity_admin` MCP tool and its identity API
+> client helpers. Extended the authorization path-matrix policy check so it
+> verifies both legacy `ROLE_ADMIN` matchers and the new
+> `PERMISSION_IDENTITY_ADMIN` matcher against
+> `contracts/authz/path-matrix.yaml`. The REST and MCP contracts are documented
+> in `docs/API.md`, `docs/architecture/ARCHITECTURE.md`,
+> `mcp/ground-control/README.md`, ADR-035, and amended ADR-085. The
+> documentation-coverage classifier, `outcome_required` mapping, Vale rules,
+> installer, and `.vale.ini` are unchanged; no new documentation classification
+> or style rule is established.
+
 > **Sync note for issue #1309 (2026-07-17, ADR-084 §5 Envers as-of spine):**
 > Removed the dead `threats-insufficient-effectiveness` action (and its
 > `as_of` / `min_effectiveness` / `freshness_window_days` parameters) from the
@@ -16,7 +50,7 @@ accepted
 > `mcp/ground-control/lib.js`. The action called a REST route that
 > `RiskControlAnalysisController` never exposed; it was the last surviving
 > divergent as-of surface (ADR-084 §5: the canonical as-of coordinate is the
-> Envers revision, resolved by the new `AsOfRevisionResolver`—see
+> Envers revision, resolved by the new `AsOfRevisionResolver`; see
 > `docs/architecture/ARCHITECTURE.md` § As-Of Time Semantics). This is a
 > policy-surface removal, not an extension: the documentation-coverage
 > classifier, `outcome_required` mapping, Vale rule set,
@@ -60,14 +94,24 @@ accepted
 > and this ADR's coverage model are unchanged; no new `docs/DOC_STYLE.md` style
 > rule is established.
 
+> **Sync note for issue #1500 (2026-08-03, context-graph teardown):** The backend, frontend, and database were removed; Ground Control is now the MCP server over repo-local files. Two documentation-coverage surface classes lost their subjects and were dropped from the classifier in `mcp/ground-control/lib/doc-coverage.js`: `public_api` (anchored on `backend/src/main/java/.../api/`) and `user_visible` (anchored on `frontend/src/`). The surviving classes are `workflow`, `mcp_tool`, `config_parser`, `policy`, `adr`, and `doc`. The Vale rule set, `tools/install-vale.sh`, `.vale.ini`, and the `outcome_required` mapping for the surviving classes are unchanged, and no new `docs/DOC_STYLE.md` style rule is established.
+>
 > **Sync note for issue #1359 (2026-07-12, remove Temporal orchestration lane):** Deleted the `/api/v1/workflow-executions**` REST surface (`WorkflowExecutionController`/`WorkflowExecutionService`/`WorkflowControlPort`/`TemporalWorkflowControlAdapter`) and the `gc_workflow_execution` MCP tool (`start`/`get`/`list`/`signal`, handler `mcp/ground-control/gc-workflow-execution.js`) together with its API-client helpers and field mappings in `mcp/ground-control/lib.js`/`index.js`; removed `infrastructure/temporal/**` (worker config, control adapter, `/implement` workflow and activities, activity-payload contract records) and `domain/workflowexecution/**`; removed `domain/llm`/`infrastructure/llm` including the Anthropic adapter, so `ROUTING_PROVIDERS` reverts to `["claude"]` and the canonical `anthropic` provider id and `claude`→`anthropic` normalization are gone; and dropped the `run_workflow_payload_contract_check`, `run_gate_set_invariant_check`, and `deploy-temporal-topology` policy checks from `tools/policy/checks.py` along with the `contracts/schemas/workflow/` activity-payload schemas (the ADR-061 `workflow-run-record.v1.schema.json` telemetry schema is unaffected). ADR-028, ADR-081, and ADR-088 are marked Superseded (issue #1359) in `architecture/adrs/README.md`; the run-economics surface this issue does not touch (`workflow_run`, ADR-061 telemetry, `gc_workflow_run`/`gc_workflow_run_ingest`, ADR-036 per-step routing, ADR-029 issue-thread gates) is unchanged. This is a policy-surface, MCP tool-surface, public-API, and infrastructure removal: the documentation-coverage classifier, `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new `docs/DOC_STYLE.md` style rule is established.
 >
 > **Sync note for issue #1429 (2026-07-26 configuration-derived policy command):** Added `workflow.policy_command` to the `.ground-control.yaml` parser in `mcp/ground-control/lib.js` (`emptyWorkflowConfig`, `normalizeWorkflowConfig`, new `DEFAULT_POLICY_COMMAND` / `resolveWorkflowPolicyCommand`), routed the two executable policy boundaries (`runImplementFinalTreeGates` and `gc_implement_mechanical action=verify`) through it, and replaced the PR body's hardcoded `` `make policy` `` check line with the semantic `- [x] Configured repository policy command passes` in `buildPrBody` / `checkPrBodyShape` / `tools/policy/checks.py::check_pr_body` / `.github/PULL_REQUEST_TEMPLATE.md`. The same change adds `workflow.precommit_command` (normalized default `pre-commit run --all-files`) and routes `runImplementPreCommit` plus the `gc_implement_mechanical action=publish` hook boundary through it, so the mandatory pre-publish boundary no longer requires the pre-commit framework specifically. The `tools/policy/checks.py` edit is a token update to the existing `/implement` verification-surface drift check, not a new gate. This is a configuration-parser and workflow-gate change; the documentation-coverage classifier (`classifyChangedSurface`), `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, `.vale.ini`, and `docs/DOC_STYLE.md` style rules are unchanged.
 
+> **Sync note for issue #1438 (2026-07-27, versioned measurement contract and station catalogue):** Added `run_measurement_catalogue_check` to `tools/policy/checks.py` (plus `STATION_CATALOGUE_PATH`, `MEASUREMENT_RECORD_SCHEMA_PATH`, and three new schema/data entries in `CONTRACT_REQUIRED_PATHS`), which asserts the ADR-090 station catalogue is internally coherent and that every station id emitted by `gc-implement-mechanical.js`, every `gc:phase` marker value, and every `.ground-control.yaml` routing stage resolves to a declared entry. This is a new contract-drift gate over data artifacts under `contracts/`: the documentation-coverage classifier (`classifyChangedSurface`), the `outcome_required` mapping, the Vale rule set, `tools/install-vale.sh`, `.vale.ini`, and the `docs/DOC_STYLE.md` style rules are all unchanged, and no new documentation-coverage surface class is introduced.
+>
+> **Sync note for issue #1436 (2026-07-27, live workflow-run SSE transport):** The `mcp/ground-control/lib.js` edit is a single guard in the shared `request()` helper: a response whose `content-type` is `text/event-stream` is rejected as `unsupported_media_type` before `res.text()` is called, because reading a live event stream never resolves and would hang the MCP server rather than fail. `mcp/ground-control/gc-query.js` denylists the new `/api/v1/workflow-runs/stream` path, which the existing `/api/v1/workflow-runs` prefix allowlist would otherwise have admitted, and `mcp/ground-control/gc-workflow-run.js` records that the stream is deliberately not an MCP action. This is an HTTP-client and read-allowlist change: the documentation-coverage classifier (`classifyChangedSurface`), the `outcome_required` mapping, the Vale rule set, `tools/install-vale.sh`, `.vale.ini`, and the `docs/DOC_STYLE.md` style rules are all unchanged, and no new documentation-coverage surface class is introduced.
+>
 > **Sync note for issue #1435 (2026-07-26, live workflow-run lifecycle emission):** Added an optional `signal` pass-through to the shared `request()` helper in `mcp/ground-control/lib.js` (so a fail-open emitter can bound its own writes), threaded it through `createWorkflowRun`/`recordWorkflowRunEvent`, and added the `listWorkflowRunEvents` client for the new project-scoped `GET /api/v1/workflow-runs/{runId}/events` read. The new emitter module `mcp/ground-control/workflow-run-lifecycle.js` and `mcp/ground-control/gc-implement-mechanical.js` were added to ADR-090's `measurement-model-sync` trigger. This is an HTTP-client and telemetry-emitter change: the documentation-coverage classifier (`classifyChangedSurface`), the `outcome_required` mapping, the Vale rule set, `tools/install-vale.sh`, `.vale.ini`, and the `docs/DOC_STYLE.md` style rules are all unchanged, and no new documentation-coverage surface class is introduced.
 >
 > **Sync note for issue #1280 (2026-07-11 GC-O009 phase 5 LLM provider boundary):** Changed `ROUTING_PROVIDERS`, added `ROUTING_PROVIDER_ALIASES`/`normalizeProviderId`, and updated `normalizeRoutingConfig`/`normalizeRoutingStageConfig`/`resolveWorkflowRouteFromConfig` in `mcp/ground-control/lib.js` so the canonical LLM provider id `anthropic` is accepted and the legacy label `claude` normalizes to it in every output (ADR-027 amendment). This is the `.ground-control.yaml` routing parser, not the documentation-coverage gate; the documentation-coverage classifier, outcome mapping, Vale rule set, `tools/install-vale.sh`, `.vale.ini`, and `docs/DOC_STYLE.md` style rules are unchanged.
 >
+> **Sync note for issue #1468 (2026-07-28, ADR-091 frontend lane amendment):** `tools/policy/checks.py::CI_STRICTNESS_REQUIRED_CONTEXTS` gained the `frontend` context for the new CI lane that runs Biome lint, the Vitest unit suite, and the frontend build. `frontend` is also added to `.github/branch-protection-baseline.json` and to `docker.needs`, and `tools/tests/test_ci_topology.py` gains frontend-specific invariants covering the job's existence, its read-only permissions, and its lint/test/build steps. Before this the frontend was compiled only inside the Docker image build, which runs after merge and runs neither lint nor tests. This is a policy-surface extension on the CI strictness contract, not the documentation-coverage gate; the classifier, `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new `docs/DOC_STYLE.md` style rule is established.
+
+> **Sync note for issue #1461 (2026-07-28, ADR-091 CI verification topology):** `tools/policy/checks.py::CI_STRICTNESS_REQUIRED_CONTEXTS` dropped the `mutation` context. Commit `bf766bfe` removed the CI `mutation` job and `tools/mutation/` with the Contract-Locked Development track (see the CLD track drop note below), but left the context declared here and in `.github/branch-protection-baseline.json`, so `run_ci_strictness_contract` required a check that no job produced. Applying the baseline as written would have blocked every pull request on `main` and `dev`. The new `tools/tests/test_ci_topology.py` asserts that every required context has a job in `ci.yml` and that the baseline matches this constant, so the drift cannot recur. The same issue fixed a false green in `mcp/ground-control/lib.js::runWatchCiRun`, which watched only the newest workflow run for a branch and so could report an unrelated fast workflow's success as the CI gate; it now groups runs by head SHA and requires all of them to succeed (new `selectCiRunsForHeadSha` / `aggregateCiRunOutcomes` helpers, contract in the ADR-027 2026-07-28 amendment). This is a policy-surface removal that completes an earlier one plus a workflow-tool correctness fix, not a gate relaxation: the documentation-coverage classifier, `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new `docs/DOC_STYLE.md` style rule is established.
+
 > **Sync note for issue #1346 (2026-07-11, ADR-089 GRC retirement):** `tools/policy/checks.py::run_traceability_reconciliation_gate_contract` dropped its `next_issue_recommendation` prose anchors from the Step 20 and SKILL.md requirements (the field is retired), and `ENUM_CONTRACT_INVENTORY` dropped the seven enum-contract entries owned by the retired GRC surface (`ThreatEventKind`, `ThreatSourceRelevance`, `NistLikelihoodBand`, `NistImpactBand`, `NormalizedConcept`, `CrosswalkVocabularySurface`, `MethodologyFamily`); `VerificationStatus` and `AssuranceLevel` are unaffected. This is a policy-surface removal, not an extension: the documentation-coverage classifier, `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new `docs/DOC_STYLE.md` style rule is established.
 
 > **Sync note for issue #1279 (2026-07-10 GC-O009 (b) human gates):** Added `run_gate_set_invariant_check` to `tools/policy/checks.py` so `make policy` pins the operator-gate set to the closed catalog (`cancel` / `retryFrom` / `applyReviewCapDisposition`) across the workflow `@SignalMethod` contract, the `OperatorSignalType` enum, the `implement-signals.v1` schema, and the MCP `WORKFLOW_SIGNAL_TYPES` catalog, and fails if a plan/merge-approval gate is reintroduced (ADR-029). Documentation lives in ADR-088, `docs/API.md`, and the changelog fragment. This is a policy-surface extension; the documentation-coverage classifier, outcome mapping, Vale rule set, `tools/install-vale.sh`, `.vale.ini`, and `docs/DOC_STYLE.md` style rules are unchanged.
@@ -253,6 +297,24 @@ current with the actual classifier surface.
 
 ## Amendments
 
+### Issue #1355 (2026-07-28): the gate's implementation moved out of lib.js
+
+`mcp/ground-control/lib.js` exceeded the repo's 500-LOC limit by a factor of forty, so it
+was split into `mcp/ground-control/lib/*` with `lib.js` retained as a barrel. This gate's
+implementation (`gc_documentation_coverage`, the surface classifier, and the doc-target
+mapping) now lives in `mcp/ground-control/lib/doc-coverage.js`.
+
+Nothing about the gate's behaviour changed: the surface classes, the `outcome_required`
+mapping, and every doc target are identical, and the split is verified behaviour-neutral by
+the unchanged test suite.
+
+The consequence worth recording is for the *checks that read this surface*. Several policy
+checks located the gate by reading `mcp/ground-control/lib.js` as a single file. After the
+split that file holds only re-exports, so those checks would have found no implementation
+and passed silently: a gate reporting green because it was looking at the wrong file.
+`tools/policy/checks.py::read_mcp_library` now returns the barrel plus every extracted
+module, and each content check reads that instead of one path.
+
 **2026-07-13 (env-template orphan-key invariant - issue #1384, GC-P023).** Extended `run_deploy_artifact_consistency` in `tools/policy/checks.py` with a reverse template-to-consumer check (violation code `deploy-env-template-orphan-key`, helpers `_run_env_template_consumer_check`, `_env_template_keys`, `_compose_consumed_names`, `_schema_consumed_names`, `_spring_bound_prefixes`, `_literal_consumed_names`, inventory `ENV_TEMPLATE_CONTRACTS`). The existing check proved that every `${VAR}` the production compose dereferences is declared in `env.schema`; nothing proved the reverse, so a key could outlive the service that read it - which is exactly what the Temporal removal (#1359) left behind in `.env.example` and `deploy/docker/.env.example`. The new check fails `make policy` when an active env template advertises a key with no executable consumer, where the legitimate consumer surfaces are declared per template in `ENV_TEMPLATE_CONTRACTS` (compose interpolation and list-form inherit, `env.schema` directives with the ADR-026 credential/allowlist slots expanded, the deploy validator and script, `application*.yml` placeholders, the MCP client's `process.env` reads, and Spring relaxed binding onto a declared `@ConfigurationProperties` prefix). Two rules are load-bearing: a compose **literal** (`- GC_SERVER_PORT=8000`) pins the value and is not a consumer of the operator's, and the production template does not get the backend-application surface, because an `application.yml` placeholder is irrelevant to `/opt/gc/.env` unless compose forwards the value into the container. Tests, docs, superseded ADRs, and historical migrations are not consumers. This is a repo-native policy-surface addition anchored on GC-P023 clauses (a) and (e); the documentation-coverage classifier (`classifyChangedSurface`), `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new `docs/DOC_STYLE.md` style rule is established.
 
 **2026-07-05 (issue #1295 GC-CLD-2 architecture-as-code registry).** Added the `run_module_graph_boundary_check` policy check to `tools/policy/checks.py` (with the `_validate_module_graph_registry`, `_module_for_path`, `_resolve_import_target`, and `_module_graph_authority_violations` helpers) and wired it into `main()`. The check validates `architecture/registry/module-graph.json`, asserts the registry is covered by a design-authority protected path, and fails frontend/MCP cross-module imports whose edge is absent from the registry's `allowed_edges`; the backend arm is `RegistryBoundaryArchitectureTest` (ArchUnit), which reads the same registry. This is a repo-native policy-surface addition: the user-facing reference lives in `architecture/registry/README.md` and `docs/DEVELOPMENT_WORKFLOW.md`, the contract in the ADR-087 §1/§3 amendment, and the temporal record in `changelog.d/1295.added.md`; `docs/DOC_STYLE.md`'s policy-surface sync note records the new check. The documentation-coverage classifier (`classifyChangedSurface`), `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged; no new `docs/DOC_STYLE.md` style rule is established.
@@ -296,6 +358,8 @@ current with the actual classifier surface.
 **2026-05-26 (issue #989 merge carve-out).** The `lib.js` change in this commit adds `INTEGRATION_MANAGER_MERGE_STRATEGIES` and extends `normalizeIntegrationManagerConfig` with the `merge_strategy` field. These changes are to the integration manager config parser, not to any documentation coverage gate surface. No change to the Vale rule set, the `.vale.ini` configuration, or `docs/DOC_STYLE.md` is required.
 
 **2026-06-15 (issue #1168).** `tools/policy/checks.py` gained `run_workflow_routing_contract` and its `parse_routing_agents` helper - a guardrail that asserts the async-poll `/implement` routing stages in `.ground-control.yaml` resolve to `agent: parent`. The change is unrelated to documentation coverage: the surface classifier (`run_documentation_coverage_check`), the Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged. `docs/DOC_STYLE.md` is updated only to list `tools/policy/checks.py` among the gate-surface trigger paths it previously omitted.
+
+**2026-07-29 (issue #1283, GC-Q015 console session read).** The new `SessionController` (`GET /api/v1/session`) added a `getCurrentSession` completeness helper in `mcp/ground-control/lib/api-session.js` (re-exported by `mcp/ground-control/lib.js` and imported in `mcp/ground-control/index.js`) plus a `/api/v1/session` entry in the `gc_query` read allowlist (`mcp/ground-control/gc-query.js`), for API/MCP parity; the endpoint is documented in `docs/API.md § Session`. This is an MCP tool-surface addition only - the documentation-coverage classifier (`classifyChangedSurface` / `run_documentation_coverage_check`), the `outcome_required` mapping, the Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged. `docs/DOC_STYLE.md` is updated only to add the previously omitted `mcp/ground-control/lib/doc-coverage.js` gate-surface trigger path.
 
 **2026-07-26 (issue #1421).** The #1168 executor-routing guard above is
 retired because `/implement` no longer carries an `agent` execution-control
@@ -613,6 +677,44 @@ first need. Layer 3 prose and the rejected "graceful skip" alternative are
 updated to name those two surfaces instead of the hook. The eight hygiene and
 secret-scan hooks pinned by `run_ci_strictness_contract` are untouched, as is
 the ADR-025 backup-policy assertion. The documentation-coverage classifier
+(`classifyChangedSurface`), its `outcome_required` mapping, the Vale rules,
+`tools/install-vale.sh`, and `.vale.ini` are unchanged; no new documentation
+classification or style rule is established.
+
+> **Sync note for issue #1467 (2026-07-28, enforce the 500-LOC file-size limit):**
+> The documentation-coverage classifier, its `outcome_required` mapping, the Vale
+> rule set, `tools/install-vale.sh`, and `.vale.ini` are all unchanged. What moved
+> is where two of this gate's trigger surfaces live: `mcp/ground-control/index.js`
+> kept its bootstrap and now registers tools through `mcp/ground-control/tools/*`,
+> and `tools/policy/checks.py` gained one line wiring in the new file-size gate
+> (`tools/policy/file_size.py`, ADR-092). Recorded here because this ADR names
+> those files as the gate's surfaces: a reader looking for a registration in
+> `index.js` alone would no longer find it. No documentation classification, Vale
+> rule, or style rule is established or altered by that change.
+
+**2026-07-28 (issue #1473 async mechanical jobs).**
+`gc_implement_mechanical` adds bounded `async` and `idempotency_key` inputs for
+its long `verify`, `publish`, and `monitor` actions, and the existing
+`gc_codex_job` surface becomes the shared review/preflight/mechanical poller.
+The public shape is synchronized in the live tool-description test and MCP
+README; behavior is synchronized in ADR-036, the implement/quickfix skills, and
+the workflow documents. The documentation-coverage classifier,
+`outcome_required` mapping, Vale rules, installer, and `.vale.ini` are
+unchanged. This amendment records a changed MCP/workflow contract; it adds no
+documentation classification or style rule.
+
+**2026-07-30 (#1434 follow-up: auto-resolve the requirement UID for repository
+gates).** `authorizeRequestedRequirementUid` in
+`mcp/ground-control/lib/codex-workflow-3.js` (re-exported by the
+`mcp/ground-control/lib.js` barrel) now resolves an issue's sole in-scope
+requirement UID from its `## Requirements` section when the caller omits
+`requested_requirement_uid`, so the shared repository gates (`verify`,
+`publish`, and base-sync completion) receive requirement-governance context even
+on a branch named for the issue number rather than the UID. Zero
+(requirement-free) or multiple (ambiguous) in-scope requirements resolve to no
+UID, and an explicit UID is still validated against the issue and still blocks
+on an unreadable issue. This changes only the requirement-context environment
+carried into the gate subprocess. The documentation-coverage classifier
 (`classifyChangedSurface`), its `outcome_required` mapping, the Vale rules,
 `tools/install-vale.sh`, and `.vale.ini` are unchanged; no new documentation
 classification or style rule is established.

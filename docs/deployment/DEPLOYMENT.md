@@ -46,6 +46,22 @@ make dev                           # Spring Boot dev server on :8000
 
 Flyway migrations run automatically on application startup - there is no separate migration step.
 
+### V211 GitHub traceability repair
+
+V211 normalizes legacy `#<positive decimal>` identifiers for `GITHUB_ISSUE`
+and `PULL_REQUEST` traceability links. Startup fails closed when both the legacy
+and canonical spellings already exist for the same requirement, artifact type,
+and link type; inspect and resolve those distinct links deliberately before
+retrying the deployment. The migration preserves Envers audit rows and leaves
+other malformed values unchanged.
+
+After V211 starts successfully, invoke the existing authenticated
+`POST /api/v1/admin/graph/materialize` operation once. The relational tables
+are authoritative, but `artifactIdentifier` contributes to derivative AGE node
+identity, so a previously published graph must be rebuilt after normalization.
+Use an authenticated admin client that sends credentials in HTTP headers
+without placing tokens in command arguments.
+
 ### Docker Compose Services
 
 The `docker-compose.yml` in the project root runs infrastructure only. Spring Boot runs on the host.
@@ -771,6 +787,12 @@ EOF
 To roll back to a prior version, use `make rollback VERSION=<version-or-digest>` (or `./scripts/rollback.sh <version-or-digest>`). The wrapper patches `GC_IMAGE` in `/opt/gc/.env` and delegates to the canonical deploy path, so the health gate and auto-rollback apply. See `skills/deploy/SKILL.md` (§Rollback) for the full runbook.
 
 The credential block (`GROUNDCONTROL_SECURITY_CREDENTIALS_*`) and any other ADR-026 / GC-P011 access-control envs go in this same file. See the ADR-026 cutover playbook above for the full credential shape.
+
+Live Activity uses non-secret optional bounds inherited by the backend:
+`GC_ACTIVITY_STALL_THRESHOLD` (default `30m`), `GC_ACTIVITY_MAX_OPEN_RUNS` (default `100`), and
+`GC_ACTIVITY_RECENT_RUNS` (default `8`). Set them in `/opt/gc/.env` only when the deployment needs
+different presentation sensitivity or snapshot sizes. The stall threshold changes an attention
+label only; it does not change workflow state, liveness, or cleanup behavior.
 
 #### 3. Deploy script
 

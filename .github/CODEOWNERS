@@ -10,9 +10,6 @@ AGENTS.md @Brad-Edwards
 .github/PULL_REQUEST_TEMPLATE.md @Brad-Edwards
 skills/** @Brad-Edwards
 architecture/adrs/** @Brad-Edwards
-architecture/registry/** @Brad-Edwards
-architecture/registry/mutation-boundaries.json @Brad-Edwards
-architecture/registry/mutation-baseline.md @Brad-Edwards
 architecture/policies/** @Brad-Edwards
 contracts/** @Brad-Edwards
 docs/DEVELOPMENT_WORKFLOW.md @Brad-Edwards
@@ -20,9 +17,6 @@ docs/WORKFLOW.md @Brad-Edwards
 bin/policy @Brad-Edwards
 tools/policy/** @Brad-Edwards
 tools/tests/** @Brad-Edwards
-frontend/src/test/oracle-battery.ts @Brad-Edwards
-frontend/src/test/oracle-battery.test.ts @Brad-Edwards
-backend/src/test/java/com/keplerops/groundcontrol/unit/domain/derivation/BoundaryModelServiceTest.java @Brad-Edwards
 mcp/ground-control/** @Brad-Edwards
 mcp/ground-control/lib.js @Brad-Edwards
 mcp/ground-control/index.js @Brad-Edwards

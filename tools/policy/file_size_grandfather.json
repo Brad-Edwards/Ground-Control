@@ -1,0 +1,13 @@
+{
+  "_comment": [
+    "Files still over the 500-line limit (docs/CODING_STANDARDS.md), enforced by",
+    "tools/policy/file_size.py. This list is only allowed to shrink: the gate fails",
+    "on an oversized file that is not listed AND on a listed file that is no longer",
+    "oversized, so an entry cannot outlive the work it covers.",
+    "",
+    "It is empty, which is the finished state: every file in the repo is within the",
+    "limit. Adding an entry needs a reason naming why the file is not decomposed in",
+    "the same change. 'Out of scope' is not a reason."
+  ],
+  "entries": {}
+}

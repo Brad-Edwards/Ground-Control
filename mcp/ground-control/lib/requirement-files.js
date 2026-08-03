@@ -1,0 +1,153 @@
+// File-based requirement reader for the post-teardown MCP (issue #1500, ADR-093).
+//
+// Requirements are the record as repo-local files: docs/requirements/<UID>/requirement.md,
+// with YAML frontmatter (id, title, status, type, priority, wave, timestamps) and a body
+// carrying `## Statement`, an optional `## Rationale`, and an optional `## Traceability` list.
+// There is no backend and no database; git is the source of truth. This module replaces the
+// former `/api/v1/requirements/*` REST reads with direct filesystem reads, keeping the exact
+// object shape the /implement workflow consumes (id, uid, title, statement, status, wave, and
+// traceability links). The exporter (RequirementsMarkdownExportService) is the write contract;
+// keep the two in step.
+import { promises as fs } from "node:fs";
+import { join } from "node:path";
+
+const SPECS_SUBDIR = join("docs", "requirements");
+
+// `- <linkType> → <artifactType> `<artifactIdentifier>`` with an optional ` (<artifactTitle>)`.
+const TRACE_LINE_RE = /^-\s+(\S+)\s+→\s+(\S+)\s+`([^`]+)`(?:\s+\((.+)\))?\s*$/;
+
+function specDir(repoPath) {
+  return join(repoPath, SPECS_SUBDIR);
+}
+
+function requirementPath(repoPath, uid) {
+  return join(specDir(repoPath), uid, "requirement.md");
+}
+
+// Parse the leading `---` YAML frontmatter block into a flat map plus the body lines that follow.
+// Only flat `key: value` scalars are read (the contract the exporter writes); quoted string
+// values are unquoted. Returns null when the frontmatter is missing or unterminated.
+function parse(text) {
+  const lines = text.split(/\r?\n/);
+  if (lines[0]?.trim() !== "---") return null;
+  const frontmatter = {};
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].trim() === "---") {
+      return { frontmatter, body: lines.slice(i + 1) };
+    }
+    const sep = lines[i].indexOf(":");
+    if (sep > 0) {
+      const key = lines[i].slice(0, sep).trim();
+      let value = lines[i].slice(sep + 1).trim();
+      if (value.startsWith('"') && value.endsWith('"') && value.length >= 2) {
+        value = value.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+      }
+      frontmatter[key] = value;
+    }
+  }
+  return null;
+}
+
+// Body text of a `## <heading>` section, up to the next `## ` heading or end of file.
+function section(body, heading) {
+  const start = body.findIndex((line) => line.trim() === `## ${heading}`);
+  if (start === -1) return null;
+  const collected = [];
+  for (let i = start + 1; i < body.length; i++) {
+    if (body[i].startsWith("## ")) break;
+    collected.push(body[i]);
+  }
+  return collected.join("\n").trim() || null;
+}
+
+function traceability(body) {
+  const start = body.findIndex((line) => line.trim() === "## Traceability");
+  if (start === -1) return [];
+  const links = [];
+  for (let i = start + 1; i < body.length; i++) {
+    if (body[i].startsWith("## ")) break;
+    const match = TRACE_LINE_RE.exec(body[i].trim());
+    if (match) {
+      links.push({
+        linkType: match[1],
+        artifactType: match[2],
+        artifactIdentifier: match[3],
+        artifactTitle: match[4] ?? null,
+        artifactUrl: null,
+      });
+    }
+  }
+  return links;
+}
+
+function toRequirement(uid, parsed) {
+  const fm = parsed.frontmatter;
+  const waveRaw = fm.wave;
+  const wave = waveRaw != null && waveRaw !== "" && !Number.isNaN(Number(waveRaw)) ? Number(waveRaw) : null;
+  return {
+    id: fm.id || uid,
+    uid: fm.id || uid,
+    title: fm.title || "",
+    statement: section(parsed.body, "Statement") || "",
+    rationale: section(parsed.body, "Rationale") || "",
+    requirementType: fm.type || null,
+    // Snake alias for consumers that read the former REST shape (e.g. formatIssueBody).
+    requirement_type: fm.type || null,
+    type: fm.type || null,
+    priority: fm.priority || null,
+    status: fm.status || null,
+    wave,
+    createdAt: fm.created_at || null,
+    updatedAt: fm.updated_at || null,
+    traceabilityLinks: traceability(parsed.body),
+  };
+}
+
+// Read one requirement by UID. Returns null when the file is absent or malformed.
+export async function readRequirementByUid(repoPath, uid) {
+  let text;
+  try {
+    text = await fs.readFile(requirementPath(repoPath, uid), "utf8");
+  } catch {
+    return null;
+  }
+  const parsed = parse(text);
+  return parsed ? toRequirement(uid, parsed) : null;
+}
+
+export async function readTraceabilityLinks(repoPath, uid) {
+  const requirement = await readRequirementByUid(repoPath, uid);
+  return requirement ? requirement.traceabilityLinks : [];
+}
+
+// Read every requirement in the repo (one pass over docs/requirements/*/requirement.md).
+export async function readAllRequirements(repoPath) {
+  let entries;
+  try {
+    entries = await fs.readdir(specDir(repoPath), { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const requirements = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const requirement = await readRequirementByUid(repoPath, entry.name);
+    if (requirement) requirements.push(requirement);
+  }
+  return requirements;
+}
+
+// Reverse lookup: every (requirement, link) whose link targets the given artifact — the
+// file-based replacement for GET /api/v1/traceability?artifactType=…&artifactIdentifier=…
+export async function findTraceabilityByArtifact(repoPath, artifactType, artifactIdentifier) {
+  const wanted = String(artifactIdentifier);
+  const matches = [];
+  for (const requirement of await readAllRequirements(repoPath)) {
+    for (const link of requirement.traceabilityLinks) {
+      if (link.artifactType === artifactType && String(link.artifactIdentifier) === wanted) {
+        matches.push({ ...link, requirementUid: requirement.uid, requirementId: requirement.id });
+      }
+    }
+  }
+  return matches;
+}

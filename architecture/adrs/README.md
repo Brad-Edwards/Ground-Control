@@ -2,6 +2,8 @@
 
 This directory contains Architecture Decision Records (ADRs) for Ground Control. ADRs capture significant architectural decisions along with their context, rationale, and consequences.
 
+> **Context-graph teardown (issue #1500, 2026-08-03).** Ground Control was re-platformed from a graph-native GRC/requirements product into the MCP server for the `/implement` workflow over repo-local files. The backend, PostgreSQL/Apache AGE database, React frontend, deploy/Docker surface, and the composed GRC/audit/verification/measurement layers were removed. The record of that decision is [ADR-093](093-requirements-specs-as-code.md) (requirements are repo-local files) and [ADR-094](094-graphify-comprehension-index.md) (Graphify is an optional comprehension index). ADRs describing the removed surfaces, the context graph, the GRC aggregates and composed product, the pluggable verification and formal-methods lanes, the production-line measurement model, the REST API access-control and deployment surfaces, and the frontend console, are historical: they document decisions for a system that no longer exists in this repo, superseded by the #1500 re-platform.
+
 ## Format
 
 We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each ADR includes:
@@ -52,7 +54,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [033](033-authenticated-audit-actor-provenance.md) | Authenticated Audit Actor Provenance | Accepted |
 | [034](034-api-enum-contract-single-source.md) | API Enum Contract Single Source of Truth | Accepted (amended 2026-06-15, #1106) |
 | [035](035-mcp-tool-catalog-curation.md) | MCP Tool Catalog Curation | Accepted |
-| [036](036-per-step-routing-tool-surfaces-telemetry.md) | Per-Step Model Routing, Durable-Record Tool Surfaces, and Step Telemetry (amends ADR-021) | Accepted (amended 2026-05-26, GC-O011/#989; 2026-07-03, ADR-081) |
+| [036](036-per-step-routing-tool-surfaces-telemetry.md) | Per-Step Model Routing, Durable-Record Tool Surfaces, and Step Telemetry (amends ADR-021) | Accepted (amended 2026-05-26, GC-O011/#989; 2026-07-03, ADR-081; 2026-07-28, #1473) |
 | [037](037-browser-session-access-control.md) | Browser Session Access Control | Accepted |
 | [038](038-finding-entity-boundary.md) | Finding Entity Boundary | Accepted |
 | [039](039-control-verification-subsystem.md) | Control Verification Subsystem (Tests + Effectiveness Assessments) | Accepted |
@@ -78,7 +80,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [058](058-derivation-first-continuous-grc.md) | Derivation-First Continuous GRC | Superseded by ADR-089 for active product and workflow behavior |
 | [059](059-mcp-usage-telemetry.md) | MCP Tool Usage Telemetry | Accepted |
 | [060](060-requirement-uid-identity.md) | Requirement UID identity | Accepted |
-| [061](061-workflow-run-telemetry-reporting.md) | Workflow-Run Telemetry & Economics Reporting Surface | Accepted (amended 2026-07-26, #1435) |
+| [061](061-workflow-run-telemetry-reporting.md) | Workflow-Run Telemetry & Economics Reporting Surface | Accepted (amended 2026-07-30, #1437) |
 | [062](062-age-graph-projection-snapshot-publication.md) | AGE Graph Projection Snapshot Publication | Accepted |
 | [063](063-release-deployment-model.md) | Release & Deployment Model | Accepted (amended 2026-07-15, GC-P027/#1399 Release Please ownership) |
 | [064](064-research-run-lifecycle-and-stage-gating.md) | Research Run Lifecycle and Stage Gating | Accepted |
@@ -102,12 +104,16 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [082](082-contract-surface-architecture.md) | Contract Surface Architecture and Enforcement Gates | Accepted |
 | [083](083-research-protocol-plan-artifact-and-method-outputs.md) | Research Protocol Plan Artifact and Method-Specific Outputs | Accepted |
 | [084](084-context-graph-concept-authority.md) | Context-Graph Concept Authority and Time Semantics | Accepted |
-| [085](085-identity-model-users-groups-roles.md) | Identity Model - Users, Groups, and Roles as Data | Accepted |
+| [085](085-identity-model-users-groups-roles.md) | Identity Model - Users, Groups, and Roles as Data | Accepted (amended 2026-07-27, #1282) |
 | [086](086-research-high-risk-operation-authorization.md) | Research High-Risk Operation Authorization | Accepted |
-| [087](087-contract-locked-development-methodology.md) | Contract-Locked Development Methodology | Accepted (amended 2026-07-04, #1293) |
+| [087](087-contract-locked-development-methodology.md) | Contract-Locked Development Methodology | Withdrawn (2026-07-10, #1296) |
 | [088](088-temporal-human-gates.md) | Temporal Human Gates (Merge Observation and Authorized Operator Signals) | Superseded (issue #1359) |
 | [089](089-retire-grc-product-and-next-issue-recommendation.md) | Retire the GRC Product Surface and Next-Issue Recommendation | Accepted |
-| [090](090-production-line-measurement-model.md) | Production-Line Measurement Model | Accepted (amended 2026-07-26, #1435) |
+| [090](090-production-line-measurement-model.md) | Production-Line Measurement Model | Accepted (amended 2026-07-28, #1355) |
+| [091](091-ci-verification-topology.md) | CI Verification Topology | Accepted |
+| [092](092-file-size-limit-gate.md) | Enforce the 500-LOC File-Size Limit in Repo Policy | Accepted |
+| [093](093-requirements-specs-as-code.md) | Requirements as Specs-as-Code | Accepted |
+| [094](094-graphify-comprehension-index.md) | Graphify Comprehension Index | Accepted |
 
 Prior ADRs from the old project frame are archived in `archive/architecture/adrs/`.
 

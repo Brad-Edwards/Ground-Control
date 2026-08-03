@@ -7,9 +7,12 @@ tier: low
 # Step 6: Completion Gate
 
 On the normal path call `gc_implement_mechanical` with `action="verify"`,
-`requirements` populated from Step 1, and the issue/repository identifiers.
-The action runs the configured completion command, the configured policy
-command, verifies
+`requirements` populated from Step 1, the issue/repository identifiers,
+`async=true`, and one bounded `idempotency_key` for this verification attempt.
+Poll the returned `job_id` through `gc_codex_job` until `status="done"`, then
+dispatch on `result`. Reuse the same key only if the start response was lost;
+after repairing a failed gate, create a new key for the new attempt. The action
+runs the configured completion command, the configured policy command, verifies
 that those gates did not mutate the checkout, and calls
 `gc_assert_quality_gates`. Continue only on `ok: true`; a failed envelope
 names the exact gate an agent must repair before retrying the same action.
@@ -17,11 +20,11 @@ names the exact gate an agent must repair before retrying the same action.
 Implementation is NOT ready for commit until ALL of the following are verified:
 
 1. **Completion gate passes once on the final Phase-B implementation tree** -
-   run `cfg.workflow.completion_command`. If that field is null, fall back to
-   `cfg.workflow.test_command`. If both are null, ask the user what the
-   completion gate command should be for this repo (do not guess). Confirm the
-   command exits successfully. Do not rerun it when the relevant tree state is
-   unchanged.
+   the `verify` action runs `cfg.workflow.completion_command`, falling back to
+   `cfg.workflow.test_command` when necessary. If neither is configured, its
+   result names that configuration defect. Repair the configuration or ask the
+   user for the repository's intended command; do not guess or run a substitute
+   gate. Do not retry when the relevant tree state is unchanged.
 2. **Step 4.5 clause mapping was completed** - if you skipped it, go back and do it now.
 3. **If the documentation-only carve-out from Step 4.4 was declared**, re-validate it against the *actual* diff right now. The check must cover both committed AND uncommitted/untracked changes, since Step 6 runs *before* the Step 7/8 stage-and-commit step:
    1. **Compute the full path set.** Take the union of `git diff --name-only <base-ref>...HEAD` (committed work), `git diff --name-only HEAD` (unstaged), `git diff --cached --name-only` (staged), and `git ls-files --others --exclude-standard` (untracked-but-not-ignored). Working-tree state is part of the diff at this point in the workflow.
@@ -30,10 +33,10 @@ Implementation is NOT ready for commit until ALL of the following are verified:
    4. The carve-out passes Step 6 only when BOTH checks pass: every path is in the documentation set AND no diff hunk introduces executable behavior. If either check fails, revert to the mandatory red-green loop for the failing portion before declaring the gate passed.
 
 4. **Repository policy passes once on the same tree.** Run
-   `cfg.workflow.policy_command` (default `make policy`). A repo whose gate is
-   named differently sets that field; the gate is never skipped because a
-   target is absent. In this repository it also runs Vale on docs touched in
-   the diff. If
+   `cfg.workflow.policy_command` only through the `verify` action (default
+   `make policy`). A repo whose gate is named differently sets that field; the
+   gate is never skipped because a target is absent. In this repository it also
+   runs Vale on docs touched in the diff. If
    `.tools/vale/current/vale` is missing, run `bash tools/install-vale.sh` and
    retry - do not skip. Vale enforces the Google Developer Documentation Style
    Guide and Diátaxis structure (see ADR-054 and `docs/DOC_STYLE.md`); fix every
@@ -43,7 +46,24 @@ Implementation is NOT ready for commit until ALL of the following are verified:
    redundant broad reruns; if review fixes later change the tree, the review
    band reruns completion and policy once on its final post-fix state.
 
-5. **Quality gates pass.** Call `gc_assert_quality_gates` with `project: cfg.project` and `requirements` populated from `in_scope_requirements[]` as `[{uid, status_intent}]`. The tool evaluates the project's enabled quality gates server-side (`QualityGateService.evaluate`) and returns a mechanical pass/fail envelope - this is not an agent judgment call. If it returns `ok: false`, the run is **blocked**. Project-level failures return `failing_gates[]` with each failing gate as `{name, metric_type, threshold, actual}` (only the gates that failed), so the metric to fix is obvious from the error alone. When the active `DOCUMENTS` coverage gate exists, the same call also checks every in-scope requirement for a `DOCUMENTS` traceability link regardless of status; missing links return `error: "in_scope_documentation_coverage_failed"` plus `missing_documents[]`. Fix the underlying metric - add the missing IMPLEMENTS / TESTS / DOCUMENTS traceability links, resolve orphaned or incomplete requirements - then re-run. The enforced metric types are COVERAGE (over IMPLEMENTS / TESTS / DOCUMENTS link coverage), ORPHAN_COUNT, and COMPLETENESS. Do NOT proceed to Phase C while any enabled gate fails. (If `gc_assert_quality_gates` is not yet exposed by the running MCP server - it shipped in issue #1101 - fall back to `gc_quality_gate action=evaluate` with the same project and block on `passed: false`; the dedicated tool applies once the server restarts. The fallback cannot perform the in-scope requirement check, so prefer the dedicated tool.)
+5. **Quality gates pass.** The `verify` action invokes
+   `gc_assert_quality_gates` with `project: cfg.project` and the supplied
+   requirements. The tool evaluates the project's enabled quality gates
+   server-side (`QualityGateService.evaluate`) and returns a mechanical
+   pass/fail envelope - this is not an agent judgment call. If the completed
+   result has `ok: false`, the run is **blocked**. Project-level failures return
+   `failing_gates[]` with each failing gate as
+   `{name, metric_type, threshold, actual}` (only the gates that failed), so the
+   metric to fix is obvious from the error alone. When the active `DOCUMENTS`
+   coverage gate exists, the same call also checks every in-scope requirement
+   for a `DOCUMENTS` traceability link regardless of status; missing links
+   return `error: "in_scope_documentation_coverage_failed"` plus
+   `missing_documents[]`. Fix the underlying metric - add the missing
+   IMPLEMENTS / TESTS / DOCUMENTS traceability links, resolve orphaned or
+   incomplete requirements - then retry `verify` with a new key. The enforced
+   metric types are COVERAGE (over IMPLEMENTS / TESTS / DOCUMENTS link
+   coverage), ORPHAN_COUNT, and COMPLETENESS. Do NOT proceed to Phase C while
+   any enabled gate fails.
 
 If any check fails, fix it before proceeding. Do NOT move to Phase C until every check passes.
 

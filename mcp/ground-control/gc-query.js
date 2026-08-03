@@ -57,6 +57,7 @@ export const GC_QUERY_PATH_ALLOWLIST = Object.freeze([
   "/api/v1/research-runs",
   "/api/v1/risk-scenarios",
   "/api/v1/sections",
+  "/api/v1/session",
   "/api/v1/test-cases",
   "/api/v1/test-plans",
   "/api/v1/test-runs",
@@ -86,6 +87,12 @@ export const GC_QUERY_PATH_DENYLIST = Object.freeze([
   // prefix allowlist cannot route it with the admin token through the gc_query escape hatch. The
   // denylist is checked before the allowlist, so this exact entry wins over the prefix match.
   "/api/v1/workflow-runs/cross-project-aggregate",
+  // The live SSE stream sits under the allowlisted /api/v1/workflow-runs prefix but is not a
+  // readable document (issue #1436). gc_query would open it, block in readBoundedBody on a
+  // response that never ends, and — because the stream heartbeats — burn the full 30s timeout
+  // before returning nothing useful. It is a browser transport, not an agent read; snapshots come
+  // from GET /api/v1/workflow-runs and /api/v1/workflow-runs/{runId}/events.
+  "/api/v1/workflow-runs/stream",
 ]);
 
 /** 1 MiB body cap for gc_query responses. */

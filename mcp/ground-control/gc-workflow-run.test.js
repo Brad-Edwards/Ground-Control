@@ -18,6 +18,7 @@ import {
   WORKFLOW_RUN_EVENT_FIELDS,
   WORKFLOW_RUN_COST_FIELDS,
 } from "./gc-workflow-run.js";
+import { listWorkflowRuns } from "./lib.js";
 
 const ORIGINAL_FETCH = globalThis.fetch;
 const ORIGINAL_BASE_URL = process.env.GC_BASE_URL;
@@ -113,17 +114,20 @@ describe("gcWorkflowRunZodShape", () => {
 });
 
 describe("GC_WORKFLOW_RUN_ACTIONS constant", () => {
-  it("contains exactly the seven documented actions", () => {
+  it("contains exactly the documented actions", () => {
     assert.deepEqual(
       [...GC_WORKFLOW_RUN_ACTIONS].sort(),
       [
+        "activity",
         "aggregate",
         "cross_project_aggregate",
         "import_cost",
         "list",
         "list_events",
+        "measurement",
         "record",
         "record_event",
+        "record_finding_disposition",
       ],
     );
   });
@@ -450,5 +454,37 @@ describe("WORKFLOW_RUN_COST_FIELDS", () => {
     assert.ok(WORKFLOW_RUN_COST_FIELDS.includes("cost_proxy"));
     assert.ok(WORKFLOW_RUN_COST_FIELDS.includes("model"));
     assert.ok(WORKFLOW_RUN_COST_FIELDS.includes("provider"));
+  });
+});
+
+// ── Event-stream guard on the shared HTTP client (issue #1436) ───────────────
+
+describe("request() event-stream guard", () => {
+  it("refuses a text/event-stream response instead of hanging on it", async () => {
+    // res.text() on a live SSE response never resolves — the connection stays open by design and
+    // heartbeats keep it from failing idle — so without this guard a streaming endpoint reached
+    // through the shared client would hang the MCP server outright rather than erroring.
+    globalThis.fetch = async () =>
+      new Response("event: workflow-run\ndata: {}\n\n", {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream;charset=UTF-8" },
+      });
+
+    await assert.rejects(() => listWorkflowRuns("ground-control", 50), (error) => {
+      assert.equal(error.code, "unsupported_media_type");
+      return true;
+    });
+  });
+
+  it("still reads an ordinary JSON response", async () => {
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify([{ id: "run-1" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+
+    const runs = await listWorkflowRuns("ground-control", 50);
+
+    assert.deepEqual(runs, [{ id: "run-1" }]);
   });
 });
