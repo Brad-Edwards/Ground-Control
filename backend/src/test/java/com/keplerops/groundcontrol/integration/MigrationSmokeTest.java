@@ -407,7 +407,10 @@ class MigrationSmokeTest extends BaseIntegrationTest {
                         "210",
                         // V211 (#250): fail-closed normalization of legacy #<number> GitHub
                         // traceability identifiers without rewriting Envers history.
-                        "211");
+                        "211",
+                        // V212 (#1500, GC-P026): normalize legacy KeplerOps/Ground-Control
+                        // traceability identity to canonical autarchy-ai/Ground-Control.
+                        "212");
     }
 
     @Test

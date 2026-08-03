@@ -46,8 +46,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * End-to-end requirements flow against the full Flyway migration set applied by
- * {@link BaseIntegrationTest} — through V211, which normalizes legacy GitHub traceability
- * identifiers without rewriting audit history (issue #250). It exercises the API and the audited
+ * {@link BaseIntegrationTest} — through V212, which normalizes the legacy KeplerOps/Ground-Control
+ * traceability identity to autarchy-ai/Ground-Control (issue #1500). It exercises the API and the audited
  * persistence spine those migrations build, so a migration that breaks the end-to-end path fails
  * here rather than only in the migration smoke test.
  */

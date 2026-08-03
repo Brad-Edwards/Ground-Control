@@ -46,6 +46,14 @@
         <Bug pattern="EI_EXPOSE_REP2" />
     </Match>
 
+    <!-- CLI ApplicationRunners store injected dependencies by design (same rationale as the
+         domain service and infrastructure blocks above: storing an injected singleton bean is
+         intended constructor injection, not exposure of mutable internal state). -->
+    <Match>
+        <Package name="com.keplerops.groundcontrol.shared.cli" />
+        <Bug pattern="EI_EXPOSE_REP2" />
+    </Match>
+
     <!-- ErrorResponse is a JSON envelope record that carries a Map<String, Object> detail
          block. The Map ref is exposed via the record accessor by design — same as the
          api/* records that were already excluded. -->

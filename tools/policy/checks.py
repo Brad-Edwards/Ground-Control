@@ -124,6 +124,14 @@ from .ci_contract import (  # noqa: F401
     run_deploy_compose_credential_passthrough,
     run_ghcr_namespace_drift,
 )
+from .requirement_specs import (  # noqa: F401
+    FRONTMATTER_CODE,
+    PRIORITY_VALUES,
+    REQUIREMENT_SPECS_DIR,
+    STATUS_VALUES,
+    TYPE_VALUES,
+    run_requirement_specs_frontmatter_check,
+)
 from .repo_identity import (  # noqa: F401
     BACKEND_JAVA_GLOB,
     CANONICAL_REPO_OWNER,
