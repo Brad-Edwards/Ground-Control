@@ -25,17 +25,17 @@ For both phases, `gc_assert_completion` re-reads the trusted
 Caller summaries or cached arrays cannot override this gate. Repair and verify
 every obligation, record its resolution, then retry completion.
 
-**Precondition (post_merge only)**: Steps 15 (`gc_transition_status`) and 16 (`gc_create_traceability_link` / `gc_delete_traceability_link`) must have run successfully in Phase E. The post-merge final report must reflect the reconciled state of the Ground Control graph; the pre-merge readiness record must not claim a reconciliation that has not happened.
+**Precondition (post_merge only)**: Steps 15 (requirement `status:` frontmatter edits) and 16 (requirement `## Traceability` edits) must have been committed in Phase E. The post-merge final report must reflect the reconciled requirement files; the pre-merge readiness record must not claim a reconciliation that has not happened.
 
 **You MUST NOT merge the PR. You MUST NOT run `gh pr merge`. The user reviews and merges.**
 
 ## What gc_assert_completion does (`phase="post_merge"`)
 
-Call `gc_assert_completion` with `phase="post_merge"` (the default) once Step 15/16 have run in Phase E. The tool first verifies the linked PR is merged (`merged_at` non-null AND state `MERGED`) - refusing with `completion_pr_not_merged` / `next_action:"wait_for_user_to_merge_the_pr"` otherwise - then runs the following assertions in sequence and posts the final report:
+Call `gc_assert_completion` with `phase="post_merge"` (the default) once Step 15/16 have run in Phase E. The tool first verifies the linked PR is merged (`merged_at` non-null AND state `MERGED`) - refusing with `completion_pr_not_merged` / `next_action:"wait_for_user_to_merge_the_pr"` otherwise - then posts the final report:
 
-1. **Traceability assertion** (`gc_assert_traceability_reconciled`): re-fetches each in-scope requirement and its IMPLEMENTS/TESTS links from the Ground Control REST API. Posts the `traceability_reconciled` phase marker on success. Returns `ok:false` with `error: "traceability_not_reconciled"` on failure - loop back to Step 16 to fix.
+Before calling it, confirm each in-scope requirement's `docs/requirements/<UID>/requirement.md` is ACTIVE and its `## Traceability` section records the Step 16 entries; if anything is missing, loop back to Step 16 first. There is no backend traceability reconciliation — the requirement files edited in Steps 15/16 are the record.
 
-2. **Final report** (`gc_post_final_report`): renders the structured final-report Markdown and posts it as a comment. The `internalVerifiedPhases` union avoids a GitHub read-after-write race on the marker just posted.
+1. **Final report** (`gc_post_final_report`): renders the structured final-report Markdown and posts it as a comment. It enforces the real gates — CI green, Sonar pass-or-legit-skipped, the mandatory Codex review, and the sensitive/defer/reserved-marker scrubs.
 
 The tool returns `{ok, assertions[], final_report}`. The `assertions` array contains one entry per assertion: `{name, ok, comment_url, comment_id}`.
 

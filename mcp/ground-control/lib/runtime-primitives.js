@@ -231,6 +231,27 @@ export async function execFileWithInput(
     }
   });
 }
+
+// The review engine (`claude`) is spawned as a separate process from the agent,
+// so by default ANTHROPIC_API_KEY is stripped from its environment. Strip it,
+// though, ONLY when the child still has another way to authenticate — Vertex or
+// Bedrock, or a dedicated CLAUDE_CONFIG_DIR profile. If the key is the only auth
+// present, keep it: otherwise the review falls through to a default OAuth
+// profile that is frequently expired, which surfaces as
+// `test_quality_review_engine_failed`. This makes the review inherit whatever
+// auth mode launched the MCP — Vertex vars, a personal config dir, or a bare
+// key — across any repo, folder, or tmux session, whether codex or claude loaded
+// the server.
+export function reviewEngineEnv(baseEnv = process.env) {
+  const env = { ...baseEnv };
+  const hasAlternativeAuth = Boolean(
+    env.CLAUDE_CODE_USE_VERTEX || env.CLAUDE_CODE_USE_BEDROCK || env.CLAUDE_CONFIG_DIR,
+  );
+  if (hasAlternativeAuth) {
+    delete env.ANTHROPIC_API_KEY;
+  }
+  return env;
+}
 export function resolveWorkflowRouteFromConfig({ routing, stage, tier = null }) {
   if (typeof stage !== "string" || stage.trim() === "") {
     return { ok: false, error: "routing_stage_invalid", message: "stage must be a non-empty string" };

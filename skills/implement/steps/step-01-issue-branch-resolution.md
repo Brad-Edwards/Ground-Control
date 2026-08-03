@@ -35,19 +35,19 @@ if they are absent, if their digest no longer matches, or if
      synthesize or rewrite a prefix.
    - Otherwise ask for disambiguation.
 
-4. For a requirement UID, call `gc_get_requirement`, then
-   `gc_get_traceability`. Reuse its `GITHUB_ISSUE` link or call
+4. For a requirement UID, read `docs/requirements/<UID>/requirement.md` and its
+   `## Traceability` section. Reuse its `GITHUB_ISSUE` entry or call
    `gc_create_github_issue` with the UID, project, and invocation root. The
    resolved issue number is authoritative.
 
 5. Call `gc_get_issue_thread` and cache its content hash. Parse the issue
    body's `##` through `#### Requirements` section. Every valid UID bullet is
    in scope; an absent or empty section means a requirement-free run. Resolve
-   every UID with `gc_get_requirement` and cache its UUID, title, statement,
-   status, and wave. If the run started from a UID, ensure that UID appears in
+   every UID by reading `docs/requirements/<UID>/requirement.md` and cache its
+   title, statement, status, and wave. If the run started from a UID, ensure that UID appears in
    the issue Requirements section.
 
-6. Call `gc_get_traceability_by_artifact` for the issue and cache the links.
+6. Read the requirement files' `## Traceability` sections for `GITHUB_ISSUE` entries naming the issue and cache them.
 
 7. Derive a compliant branch name `<issue-number>-<short-slug>` from two to
    four words naming the change. The total is at most 50 characters and uses
