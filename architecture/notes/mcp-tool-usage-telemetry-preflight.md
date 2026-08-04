@@ -119,9 +119,9 @@ not an implementation plan.
 - Validate or bound the time window so an unintentional all-history scan is a
   deliberate API decision. If defaults are added, make them explicit in the
   controller/service rather than burying them in SQL.
-- Compute aggregates server-side. Do not reuse
-  `tools/summarize_implement_telemetry.py`; it is ADR-036 JSONL economics
-  tooling with a different schema and scope.
+- Compute aggregates server-side. Do not revive the retired local JSONL
+  economics tooling (the former `tools/summarize_implement_telemetry.py`,
+  removed in #1507); it had a different schema and scope.
 - Keep the obvious extension seam in one place: the percentile set and any
   default/max window policy belong in backend service/config, not duplicated in
   MCP or README prose.
@@ -153,8 +153,9 @@ not an implementation plan.
   `mcp/ground-control/*.test.js`: controller-slice and MCP handler-wrapper
   tests are mandatory because they prove the acceptance criteria in the CI
   lanes that actually run for coverage.
-- `tools/summarize_implement_telemetry.py` and `.gc/telemetry/` are explicitly
-  out of scope for this issue except as "do not reuse" examples.
+- The former `tools/summarize_implement_telemetry.py` (removed in #1507) and
+  `.gc/telemetry/` are explicitly out of scope for this issue except as "do not
+  reuse" examples.
 
 ## Implementation Boundaries
 

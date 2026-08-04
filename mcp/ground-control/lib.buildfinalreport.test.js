@@ -4,16 +4,11 @@
 import { before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-  CLAUDE_MODEL_BY_TIER,
   PR_BODY_POLICY_CHECK_LINE,
   PR_BODY_SUMMARY_MAX,
-  TELEMETRY_SCHEMA_VERSION,
   buildFinalReport,
   buildPrBody,
-  buildTelemetryRecord,
-  buildTelemetryRelPath,
   checkPrBodyShape,
-  sanitizeTelemetryBranch,
   validatePrBodyInput,
 } from "./lib.js";
 
@@ -355,121 +350,5 @@ describe("buildPrBody", () => {
     assert.match(body, /No ADR required/);
     const shape = checkPrBodyShape(body);
     assert.equal(shape.ok, true, JSON.stringify(shape.errors));
-  });
-});
-
-describe("sanitizeTelemetryBranch", () => {
-  it("passes plain alphanumeric + dash + dot + underscore through", () => {
-    assert.equal(sanitizeTelemetryBranch("868-route-tools-telem"), "868-route-tools-telem");
-    assert.equal(sanitizeTelemetryBranch("v1.2.3_test"), "v1.2.3_test");
-  });
-  it("replaces forward slashes and arrows with underscores", () => {
-    assert.equal(sanitizeTelemetryBranch("feat/something"), "feat_something");
-    // `→` is a single BMP code unit in JS; one substitution → one underscore.
-    assert.equal(sanitizeTelemetryBranch("foo→bar"), "foo_bar");
-    // Mixed: `=` is not in the allowed class, becomes `_`.
-    assert.equal(sanitizeTelemetryBranch("a=b/c d"), "a_b_c_d");
-  });
-  it("truncates to 60 chars", () => {
-    const long = "a".repeat(100);
-    const out = sanitizeTelemetryBranch(long);
-    assert.equal(out.length, 60);
-  });
-  it("returns 'unknown' for empty / non-string input", () => {
-    assert.equal(sanitizeTelemetryBranch(""), "unknown");
-    assert.equal(sanitizeTelemetryBranch("   "), "unknown");
-    assert.equal(sanitizeTelemetryBranch(null), "unknown");
-    assert.equal(sanitizeTelemetryBranch(undefined), "unknown");
-    assert.equal(sanitizeTelemetryBranch(123), "unknown");
-  });
-});
-
-describe("buildTelemetryRecord", () => {
-  function baseInput(overrides = {}) {
-    return {
-      issueNumber: 868,
-      branch: "868-route-tools-telem",
-      step: "4.5",
-      tier: "medium",
-      model: "sonnet",
-      wallTimeMs: 12480,
-      outcome: "ok",
-      ...overrides,
-    };
-  }
-  it("returns a normalized JSON-stringifiable record with the schema version", () => {
-    const r = buildTelemetryRecord(baseInput());
-    assert.equal(r.schema, TELEMETRY_SCHEMA_VERSION);
-    assert.equal(r.issue, 868);
-    assert.equal(r.branch, "868-route-tools-telem");
-    assert.equal(r.step, "4.5");
-    assert.equal(r.tier, "medium");
-    assert.equal(r.model, "sonnet");
-    assert.equal(r.wall_time_ms, 12480);
-    assert.equal(r.outcome, "ok");
-    assert.equal(r.input_tokens, null);
-    assert.equal(r.output_tokens, null);
-    assert.match(r.ts, /^\d{4}-\d{2}-\d{2}T/);
-  });
-
-  it("records the config-derived expected_model for each tier (issue #1181)", () => {
-    assert.equal(buildTelemetryRecord(baseInput({ tier: "low" })).expected_model, CLAUDE_MODEL_BY_TIER.low);
-    assert.equal(buildTelemetryRecord(baseInput({ tier: "medium" })).expected_model, CLAUDE_MODEL_BY_TIER.medium);
-    assert.equal(buildTelemetryRecord(baseInput({ tier: "high" })).expected_model, CLAUDE_MODEL_BY_TIER.high);
-  });
-
-  it("flags model_matches_expected true when the reported model is the tier's canonical model", () => {
-    const r = buildTelemetryRecord(baseInput({ tier: "medium", model: CLAUDE_MODEL_BY_TIER.medium }));
-    assert.equal(r.model_matches_expected, true);
-  });
-
-  it("flags model_matches_expected false when the reported model diverges from the tier (routing-drift signal)", () => {
-    // A medium step reporting an opus model — the exact divergence seen in the
-    // real .gc/telemetry data that motivated #1181.
-    const r = buildTelemetryRecord(baseInput({ tier: "medium", model: CLAUDE_MODEL_BY_TIER.high }));
-    assert.equal(r.expected_model, CLAUDE_MODEL_BY_TIER.medium);
-    assert.equal(r.model_matches_expected, false);
-  });
-
-  it("accepts optional token counts", () => {
-    const r = buildTelemetryRecord(baseInput({ inputTokens: 8421, outputTokens: 612 }));
-    assert.equal(r.input_tokens, 8421);
-    assert.equal(r.output_tokens, 612);
-  });
-
-  it("accepts an explicit ts and propagates it verbatim", () => {
-    const r = buildTelemetryRecord(baseInput({ ts: "2026-05-11T07:00:00Z" }));
-    assert.equal(r.ts, "2026-05-11T07:00:00Z");
-  });
-
-  it("rejects unknown tier values", () => {
-    assert.throws(() => buildTelemetryRecord(baseInput({ tier: "ultra" })), /tier must be one of/);
-  });
-
-  it("rejects unknown outcome values", () => {
-    assert.throws(() => buildTelemetryRecord(baseInput({ outcome: "warned" })), /outcome must be one of/);
-  });
-
-  it("rejects negative wallTimeMs", () => {
-    assert.throws(() => buildTelemetryRecord(baseInput({ wallTimeMs: -1 })), /wallTimeMs must be non-negative/);
-  });
-
-  it("rejects negative token counts", () => {
-    assert.throws(() => buildTelemetryRecord(baseInput({ inputTokens: -1 })), /inputTokens/);
-  });
-});
-
-describe("buildTelemetryRelPath", () => {
-  it("returns the canonical repo-relative path under .gc/telemetry/", () => {
-    const p = buildTelemetryRelPath({ issueNumber: 868, branch: "868-route-tools-telem" });
-    assert.equal(p, ".gc/telemetry/868-868-route-tools-telem.jsonl");
-  });
-  it("sanitizes the branch component", () => {
-    const p = buildTelemetryRelPath({ issueNumber: 1, branch: "feat/x" });
-    assert.equal(p, ".gc/telemetry/1-feat_x.jsonl");
-  });
-  it("rejects invalid issue numbers", () => {
-    assert.throws(() => buildTelemetryRelPath({ issueNumber: 0, branch: "x" }));
-    assert.throws(() => buildTelemetryRelPath({ issueNumber: 1.5, branch: "x" }));
   });
 });

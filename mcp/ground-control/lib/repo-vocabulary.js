@@ -357,7 +357,6 @@ export function _pruneSonarExports(absSonarDir, retention) {
     // handles creation; nothing to prune.
   }
 }
-export const TELEMETRY_SCHEMA_VERSION = "gc.implement.telemetry/v2";
 export const TELEMETRY_TIERS = Object.freeze(["low", "medium", "high"]);
 export const TELEMETRY_OUTCOMES = Object.freeze(["ok", "error", "skipped"]);
 export const ROUTING_TIERS = TELEMETRY_TIERS;
@@ -390,67 +389,3 @@ export const DEFAULT_IMPLEMENT_ROUTING_STAGES = Object.freeze({
   final_report: { tier: "low" },
   close_issue_after_merge: { tier: "low" },
 });
-const TELEMETRY_SANITIZE_BRANCH_RE = /[^A-Za-z0-9._-]/g;
-const TELEMETRY_BRANCH_MAX_LEN = 60;
-export function sanitizeTelemetryBranch(branch) {
-  if (typeof branch !== "string" || branch.trim() === "") return "unknown";
-  let s = branch.replace(TELEMETRY_SANITIZE_BRANCH_RE, "_");
-  if (s.length > TELEMETRY_BRANCH_MAX_LEN) s = s.slice(0, TELEMETRY_BRANCH_MAX_LEN);
-  // Reject empty or pathological results — would let a branch of all-special
-  // chars produce an empty path segment.
-  if (s.trim() === "") return "unknown";
-  return s;
-}
-export function buildTelemetryRecord(input) {
-  const errors = [];
-  if (input == null || typeof input !== "object") {
-    throw new Error("buildTelemetryRecord: input must be an object");
-  }
-  const { issueNumber, branch, step, tier, model, wallTimeMs, inputTokens = null, outputTokens = null, outcome, ts } = input;
-  if (!Number.isInteger(issueNumber) || issueNumber <= 0) errors.push("issueNumber must be positive integer");
-  if (typeof branch !== "string" || branch.trim() === "") errors.push("branch must be non-empty string");
-  if (typeof step !== "string" || step.trim() === "") errors.push("step must be non-empty string");
-  if (!TELEMETRY_TIERS.includes(tier)) errors.push(`tier must be one of: ${TELEMETRY_TIERS.join(", ")}`);
-  if (typeof model !== "string" || model.trim() === "") errors.push("model must be non-empty string");
-  if (!Number.isInteger(wallTimeMs) || wallTimeMs < 0) errors.push("wallTimeMs must be non-negative integer");
-  if (inputTokens != null && (!Number.isInteger(inputTokens) || inputTokens < 0)) errors.push("inputTokens must be non-negative integer or null");
-  if (outputTokens != null && (!Number.isInteger(outputTokens) || outputTokens < 0)) errors.push("outputTokens must be non-negative integer or null");
-  if (!TELEMETRY_OUTCOMES.includes(outcome)) errors.push(`outcome must be one of: ${TELEMETRY_OUTCOMES.join(", ")}`);
-  if (ts != null && (typeof ts !== "string" || ts.trim() === "")) errors.push("ts must be non-empty ISO-8601 string or null");
-  if (errors.length) {
-    throw new Error(`buildTelemetryRecord input invalid: ${errors.join("; ")}`);
-  }
-  return {
-    schema: TELEMETRY_SCHEMA_VERSION,
-    ts: ts ?? new Date().toISOString(),
-    issue: issueNumber,
-    // Sanitize the branch in the record itself, not just the filename
-    // (ADR-036 § telemetry contract). Codex cycle 1 flagged that the previous
-    // version stored the raw input in the record while the filename used a
-    // normalized token, which is inconsistent and would let a long / arrow-
-    // bearing branch persist into every record.
-    branch: sanitizeTelemetryBranch(branch),
-    step,
-    tier,
-    model,
-    // Config-derived ground truth for the step's tier (issue #1181). `tier` is
-    // validated against TELEMETRY_TIERS above, so this lookup is always defined.
-    // `model_matches_expected` is the tier/model consistency assertion: false
-    // means the reported model diverged from the tier's canonical model — the
-    // signal that routing did not land where the tier intended (or the
-    // orchestrator mis-reported). Never gates; analysis-only.
-    expected_model: CLAUDE_MODEL_BY_TIER[tier],
-    model_matches_expected: model === CLAUDE_MODEL_BY_TIER[tier],
-    wall_time_ms: wallTimeMs,
-    input_tokens: inputTokens,
-    output_tokens: outputTokens,
-    outcome,
-  };
-}
-export function buildTelemetryRelPath({ issueNumber, branch }) {
-  if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
-    throw new Error("buildTelemetryRelPath: issueNumber must be positive integer");
-  }
-  const safe = sanitizeTelemetryBranch(branch);
-  return `.gc/telemetry/${issueNumber}-${safe}.jsonl`;
-}
