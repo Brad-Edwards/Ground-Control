@@ -207,8 +207,9 @@ Each routed step writes one JSONL line via `gc_log_step_telemetry` to
   never let the writer escape `.gc/telemetry/`.
 - Telemetry is opt-in per repo via `.ground-control.yaml`'s
   `telemetry.enabled` knob (default `false`).
-- `.gc/telemetry/` is gitignored. The summarizer (`make implement-cost-summary`)
-  aggregates per-step and per-model totals.
+- `.gc/telemetry/` is gitignored. The local summarizer (`make
+  implement-cost-summary`) that aggregated per-step and per-model totals was
+  removed in #1507 (see Amendments); this reference is historical.
 
 ### Forward compatibility with GC-O009
 
@@ -654,9 +655,22 @@ consequences for its own surface:
   attempt.
 - The write is strictly fail-open and never falls back to a local authoritative
   file: a durable record is guaranteed only when `telemetry.enabled` and the
-  authenticated backend is reachable. Existing local JSONL files remain
-  historical input for the `make implement-cost-summary` summarizer; they are
-  not backfilled, dual-written, or promoted to a second source of truth.
+  authenticated backend is reachable. Any pre-existing local JSONL files are
+  inert historical artifacts; the local `make implement-cost-summary` summarizer
+  that read them was removed in #1507 (see Amendments). They are not
+  backfilled, dual-written, or promoted to a second source of truth.
 
 The routing table, the tier→model mapping, and the telemetry record's
 operational-only status are otherwise unchanged.
+
+**2026-08-04 (issue #1507).** The retired local `/implement` telemetry
+summarizer is deleted: `tools/summarize_implement_telemetry.py` and the
+`make implement-cost-summary` target (already removed with the #1500 backend
+teardown) no longer exist, and the dead local-JSONL data-contract helpers
+(`buildTelemetryRecord`, `buildTelemetryRelPath`, `sanitizeTelemetryBranch`) are
+removed with their tests. Earlier references in this ADR to the summarizer and
+that target are historical. Routing metadata, the durable ADR-061
+step-observation path (`gc_log_step_telemetry` / `buildStepObservationEvent`),
+and the `telemetry.enabled` contract are unchanged; a future run-economics
+summary must consume the durable projection, not revive per-clone
+`.gc/telemetry` scanning.

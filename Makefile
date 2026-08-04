@@ -27,9 +27,9 @@ vale-install: ## Install Vale prose linter (tools/install-vale.sh → .tools/val
 
 # BASE_REF defaults to origin/dev for local invocation. CI sets it to
 # origin/<base-branch> for the current pull_request event.
-vale-lint: vale-install ## Run Vale on .md docs touched in the diff vs BASE_REF (default origin/dev)
+vale-lint: vale-install ## Run Vale on .md docs changed vs BASE_REF, incl. uncommitted (default origin/dev)
 	@BASE_REF="$${BASE_REF:-origin/dev}"; \
-	CHANGED_DOCS=$$(git diff --name-only --diff-filter=ACMR $$BASE_REF...HEAD 2>/dev/null | grep -E '\.(md|markdown)$$' || true); \
+	CHANGED_DOCS=$$(bash tools/changed-docs.sh "$$BASE_REF"); \
 	if [ -z "$$CHANGED_DOCS" ]; then \
 	  echo "vale-lint: no changed docs vs $$BASE_REF"; \
 	  exit 0; \

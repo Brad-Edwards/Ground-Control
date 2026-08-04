@@ -98,6 +98,8 @@ export const GC_IMPLEMENT_MECHANICAL_DESCRIPTION =
   "readiness (pre-merge completion assertion), finalize (post-merge assertion + idempotent issue close). " +
   "Always pass action, repo_path, and issue_number. Depending on action, also pass invocation_root, branch_name, " +
   "base_branch, driver, requested_requirement_uid, requirements, commit_message, synchronization, pr_number, or completion. " +
+  "bootstrap requires branch_name; for publish and monitor branch_name is OPTIONAL and defaults to the checkout's current " +
+  "branch when it is this issue's branch (`<issue>-<slug>`), refusing a base/unrelated branch rather than acting on it. " +
   "Long actions verify, publish, and monitor accept async=true plus a required bounded idempotency_key; " +
   "poll the returned job_id through gc_codex_job and consume the terminal result as this tool's unchanged envelope. " +
   "Bootstrap, readiness, and finalize remain synchronous. " +

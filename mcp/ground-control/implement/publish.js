@@ -5,13 +5,11 @@
 
 import { ciGateFindings } from "../gate-finding-adapters.js";
 import { ciStationResult } from "../lib/ci-conclusion.js";
-import { commandFailure, failure, requireField } from "./gate-helpers.js";
+import { commandFailure, failure, requireField, resolveIssueBranch } from "./gate-helpers.js";
 import { isSensitivePublishPath, readPublishPaths, validateCommitMessage } from "./verify.js";
 
 export async function runPublish(args, deps) {
   const action = "publish";
-  const invalidBranch = requireField(args, "branchName", action);
-  if (invalidBranch) return invalidBranch;
   const authorization = await deps.authorizeRepo(args.repoPath);
   if (!authorization.ok) {
     return failure(
@@ -47,14 +45,14 @@ export async function runPublish(args, deps) {
     ["branch", "--show-current"],
     deps.execFile,
   );
-  if (activeBranch.trim() !== args.branchName) {
-    return failure(
-      action,
-      "implement_mechanical_branch_mismatch",
-      `Active branch is '${activeBranch.trim()}', expected '${args.branchName}'`,
-      "return_to_the_issue_branch_and_retry",
-    );
-  }
+  const resolved = resolveIssueBranch({
+    branchName: args.branchName,
+    activeBranch,
+    issueNumber: args.issueNumber,
+    action,
+  });
+  if (!resolved.ok) return resolved.failure;
+  const branchName = resolved.branchName;
   const publishPaths = await readPublishPaths(
     repoRoot,
     deps.runGit,
@@ -76,7 +74,7 @@ export async function runPublish(args, deps) {
     const completed = await deps.synchronize({
       repoPath: repoRoot,
       issueNumber: args.issueNumber,
-      branchName: args.branchName,
+      branchName,
       action: "complete",
       recordId: args.synchronization.record_id,
       preSyncSha: args.synchronization.pre_sync_sha,
@@ -146,7 +144,7 @@ export async function runPublish(args, deps) {
   try {
     await deps.runGit(
       repoRoot,
-      ["push", "-u", "origin", args.branchName],
+      ["push", "-u", "origin", branchName],
       deps.execFile,
     );
   } catch (error) {
@@ -155,7 +153,7 @@ export async function runPublish(args, deps) {
   const started = await deps.synchronize({
     repoPath: repoRoot,
     issueNumber: args.issueNumber,
-    branchName: args.branchName,
+    branchName,
     action: "start",
     requestedRequirementUid: authorized.requirementUid,
   });
@@ -206,7 +204,7 @@ export async function runPublish(args, deps) {
   const completed = await deps.synchronize({
     repoPath: repoRoot,
     issueNumber: args.issueNumber,
-    branchName: args.branchName,
+    branchName,
     action: "complete",
     recordId: started.recordId,
     preSyncSha: started.preSyncSha,
@@ -233,9 +231,27 @@ export async function runPublish(args, deps) {
 }
 export async function runMonitor(args, deps) {
   const action = "monitor";
-  for (const field of ["branchName", "prNumber"]) {
-    const invalid = requireField(args, field, action);
-    if (invalid) return invalid;
+  const invalidPr = requireField(args, "prNumber", action);
+  if (invalidPr) return invalidPr;
+  // branchName is optional: derive it from the checkout ONLY when omitted, so an
+  // explicit branch keeps monitor's original behavior (watch CI for exactly that
+  // branch, no checkout assertion) while an omitted one is inferred from the
+  // issue branch in the working tree.
+  let branchName = args.branchName;
+  if (branchName == null || branchName === "") {
+    const { stdout: activeBranch } = await deps.runGit(
+      args.repoPath,
+      ["branch", "--show-current"],
+      deps.execFile,
+    );
+    const resolved = resolveIssueBranch({
+      branchName,
+      activeBranch,
+      issueNumber: args.issueNumber,
+      action,
+    });
+    if (!resolved.ok) return resolved.failure;
+    branchName = resolved.branchName;
   }
   // CI and SonarCloud are two distinct gates with distinct rework profiles, so this action records
   // two station attempts rather than one. The outer dispatcher leaves `monitor` un-instrumented for
@@ -244,7 +260,7 @@ export async function runMonitor(args, deps) {
   await deps.emitter.station("ci", async () => {
     ci = await deps.watchCi({
       repoPath: args.repoPath,
-      branch: args.branchName,
+      branch: branchName,
     });
     const passed = ci.ok && ci.conclusion === "success";
     const ciFindings = ci.ok ? ciGateFindings(ci) : null;
