@@ -1,0 +1,43 @@
+name: Security
+
+# Restored for the slim MCP topology (issue #1155): dependency-vulnerability and
+# filesystem/secret scanning for the Node.js MCP server and Python tooling. The
+# pre-#1500 Java/Python security lanes were deleted across earlier re-platforms;
+# these run against the current repo. Job ids are the required-check contexts
+# (`osv-scanner`, `trivy`).
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  osv-scanner:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Install OSV-Scanner
+        run: |
+          curl -sSfL "https://github.com/google/osv-scanner/releases/download/v2.4.0/osv-scanner_linux_amd64" -o "$RUNNER_TEMP/osv-scanner"
+          chmod +x "$RUNNER_TEMP/osv-scanner"
+      - name: Scan dependencies for known vulnerabilities
+        run: |
+          "$RUNNER_TEMP/osv-scanner" scan source --recursive .
+
+  trivy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Trivy filesystem scan (vulnerabilities + secrets)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
