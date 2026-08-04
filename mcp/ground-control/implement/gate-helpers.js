@@ -76,6 +76,52 @@ export function requireField(args, field, action) {
   }
   return null;
 }
+/**
+ * Resolve the issue branch for publish/monitor. `branchName` is OPTIONAL: when
+ * the caller omits it, it is derived from the checkout's current branch, but
+ * only when that branch belongs to THIS issue (bootstrap names branches
+ * `<issue>-<slug>`). This keeps the "am I on the branch I intend?" guard — an
+ * explicit `branchName` is still asserted to match the checkout, and a derived
+ * branch that is not this issue's branch (a base branch like dev/main, a
+ * detached HEAD, or an unrelated branch) is refused rather than silently pushed
+ * or watched. The redundant handoff the /implement orchestrator hit — bootstrap
+ * already created and checked out the branch, yet publish/monitor demanded it
+ * be re-declared — becomes a safe default instead of a hard input error.
+ *
+ * @returns {{ok: true, branchName: string} | {ok: false, failure: object}}
+ */
+export function resolveIssueBranch({ branchName, activeBranch, issueNumber, action }) {
+  const active = typeof activeBranch === "string" ? activeBranch.trim() : "";
+  const explicit = typeof branchName === "string" ? branchName.trim() : "";
+  if (explicit !== "") {
+    if (active !== explicit) {
+      return {
+        ok: false,
+        failure: failure(
+          action,
+          "implement_mechanical_branch_mismatch",
+          `Active branch is '${active}', expected '${explicit}'`,
+          "return_to_the_issue_branch_and_retry",
+        ),
+      };
+    }
+    return { ok: true, branchName: explicit };
+  }
+  const issuePrefix = `${issueNumber}-`;
+  if (!active.startsWith(issuePrefix)) {
+    return {
+      ok: false,
+      failure: failure(
+        action,
+        "implement_mechanical_branch_unresolved",
+        `branch_name was not supplied and the active branch '${active}' is not issue #${issueNumber}'s branch `
+          + `(expected '${issuePrefix}<slug>'); check out the issue branch or pass branch_name.`,
+        "checkout_the_issue_branch_or_supply_branch_name_and_retry",
+      ),
+    };
+  }
+  return { ok: true, branchName: active };
+}
 export function commandFailure(action, stage, error) {
   const detail =
     typeof error?.stderr === "string" && error.stderr.trim() !== ""
