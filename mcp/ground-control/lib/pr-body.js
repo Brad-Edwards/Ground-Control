@@ -11,7 +11,7 @@ import { ensureGitRepo } from "./grc-legacy-compat-4.js";
 import { devStartFieldValue, extractMarkdownHeadingSection, parseDevStartGateFields } from "./grc-legacy-compat.js";
 import { DEFAULT_DEV_START_GATE_PLAN_SECTION } from "./repo-context.js";
 import { getRepoGroundControlContext } from "./repo-vocabulary-2.js";
-import { PR_BODY_SUMMARY_MAX } from "./repo-vocabulary.js";
+import { PR_BODY_MAX, PR_BODY_SUMMARY_MAX, PR_BODY_TEST_NOTES_MAX } from "./repo-vocabulary.js";
 import { buildStepObservationEvent } from "./step-telemetry.js";
 import { getOwnerRepo } from "./grc-legacy-compat-3.js";
 import { createWorkflowRun, recordWorkflowRunEvent } from "./api-workflow-run.js";
@@ -130,8 +130,14 @@ export function validatePrBodyInput(input) {
       }
     }
   }
-  if (testNotes != null && typeof testNotes !== "string") {
-    errors.push("testNotes must be a string when set");
+  if (testNotes != null) {
+    if (typeof testNotes !== "string") {
+      errors.push("testNotes must be a string when set");
+    } else if (Buffer.byteLength(testNotes, "utf8") > PR_BODY_TEST_NOTES_MAX) {
+      errors.push(
+        `testNotes exceeds the PR-body test-notes cap of ${PR_BODY_TEST_NOTES_MAX} bytes (got ${Buffer.byteLength(testNotes, "utf8")}). test_notes is run-specific evidence, not a second configuration surface.`,
+      );
+    }
   }
   if (input.devStartGate != null) {
     if (typeof input.devStartGate !== "string" || input.devStartGate.trim() === "") {
@@ -204,7 +210,10 @@ export function buildPrBody(input) {
     for (const c of changes) lines.push(`- ${c}`);
   }
   if (changeClass === "source+migration") {
-    lines.push("- **Migration reminder:** update version lists in `MigrationSmokeTest.java` and `RequirementsE2EIntegrationTest.java` (per `.gc/plan-rules.md`).");
+    // Repo-neutral (issue #1199): name no framework, ORM, or test class. The
+    // change_class is a workflow/changelog classifier, not a migration-tool
+    // discriminator — the reminder points authors at their own migration policy.
+    lines.push("- **Migration reminder:** this change includes a migration — verify the repo's migration/version references and run its migration checks per the repository's migration policy.");
   }
   if (devStartGate != null && devStartGate.trim() !== "") {
     lines.push("");
@@ -253,10 +262,11 @@ export function buildPrBody(input) {
   lines.push("");
   lines.push("## Checklist");
   lines.push("");
-  lines.push("- [x] Code follows project coding standards (`docs/CODING_STANDARDS.md`)");
-  lines.push("- [x] No business logic in API layer");
-  lines.push("- [x] Domain layer has no framework imports");
-  lines.push("- [x] Envers `@Audited` on new entities if applicable");
+  // Repo-neutral checklist (issue #1199): universally meaningful workflow
+  // evidence only — not Ground Control's Java/domain architecture rules
+  // (Envers, framework-import layering, no-business-logic-in-API) and no
+  // hardcoded documentation path.
+  lines.push("- [x] Code follows the project's coding standards");
   if (changelogMode === "release-please") {
     lines.push("- [x] Changelog: owned by Release Please (generated from the Conventional Commit PR title; no per-PR fragment)");
   } else if (changeClass === "doc-only") {
@@ -298,6 +308,18 @@ export async function runRenderPrBody(input) {
   // runPostFinalReport) keep a Tier-1 check because they call `gh api` rather
   // than `gh pr create`, and the PreToolUse hook only fires on the latter.
   const body = buildPrBody(input);
+  // Enforce the GitHub PR-body cap at the renderer boundary (issue #1199) so a
+  // render success can never produce an artifact gc_create_synchronized_implement_pr
+  // must reject at its own 65,535-byte limit.
+  if (Buffer.byteLength(body, "utf8") > PR_BODY_MAX) {
+    return {
+      ok: false,
+      error: "pr_body_too_large",
+      message: `rendered PR body is ${Buffer.byteLength(body, "utf8")} bytes; GitHub's PR-body cap is ${PR_BODY_MAX} bytes. Trim summary, changes, or test_notes.`,
+      issue_number: input.issueNumber,
+      next_action: "trim_inputs_and_retry",
+    };
+  }
   const sensitiveError = detectSensitiveBodyContent(body);
   if (sensitiveError) {
     return {

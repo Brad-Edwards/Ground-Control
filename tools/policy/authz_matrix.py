@@ -303,14 +303,16 @@ def check_pr_body(body: str) -> list[Violation]:
         )
 
     required_checks = [
-        # The policy gate is named semantically, not by command (issue #1429).
-        # `workflow.policy_command` in `.ground-control.yaml` decides what
-        # actually runs, so the PR body attests that the configured gate
-        # passed rather than asserting a Make target. Mirrors
-        # `PR_BODY_POLICY_CHECK_LINE` in `mcp/ground-control/lib.js`.
+        # Repo-neutral, semantically-named gates the /implement workflow actually
+        # enforces for every repository (issues #1429, #1199). `workflow.policy_command`
+        # decides what the policy line runs; the second line attests the pre-push
+        # code + test-quality reviews (Steps 6.5/6.6) that run before the PR body
+        # is rendered. Byte-identical to `PR_BODY_GC_CHECK_LINES` in
+        # `mcp/ground-control/lib/runtime-primitives.js` — the render→check compose
+        # fixture is the parity contract. The former `gc_evaluate_quality_gates` /
+        # `gc_run_sweep` lines named tools removed with the #1500 teardown.
         "- [x] Configured repository policy command passes",
-        "- [x] `gc_evaluate_quality_gates` passes or is unchanged by this repo-only change",
-        "- [x] `gc_run_sweep` reviewed; findings fixed or recorded with rationale",
+        "- [x] Pre-push code review and test-quality review completed; all findings fixed or dispositioned",
     ]
     missing_checks = [entry for entry in required_checks if entry not in body]
     if missing_checks:

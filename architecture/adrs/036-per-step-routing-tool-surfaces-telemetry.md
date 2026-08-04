@@ -674,3 +674,22 @@ step-observation path (`gc_log_step_telemetry` / `buildStepObservationEvent`),
 and the `telemetry.enabled` contract are unchanged; a future run-economics
 summary must consume the durable projection, not revive per-clone
 `.gc/telemetry` scanning.
+
+**2026-08-04 (issue #1199, repo-neutral PR-body envelope).** `gc_render_pr_body`'s
+evidence envelope is made repo-neutral: the Test Plan, Ground Control Checks,
+migration reminder, and Checklist attest only gates the workflow enforces for
+every repository, named semantically, and never publish configured command
+strings. The Ground Control Checks drop the removed `gc_evaluate_quality_gates` /
+`gc_run_sweep` tools (retired with the #1500 teardown) for a two-line set
+(`Configured repository policy command passes`; `Pre-push code review and
+test-quality review completed…`), kept byte-identical to
+`tools/policy/authz_matrix.py::check_pr_body` via the render→check compose
+fixture. The Checklist drops Ground Control's Java/domain rules (Envers,
+framework-import layering, no-business-logic-in-API) and hardcoded documentation
+paths; the `source+migration` reminder names no framework, ORM, or test class.
+`test_notes` and the final rendered body gain explicit byte caps
+(`PR_BODY_TEST_NOTES_MAX`, `PR_BODY_MAX`). No stack/language flag and no
+`workflow.pr_body` config block were introduced; removing stack-specific claims
+solves the contract without a taxonomy that would immediately grow language and
+framework combinations. `.github/PULL_REQUEST_TEMPLATE.md` moves in lockstep. See
+`architecture/notes/repository-neutral-pr-body-rendering-preflight.md`.

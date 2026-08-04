@@ -6,9 +6,11 @@ import assert from "node:assert/strict";
 import {
   PR_BODY_POLICY_CHECK_LINE,
   PR_BODY_SUMMARY_MAX,
+  PR_BODY_TEST_NOTES_MAX,
   buildFinalReport,
   buildPrBody,
   checkPrBodyShape,
+  runRenderPrBody,
   validatePrBodyInput,
 } from "./lib.js";
 
@@ -247,11 +249,13 @@ describe("buildPrBody", () => {
     assert.ok(body.includes("- TESTS:"), "missing TESTS marker");
   });
 
-  it("includes the three exact Ground Control Checks lines (policy: pr-ground-control-checks)", () => {
+  it("includes the exact repo-neutral Ground Control Checks lines (policy: pr-ground-control-checks)", () => {
     const body = buildPrBody(baseInput());
     assert.ok(body.includes(PR_BODY_POLICY_CHECK_LINE));
-    assert.ok(body.includes("- [x] `gc_evaluate_quality_gates` passes or is unchanged by this repo-only change"));
-    assert.ok(body.includes("- [x] `gc_run_sweep` reviewed; findings fixed or recorded with rationale"));
+    assert.ok(body.includes("- [x] Pre-push code review and test-quality review completed; all findings fixed or dispositioned"));
+    // The former checks named tools removed with the #1500 teardown (issue #1199).
+    assert.ok(!body.includes("gc_evaluate_quality_gates"), "must not attest a removed tool");
+    assert.ok(!body.includes("gc_run_sweep"), "must not attest a removed tool");
   });
 
   it("names the policy gate semantically, never a concrete repo command (#1429)", () => {
@@ -304,10 +308,40 @@ describe("buildPrBody", () => {
     assert.ok(body.includes(PR_BODY_POLICY_CHECK_LINE));
   });
 
-  it("source+migration adds the MigrationSmokeTest reminder", () => {
+  it("source+migration adds a repo-neutral migration reminder (no framework/test-class names)", () => {
     const body = buildPrBody(baseInput({ changeClass: "source+migration" }));
-    assert.match(body, /MigrationSmokeTest\.java/);
-    assert.match(body, /RequirementsE2EIntegrationTest\.java/);
+    assert.match(body, /\*\*Migration reminder:\*\*/);
+    assert.ok(!body.includes("MigrationSmokeTest.java"), "must not name a Java test class");
+    assert.ok(!body.includes("RequirementsE2EIntegrationTest.java"), "must not name a Java test class");
+    assert.ok(!body.includes("Flyway"), "must not name a migration tool");
+  });
+
+  it("checklist is repo-neutral: no Java/domain rules or hardcoded doc path (#1199)", () => {
+    const body = buildPrBody(baseInput());
+    for (const forbidden of [
+      "Envers",
+      "@Audited",
+      "No business logic in API layer",
+      "Domain layer has no framework imports",
+      "docs/CODING_STANDARDS.md",
+    ]) {
+      assert.ok(!body.includes(forbidden), `checklist must not include Java/domain claim: ${forbidden}`);
+    }
+    assert.ok(body.includes("- [x] Code follows the project's coding standards"), "keeps a neutral coding-standards line");
+  });
+
+  it("rejects test_notes over the byte cap (#1199)", () => {
+    const r = validatePrBodyInput(baseInput({ testNotes: "x".repeat(PR_BODY_TEST_NOTES_MAX + 1) }));
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => /testNotes exceeds/.test(e)), r.errors.join("; "));
+  });
+
+  it("runRenderPrBody rejects a final body over the GitHub PR-body cap (#1199)", async () => {
+    // Each bullet passes element validation; the aggregate exceeds PR_BODY_MAX.
+    const bigChanges = Array.from({ length: 400 }, (_, i) => `change ${i} ` + "y".repeat(200));
+    const r = await runRenderPrBody(baseInput({ changes: bigChanges }));
+    assert.equal(r.ok, false);
+    assert.equal(r.error, "pr_body_too_large");
   });
 
   it("release-please mode: emits the Release Please changelog line, not a fragment line (#1336)", () => {

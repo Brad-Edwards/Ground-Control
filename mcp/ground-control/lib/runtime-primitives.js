@@ -362,10 +362,17 @@ export const REQUIREMENT_UID_CONTRACT_DESCRIPTION =
   `a single requirement UID: 1-${REQUIREMENT_UID_MAX_LENGTH} characters, starting with a letter or digit, `
   + "containing only letters, digits, '.', '_', or '-'";
 export const PR_BODY_POLICY_CHECK_LINE = "- [x] Configured repository policy command passes";
+// Repo-neutral Ground Control Checks (issue #1199): the section attests only
+// gates the /implement workflow actually enforces for every repository, named
+// semantically. The previous lines named `gc_evaluate_quality_gates` /
+// `gc_run_sweep`, tools removed with the #1500 backend teardown. The pre-push
+// review gates (code review + test-quality review, Steps 6.5/6.6) run before
+// gc_render_pr_body, so this attestation is accurate at render time. Keep this
+// byte-identical to tools/policy/authz_matrix.py::check_pr_body's required set —
+// the renderer-vs-policy compose fixture is the parity contract.
 export const PR_BODY_GC_CHECK_LINES = Object.freeze([
   PR_BODY_POLICY_CHECK_LINE,
-  "- [x] `gc_evaluate_quality_gates` passes or is unchanged by this repo-only change",
-  "- [x] `gc_run_sweep` reviewed; findings fixed or recorded with rationale",
+  "- [x] Pre-push code review and test-quality review completed; all findings fixed or dispositioned",
 ]);
 const PR_BODY_REQUIRED_HEADERS = Object.freeze([
   "## Requirement UIDs",

@@ -40,8 +40,7 @@ function renderedPrBody() {
     "## Test Plan", "", "- tests", "",
     "## Ground Control Checks", "",
     "- [x] Configured repository policy command passes",
-    "- [x] `gc_evaluate_quality_gates` passes or is unchanged by this repo-only change",
-    "- [x] `gc_run_sweep` reviewed; findings fixed or recorded with rationale",
+    "- [x] Pre-push code review and test-quality review completed; all findings fixed or dispositioned",
     "", "## Traceability", "", "- IMPLEMENTS: GC-O007", "- TESTS: test", "",
     "## Checklist", "", "- [x] done",
   ].join("\n");
