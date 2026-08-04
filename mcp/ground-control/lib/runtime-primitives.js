@@ -261,25 +261,29 @@ function hasClaudeAuth(env) {
 //      an active Vertex or personal mode still wins).
 //   2. Strip ANTHROPIC_API_KEY only when another auth path survives, so the key
 //      can serve as the sole auth when it is all that is present.
+// Parse one `KEY=VALUE` line from a dotenv-style fallback file, stripping a
+// single matching quote pair. Returns [key, value] or null for blank/comment/
+// malformed lines. Extracted so reviewEngineEnv stays flat (Sonar S3776).
+function parseEnvFileLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.startsWith("#")) return null;
+  const eq = trimmed.indexOf("=");
+  if (eq <= 0) return null;
+  const key = trimmed.slice(0, eq).trim();
+  let value = trimmed.slice(eq + 1).trim();
+  const quoted = value.length >= 2
+    && ((value[0] === '"' && value.at(-1) === '"') || (value[0] === "'" && value.at(-1) === "'"));
+  if (quoted) value = value.slice(1, -1);
+  return [key, value];
+}
 export function reviewEngineEnv(baseEnv = process.env, fallbackPath = REVIEW_ENGINE_ENV_FALLBACK) {
   const env = { ...baseEnv };
 
   if (!hasClaudeAuth(env)) {
     try {
       for (const line of readFileSync(fallbackPath, "utf8").split(/\r?\n/)) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith("#")) continue;
-        const eq = trimmed.indexOf("=");
-        if (eq <= 0) continue;
-        const key = trimmed.slice(0, eq).trim();
-        let value = trimmed.slice(eq + 1).trim();
-        if (
-          value.length >= 2 &&
-          ((value[0] === '"' && value.at(-1) === '"') || (value[0] === "'" && value.at(-1) === "'"))
-        ) {
-          value = value.slice(1, -1);
-        }
-        if (env[key] === undefined) env[key] = value;
+        const parsed = parseEnvFileLine(line);
+        if (parsed && env[parsed[0]] === undefined) env[parsed[0]] = parsed[1];
       }
     } catch {
       // No fallback file, or unreadable: leave the environment as inherited.
@@ -326,6 +330,9 @@ export function resolveWorkflowRouteFromConfig({ routing, stage, tier = null }) 
   }
   const provider = configured?.provider ?? routing.default_provider ?? "claude";
   const model = configured?.model ?? CLAUDE_MODEL_BY_TIER[resolvedTier];
+  let source = "tier";
+  if (configured) source = "config";
+  else if (defaultStage) source = "default";
   return {
     ok: true,
     enabled: true,
@@ -333,7 +340,7 @@ export function resolveWorkflowRouteFromConfig({ routing, stage, tier = null }) 
     tier: resolvedTier,
     provider,
     model,
-    source: configured ? "config" : (defaultStage ? "default" : "tier"),
+    source,
   };
 }
 export const PR_BODY_CHANGE_CLASSES = Object.freeze(["doc-only", "source", "source+migration"]);

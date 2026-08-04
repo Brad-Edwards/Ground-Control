@@ -32,129 +32,65 @@ from .core import (
 )
 
 
-def run_contract_invariant_enforcement_check(root: Path = REPO_ROOT) -> list[Violation]:
+def _check_enforcement_target(rel: str, entry_id: str, target: object, root: Path) -> list[Violation]:
+    if not isinstance(target, str):
+        return [Violation(code="contract-invariant-enforcement-invalid", message=f"{rel} invariant {entry_id} has an invalid enforcement path.", details=[str(target)])]
+    target_path_text, separator, target_anchor = target.partition("::")
+    target_path = Path(target_path_text)
+    if not separator or not target_anchor:
+        return [Violation(code="contract-invariant-enforcement-anchor-missing", message=f"{rel} invariant {entry_id} must name a specific test/spec anchor.", details=[f"use '<repo-path>::<test-or-rule-id>', got {target}"])]
+    if target_path_text.startswith("/") or ".." in target_path.parts:
+        return [Violation(code="contract-invariant-enforcement-invalid", message=f"{rel} invariant {entry_id} has an invalid enforcement path.", details=[target])]
+    resolved = root / target_path
+    if not resolved.exists():
+        return [Violation(code="contract-invariant-enforcement-missing-file", message=f"{rel} invariant {entry_id} references a missing enforcement file.", details=[target_path_text])]
+    if target_anchor not in resolved.read_text(encoding="utf-8"):
+        return [Violation(code="contract-invariant-enforcement-anchor-missing-file", message=f"{rel} invariant {entry_id} references an enforcement anchor that is not present.", details=[target])]
+    return []
+
+
+def _check_invariant_entry(rel: str, entry: object, root: Path) -> list[Violation]:
+    if not isinstance(entry, dict) or not entry.get("id"):
+        return [Violation(code="contract-invariant-entry-invalid", message=f"{rel} has an invariant entry without an id.")]
+    if entry["id"] == "none":
+        if not entry.get("rationale"):
+            return [Violation(code="contract-invariant-none-rationale-missing", message=f"{rel} declares no invariants but omits a rationale.")]
+        return []
+    enforced_by = entry.get("enforcedBy")
+    if not isinstance(enforced_by, list) or len(enforced_by) == 0:
+        return [Violation(code="contract-invariant-enforcement-missing", message=f"{rel} invariant {entry['id']} must name at least one enforcing test or spec file.")]
     violations: list[Violation] = []
+    for target in enforced_by:
+        violations.extend(_check_enforcement_target(rel, entry["id"], target, root))
+    return violations
+
+
+def _check_schema_invariants(rel: str, schema: dict, root: Path) -> list[Violation]:
+    invariants = schema.get("x-ground-control-invariants")
+    if invariants is None:
+        return [Violation(code="contract-invariant-inventory-missing", message=f"{rel} must declare x-ground-control-invariants.", details=["Use [{\"id\":\"none\", \"rationale\":\"...\"}] only when the schema has no declared invariant."])]
+    if not isinstance(invariants, list) or len(invariants) == 0:
+        return [Violation(code="contract-invariant-inventory-invalid", message=f"{rel} has an empty or non-list x-ground-control-invariants value.")]
+    violations: list[Violation] = []
+    for entry in invariants:
+        violations.extend(_check_invariant_entry(rel, entry, root))
+    return violations
+
+
+def run_contract_invariant_enforcement_check(root: Path = REPO_ROOT) -> list[Violation]:
     schemas_dir = root / "contracts" / "schemas"
     if not schemas_dir.exists():
-        return [
-            Violation(
-                code="contract-schema-dir-missing",
-                message="contracts/schemas/ is missing; GC-O014 schema invariant coverage cannot be checked.",
-            )
-        ]
-
+        return [Violation(code="contract-schema-dir-missing", message="contracts/schemas/ is missing; GC-O014 schema invariant coverage cannot be checked.")]
+    violations: list[Violation] = []
     for schema_path in sorted(schemas_dir.rglob("*.schema.json")):
         rel = schema_path.relative_to(root).as_posix()
         try:
             schema = json.loads(schema_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
-            violations.append(
-                Violation(
-                    code="contract-schema-json-invalid",
-                    message=f"{rel} is not valid JSON.",
-                    details=[str(exc)],
-                )
-            )
+            violations.append(Violation(code="contract-schema-json-invalid", message=f"{rel} is not valid JSON.", details=[str(exc)]))
             continue
-
-        invariants = schema.get("x-ground-control-invariants")
-        if invariants is None:
-            violations.append(
-                Violation(
-                    code="contract-invariant-inventory-missing",
-                    message=f"{rel} must declare x-ground-control-invariants.",
-                    details=["Use [{\"id\":\"none\", \"rationale\":\"...\"}] only when the schema has no declared invariant."],
-                )
-            )
-            continue
-        if not isinstance(invariants, list) or len(invariants) == 0:
-            violations.append(
-                Violation(
-                    code="contract-invariant-inventory-invalid",
-                    message=f"{rel} has an empty or non-list x-ground-control-invariants value.",
-                )
-            )
-            continue
-
-        for entry in invariants:
-            if not isinstance(entry, dict) or not entry.get("id"):
-                violations.append(
-                    Violation(
-                        code="contract-invariant-entry-invalid",
-                        message=f"{rel} has an invariant entry without an id.",
-                    )
-                )
-                continue
-            if entry["id"] == "none":
-                if not entry.get("rationale"):
-                    violations.append(
-                        Violation(
-                            code="contract-invariant-none-rationale-missing",
-                            message=f"{rel} declares no invariants but omits a rationale.",
-                        )
-                    )
-                continue
-            enforced_by = entry.get("enforcedBy")
-            if not isinstance(enforced_by, list) or len(enforced_by) == 0:
-                violations.append(
-                    Violation(
-                        code="contract-invariant-enforcement-missing",
-                        message=f"{rel} invariant {entry['id']} must name at least one enforcing test or spec file.",
-                    )
-                )
-                continue
-            for target in enforced_by:
-                if not isinstance(target, str):
-                    violations.append(
-                        Violation(
-                            code="contract-invariant-enforcement-invalid",
-                            message=f"{rel} invariant {entry['id']} has an invalid enforcement path.",
-                            details=[str(target)],
-                        )
-                    )
-                    continue
-
-                target_path_text, separator, target_anchor = target.partition("::")
-                target_path = Path(target_path_text)
-                if not separator or not target_anchor:
-                    violations.append(
-                        Violation(
-                            code="contract-invariant-enforcement-anchor-missing",
-                            message=f"{rel} invariant {entry['id']} must name a specific test/spec anchor.",
-                            details=[f"use '<repo-path>::<test-or-rule-id>', got {target}"],
-                        )
-                    )
-                    continue
-                if target_path_text.startswith("/") or ".." in target_path.parts:
-                    violations.append(
-                        Violation(
-                            code="contract-invariant-enforcement-invalid",
-                            message=f"{rel} invariant {entry['id']} has an invalid enforcement path.",
-                            details=[target],
-                        )
-                    )
-                    continue
-
-                resolved = root / target_path
-                if not resolved.exists():
-                    violations.append(
-                        Violation(
-                            code="contract-invariant-enforcement-missing-file",
-                            message=f"{rel} invariant {entry['id']} references a missing enforcement file.",
-                            details=[target_path_text],
-                        )
-                    )
-                elif target_anchor not in resolved.read_text(encoding="utf-8"):
-                    violations.append(
-                        Violation(
-                            code="contract-invariant-enforcement-anchor-missing-file",
-                            message=f"{rel} invariant {entry['id']} references an enforcement anchor that is not present.",
-                            details=[target],
-                        )
-                    )
-
+        violations.extend(_check_schema_invariants(rel, schema, root))
     return violations
-
 
 def _parse_authz_contract_rows(text: str) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
@@ -174,10 +110,7 @@ def _parse_authz_contract_rows(text: str) -> list[dict[str, str]]:
 
 
 def _java_matrix_paths_by_access(java_text: str) -> dict[str, set[str]]:
-    constants = {
-        name: value
-        for name, value in re.findall(r'private\s+static\s+final\s+String\s+(\w+)\s*=\s*"([^"]+)"', java_text)
-    }
+    constants = dict(re.findall(r'private\s+static\s+final\s+String\s+(\w+)\s*=\s*"([^"]+)"', java_text))
     access_methods = {
         "hasRole(ROLE_ADMIN)": "ROLE_ADMIN",
         "access(identityAuthorizationManager)": "PERMISSION_IDENTITY_ADMIN",
@@ -188,7 +121,7 @@ def _java_matrix_paths_by_access(java_text: str) -> dict[str, set[str]]:
         block = match.group(1)
         access = access_methods[match.group(2)]
         paths = paths_by_access[access]
-        paths.update(value for value in re.findall(r'"(/api/v1/[^"]+)"', block))
+        paths.update(re.findall(r'"(/api/v1/[^"]+)"', block))
         for token in re.findall(r"\b[A-Z][A-Z0-9_]+\b", block):
             if token in constants and constants[token].startswith("/api/v1/"):
                 paths.add(constants[token])
