@@ -224,8 +224,7 @@ class PolicyChecksFixture(unittest.TestCase):
             "## ADR Impact\n\nNo ADR required.\n"
             "## Ground Control Checks\n\n"
             "- [x] Configured repository policy command passes\n"
-            "- [x] `gc_evaluate_quality_gates` passes or is unchanged by this repo-only change\n"
-            "- [x] `gc_run_sweep` reviewed; findings fixed or recorded with rationale\n"
+            "- [x] Pre-push code review and test-quality review completed; all findings fixed or dispositioned\n"
             "## Traceability\n\n- IMPLEMENTS: foo\n- TESTS: bar\n"
         )
 

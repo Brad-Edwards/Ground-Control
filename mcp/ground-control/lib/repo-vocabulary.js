@@ -195,7 +195,14 @@ export const DECISION_RECORD_DECISIONS = Object.freeze(["fix", "wontfix", "not-a
 export const DECISION_RECORD_CLASSIFICATIONS = Object.freeze(["one-off", "class"]);
 const DECISION_RECORD_MARKER_PREFIX = "<!-- gc:decision-record";
 export const GITHUB_ISSUE_COMMENT_BODY_MAX = 65535;
+// GitHub caps a PR body at the same 65,535 bytes as an issue comment. The
+// renderer enforces this at its own boundary (issue #1199) so a rendered body
+// can never succeed only to be rejected by gc_create_synchronized_implement_pr.
+export const PR_BODY_MAX = 65535;
 export const PR_BODY_SUMMARY_MAX = 1200;
+// Caller-supplied run-specific test evidence (`test_notes`) is bounded well
+// below the body cap: it is evidence prose, not a second configuration surface.
+export const PR_BODY_TEST_NOTES_MAX = 4000;
 export const FINAL_REPORT_SUMMARY_MAX = 800;
 export const FINAL_REPORT_PLAIN_ENGLISH_OUTCOME_MAX = 600;
 export const FINAL_REPORT_REVIEW_SUMMARY_MAX = 240;
