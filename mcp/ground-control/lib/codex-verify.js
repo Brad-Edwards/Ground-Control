@@ -17,7 +17,7 @@ import { enrichCommentsWithThreadIds, ensureGitRepo, fetchReviewCommentById } fr
 import { buildCodexVerifyPrompt, getRuntimeAllowedAuthors, parseCodexVerifyTail, postReviewCommentReply, resolveReviewThread } from "./issue-thread.js";
 import { listWorkingTreeChanges } from "./knowledge-capture.js";
 import { getRepoGroundControlContext } from "./repo-vocabulary-2.js";
-import { DEFAULT_CODEX_TIMEOUT_MS, execFile, execFileWithInput, formatCommandFailure } from "./runtime-primitives.js";
+import { getDefaultCodexTimeoutMs, execFile, execFileWithInput, formatCommandFailure } from "./runtime-primitives.js";
 
 export async function runCodexArchitecturePreflight({
   requirementUid,
@@ -121,7 +121,7 @@ export async function runCodexArchitecturePreflight({
         cwd: repoRoot,
         maxBuffer: 10 * 1024 * 1024,
         env: codexEngineEnv(),
-        timeoutMs: DEFAULT_CODEX_TIMEOUT_MS,
+        timeoutMs: getDefaultCodexTimeoutMs(),
         signal,
       },
     );
@@ -274,7 +274,7 @@ export async function runCodexVerifyFinding({
         cwd: repoRoot,
         maxBuffer: 10 * 1024 * 1024,
         env: codexEngineEnv(),
-        timeoutMs: DEFAULT_CODEX_TIMEOUT_MS,
+        timeoutMs: getDefaultCodexTimeoutMs(),
       },
     ));
   } catch (error) {

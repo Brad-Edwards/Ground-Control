@@ -21,7 +21,14 @@ export function parseCodexTimeoutMs(raw) {
   }
   return parsed;
 }
-export const DEFAULT_CODEX_TIMEOUT_MS = parseCodexTimeoutMs(process.env.GC_CODEX_TIMEOUT_MS);
+// Resolved on every call, not once at module-import time (issue #1521): the
+// import graph that reaches this module executes before index.js's
+// loadDotenvFromCwd() (or any other startup env-config loader) runs, so a
+// module-level constant would permanently miss a GC_CODEX_TIMEOUT_MS value
+// that only lives in a .env/host-config file rather than the ambient shell.
+export function getDefaultCodexTimeoutMs() {
+  return parseCodexTimeoutMs(process.env.GC_CODEX_TIMEOUT_MS);
+}
 const KILL_GRACE_MS_DEFAULT = 5000;
 const MAX_BUFFER_DEFAULT = 1024 * 1024; // 1 MiB, matches Node's own execFile default
 // child_process.execFile() silently drops `detached` before it reaches the

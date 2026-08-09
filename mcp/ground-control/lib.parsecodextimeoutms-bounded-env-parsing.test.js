@@ -3,12 +3,13 @@
 // remove the wall-clock cap every codex/claude subprocess runs under
 // (issue #1518).
 
-import { describe, it } from "node:test";
+import { afterEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   CODEX_TIMEOUT_MS_DEFAULT,
   CODEX_TIMEOUT_MS_MAX,
   CODEX_TIMEOUT_MS_MIN,
+  getDefaultCodexTimeoutMs,
   parseCodexTimeoutMs,
 } from "./lib/runtime-primitives.js";
 
@@ -44,5 +45,30 @@ describe("parseCodexTimeoutMs", () => {
   it("accepts the exact MIN and MAX bounds", () => {
     assert.equal(parseCodexTimeoutMs(String(CODEX_TIMEOUT_MS_MIN)), CODEX_TIMEOUT_MS_MIN);
     assert.equal(parseCodexTimeoutMs(String(CODEX_TIMEOUT_MS_MAX)), CODEX_TIMEOUT_MS_MAX);
+  });
+});
+
+describe("getDefaultCodexTimeoutMs", () => {
+  const ORIGINAL = process.env.GC_CODEX_TIMEOUT_MS;
+
+  afterEach(() => {
+    if (ORIGINAL === undefined) delete process.env.GC_CODEX_TIMEOUT_MS;
+    else process.env.GC_CODEX_TIMEOUT_MS = ORIGINAL;
+  });
+
+  // Regression guard for issue #1521: the value must be resolved on every
+  // call, not captured once at module-import time — an import-time capture
+  // would run before index.js's loadDotenvFromCwd() (or any other startup
+  // env-config loader) has a chance to populate GC_CODEX_TIMEOUT_MS, so a
+  // .env-only value would be silently ignored forever.
+  it("reflects a GC_CODEX_TIMEOUT_MS value set after this module was already imported", () => {
+    delete process.env.GC_CODEX_TIMEOUT_MS;
+    assert.equal(getDefaultCodexTimeoutMs(), CODEX_TIMEOUT_MS_DEFAULT);
+
+    process.env.GC_CODEX_TIMEOUT_MS = "60000";
+    assert.equal(getDefaultCodexTimeoutMs(), 60000);
+
+    process.env.GC_CODEX_TIMEOUT_MS = "120000";
+    assert.equal(getDefaultCodexTimeoutMs(), 120000);
   });
 });

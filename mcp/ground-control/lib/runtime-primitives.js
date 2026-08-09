@@ -19,7 +19,7 @@ export {
   CODEX_TIMEOUT_MS_DEFAULT,
   CODEX_TIMEOUT_MS_MAX,
   CODEX_TIMEOUT_MS_MIN,
-  DEFAULT_CODEX_TIMEOUT_MS,
+  getDefaultCodexTimeoutMs,
   execFileWithInput,
   parseCodexTimeoutMs,
 } from "./model-subprocess.js";
