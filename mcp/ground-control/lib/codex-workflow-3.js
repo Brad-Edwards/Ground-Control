@@ -224,6 +224,7 @@ export function buildCodexArchitecturePreflightPrompt({ requirement = null, trac
     "- You may add or update ADRs, design notes, workflow notes, or other guidance docs when they materially reduce design risk.",
     "- Keep guidance minimal but sufficient. Do not write an implementation plan.",
     "- Do not invent new abstractions if existing cross-cutting concerns, schemas, error handling, validation, logging, or workflow patterns already cover the need.",
+    "- Repository-wide inspection means the current repository only. Use the working directory or repo-relative paths for any search (grep, find, ripgrep, etc.). Never recursively search `/`, a parent directory, a home directory, `/proc`, or another checkout — `-C`/the sandbox do not confine reads to the repo, so an unscoped search root is never appropriate for a lookup that is inherently repo-scoped.",
     "",
     "Quality bar:",
     "- Hold the upcoming implementation to a top-tier production engineering bar for maintainability, reliability, security, consistency, reuse of existing cross-cutting concerns, clear boundaries, and avoidance of abstraction or concept confusion.",

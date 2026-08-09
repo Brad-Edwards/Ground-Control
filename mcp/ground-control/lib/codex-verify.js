@@ -8,6 +8,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readRequirementByUid } from "./requirement-files.js";
+import { codexEngineEnv } from "./codex-engine-env.js";
 import { evaluateCodexVerifyCycleCap, postCodexVerifyCycleMarker, readPriorCodexVerifyCycleCount } from "./codex-verify-cap.js";
 import { buildCodexArchitecturePreflightPrompt, getIssueContext } from "./codex-workflow-3.js";
 import { buildCodexArchitectureExecArgs, findNewWorkingTreeChanges, readGeneratedCodexSummary } from "./codex-workflow.js";
@@ -119,7 +120,7 @@ export async function runCodexArchitecturePreflight({
         input: prompt,
         cwd: repoRoot,
         maxBuffer: 10 * 1024 * 1024,
-        env: { ...process.env, NO_COLOR: "1" },
+        env: codexEngineEnv(),
         timeoutMs: DEFAULT_CODEX_TIMEOUT_MS,
         signal,
       },
@@ -272,7 +273,7 @@ export async function runCodexVerifyFinding({
         input: prompt,
         cwd: repoRoot,
         maxBuffer: 10 * 1024 * 1024,
-        env: { ...process.env, NO_COLOR: "1" },
+        env: codexEngineEnv(),
         timeoutMs: DEFAULT_CODEX_TIMEOUT_MS,
       },
     ));
