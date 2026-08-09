@@ -15,53 +15,6 @@ import { SONAR_BASE_URL, SONAR_EXPORT_RETENTION, SONAR_RETRY_DELAYS_MS, _pruneSo
 
 export const VERIFICATION_STATUSES = ["PROVEN", "REFUTED", "TIMEOUT", "UNKNOWN", "ERROR"];
 export const ASSURANCE_LEVELS = ["L0", "L1", "L2", "L3"];
-function shapeQualityGateResult(gate) {
-  return {
-    name: gate.gate_name,
-    metric_type: gate.metric_type,
-    metric_param: gate.metric_param,
-    scope_status: gate.scope_status,
-    operator: gate.operator,
-    threshold: gate.threshold,
-    actual: gate.actual_value,
-  };
-}
-function gateField(gate, snakeKey, camelKey = null) {
-  if (gate == null || typeof gate !== "object") return undefined;
-  if (gate[snakeKey] !== undefined) return gate[snakeKey];
-  if (camelKey != null && gate[camelKey] !== undefined) return gate[camelKey];
-  return undefined;
-}
-export function isActiveDocumentsCoverageGate(gate) {
-  return gateField(gate, "metric_type", "metricType") === "COVERAGE"
-    && gateField(gate, "metric_param", "metricParam") === "DOCUMENTS"
-    && gateField(gate, "scope_status", "scopeStatus") === "ACTIVE";
-}
-export function buildQualityGateAssertion(evaluation, project) {
-  const gates = Array.isArray(evaluation?.gates) ? evaluation.gates : [];
-  const failing = gates.filter((g) => g?.passed !== true).map(shapeQualityGateResult);
-  if (failing.length > 0) {
-    return {
-      ok: false,
-      error: "quality_gates_failed",
-      message:
-        `Quality gate evaluation failed for project '${project}': ` +
-        failing
-          .map((f) => `${f.name} (${f.metric_type}) actual=${f.actual}, expected ${f.operator} ${f.threshold}`)
-          .join("; "),
-      project,
-      failing_gates: failing,
-      next_action: "fix_failing_quality_gates_and_retry",
-    };
-  }
-  return {
-    ok: true,
-    project,
-    total_gates: Number.isInteger(evaluation?.total_gates) ? evaluation.total_gates : gates.length,
-    passed_count: Number.isInteger(evaluation?.passed_count) ? evaluation.passed_count : gates.length,
-    evaluated: gates.map(shapeQualityGateResult),
-  };
-}
 async function _sonarFetchWithRetry(url, init) {
   let lastErr = null;
   for (let attempt = 0; attempt <= SONAR_RETRY_DELAYS_MS.length; attempt++) {

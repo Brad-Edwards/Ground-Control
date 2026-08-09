@@ -8,6 +8,23 @@ accepted
 
 2026-05-23
 
+> **Sync note for issue #1506 (2026-08-09, dead GRC handler removal):** Removed the ~63
+> unregistered GRC/backend tool handlers left over from the #1500 teardown—the top-level
+> `gc-asset.js`, `gc-audit.js`, `gc-control.js`, `gc-evidence.js`, `gc-finding.js`,
+> `gc-identity-admin.js`, `gc-integrate.js`, `gc-observation.js`, `gc-query.js`,
+> `gc-research-provenance.js`, `gc-research-operation-authorization.js`, `gc-risk-governance.js`,
+> `gc-risk-scenario.js`, `gc-threat-model.js`, `gc-workflow-run.js`, `gc-workflow-run-ingest.js`,
+> `link-create.js` tool-handler modules (none registered a tool `tools/*.js` calls), their fixture
+> tests, and the dead REST-wrapper functions inside `mcp/ground-control/lib/api-controls-2.js`,
+> `lib/api-controls-3.js` (deleted), `lib/api-history.js` (deleted), `lib/api-workflow-run.js`,
+> `lib/assert-completion.js`, `lib/assert-traceability.js`, `lib/sonar-watcher.js`, and
+> `lib/pr-body.js`, plus `mcp/ground-control/index.js`'s ~290-line dead import block. Every removed
+> export was verified to have zero callers anywhere in the live MCP surface, including
+> barrel-mediated imports through `lib.js`, before deletion. This is a dead-code removal, not a
+> documentation-coverage extension: the classifier in `mcp/ground-control/lib/doc-coverage.js`, the
+> surviving surface classes, `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`,
+> and `.vale.ini` are unchanged, and no `docs/DOC_STYLE.md` style rule is established.
+
 > **Sync note for issue #1437 (2026-07-30, Live Activity):** Added the project-scoped
 > `GET /api/v1/workflow-runs/activity` read projection, its generated OpenAPI/TypeScript contract,
 > deployment configuration, and console workspace. Documentation lives in ADR-061, `docs/API.md`,

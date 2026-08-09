@@ -4,97 +4,12 @@
 // (docs/CODING_STANDARDS.md, Sonar S104). It contained no mutual recursion, so it was
 // split along its own dependency layering. lib.js remains the barrel every caller imports.
 
-import { request } from "./api-controls-2.js";
-import { getRequirementByUid, getTraceabilityLinks } from "./api-controls-3.js";
-import { evaluateQualityGates } from "./api-history.js";
 import { resolvePrForClose } from "./close-issue.js";
 import { runPostFinalReport } from "./doc-coverage-2.js";
 import { getOwnerRepo } from "./grc-legacy-compat-3.js";
 import { ensureGitRepo, readTrustedExecutionObligationState } from "./grc-legacy-compat-4.js";
 import { validateFinalReportInput } from "./plan-posting.js";
-import { buildQualityGateAssertion, isActiveDocumentsCoverageGate } from "./sonar-watcher.js";
 
-export async function runSweep(project) {
-  return request("POST", "/api/v1/analysis/sweep", { params: { project } });
-}
-export async function runSweepAll() {
-  return request("POST", "/api/v1/analysis/sweep/all");
-}
-async function findMissingInScopeDocumentsLinks({ evaluation, project, requirements }) {
-  const gates = Array.isArray(evaluation?.gates) ? evaluation.gates : [];
-  const documentsGateActive = gates.some(isActiveDocumentsCoverageGate);
-  if (!documentsGateActive || !Array.isArray(requirements) || requirements.length === 0) {
-    return { ok: true, checked: false, missing: [] };
-  }
-
-  const missing = [];
-  for (const item of requirements) {
-    if (!item || typeof item !== "object" || typeof item.uid !== "string" || item.uid.trim() === "") {
-      return {
-        ok: false,
-        error: "in_scope_requirement_input_invalid",
-        message: "requirements[] entries must be { uid: <non-empty string>, statusIntent?: <status> }",
-      };
-    }
-    const uid = item.uid.trim();
-    const requirement = await getRequirementByUid(uid, project);
-    const actualStatus = typeof requirement?.status === "string" ? requirement.status : null;
-    const links = await getTraceabilityLinks(requirement.id);
-    const hasDocumentsLink = Array.isArray(links) && links.some((link) => link?.link_type === "DOCUMENTS");
-    if (!hasDocumentsLink) {
-      missing.push({ uid, status: actualStatus, missing_link_type: "DOCUMENTS" });
-    }
-  }
-
-  return { ok: true, checked: true, missing };
-}
-export async function runAssertQualityGates({ project, requirements }) {
-  if (typeof project !== "string" || project.trim() === "") {
-    throw new Error("gc_assert_quality_gates requires a non-empty project");
-  }
-  if (!Array.isArray(requirements)) {
-    throw new Error("gc_assert_quality_gates requires requirements[]; pass [] when there are no in-scope requirements");
-  }
-  const trimmed = project.trim();
-  const evaluation = await evaluateQualityGates(trimmed);
-  const assertion = buildQualityGateAssertion(evaluation, trimmed);
-  if (assertion.ok !== true) {
-    return assertion;
-  }
-
-  const inScopeDocuments = await findMissingInScopeDocumentsLinks({
-    evaluation,
-    project: trimmed,
-    requirements,
-  });
-  if (inScopeDocuments.ok !== true) {
-    return {
-      ok: false,
-      error: inScopeDocuments.error,
-      message: inScopeDocuments.message,
-      project: trimmed,
-      next_action: "fix_in_scope_requirement_input_and_retry",
-    };
-  }
-  if (inScopeDocuments.missing.length > 0) {
-    return {
-      ok: false,
-      error: "in_scope_documentation_coverage_failed",
-      message:
-        "Active DOCUMENTS Coverage requires every in-scope requirement to carry a DOCUMENTS traceability link, " +
-        "regardless of status: " +
-        inScopeDocuments.missing.map((m) => `${m.uid} (${m.status ?? "unknown"}) missing ${m.missing_link_type}`).join("; "),
-      project: trimmed,
-      missing_documents: inScopeDocuments.missing,
-      next_action: "add_documents_traceability_links_and_retry",
-    };
-  }
-
-  return {
-    ...assertion,
-    in_scope_documents_checked: inScopeDocuments.checked,
-  };
-}
 export async function runAssertCompletion(input) {
   const {
     repoPath,

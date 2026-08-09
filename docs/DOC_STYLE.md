@@ -1,5 +1,11 @@
 # Documentation style
 
+> **Sync note for issue #1506 (2026-08-09, dead GRC handler removal):** Removed the unregistered
+> GRC/backend tool-handler modules and their dead REST-wrapper functions left over from the #1500
+> teardown, plus `mcp/ground-control/index.js`'s dead import block, per the ADR-054 sync note for
+> this issue. The documentation-coverage classifier, `outcome_required` mapping, Vale rules,
+> installer, `.vale.ini`, and this file's style rules are unchanged.
+
 > **Sync note for issue #1500 (2026-08-03, context-graph teardown):** The backend, frontend, and
 > database were removed; Ground Control is now the MCP server over repo-local files. The
 > documentation-coverage classifier in `mcp/ground-control/lib/doc-coverage.js` dropped its
