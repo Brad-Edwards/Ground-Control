@@ -11,6 +11,19 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { CLAUDE_MODEL_BY_TIER, DEFAULT_IMPLEMENT_ROUTING_STAGES, ROUTING_STAGE_NAME_RE, ROUTING_TIERS } from "./repo-vocabulary.js";
 
+// execFileWithInput and the GC_CODEX_TIMEOUT_MS parsing/bounds live in
+// model-subprocess.js (issue #1518, split out to stay under the 500-LOC file
+// gate). Re-exported here so this remains the single import path every
+// existing caller already uses.
+export {
+  CODEX_TIMEOUT_MS_DEFAULT,
+  CODEX_TIMEOUT_MS_MAX,
+  CODEX_TIMEOUT_MS_MIN,
+  DEFAULT_CODEX_TIMEOUT_MS,
+  execFileWithInput,
+  parseCodexTimeoutMs,
+} from "./model-subprocess.js";
+
 export const execFile = promisify(execFileCb);
 export const GROUND_CONTROL_PROJECT_RE = /^[a-z0-9][a-z0-9-]*$/;
 // Shared with the .ground-control.yaml parser and the repo-identity resolver. It lives beside its
@@ -159,82 +172,6 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     "",
   ].join("\n");
 }
-export const DEFAULT_CODEX_TIMEOUT_MS = (() => {
-  const raw = Number.parseInt(process.env.GC_CODEX_TIMEOUT_MS || "", 10);
-  if (!Number.isInteger(raw)) return 1200000; // 20 minutes
-  return raw;
-})();
-const KILL_GRACE_MS_DEFAULT = 5000;
-export async function execFileWithInput(
-  file,
-  args,
-  {
-    input,
-    timeoutMs,
-    killSignal = "SIGTERM",
-    killGraceMs = KILL_GRACE_MS_DEFAULT,
-    ...options
-  } = {},
-) {
-  return await new Promise((resolve, reject) => {
-    let timedOut = false;
-    let killTimer = null;
-    let graceTimer = null;
-    let settled = false;
-
-    const finish = (fn, value) => {
-      if (settled) return;
-      settled = true;
-      if (killTimer) clearTimeout(killTimer);
-      if (graceTimer) clearTimeout(graceTimer);
-      fn(value);
-    };
-
-    const child = execFileCb(file, args, options, (error, stdout, stderr) => {
-      if (timedOut) {
-        const e = new Error(
-          `${file} did not exit within ${timeoutMs}ms (sent ${killSignal}, then SIGKILL after ${killGraceMs}ms grace)`,
-        );
-        e.code = "ETIMEDOUT";
-        e.killed = true;
-        e.stdout = stdout;
-        e.stderr = stderr;
-        finish(reject, e);
-        return;
-      }
-      if (error) {
-        error.stdout = stdout;
-        error.stderr = stderr;
-        finish(reject, error);
-        return;
-      }
-      finish(resolve, { stdout, stderr });
-    });
-
-    if (timeoutMs && timeoutMs > 0) {
-      killTimer = setTimeout(() => {
-        timedOut = true;
-        try {
-          child.kill(killSignal);
-        } catch {
-          // Already exited between the timer firing and the kill call.
-        }
-        graceTimer = setTimeout(() => {
-          try {
-            child.kill("SIGKILL");
-          } catch {
-            // Already exited.
-          }
-        }, killGraceMs);
-      }, timeoutMs);
-    }
-
-    if (input != null) {
-      child.stdin.end(input);
-    }
-  });
-}
-
 // Default fallback-auth file (issue #1500). A launcher — Codex especially, or
 // any non-interactive shell — may hand the MCP an environment with NO Claude
 // auth (no Vertex/Bedrock vars, no CLAUDE_CONFIG_DIR, no key), so the review

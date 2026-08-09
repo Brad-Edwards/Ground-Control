@@ -247,8 +247,8 @@ manufacture findings. See issue #931 and the preflight note at
 and the `gc_codex_review_cycle` wrapper gain an opt-in `async` mode: the tool
 spawns the `codex exec` child as a background job and returns a `job_id`
 immediately; the new `gc_codex_job` tool polls for the verdict envelope or
-cancels the job (the cancel aborts an `AbortController` whose signal kills the
-child, so nothing is orphaned). Run synchronously, the call blocked past the
+cancels the job (the cancel aborts an `AbortController` whose signal terminates
+the model invocation). Run synchronously, the call blocked past the
 MCP client's per-call timeout and the client abandoned it while the child ran
 on (issue #893). The stopping model this ADR defines is **unchanged**: the
 per-issue cycle cap, the `gc:codex-review-cycle` marker family, the
@@ -266,6 +266,19 @@ executors and every stopping decision remain unchanged under terminal
 roll back durable GitHub writes. After `job_not_found`, the caller refreshes
 the issue thread before selecting a new key. Cap counters, marker families,
 override authorization, and clean/findings/capped outcomes are unchanged.
+
+**2026-08-08 (issue #1518): cancellation and timeout own the subprocess tree.**
+The issue #937 wording above described the intended terminal behavior but the
+shared subprocess helper signalled only the direct CLI child. A CLI-spawned
+search process could therefore survive timeout or cancellation as an orphan.
+Every bounded model invocation must have one process-tree ownership contract:
+timeout, abort, direct-child failure, and direct-child success must leave no
+descendants. Architecture preflight additionally defines repository-wide
+inspection as repository-scoped inspection; `-C` and `workspace-write` are not
+represented as host read-confinement controls. The binding guardrails and
+non-goals are recorded in
+`architecture/notes/codex-subprocess-containment-preflight.md`. Review caps,
+job retention, durable-write ordering, and stopping decisions are unchanged.
 
 **Amendment: renderer summary byte caps (#964).** `gc_render_pr_body` and `gc_post_final_report` now enforce reject-not-truncate byte caps on their caller-controlled summary fields. `gc_post_decision_record` (the per-cycle decision-record surface this ADR's stopping model writes to) is unchanged at the schema layer; its caller-controlled prose fields (`notes[].text`, finding rationales, titles) already had per-field caps. The canonical succinctness rule lives in `skills/implement/steps/_review-loop-rules.md § Update succinctness (canonical)`.
 

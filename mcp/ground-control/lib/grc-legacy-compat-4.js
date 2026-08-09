@@ -8,6 +8,7 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { parsePhaseMarkers } from "./codex-review.js";
+import { codexEngineEnv } from "./codex-engine-env.js";
 import { MCP_LAUNCH_CWD, evaluateExecutionObligations, isDefaultImplementHooksPath, parseExecutionObligationMarkers, readGeneratedCodexSummary } from "./codex-workflow.js";
 import { ENRICH_THREAD_PAGE_CAP } from "./grc-legacy-compat-2.js";
 import { getAuthenticatedGitHubLogin, getOwnerRepo, hasVerifiedStructuredWontfixAuthorization, readIssueCommentBodies, readIssueCommentsWithAuthors, resolveExecutionObligationTrust } from "./grc-legacy-compat-3.js";
@@ -461,7 +462,7 @@ export async function runSingleCodexReview({ repoRoot, prompt, signal = undefine
         input: prompt,
         cwd: repoRoot,
         maxBuffer: 10 * 1024 * 1024,
-        env: { ...process.env, NO_COLOR: "1" },
+        env: codexEngineEnv(),
         timeoutMs: DEFAULT_CODEX_TIMEOUT_MS,
         signal,
       },
