@@ -4,12 +4,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-  aggregateWorkflowRuns,
   buildReviewAutoDispositionRecord,
   collectDispositionSignals,
-  crossProjectAggregateWorkflowRuns,
-  importWorkflowRunCost,
-  listWorkflowRuns,
   parseReviewAutoDispositionMarkers,
   recordWorkflowRunEvent,
   scoreDisposition,
@@ -78,85 +74,6 @@ describe("recordWorkflowRunEvent", () => {
     }),
   );
 
-});
-
-describe("importWorkflowRunCost", () => {
-  it(
-    "POSTs to /api/v1/workflow-runs/{runId}/cost",
-    withWorkflowRunEnv(async () => {
-      const calls = makeWorkflowRunFetchSpy({ status: 200, body: { id: "run-1", costProxy: 1.5 } });
-      await importWorkflowRunCost("run-xyz", { cost_proxy: 1.5, cost_currency: "USD" }, "proj-a");
-      assert.equal(calls[0].method, "POST");
-      const url = new URL(calls[0].url);
-      assert.equal(url.pathname, "/api/v1/workflow-runs/run-xyz/cost");
-      assert.equal(url.searchParams.get("project"), "proj-a");
-      assert.equal(calls[0].body.costProxy, 1.5);
-      assert.equal(calls[0].body.costCurrency, "USD");
-    }),
-  );
-});
-
-describe("listWorkflowRuns", () => {
-  it(
-    "GETs /api/v1/workflow-runs with project and limit params",
-    withWorkflowRunEnv(async () => {
-      const calls = makeWorkflowRunFetchSpy({ status: 200, body: [] });
-      await listWorkflowRuns({ project: "p1", limit: 20 });
-      assert.equal(calls[0].method, "GET");
-      const url = new URL(calls[0].url);
-      assert.equal(url.pathname, "/api/v1/workflow-runs");
-      assert.equal(url.searchParams.get("project"), "p1");
-      assert.equal(url.searchParams.get("limit"), "20");
-    }),
-  );
-
-  it(
-    "omits undefined params",
-    withWorkflowRunEnv(async () => {
-      const calls = makeWorkflowRunFetchSpy({ status: 200, body: [] });
-      await listWorkflowRuns({});
-      const url = new URL(calls[0].url);
-      assert.equal(url.searchParams.get("project"), null);
-      assert.equal(url.searchParams.get("limit"), null);
-    }),
-  );
-});
-
-describe("aggregateWorkflowRuns", () => {
-  it(
-    "GETs /api/v1/workflow-runs/aggregate with filter params",
-    withWorkflowRunEnv(async () => {
-      const calls = makeWorkflowRunFetchSpy({ status: 200, body: { totalRuns: 3 } });
-      await aggregateWorkflowRuns({
-        project: "p2",
-        workflowType: "IMPLEMENT",
-        from: "2026-01-01",
-        to: "2026-06-01",
-      });
-      assert.equal(calls[0].method, "GET");
-      const url = new URL(calls[0].url);
-      assert.equal(url.pathname, "/api/v1/workflow-runs/aggregate");
-      assert.equal(url.searchParams.get("project"), "p2");
-      assert.equal(url.searchParams.get("workflowType"), "IMPLEMENT");
-      assert.equal(url.searchParams.get("from"), "2026-01-01");
-      assert.equal(url.searchParams.get("to"), "2026-06-01");
-    }),
-  );
-});
-
-describe("crossProjectAggregateWorkflowRuns", () => {
-  it(
-    "GETs /api/v1/workflow-runs/cross-project-aggregate without project param",
-    withWorkflowRunEnv(async () => {
-      const calls = makeWorkflowRunFetchSpy({ status: 200, body: { totalRuns: 999 } });
-      await crossProjectAggregateWorkflowRuns({ workflowType: "QUICKFIX" });
-      assert.equal(calls[0].method, "GET");
-      const url = new URL(calls[0].url);
-      assert.equal(url.pathname, "/api/v1/workflow-runs/cross-project-aggregate");
-      assert.equal(url.searchParams.get("project"), null);
-      assert.equal(url.searchParams.get("workflowType"), "QUICKFIX");
-    }),
-  );
 });
 
 // ---------------------------------------------------------------------------
