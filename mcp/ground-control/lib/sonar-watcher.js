@@ -122,30 +122,12 @@ function _writeSonarExport(repoRoot, prNumber, payload) {
     return null;
   }
 }
-export async function runWatchSonarAnalysis({
-  repoPath,
-  prNumber,
-  initialWaitSeconds = 60,
-  totalTimeoutSeconds = 1800,
-  pollIntervalSeconds = 30,
-}) {
+function validateWatchSonarAnalysisInput({ repoPath, prNumber, initialWaitSeconds, totalTimeoutSeconds, pollIntervalSeconds }) {
   if (typeof repoPath !== "string" || repoPath.length === 0) {
-    return {
-      ok: false,
-      error: "sonar_watch_input_invalid",
-      message: "repo_path is required",
-    };
+    return { ok: false, error: "sonar_watch_input_invalid", message: "repo_path is required" };
   }
-  if (
-    typeof prNumber !== "number" ||
-    !Number.isInteger(prNumber) ||
-    prNumber <= 0
-  ) {
-    return {
-      ok: false,
-      error: "sonar_watch_input_invalid",
-      message: "pr_number must be a positive integer",
-    };
+  if (typeof prNumber !== "number" || !Number.isInteger(prNumber) || prNumber <= 0) {
+    return { ok: false, error: "sonar_watch_input_invalid", message: "pr_number must be a positive integer" };
   }
   for (const [name, value] of [
     ["initial_wait_seconds", initialWaitSeconds],
@@ -153,13 +135,63 @@ export async function runWatchSonarAnalysis({
     ["poll_interval_seconds", pollIntervalSeconds],
   ]) {
     if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
-      return {
-        ok: false,
-        error: "sonar_watch_input_invalid",
-        message: `${name} must be a non-negative integer`,
-      };
+      return { ok: false, error: "sonar_watch_input_invalid", message: `${name} must be a non-negative integer` };
     }
   }
+  return null;
+}
+
+// Poll for the quality gate; PRs not yet analyzed return 404. Returns
+// `{ qg }` once available, or `{ earlyReturn }` carrying the exact envelope
+// the caller should return immediately (fetch error or overall timeout).
+async function pollSonarQualityGateUntilReady({ projectKey, prNumber, token, totalTimeoutSeconds, pollIntervalSeconds }) {
+  const startMs = Date.now();
+  while (true) {
+    let qg;
+    try {
+      qg = await _fetchSonarQualityGate({ projectKey, prNumber, token });
+    } catch (e) {
+      return {
+        earlyReturn: {
+          ok: false,
+          error: "sonar_watch_quality_gate_failed",
+          message: e?.message ?? "sonar quality gate fetch failed",
+          pr_number: prNumber,
+        },
+      };
+    }
+    if (qg.available) return { qg };
+    const elapsedSeconds = Math.floor((Date.now() - startMs) / 1000);
+    if (elapsedSeconds > totalTimeoutSeconds) {
+      return {
+        earlyReturn: {
+          ok: true,
+          skipped: false,
+          pr_number: prNumber,
+          quality_gate: "NONE",
+          issues_summary: { open_count: 0, by_severity: {}, by_type: {}, top_issues: [] },
+          hotspots_summary: { open_count: 0, top_hotspots: [] },
+          full_issue_export_path: null,
+          timed_out: true,
+        },
+      };
+    }
+    if (pollIntervalSeconds > 0) {
+      await _sleepMs(pollIntervalSeconds * 1000);
+    }
+  }
+}
+export async function runWatchSonarAnalysis({
+  repoPath,
+  prNumber,
+  initialWaitSeconds = 60,
+  totalTimeoutSeconds = 1800,
+  pollIntervalSeconds = 30,
+}) {
+  const inputError = validateWatchSonarAnalysisInput({
+    repoPath, prNumber, initialWaitSeconds, totalTimeoutSeconds, pollIntervalSeconds,
+  });
+  if (inputError) return inputError;
 
   let repoRoot;
   try {
@@ -201,42 +233,15 @@ export async function runWatchSonarAnalysis({
     await _sleepMs(initialWaitSeconds * 1000);
   }
 
-  // Poll for the quality gate; PRs not yet analyzed return 404.
-  const startMs = Date.now();
-  let qg = null;
-  while (true) {
-    try {
-      qg = await _fetchSonarQualityGate({
-        projectKey: sonarConfig.projectKey,
-        prNumber,
-        token,
-      });
-    } catch (e) {
-      return {
-        ok: false,
-        error: "sonar_watch_quality_gate_failed",
-        message: e?.message ?? "sonar quality gate fetch failed",
-        pr_number: prNumber,
-      };
-    }
-    if (qg.available) break;
-    const elapsedSeconds = Math.floor((Date.now() - startMs) / 1000);
-    if (elapsedSeconds > totalTimeoutSeconds) {
-      return {
-        ok: true,
-        skipped: false,
-        pr_number: prNumber,
-        quality_gate: "NONE",
-        issues_summary: { open_count: 0, by_severity: {}, by_type: {}, top_issues: [] },
-        hotspots_summary: { open_count: 0, top_hotspots: [] },
-        full_issue_export_path: null,
-        timed_out: true,
-      };
-    }
-    if (pollIntervalSeconds > 0) {
-      await _sleepMs(pollIntervalSeconds * 1000);
-    }
-  }
+  const pollResult = await pollSonarQualityGateUntilReady({
+    projectKey: sonarConfig.projectKey,
+    prNumber,
+    token,
+    totalTimeoutSeconds,
+    pollIntervalSeconds,
+  });
+  if (pollResult.earlyReturn) return pollResult.earlyReturn;
+  const qg = pollResult.qg;
 
   let issues = [];
   let hotspots = [];

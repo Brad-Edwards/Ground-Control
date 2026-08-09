@@ -25,7 +25,7 @@ const CODEX_REVIEW_PREPUSH_MARKER_RE =
   /<!--\s*gc:codex-prepush-cycle\s+issue="(\d+)"\s+branch="((?:[^"\\]|\\.)*)"\s+cycle="(\d+)"[^]*?-->/g;
 export function deriveIssueNumberFromBranch(branchName) {
   if (typeof branchName !== "string" || branchName === "") return null;
-  const match = branchName.match(/^(\d+)(?:-|$)/);
+  const match = /^(\d+)(?:-|$)/.exec(branchName);
   if (!match) return null;
   const n = Number.parseInt(match[1], 10);
   if (!Number.isInteger(n) || n <= 0) return null;

@@ -15,7 +15,7 @@ export async function createGitHubIssueFromRequirement({ uid, project, repo, rep
   // docs/requirements/<UID>/requirement.md. A missing file aborts before any GitHub
   // issue is created — the same fail-fast the former REST 404 gave.
   const req = await readRequirementByUid(repoRoot, uid);
-  if (!req || !req.id) {
+  if (!req?.id) {
     throw new Error(`createGitHubIssueFromRequirement: requirement '${uid}' not found`);
   }
 

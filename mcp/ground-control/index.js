@@ -94,7 +94,7 @@ registerReviewCapDisposition(server);
 // Startup
 // ============================================================================
 
-async function main() {
+try {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error(
@@ -102,9 +102,7 @@ async function main() {
       "in the repo, no backend and no database. The surviving surface is the /implement workflow " +
       "mechanics plus the coding-agent↔reviewer separation tools.",
   );
-}
-
-main().catch((e) => {
+} catch (e) {
   console.error(e);
   process.exit(1);
-});
+}

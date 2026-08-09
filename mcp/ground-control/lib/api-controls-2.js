@@ -71,27 +71,20 @@ export async function request(method, path, { body, rawBody, params, formData, s
   const data = text ? JSON.parse(text) : null;
   return toSnakeCase(data);
 }
-export async function writeKnowledgeInbox({
-  repoPath,
-  note,
-  sourceType,
-  sourceRef,
-  tags = [],
-  spawnIngest = defaultSpawnIngest,
-} = {}) {
+function validateWriteKnowledgeInboxArgs({ repoPath, note, tags }) {
   if (typeof repoPath !== "string" || !isAbsolute(repoPath)) {
-    return { ok: false, error: "repo_path must be an absolute path to a Git repository" };
+    return "repo_path must be an absolute path to a Git repository";
   }
   if (typeof note !== "string" || note.trim() === "") {
-    return { ok: false, error: "note is required and must be a non-empty string" };
+    return "note is required and must be a non-empty string";
   }
   if (tags != null && !Array.isArray(tags)) {
-    return { ok: false, error: "tags must be an array of strings when set" };
+    return "tags must be an array of strings when set";
   }
+  return null;
+}
 
-  const citationResult = formatSourceCitation({ sourceType, sourceRef });
-  if (!citationResult.ok) return { ok: false, error: citationResult.error };
-
+async function resolveKnowledgeCaptureContext(repoPath) {
   let context;
   try {
     context = await getRepoGroundControlContext(repoPath);
@@ -110,6 +103,63 @@ export async function writeKnowledgeInbox({
       error: "repository has no 'knowledge' block in .ground-control.yaml — capture is not configured",
     };
   }
+  return { ok: true, context };
+}
+
+// Atomic write: temp file + fsync + rename. A crash between the write and the
+// rename leaves a .tmp sidecar but no partial file at the final path, so
+// readers never observe a half-written inbox entry. Returns an error message
+// on failure, null on success.
+function writeInboxFileAtomically(tmpPath, absInboxFile, fileContent) {
+  let fd;
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- tmpPath derives from inboxDir which is repo-relative
+    fd = openSync(tmpPath, "wx");
+    writeSync(fd, fileContent);
+    fsyncSync(fd);
+  } catch (error) {
+    if (fd != null) {
+      try { closeSync(fd); } catch { /* best-effort */ }
+    }
+    try {
+      rmSync(tmpPath, { force: true });
+    } catch { /* best-effort cleanup */ }
+    return `failed to write inbox tmp file: ${error.message}`;
+  }
+  try {
+    closeSync(fd);
+  } catch (error) {
+    return `failed to close inbox tmp file: ${error.message}`;
+  }
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- both paths are under absInboxDir which is realpath-contained within repoRoot
+    renameSync(tmpPath, absInboxFile);
+  } catch (error) {
+    try {
+      rmSync(tmpPath, { force: true });
+    } catch { /* best-effort cleanup */ }
+    return `failed to rename inbox tmp file: ${error.message}`;
+  }
+  return null;
+}
+
+export async function writeKnowledgeInbox({
+  repoPath,
+  note,
+  sourceType,
+  sourceRef,
+  tags = [],
+  spawnIngest = defaultSpawnIngest,
+} = {}) {
+  const argError = validateWriteKnowledgeInboxArgs({ repoPath, note, tags });
+  if (argError) return { ok: false, error: argError };
+
+  const citationResult = formatSourceCitation({ sourceType, sourceRef });
+  if (!citationResult.ok) return { ok: false, error: citationResult.error };
+
+  const contextResult = await resolveKnowledgeCaptureContext(repoPath);
+  if (!contextResult.ok) return contextResult;
+  const { context } = contextResult;
 
   const repoRoot = context.repo_path;
   const knowledge = context.knowledge;
@@ -147,39 +197,8 @@ export async function writeKnowledgeInbox({
   const yamlBlock = dumpYaml(frontmatter, { lineWidth: -1, noRefs: true });
   const fileContent = `---\n${yamlBlock}---\n\n${note.trim()}\n`;
 
-  // Atomic write: temp file + fsync + rename. A crash between the write
-  // and the rename leaves a .tmp sidecar but no partial file at the final
-  // path, so readers never observe a half-written inbox entry.
-  const tmpPath = `${absInboxFile}.tmp`;
-  let fd;
-  try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- tmpPath derives from inboxDir which is repo-relative
-    fd = openSync(tmpPath, "wx");
-    writeSync(fd, fileContent);
-    fsyncSync(fd);
-  } catch (error) {
-    if (fd != null) {
-      try { closeSync(fd); } catch { /* best-effort */ }
-    }
-    try {
-      rmSync(tmpPath, { force: true });
-    } catch { /* best-effort cleanup */ }
-    return { ok: false, error: `failed to write inbox tmp file: ${error.message}` };
-  }
-  try {
-    closeSync(fd);
-  } catch (error) {
-    return { ok: false, error: `failed to close inbox tmp file: ${error.message}` };
-  }
-  try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- both paths are under absInboxDir which is realpath-contained within repoRoot
-    renameSync(tmpPath, absInboxFile);
-  } catch (error) {
-    try {
-      rmSync(tmpPath, { force: true });
-    } catch { /* best-effort cleanup */ }
-    return { ok: false, error: `failed to rename inbox tmp file: ${error.message}` };
-  }
+  const writeError = writeInboxFileAtomically(`${absInboxFile}.tmp`, absInboxFile, fileContent);
+  if (writeError) return { ok: false, error: writeError };
 
   const inboxRelFromRepo = relative(repoRoot, absInboxFile);
 
