@@ -70,6 +70,10 @@ from .core import (  # noqa: F401
     normalize_path,
     run_no_deferral_disposition_check,
 )
+from .cli_safety import (  # noqa: F401
+    safe_cli_path,
+    validate_git_ref,
+)
 from .file_size import (  # noqa: F401
     MAX_LINES,
     run_file_size_limit_check,

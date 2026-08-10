@@ -27,6 +27,9 @@ from .core import (
     REPO_ROOT,
     Violation,
 )
+from .cli_safety import (
+    safe_cli_path,
+)
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -99,7 +102,7 @@ def write_violations_json(path: str, violations: list[Violation], duration_ms: i
     is swallowed. The gate's verdict is its exit code, not this file.
     """
     try:
-        Path(path).write_text(
+        safe_cli_path(path).write_text(
             json.dumps(
                 {
                     "station_id": "policy",
@@ -112,7 +115,7 @@ def write_violations_json(path: str, violations: list[Violation], duration_ms: i
             ),
             encoding="utf-8",
         )
-    except OSError:
+    except (OSError, ValueError):
         pass
 
 

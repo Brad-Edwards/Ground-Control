@@ -28,6 +28,9 @@ from .core import (
     Violation,
     normalize_path,
 )
+from .cli_safety import (
+    validate_git_ref,
+)
 
 
 def run_git(args: list[str], root: Path = REPO_ROOT) -> str:
@@ -64,7 +67,7 @@ def merge_base_or(base: str, ref: str = "HEAD", root: Path = REPO_ROOT) -> str:
     """
     try:
         result = subprocess.run(
-            ["git", "merge-base", base, ref],
+            ["git", "merge-base", validate_git_ref(base), validate_git_ref(ref)],
             cwd=root,
             check=True,
             capture_output=True,
