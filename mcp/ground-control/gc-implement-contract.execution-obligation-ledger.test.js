@@ -31,11 +31,15 @@ function initRepo() {
 }
 
 function authorizationForRepo(repo) {
+  // A freshly `git init`'d repo is a main worktree, so --absolute-git-dir and
+  // --git-common-dir resolve to the same `.git` (issue #1502).
+  const gitDir = realpathSync(
+    execFileSync("git", ["-C", repo, "rev-parse", "--absolute-git-dir"], { encoding: "utf8" }).trim(),
+  );
   return {
     workspaceRoot: realpathSync(repo),
-    gitDir: realpathSync(
-      execFileSync("git", ["-C", repo, "rev-parse", "--absolute-git-dir"], { encoding: "utf8" }).trim(),
-    ),
+    gitDir,
+    gitCommonDir: gitDir,
     origin: execFileSync(
       "git", ["-C", repo, "remote", "get-url", "origin"], { encoding: "utf8" },
     ).trim(),

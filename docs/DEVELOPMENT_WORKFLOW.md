@@ -879,8 +879,22 @@ iterations-to-green denominators, so an outage never reads as rework.
 The `/implement` mutation tools are repository-bound at the server boundary. Their
 `repo_path` must resolve to the Git workspace captured when that repository's
 MCP server launched and retain the exact launch-time origin identity; supplying
-another on-host checkout or retargeting origin is rejected. Raw remote URLs
-never enter branch-tool results. Obligation replay checks every record author
+another on-host checkout or retargeting origin is rejected. The Git-store half of
+that identity is pinned to the shared common Git directory (`--git-common-dir`),
+not the per-worktree pointer (`--absolute-git-dir`), so the guard is stable across
+every linked worktree of the same repository. Raw remote URLs
+never enter branch-tool results.
+
+**Concurrent worktrees and MCP relaunch (issue #1502).** Run one Ground Control
+MCP server per checkout, launched from that checkout. Each server captures the
+launch workspace once; a second `/implement` in a sibling linked worktree gets its
+own server and its own captured identity. Because the guard pins the shared common
+Git directory and origin rather than the per-worktree Git-dir pointer, sibling
+worktree maintenance (`git worktree repair`/`prune`) no longer trips the identity
+guard mid-run. A run that still returns `implement_repo_identity_changed` (for
+example after the client relaunched the server against a different checkout) needs
+the Ground Control MCP server restarted from the target worktree so it re-captures
+the workspace identity; the error message says the same. Obligation replay checks every record author
 for effective repository write permission rather than trusting organization
 membership or coarse comment associations. `wontfix` authorization is a
 structured two-step record: an authorized repository writer posts exactly

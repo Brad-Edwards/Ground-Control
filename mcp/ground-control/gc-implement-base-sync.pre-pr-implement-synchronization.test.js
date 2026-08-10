@@ -33,13 +33,15 @@ const RECORD = "4".repeat(32);
 const TREE = "5".repeat(40);
 
 async function workspaceAuthorization() {
-  const [gitDir, origin] = await Promise.all([
+  const [gitDir, gitCommonDir, origin] = await Promise.all([
     execFile("git", ["-C", REPO_ROOT, "rev-parse", "--absolute-git-dir"]),
+    execFile("git", ["-C", REPO_ROOT, "rev-parse", "--path-format=absolute", "--git-common-dir"]),
     execFile("git", ["-C", REPO_ROOT, "remote", "get-url", "origin"]),
   ]);
   return {
     workspaceRoot: REPO_ROOT,
     gitDir: realpathSync(gitDir.stdout.trim()),
+    gitCommonDir: realpathSync(gitCommonDir.stdout.trim()),
     origin: origin.stdout.trim(),
     owner: "autarchy-ai",
     name: "ground-control",
