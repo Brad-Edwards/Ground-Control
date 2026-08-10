@@ -23,11 +23,15 @@ function initRepo() {
 }
 
 function authorizationForRepo(repo) {
+  // A freshly `git init`'d repo is a main worktree, so --absolute-git-dir and
+  // --git-common-dir resolve to the same `.git` (issue #1502).
+  const gitDir = realpathSync(
+    execFileSync("git", ["-C", repo, "rev-parse", "--absolute-git-dir"], { encoding: "utf8" }).trim(),
+  );
   return {
     workspaceRoot: realpathSync(repo),
-    gitDir: realpathSync(
-      execFileSync("git", ["-C", repo, "rev-parse", "--absolute-git-dir"], { encoding: "utf8" }).trim(),
-    ),
+    gitDir,
+    gitCommonDir: gitDir,
     origin: execFileSync(
       "git", ["-C", repo, "remote", "get-url", "origin"], { encoding: "utf8" },
     ).trim(),
@@ -91,6 +95,39 @@ describe("same-checkout /implement branch operation", () => {
         realpathSync(repo),
       );
       assert.doesNotMatch(readFileSync(log, "utf8"), /worktree/);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+      rmSync(bin, { recursive: true, force: true });
+    }
+  });
+
+  it("authorizes when only the per-worktree Git dir diverges (issue #1502)", async () => {
+    const repo = initRepo();
+    const bin = mkdtempSync(join(tmpdir(), "gc-implement-bin-"));
+    const log = join(bin, "gh.log");
+    writeFileSync(log, "");
+    installGhDevelopShim(bin, log);
+    try {
+      // A concurrent /implement in a sibling linked worktree (or an MCP relaunch) can
+      // shift the captured per-worktree --absolute-git-dir while the shared repository
+      // store, origin, and owner/name are unchanged. The guard pins the common dir, so
+      // this no longer fails with implement_repo_identity_changed.
+      const authorization = {
+        ...authorizationForRepo(repo),
+        gitDir: join(repo, ".git", "worktrees", "stale-pointer"),
+      };
+      const result = await withPath(bin, () =>
+        runPrepareImplementBranch({
+          repoPath: repo,
+          invocationRoot: repo,
+          issueNumber: 1502,
+          branchName: "1502-worktree-identity-guard",
+          baseBranch: "dev",
+          checkoutMode: "same_checkout",
+        }, { workspaceAuthorizationResolver: async () => authorization }),
+      );
+      assert.equal(result.ok, true, JSON.stringify(result));
+      assert.equal(result.branch, "1502-worktree-identity-guard");
     } finally {
       rmSync(repo, { recursive: true, force: true });
       rmSync(bin, { recursive: true, force: true });

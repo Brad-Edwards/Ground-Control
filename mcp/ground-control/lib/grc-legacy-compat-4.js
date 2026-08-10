@@ -36,6 +36,7 @@ async function captureImplementWorkspaceAuthorization(cwd) {
   return Object.freeze({
     workspaceRoot,
     gitDir: identity.gitDir,
+    gitCommonDir: identity.gitCommonDir,
     origin: identity.origin,
     owner: owner.toLowerCase(),
     name: name.toLowerCase(),
@@ -58,7 +59,7 @@ export async function authorizeImplementRepoRoot(repoRoot, workspaceAuthorizatio
     authorization == null
     || typeof authorization !== "object"
     || typeof authorization.workspaceRoot !== "string"
-    || typeof authorization.gitDir !== "string"
+    || typeof authorization.gitCommonDir !== "string"
     || typeof authorization.origin !== "string"
     || typeof authorization.owner !== "string"
     || typeof authorization.name !== "string"
@@ -89,8 +90,16 @@ export async function authorizeImplementRepoRoot(repoRoot, workspaceAuthorizatio
       message: "The requested repository identity could not be verified",
     };
   }
+  // Pin the shared repository store (--git-common-dir), not the per-worktree Git
+  // directory (--absolute-git-dir). The workspaceRoot check above already binds the run
+  // to one checkout; pinning the per-worktree pointer on top of it was fragile, because a
+  // concurrent /implement in a sibling linked worktree (git worktree repair/prune) or an
+  // MCP relaunch could shift that pointer's realpath while the repository is unchanged,
+  // firing implement_repo_identity_changed mid-run with no recovery (issue #1502). The
+  // origin/owner/name checks stay strict, so an origin retarget to a different repo is
+  // still rejected.
   if (
-    current.gitDir !== realpathSync(authorization.gitDir)
+    current.gitCommonDir !== realpathSync(authorization.gitCommonDir)
     || current.origin !== authorization.origin
     || currentOwnerRepo.owner.toLowerCase() !== authorization.owner.toLowerCase()
     || currentOwnerRepo.name.toLowerCase() !== authorization.name.toLowerCase()
@@ -98,27 +107,41 @@ export async function authorizeImplementRepoRoot(repoRoot, workspaceAuthorizatio
     return {
       ok: false,
       error: "implement_repo_identity_changed",
-      message: "The checkout origin or Git directory differs from the identity captured at MCP launch",
+      message:
+        "The checkout origin or Git repository differs from the identity captured at MCP launch. "
+        + "If you are in a linked worktree or the Ground Control MCP server was relaunched, "
+        + "restart the server from this worktree so it re-captures the workspace identity.",
     };
   }
   return {
     ok: true,
     workspaceRoot,
     gitDir: current.gitDir,
+    gitCommonDir: current.gitCommonDir,
     origin: authorization.origin,
     owner: authorization.owner,
     name: authorization.name,
   };
 }
 export async function readGitIdentity(repoRoot) {
-  const [top, gitDir, origin] = await Promise.all([
+  const [top, gitDir, gitCommonDir, origin] = await Promise.all([
     execFile("git", ["-C", repoRoot, "rev-parse", "--show-toplevel"]),
     execFile("git", ["-C", repoRoot, "rev-parse", "--absolute-git-dir"]),
+    execFile("git", ["-C", repoRoot, "rev-parse", "--git-common-dir"]),
     execFile("git", ["-C", repoRoot, "remote", "get-url", "origin"]),
   ]);
+  // --git-common-dir returns the shared repository store: for a linked worktree it is
+  // the main checkout's `.git` (stable across every worktree of the repo), while
+  // --absolute-git-dir is the per-worktree `<common>/worktrees/<name>` pointer. Git may
+  // return it relative to repoRoot (typically bare `.git` in the main worktree), so
+  // resolve against repoRoot before realpath. See issue #1502.
+  const rawCommonDir = gitCommonDir.stdout.trim();
   return {
     topLevel: realpathSync(top.stdout.trim()),
     gitDir: realpathSync(gitDir.stdout.trim()),
+    gitCommonDir: realpathSync(
+      isAbsolute(rawCommonDir) ? rawCommonDir : join(repoRoot, rawCommonDir),
+    ),
     origin: origin.stdout.trim(),
   };
 }
