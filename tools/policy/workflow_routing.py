@@ -1,4 +1,4 @@
-"""Policy checks: workflow routing and traceability reconciliation gate.
+"""Policy checks: workflow routing.
 
 Extracted from tools/policy/checks.py (issue #1355), which had reached 5,679 lines against
 the repo's 500-LOC limit. checks.py remains the entry point and re-exports this module, so
@@ -22,86 +22,11 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
-from .decision_records import (
-    IMPLEMENT_STEP_17_PATH,
-    IMPLEMENT_STEP_20_PATH,
-)
 from .core import (
     GROUND_CONTROL_YAML_PATH,
     REPO_ROOT,
     Violation,
 )
-from .authz_matrix import (
-    IMPLEMENT_SKILL_PATH,
-)
-
-
-def run_traceability_reconciliation_gate_contract(
-    *,
-    root: Path = REPO_ROOT,
-) -> list[Violation]:
-    """Assert the traceability + closeout gate prose surfaces are wired.
-
-    The gate has two MCP-tool surfaces and three prose anchors:
-
-      step-17-completion.md   must mention `gc_assert_completion` and
-                              `traceability_reconciled` and `plain_english_outcome`
-      step-20-close-issue-on-merge.md must exist AND mention
-                              `gc_close_issue_after_merge`
-      SKILL.md                must mention `Phase E` and
-                              `gc_close_issue_after_merge`
-
-    Emits one violation per missing anchor with a stable code so CI surfaces
-    the specific gap. A repo whose policy-tests file isn't yet up to date
-    (e.g., the test fixture path needs a workflow run) flags here rather
-    than going silent.
-    """
-    violations: list[Violation] = []
-
-    requirements = (
-        (
-            IMPLEMENT_STEP_17_PATH,
-            ("gc_assert_completion", "traceability_reconciled", "plain_english_outcome"),
-            "traceability-gate-step17-missing",
-            "Step 17 must use gc_assert_completion with traceability_reconciled and plain_english_outcome (issue #1103).",
-        ),
-        (
-            IMPLEMENT_STEP_20_PATH,
-            ("gc_close_issue_after_merge",),
-            "traceability-gate-step20-missing",
-            "Step 20 (Phase E post-merge close) must exist and mention gc_close_issue_after_merge (issue #1058).",
-        ),
-        (
-            IMPLEMENT_SKILL_PATH,
-            ("Phase E", "gc_close_issue_after_merge"),
-            "traceability-gate-skill-missing",
-            "SKILL.md must document Phase E and the gc_close_issue_after_merge close path (issue #1058).",
-        ),
-    )
-
-    for rel_path, tokens, code, message in requirements:
-        path = root / rel_path
-        if not path.exists():
-            violations.append(
-                Violation(
-                    code=code,
-                    message=f"{rel_path} is missing — required by the issue #1058 traceability gate contract.",
-                    details=[f"expected at {rel_path}", *(f"must mention: {t}" for t in tokens)],
-                )
-            )
-            continue
-        text = path.read_text(encoding="utf-8")
-        missing_tokens = [t for t in tokens if t not in text]
-        if missing_tokens:
-            violations.append(
-                Violation(
-                    code=code,
-                    message=message,
-                    details=[f"in {rel_path}", *(f"missing: '{t}'" for t in missing_tokens)],
-                )
-            )
-
-    return violations
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:

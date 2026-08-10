@@ -26,10 +26,48 @@ from .core import (
     REPO_ROOT,
     Violation,
 )
-from .deploy_artifacts import (
-    read_mcp_library,
-    read_mcp_registrations,
-)
+MCP_LIB_PATH = "mcp/ground-control/lib.js"
+
+
+MCP_LIB_DIR = "mcp/ground-control/lib"
+
+
+def read_mcp_library(root: Path = REPO_ROOT) -> str | None:
+    """The MCP shared library's full source, barrel plus every extracted module.
+
+    lib.js was a single 20,634-line file until issue #1355 split it under the repo's
+    500-LOC limit; it is now a barrel of star re-exports. A check that reads only that
+    file sees no implementation at all and silently passes, so every content check reads
+    the whole surface instead of one path.
+    """
+    barrel = root / MCP_LIB_PATH
+    if not barrel.exists():
+        return None
+    parts = [barrel.read_text(encoding="utf-8")]
+    lib_dir = root / MCP_LIB_DIR
+    if lib_dir.is_dir():
+        parts.extend(
+            path.read_text(encoding="utf-8") for path in sorted(lib_dir.glob("*.js"))
+        )
+    return "\n".join(parts)
+
+
+def read_mcp_registrations(root: Path = REPO_ROOT) -> str:
+    """The MCP tool-registration surface: index.js plus every module under tools/.
+
+    index.js was the single registration file until it was decomposed; the registrations now
+    live in mcp/ground-control/tools/*.js. A check that reads only index.js finds none of them,
+    which is the same shape as the lib.js barrel above: the subject moved, the scan matched
+    nothing, and the check reported on a surface it could no longer see.
+    """
+    parts = []
+    index = root / "mcp/ground-control/index.js"
+    if index.exists():
+        parts.append(index.read_text(encoding="utf-8"))
+    tools_dir = root / "mcp/ground-control/tools"
+    if tools_dir.is_dir():
+        parts.extend(path.read_text(encoding="utf-8") for path in sorted(tools_dir.rglob("*.js")))
+    return "\n".join(parts)
 
 
 def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
