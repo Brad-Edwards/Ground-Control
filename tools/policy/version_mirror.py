@@ -22,17 +22,93 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
-from .migration_policy import (
-    RELEASE_PLEASE_CONFIG,
-    RELEASE_PLEASE_MANIFEST,
-    RELEASE_PLEASE_ROOT_PACKAGE,
-    _extract_generic_version,
-    _extract_json_version,
-)
 from .core import (
     REPO_ROOT,
     Violation,
 )
+
+
+RELEASE_PLEASE_CONFIG = "release-please-config.json"
+
+
+RELEASE_PLEASE_MANIFEST = ".release-please-manifest.json"
+
+
+# The single Ground Control root component's key in both the config and the manifest.
+RELEASE_PLEASE_ROOT_PACKAGE = "."
+
+
+# release-please "generic" updater annotation (string-form extra-files), e.g.
+#   version = "1.0.1" // x-release-please-version   (backend/build.gradle.kts)
+_GENERIC_VERSION_ANNOTATION = "x-release-please-version"
+
+
+_QUOTED_VERSION_RE = re.compile(r"""["'](\d+\.\d+\.\d+[0-9A-Za-z.\-+]*)["']""")
+
+
+def _jsonpath_keys(jsonpath: str) -> list[str] | None:
+    """Tokenize a minimal JSONPath into an ordered key list.
+
+    Supports the forms release-please emits for JSON extra-files: ``$.version``,
+    ``$.a.b``, and bracketed keys including the empty root-package key
+    ``$.packages[''].version`` / ``$.packages[""].version``. Returns ``None`` for a
+    path this resolver cannot parse.
+    """
+    s = jsonpath.strip()
+    if s.startswith("$"):
+        s = s[1:]
+    keys: list[str] = []
+    i, n = 0, len(s)
+    while i < n:
+        c = s[i]
+        if c == ".":
+            i += 1
+            j = i
+            while j < n and s[j] not in ".[":
+                j += 1
+            if j == i:
+                return None
+            keys.append(s[i:j])
+            i = j
+        elif c == "[":
+            close = s.find("]", i)
+            if close == -1:
+                return None
+            inner = s[i + 1 : close].strip()
+            if len(inner) >= 2 and inner[0] in "\"'" and inner[-1] == inner[0]:
+                keys.append(inner[1:-1])
+            else:
+                keys.append(inner)
+            i = close + 1
+        else:
+            j = i
+            while j < n and s[j] not in ".[":
+                j += 1
+            keys.append(s[i:j])
+            i = j
+    return keys or None
+
+
+def _extract_json_version(data: object, jsonpath: str) -> str | None:
+    keys = _jsonpath_keys(jsonpath)
+    if keys is None:
+        return None
+    cur: object = data
+    for key in keys:
+        if isinstance(cur, dict) and key in cur:
+            cur = cur[key]
+        else:
+            return None
+    return cur if isinstance(cur, str) else None
+
+
+def _extract_generic_version(text: str) -> str | None:
+    for line in text.splitlines():
+        if _GENERIC_VERSION_ANNOTATION in line:
+            match = _QUOTED_VERSION_RE.search(line)
+            if match:
+                return match.group(1)
+    return None
 
 
 def run_version_mirror_consistency_check(root: Path = REPO_ROOT) -> list[Violation]:

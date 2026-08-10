@@ -26,10 +26,51 @@ from .core import (
     REPO_ROOT,
     Violation,
 )
-from .deploy_artifacts import (
-    read_mcp_library,
-    read_mcp_registrations,
+from .cli_safety import (
+    safe_cli_path,
 )
+MCP_LIB_PATH = "mcp/ground-control/lib.js"
+
+
+MCP_LIB_DIR = "mcp/ground-control/lib"
+
+
+def read_mcp_library(root: Path = REPO_ROOT) -> str | None:
+    """The MCP shared library's full source, barrel plus every extracted module.
+
+    lib.js was a single 20,634-line file until issue #1355 split it under the repo's
+    500-LOC limit; it is now a barrel of star re-exports. A check that reads only that
+    file sees no implementation at all and silently passes, so every content check reads
+    the whole surface instead of one path.
+    """
+    barrel = root / MCP_LIB_PATH
+    if not barrel.exists():
+        return None
+    parts = [barrel.read_text(encoding="utf-8")]
+    lib_dir = root / MCP_LIB_DIR
+    if lib_dir.is_dir():
+        parts.extend(
+            path.read_text(encoding="utf-8") for path in sorted(lib_dir.glob("*.js"))
+        )
+    return "\n".join(parts)
+
+
+def read_mcp_registrations(root: Path = REPO_ROOT) -> str:
+    """The MCP tool-registration surface: index.js plus every module under tools/.
+
+    index.js was the single registration file until it was decomposed; the registrations now
+    live in mcp/ground-control/tools/*.js. A check that reads only index.js finds none of them,
+    which is the same shape as the lib.js barrel above: the subject moved, the scan matched
+    nothing, and the check reported on a surface it could no longer see.
+    """
+    parts = []
+    index = root / "mcp/ground-control/index.js"
+    if index.exists():
+        parts.append(index.read_text(encoding="utf-8"))
+    tools_dir = root / "mcp/ground-control/tools"
+    if tools_dir.is_dir():
+        parts.extend(path.read_text(encoding="utf-8") for path in sorted(tools_dir.rglob("*.js")))
+    return "\n".join(parts)
 
 
 def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
@@ -333,15 +374,17 @@ def _resolve_pr_body(args: argparse.Namespace) -> str | None:
     Returns ``None`` when no source is configured (the check is skipped).
     """
     if args.pr_body_file:
-        return Path(args.pr_body_file).read_text(encoding="utf-8")
+        return safe_cli_path(args.pr_body_file).read_text(encoding="utf-8")
     event_path = args.event_path or os.getenv("GITHUB_EVENT_PATH")
     if event_path:
-        event = json.loads(Path(event_path).read_text(encoding="utf-8"))
+        event = json.loads(safe_cli_path(event_path).read_text(encoding="utf-8"))
         pull_request = event.get("pull_request") or {}
         return pull_request.get("body") or ""
     if args.pr_number is not None:
+        # str(int(...)) forces the CLI value to an integer literal so it cannot
+        # smuggle an option or metacharacter into the gh argv (S8705).
         result = subprocess.run(
-            ["gh", "pr", "view", str(args.pr_number), "--json", "body", "--jq", ".body"],
+            ["gh", "pr", "view", str(int(args.pr_number)), "--json", "body", "--jq", ".body"],
             check=True,
             capture_output=True,
             text=True,
