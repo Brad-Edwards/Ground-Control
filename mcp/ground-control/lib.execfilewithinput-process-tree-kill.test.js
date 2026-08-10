@@ -184,6 +184,24 @@ describe("execFileWithInput — process-tree cleanup (issue #1518)", () => {
     );
   });
 
+  // Regression guard for issue #1521's CI investigation: Node's `close`
+  // event is documented to fire only after a child's stdio streams have
+  // closed, but that ordering has known gaps for a fast-exiting process with
+  // a lot of output (nodejs/node#9633, #7184, #4236). A process that writes
+  // well past a single pipe-buffer's worth of data and exits immediately
+  // must still resolve with every byte it wrote — not a result truncated by
+  // a `close` that outran the last `data` events.
+  it("delivers the full output of a process that writes a lot then exits immediately", async () => {
+    const byteCount = 300_000; // comfortably past the pipe buffer and any single read chunk
+    const { stdout } = await execFileWithInput(
+      "bash",
+      ["-c", `head -c ${byteCount} /dev/zero | tr '\\0' 'a'`],
+      { timeoutMs: 5000 },
+    );
+    assert.equal(stdout.length, byteCount, `expected ${byteCount} bytes, got ${stdout.length} — output was truncated`);
+    assert.ok(/^a+$/.test(stdout), "delivered output was not the expected repeated byte");
+  });
+
   it("fails closed on a non-POSIX platform instead of silently killing only the direct child", async () => {
     const original = Object.getOwnPropertyDescriptor(process, "platform");
     Object.defineProperty(process, "platform", { value: "win32", configurable: true });

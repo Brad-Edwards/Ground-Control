@@ -21,7 +21,14 @@ export function parseCodexTimeoutMs(raw) {
   }
   return parsed;
 }
-export const DEFAULT_CODEX_TIMEOUT_MS = parseCodexTimeoutMs(process.env.GC_CODEX_TIMEOUT_MS);
+// Resolved on every call, not once at module-import time (issue #1521): the
+// import graph that reaches this module executes before index.js's
+// loadDotenvFromCwd() (or any other startup env-config loader) runs, so a
+// module-level constant would permanently miss a GC_CODEX_TIMEOUT_MS value
+// that only lives in a .env/host-config file rather than the ambient shell.
+export function getDefaultCodexTimeoutMs() {
+  return parseCodexTimeoutMs(process.env.GC_CODEX_TIMEOUT_MS);
+}
 const KILL_GRACE_MS_DEFAULT = 5000;
 const MAX_BUFFER_DEFAULT = 1024 * 1024; // 1 MiB, matches Node's own execFile default
 // child_process.execFile() silently drops `detached` before it reaches the
@@ -169,7 +176,31 @@ export async function execFileWithInput(
       finish(reject, error);
     });
 
-    child.on("close", (code, closeSignal) => {
+    // `close` is documented to fire only after the child's stdio streams
+    // have closed, but that ordering guarantee is not airtight in practice —
+    // Node has long-standing reports of a fast-exiting child's buffered
+    // stdout being reported as fully consumed before every 'data' event for
+    // it has actually been delivered (nodejs/node#9633, #7184, #4236).
+    // Waiting on each stream's own `end` (or `error`, so a stream fault
+    // can't hang this call forever) makes "every byte the child wrote before
+    // exiting was read" an explicit, per-stream guarantee instead of an
+    // inference from the child's own close event.
+    let stdoutDone = false;
+    let stderrDone = false;
+    let closeResult = null;
+    const markStreamDone = (which) => {
+      if (which === "stdout") stdoutDone = true;
+      else stderrDone = true;
+      maybeFinalize();
+    };
+    child.stdout.on("end", () => markStreamDone("stdout"));
+    child.stdout.on("error", () => markStreamDone("stdout"));
+    child.stderr.on("end", () => markStreamDone("stderr"));
+    child.stderr.on("error", () => markStreamDone("stderr"));
+
+    function maybeFinalize() {
+      if (!closeResult || !stdoutDone || !stderrDone) return;
+      const { code, closeSignal } = closeResult;
       // Await any in-flight group cleanup before settling — a straggler
       // descendant must be confirmed gone (or given its full TERM-then-KILL
       // treatment) before the caller sees a terminal result, not just before
@@ -210,6 +241,11 @@ export async function execFileWithInput(
         }
         finish(resolve, { stdout, stderr });
       });
+    }
+
+    child.on("close", (code, closeSignal) => {
+      closeResult = { code, closeSignal };
+      maybeFinalize();
     });
 
     // The leader may exit while a background descendant it spawned (and did

@@ -14,7 +14,7 @@ import { ENRICH_THREAD_PAGE_CAP } from "./grc-legacy-compat-2.js";
 import { getAuthenticatedGitHubLogin, getOwnerRepo, hasVerifiedStructuredWontfixAuthorization, readIssueCommentBodies, readIssueCommentsWithAuthors, resolveExecutionObligationTrust } from "./grc-legacy-compat-3.js";
 import { STATION_OBSERVATION_DISPOSITION, hasVerifiedStationReobservation } from "./execution-obligation-v2.js";
 import { buildCodexReviewExecArgs } from "./grc-legacy-compat.js";
-import { DEFAULT_CODEX_TIMEOUT_MS, execFile, execFileWithInput, formatCommandFailure } from "./runtime-primitives.js";
+import { getDefaultCodexTimeoutMs, execFile, execFileWithInput, formatCommandFailure } from "./runtime-primitives.js";
 
 export async function ensureGitRepo(repoPath) {
   if (!repoPath || !isAbsolute(repoPath)) {
@@ -463,7 +463,7 @@ export async function runSingleCodexReview({ repoRoot, prompt, signal = undefine
         cwd: repoRoot,
         maxBuffer: 10 * 1024 * 1024,
         env: codexEngineEnv(),
-        timeoutMs: DEFAULT_CODEX_TIMEOUT_MS,
+        timeoutMs: getDefaultCodexTimeoutMs(),
         signal,
       },
     );
