@@ -150,13 +150,30 @@ export function implementGateEnvironment(
   }
   return { ...baseEnv, [REQUIREMENT_UID_GATE_ENV_VAR]: requestedRequirementUid };
 }
-// Greedy capture rather than the lazy `(.+?)\s*$` these replaced: the trailing
-// whitespace is stripped by the consumers (heading titles are trimmed; bullet
-// tokens are split on whitespace), so a greedy tail is equivalent while it
-// avoids the super-linear backtracking a lazy quantifier before an optional
-// trailing group can exhibit (Sonar S8786).
-const REQUIREMENTS_HEADING_RE = /^(#{1,6})\s+(.+)$/;
-const REQUIREMENTS_BULLET_RE = /^\s*[-*+]\s+(.+)$/;
+// These rewrite the lazy `\s+(.+?)\s*$` that reads as super-linear backtracking
+// (Sonar S8786), each exactly equivalent because heading titles are trimmed and
+// bullet tokens split on whitespace. Heading uses an unquantified `\s` before
+// `(.+)`, removing the quantifier-vs-quantifier ambiguity while still matching a
+// whitespace-only title (`##␠␠`) as the original did, so section breaks are
+// unchanged. Bullet keeps `\s+` (it must eat every space after the marker) and
+// anchors the capture at the first non-space `\S`; since `\s+` already consumed
+// the whitespace, that changes nothing behaviorally.
+const REQUIREMENTS_HEADING_RE = /^(#{1,6})\s(.+)$/;
+const REQUIREMENTS_BULLET_RE = /^\s*[-*+]\s+(\S.*)$/;
+
+const UID_TOKEN_LEADING_WRAPPERS = "`[(";
+const UID_TOKEN_TRAILING_WRAPPERS = "`)].:";
+
+// Strip wrapping punctuation a UID token may carry in prose (backticks,
+// brackets, parens, trailing sentence marks). A linear character scan; the
+// equivalent `[...]+$` regex reads as super-linear to the analyzer (S8786).
+function stripUidTokenWrappers(token) {
+  let start = 0;
+  let end = token.length;
+  while (start < end && UID_TOKEN_LEADING_WRAPPERS.includes(token[start])) start += 1;
+  while (end > start && UID_TOKEN_TRAILING_WRAPPERS.includes(token[end - 1])) end -= 1;
+  return token.slice(start, end);
+}
 
 // Collect the lines under a level 2-4 `## Requirements` section, ending at the
 // next heading of the same or higher level.
@@ -192,7 +209,7 @@ function requirementUidsFromBullet(line) {
   if (!bullet) return [];
   const uids = [];
   for (const token of bullet[1].split(/[\s,;]+/)) {
-    const candidate = token.replace(/^[`[(]+/, "").replace(/[`)\].:]+$/, "");
+    const candidate = stripUidTokenWrappers(token);
     if (!isRequirementUidToken(candidate)) break;
     uids.push(candidate);
   }
