@@ -4,7 +4,8 @@
 // (docs/CODING_STANDARDS.md). gc-implement-mechanical.js remains the tool entry point.
 
 import { implementGateEnvironment, resolveWorkflowPolicyCommand } from "../lib.js";
-import { childGateArtifactPaths, commandFailure, emitPolicyAndValeAttempts, emitSpotbugsAttempt, failure, readStatus } from "./gate-helpers.js";
+import { runGateCommand } from "../lib/gate-command-runner.js";
+import { childGateArtifactPaths, commandFailure, emitPolicyAndValeAttempts, emitSpotbugsAttempt, execFileAsync, failure, readStatus } from "./gate-helpers.js";
 
 export async function runVerify(args, deps) {
   const action = "verify";
@@ -56,12 +57,18 @@ export async function runVerify(args, deps) {
   // is parsed (issue #1355).
   const artifacts = childGateArtifactPaths(repoRoot);
   const childEnv = { ...gateEnv, GC_POLICY_JSON: artifacts.policy, GC_VALE_JSON: artifacts.vale };
+  // The completion and policy gates emit the full test-suite / policy transcript,
+  // which overflows execFile's maxBuffer on a large tree and aborts before the
+  // exit status is seen (issue #1501). Only the exit status is consumed here, so
+  // the production default runner is swapped for the size-safe gate runner; an
+  // injected runner (tests) is honored unchanged. Git reads keep deps.execFile.
+  const gateRunner = deps.execFile === execFileAsync ? runGateCommand : deps.execFile;
   const before = await readStatus(repoRoot, deps.runGit, deps.execFile);
   const completionStartedAt = new Date();
   const completionStartedMs = Date.now();
   let completionError = null;
   try {
-    await deps.execFile("bash", ["-c", command], { cwd: repoRoot, env: childEnv });
+    await gateRunner("bash", ["-c", command], { cwd: repoRoot, env: childEnv });
   } catch (error) {
     completionError = error;
   }
@@ -79,7 +86,7 @@ export async function runVerify(args, deps) {
   const policyStartedAt = new Date();
   let policyError = null;
   try {
-    await deps.execFile("bash", ["-c", policyCommand], { cwd: repoRoot, env: childEnv });
+    await gateRunner("bash", ["-c", policyCommand], { cwd: repoRoot, env: childEnv });
   } catch (error) {
     policyError = error;
   }

@@ -11,6 +11,7 @@ import { extractGhErrorMessage } from "./grc-legacy-compat-2.js";
 import { assertSafeImplementCheckoutConfiguration, authorizeImplementRepoRoot, ensureGitRepo, readGitIdentity, resolveMcpLaunchWorkspaceAuthorization } from "./grc-legacy-compat-4.js";
 import { isSafeGitRefName, resolveWorkflowPolicyCommand, resolveWorkflowPrecommitCommand } from "./repo-context.js";
 import { EXACT_REQUIREMENT_UID_RE, execFile, isRequirementUidToken } from "./runtime-primitives.js";
+import { runGateCommand } from "./gate-command-runner.js";
 
 export async function runPrepareImplementBranch({
   repoPath,
@@ -264,7 +265,12 @@ export async function runImplementPreCommit(
   context = null,
   requestedRequirementUid = null,
 ) {
-  return commandRunner(
+  // A verbose pre-commit hook set can overflow execFile's maxBuffer the same way
+  // the completion gate does (issue #1501); only the exit status is consumed, so
+  // the production default runner is swapped for the size-safe gate runner while
+  // an injected runner (tests) is honored unchanged.
+  const gateRunner = commandRunner === execFile ? runGateCommand : commandRunner;
+  return gateRunner(
     "bash",
     ["-c", resolveWorkflowPrecommitCommand(context)],
     {
@@ -431,14 +437,19 @@ export async function runImplementFinalTreeGates(
   }
   const beforeTree = await readImplementIndexTreeOid(repoRoot, commandRunner);
   const gateEnv = implementGateEnvironment(requestedRequirementUid);
-  await commandRunner(
+  // The completion command's stdout on a large merged tree overflows execFile's
+  // maxBuffer and aborts before its exit status is seen (issue #1501). Only the
+  // exit status matters here, so the production default runner is swapped for
+  // the size-safe gate runner; an injected runner (tests) is honored unchanged.
+  const gateRunner = commandRunner === execFile ? runGateCommand : commandRunner;
+  await gateRunner(
     "bash",
     ["-c", completionCommand],
     { cwd: repoRoot, env: gateEnv },
   );
   // Completion and policy are separate mandatory gates; neither substitutes
   // for the other. Both run through the same repo-authored-command boundary.
-  await commandRunner(
+  await gateRunner(
     "bash",
     ["-c", resolveWorkflowPolicyCommand(context)],
     { cwd: repoRoot, env: gateEnv },
