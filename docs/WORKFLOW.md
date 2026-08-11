@@ -243,6 +243,8 @@ Returns overall pass/fail + per-gate details (actual value vs. threshold). Fix f
 
 This evaluation is also wired into the `/implement` completion gate: `gc_assert_quality_gates(project: "my-system")` wraps the same server-side evaluation and refuses (`ok: false`) when any enabled gate fails, returning only the failing gates as `{name, metric_type, threshold, actual}` so the run is blocked with an actionable error before the change is committed.
 
+**Deal with what verification surfaces (issue #1526).** A run fixes the problems it surfaces (a failing gate, a flaky test, or a scanner finding on a pre-existing line the diff pulled into scope) rather than routing around them by re-running an undiagnosed failure, reverting to drop a finding out of scope, suppressing, or leaving it for later. When a fix is a genuinely separate concern, open a tracked issue **and** a PR that fixes it now; filing the issue alone is deferral. This holds for `/implement` and the lower-ceremony `/quickfix` lane alike.
+
 ### Architecture + Review Pipeline
 
 Per issue #804, the `/implement` skill runs one mandatory Codex architecture preflight before coding and then a small set of independent verification/review stages before the PR is presented for human review:
