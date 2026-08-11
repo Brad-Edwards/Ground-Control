@@ -150,46 +150,64 @@ export function implementGateEnvironment(
   }
   return { ...baseEnv, [REQUIREMENT_UID_GATE_ENV_VAR]: requestedRequirementUid };
 }
-export function extractInScopeRequirementUids(issueBody) {
-  if (typeof issueBody !== "string" || issueBody === "") return [];
+// Greedy capture rather than the lazy `(.+?)\s*$` these replaced: the trailing
+// whitespace is stripped by the consumers (heading titles are trimmed; bullet
+// tokens are split on whitespace), so a greedy tail is equivalent while it
+// avoids the super-linear backtracking a lazy quantifier before an optional
+// trailing group can exhibit (Sonar S8786).
+const REQUIREMENTS_HEADING_RE = /^(#{1,6})\s+(.+)$/;
+const REQUIREMENTS_BULLET_RE = /^\s*[-*+]\s+(.+)$/;
 
+// Collect the lines under a level 2-4 `## Requirements` section, ending at the
+// next heading of the same or higher level.
+function requirementsSectionLines(issueBody) {
   const sectionLines = [];
   let sectionLevel = null;
   for (const line of issueBody.split(/\r?\n/)) {
-    const heading = line.match(/^(#{1,6})\s+(.+?)\s*$/);
-    if (heading) {
-      const level = heading[1].length;
-      const title = heading[2].trim().toLowerCase();
-      if (sectionLevel == null) {
-        if (level >= 2 && level <= 4 && title === "requirements") {
-          sectionLevel = level;
-        }
-        continue;
-      }
-      if (level <= sectionLevel) break;
-      sectionLines.push(line);
+    const heading = REQUIREMENTS_HEADING_RE.exec(line);
+    if (!heading) {
+      if (sectionLevel != null) sectionLines.push(line);
       continue;
     }
-    if (sectionLevel != null) sectionLines.push(line);
+    const level = heading[1].length;
+    const title = heading[2].trim().toLowerCase();
+    if (sectionLevel == null) {
+      if (level >= 2 && level <= 4 && title === "requirements") sectionLevel = level;
+      continue;
+    }
+    if (level <= sectionLevel) break;
+    sectionLines.push(line);
   }
+  return sectionLines;
+}
 
+// Read the leading run of UID tokens from one bullet line, stopping at the first
+// token that is not a recognizable UID. Recognition, not identity validation:
+// these tokens come from free-form issue prose, so the bounded-identifier
+// contract would accept ordinary words. The anchored recognizer still finds
+// allocator-minted short UIDs like APP-2, so a requirement-backed run is not
+// silently reduced to a requirement-free one (issue #1425).
+function requirementUidsFromBullet(line) {
+  const bullet = REQUIREMENTS_BULLET_RE.exec(line);
+  if (!bullet) return [];
+  const uids = [];
+  for (const token of bullet[1].split(/[\s,;]+/)) {
+    const candidate = token.replace(/^[`[(]+/, "").replace(/[`)\].:]+$/, "");
+    if (!isRequirementUidToken(candidate)) break;
+    uids.push(candidate);
+  }
+  return uids;
+}
+
+export function extractInScopeRequirementUids(issueBody) {
+  if (typeof issueBody !== "string" || issueBody === "") return [];
   const seen = new Set();
   const result = [];
-  for (const line of sectionLines) {
-    const bullet = line.match(/^\s*[-*+]\s+(.+?)\s*$/);
-    if (!bullet) continue;
-    for (const token of bullet[1].split(/[\s,;]+/)) {
-      const candidate = token.replace(/^[`[(]+|[`)\].:]+$/g, "");
-      // Recognition, not identity validation: these tokens come from free-form
-      // issue prose, so the bounded-identifier contract would accept ordinary
-      // words. The anchored recognizer still finds allocator-minted short UIDs
-      // like APP-2, so a requirement-backed run is not silently reduced to a
-      // requirement-free one (issue #1425).
-      if (!isRequirementUidToken(candidate)) break;
-      if (!seen.has(candidate)) {
-        seen.add(candidate);
-        result.push(candidate);
-      }
+  for (const line of requirementsSectionLines(issueBody)) {
+    for (const candidate of requirementUidsFromBullet(line)) {
+      if (seen.has(candidate)) continue;
+      seen.add(candidate);
+      result.push(candidate);
     }
   }
   return result;
@@ -265,12 +283,7 @@ export async function runImplementPreCommit(
   context = null,
   requestedRequirementUid = null,
 ) {
-  // A verbose pre-commit hook set can overflow execFile's maxBuffer the same way
-  // the completion gate does (issue #1501); only the exit status is consumed, so
-  // the production default runner is swapped for the size-safe gate runner while
-  // an injected runner (tests) is honored unchanged.
-  const gateRunner = commandRunner === execFile ? runGateCommand : commandRunner;
-  return gateRunner(
+  return commandRunner(
     "bash",
     ["-c", resolveWorkflowPrecommitCommand(context)],
     {
