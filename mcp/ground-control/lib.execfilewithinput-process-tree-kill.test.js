@@ -162,16 +162,26 @@ describe("execFileWithInput — process-tree cleanup (issue #1518)", () => {
     }
   });
 
-  it("stops growing buffered output once maxBuffer is exceeded, instead of appending forever", { timeout: 5000 }, async () => {
+  it("stops growing buffered output once maxBuffer is exceeded, instead of appending forever", { timeout: 15000 }, async () => {
     // Emit well past maxBuffer across many small chunks so a saturation bug
     // (re-appending the same stale "remaining allowance" on every later
     // chunk) would blow the cap many times over instead of stopping near it.
+    //
+    // The emitter is an unbounded loop of shell builtins (`while`/`printf`, no
+    // fork per iteration) rather than a finite `for i in $(seq …)` burst. The
+    // finite form was flaky under the full suite's fork pressure in CI: the
+    // `$(seq …)` command substitution could come back empty (zero-iteration
+    // loop → zero output → clean exit), or the fast-exiting child could hit the
+    // close/end-before-data stdio ordering gap (nodejs/node#9633) — either way
+    // maxBuffer was never tripped and the call resolved. An unbounded emitter
+    // trips the cap deterministically while the child is still running, so it is
+    // reliably reported as a maxBuffer rejection.
     const maxBuffer = 1024;
     await assert.rejects(
       execFileWithInput(
         "bash",
-        ["-c", "for i in $(seq 1 4000); do printf 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'; done"],
-        { timeoutMs: 5000, maxBuffer },
+        ["-c", "while :; do printf 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'; done"],
+        { timeoutMs: 10000, maxBuffer },
       ),
       (err) => {
         assert.equal(err.code, "ERR_CHILD_PROCESS_STDIO_MAXBUFFER");
