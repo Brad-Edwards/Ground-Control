@@ -161,7 +161,8 @@ export async function runVerifiedGateBoundary({
  * timing envelope reports. Returns null for an empty list. */
 export function dominantGate(timings) {
   if (!Array.isArray(timings) || timings.length === 0) return null;
-  return timings.reduce((max, entry) => (entry.duration_ms > max.duration_ms ? entry : max)).phase;
+  // Explicit initial value (S6959) — the empty case already returned above.
+  return timings.reduce((max, entry) => (entry.duration_ms > max.duration_ms ? entry : max), timings[0]).phase;
 }
 
 /**

@@ -42,7 +42,12 @@ function authTagMatches(id, tag) {
 // that cannot collide with a UID-bearing run or with a malformed/empty field.
 export const REQUIREMENT_FREE_SENTINEL = "gc.implement.requirement-free";
 const MARKER_PREFIX = "<!-- gc:implement-verification-attestation";
-const MARKER_RE = /<!--\s*gc:implement-verification-attestation\s+([^>]*?)-->/g;
+// Non-backtracking (S8786): an unquantified `\s` before the capture removes the
+// quantifier-vs-quantifier ambiguity a `\s+([^>]*?)` form has, and the capture
+// runs greedily to the first `>` (disjoint from `[^>]`) — the `>` of the closing
+// `-->`. The trailing `--` lands in the capture and is ignored by attribute
+// parsing, which only extracts `key="value"` pairs.
+const MARKER_RE = /<!--\s*gc:implement-verification-attestation\s([^>]*)>/g;
 const SHA256_HEX_RE = /^[0-9a-f]{64}$/;
 
 export function sha256Hex(value) {
@@ -50,11 +55,14 @@ export function sha256Hex(value) {
 }
 
 // Stable serialization with sorted keys so the digest is order-independent.
+// The comparator is an explicit code-unit ordering, NOT String.localeCompare:
+// the digest must be byte-identical across every host and locale, and
+// localeCompare is locale-dependent, which would silently fork the id.
 export function canonicalJson(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value && typeof value === "object") {
     return `{${Object.keys(value)
-      .sort()
+      .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
       .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
       .join(",")}}`;
   }
@@ -162,7 +170,10 @@ export function parseVerificationAttestationMarkers(commentBodies, issueNumber) 
     let match;
     while ((match = MARKER_RE.exec(body)) !== null) {
       const attrs = {};
-      const attrRe = /([a-z]+)="([^"]*)"/g;
+      // Bounded quantifiers (S8786): attribute keys are short lowercase tokens
+      // and values are digests/oids/identities well under this ceiling, so the
+      // key and value quantifiers cannot drive super-linear backtracking.
+      const attrRe = /([a-z]{2,8})="([^"]{0,128})"/g;
       let attr;
       while ((attr = attrRe.exec(match[1])) !== null) attrs[attr[1]] = attr[2];
       const parsedIssue = Number.parseInt(attrs.issue ?? "", 10);
