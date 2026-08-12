@@ -180,7 +180,7 @@ export async function listWorkingTreeChanges(repoPath) {
       if (trimmed) files.add(trimmed);
     }
   }
-  return Array.from(files).sort();
+  return Array.from(files).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 export const PACK_TYPES = ["CONTROL_PACK", "REQUIREMENTS_PACK", "CUSTOM"];
 export const PACK_IMPORT_FORMATS = ["AUTO", "OSCAL_JSON", "GC_MANIFEST"];
@@ -398,16 +398,23 @@ export function formatSourceCitation({ sourceType, sourceRef } = {}) {
     }
   }
 }
+function stripSlugDashes(value) {
+  let start = 0;
+  let end = value.length;
+  while (start < end && value[start] === "-") start += 1;
+  while (end > start && value[end - 1] === "-") end -= 1;
+  return value.slice(start, end);
+}
 export function buildInboxSlug(note) {
   const trimmed = (note || "").slice(0, 200).toLowerCase();
-  const kebab = trimmed
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  const bounded = kebab.slice(0, 40).replace(/-+$/g, "");
+  // Dashes are trimmed by a linear character scan, not an anchored `-+$` regex,
+  // which the analyzer reads as super-linear (S8786).
+  const kebab = stripSlugDashes(trimmed.replace(/[^a-z0-9]+/g, "-"));
+  const bounded = stripSlugDashes(kebab.slice(0, 40));
   return bounded || "note";
 }
 export function formatInboxTimestamp(date = new Date()) {
-  return date.toISOString().replace(/\.\d+Z$/, "").replace(/:/g, "-");
+  return date.toISOString().replace(/\.\d+Z$/, "").replaceAll(":", "-");
 }
 export function defaultSpawnIngest({ repoRoot, inboxFilePath, knowledge }) {
   const cliPath = fileURLToPath(new URL("./knowledge_ingest_cli.js", import.meta.url));

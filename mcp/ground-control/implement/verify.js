@@ -175,8 +175,11 @@ export function validateCommitMessage(message) {
   }
   return null;
 }
+// Each top-level alternative is wrapped so the trailing `$` binds only to the
+// key-file branch, making operator precedence explicit (S5850); matching is
+// unchanged.
 export const SENSITIVE_STAGED_PATH_RE =
-  /(?:^|\/)(?:\.secrets?(?:\/|$)|credentials?(?:\.|\/|$))|(?:^|\/)[^/]+\.(?:pem|key|p12|pfx)$/i;
+  /(?:(?:^|\/)(?:\.secrets?(?:\/|$)|credentials?(?:\.|\/|$)))|(?:(?:^|\/)[^/]+\.(?:pem|key|p12|pfx)$)/i;
 export function isSensitivePublishPath(path) {
   const basename = path.split("/").at(-1);
   const sensitiveEnv =

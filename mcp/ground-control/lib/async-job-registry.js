@@ -185,7 +185,9 @@ function _normalizedFingerprintValue(value) {
     return Object.fromEntries(
       Object.keys(value)
         .filter((key) => value[key] !== undefined)
-        .sort()
+        // Explicit, deterministic code-unit ordering (S2871): this feeds a
+        // fingerprint, so the order must be identical across hosts and locales.
+        .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
         .map((key) => [key, _normalizedFingerprintValue(value[key])]),
     );
   }
