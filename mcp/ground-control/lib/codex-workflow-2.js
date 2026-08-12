@@ -9,9 +9,9 @@ import { isAbsolute } from "node:path";
 import { GIT_OBJECT_ID_RE, IMPLEMENT_CHECKOUT_MODES, REQUIREMENT_UID_GATE_ENV_VAR, implementNetworkGitEnvironment, sanitizedImplementGitEnvironment, validateImplementBranchName } from "./codex-workflow.js";
 import { extractGhErrorMessage } from "./grc-legacy-compat-2.js";
 import { assertSafeImplementCheckoutConfiguration, authorizeImplementRepoRoot, ensureGitRepo, readGitIdentity, resolveMcpLaunchWorkspaceAuthorization } from "./grc-legacy-compat-4.js";
-import { isSafeGitRefName, resolveWorkflowPolicyCommand, resolveWorkflowPrecommitCommand } from "./repo-context.js";
+import { isSafeGitRefName, resolveWorkflowPrecommitCommand } from "./repo-context.js";
 import { EXACT_REQUIREMENT_UID_RE, execFile, isRequirementUidToken } from "./runtime-primitives.js";
-import { runGateCommand } from "./gate-command-runner.js";
+import { runVerifiedGateBoundary } from "./verification-gates.js";
 
 export async function runPrepareImplementBranch({
   repoPath,
@@ -442,18 +442,13 @@ export async function runImplementFinalTreeGates(
     error.code = "implement_base_sync_completion_command_missing";
     throw error;
   }
-  const { stdout: beforeStatus } = await runImplementGit(
-    repoRoot,
-    ["status", "--porcelain=v1", "--untracked-files=normal"],
-    commandRunner,
-  );
+  const readStatus = async () =>
+    (await runImplementGit(repoRoot, ["status", "--porcelain=v1", "--untracked-files=normal"], commandRunner)).stdout;
   // The gates read the working tree, but the merge commit is built from the
-  // index. An unstaged modification or an untracked file therefore gets
-  // verified and then left behind, so the attestation would bind a tree the
-  // gates never saw. Staged entries (`X ` in porcelain v1) are the merge
-  // itself and are expected here; anything with a worktree-column status is
-  // not. Refuse before running the gates rather than after.
-  const unstaged = beforeStatus
+  // index. An unstaged modification or an untracked file gets verified and then
+  // left behind, so refuse before running the gates. Staged entries (`X ` in
+  // porcelain v1) are the merge itself and are expected here.
+  const unstaged = (await readStatus())
     .split(/\r?\n/)
     .filter((line) => line !== "")
     .filter((line) => line[1] !== " ");
@@ -465,35 +460,16 @@ export async function runImplementFinalTreeGates(
     error.code = "implement_base_sync_worktree_not_staged";
     throw error;
   }
-  const beforeTree = await readImplementIndexTreeOid(repoRoot, commandRunner);
-  const gateEnv = implementGateEnvironment(requestedRequirementUid);
-  // The completion command's stdout on a large merged tree overflows execFile's
-  // maxBuffer and aborts before its exit status is seen (issue #1501). Only the
-  // exit status matters here, so the production default runner is swapped for
-  // the size-safe gate runner; an injected runner (tests) is honored unchanged.
-  const gateRunner = commandRunner === execFile ? runGateCommand : commandRunner;
-  await gateRunner(
-    "bash",
-    ["-c", completionCommand],
-    { cwd: repoRoot, env: gateEnv },
-  );
-  // Completion and policy are separate mandatory gates; neither substitutes
-  // for the other. Both run through the same repo-authored-command boundary.
-  await gateRunner(
-    "bash",
-    ["-c", resolveWorkflowPolicyCommand(context)],
-    { cwd: repoRoot, env: gateEnv },
-  );
-  const { stdout: afterStatus } = await runImplementGit(
+  // Completion and policy run through the ONE shared invariant-preserving
+  // boundary (issue #1497) so this path and Step 6 verify bind identical inputs
+  // and cannot drift; it re-validates the staged index tree after the fingerprint
+  // and after each gate. Returns { treeOid, toolchainDigest, timings }.
+  return runVerifiedGateBoundary({
     repoRoot,
-    ["status", "--porcelain=v1", "--untracked-files=normal"],
+    context,
+    gateEnv: implementGateEnvironment(requestedRequirementUid),
     commandRunner,
-  );
-  const afterTree = await readImplementIndexTreeOid(repoRoot, commandRunner);
-  if (afterTree !== beforeTree || afterStatus !== beforeStatus) {
-    const error = new Error("The final-tree gates changed the Git index or checkout");
-    error.code = "implement_base_sync_gate_tree_changed";
-    throw error;
-  }
-  return afterTree;
+    readTreeOid: () => readImplementIndexTreeOid(repoRoot, commandRunner),
+    readStatus,
+  });
 }

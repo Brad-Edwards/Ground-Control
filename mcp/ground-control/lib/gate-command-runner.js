@@ -46,16 +46,27 @@ function boundedTail(limitBytes) {
 }
 
 export async function runGateCommand(file, args, options = {}) {
+  // onActivity is a progress hook, not a spawn option: pull it out so spawn only
+  // ever sees real child_process options. It fires on every drained chunk so a
+  // caller can prove the child is still producing output — the signal that tells
+  // a slow-but-healthy sweep from a dead job (issue #1497).
+  const { onActivity, ...spawnOptions } = options;
   return await new Promise((resolve, reject) => {
-    const child = spawn(file, args, options);
+    const child = spawn(file, args, spawnOptions);
     const stdoutTail = boundedTail(GATE_TAIL_BYTES);
     const stderrTail = boundedTail(GATE_TAIL_BYTES);
     // Draining both pipes as data arrives is also what prevents the child from
     // blocking on a full OS pipe buffer once its output passes ~64 KiB — the
     // failure mode a "discard the output" runner that stopped reading would
     // reintroduce.
-    child.stdout.on("data", (chunk) => stdoutTail.push(chunk));
-    child.stderr.on("data", (chunk) => stderrTail.push(chunk));
+    child.stdout.on("data", (chunk) => {
+      stdoutTail.push(chunk);
+      if (typeof onActivity === "function") onActivity("stdout", chunk.length);
+    });
+    child.stderr.on("data", (chunk) => {
+      stderrTail.push(chunk);
+      if (typeof onActivity === "function") onActivity("stderr", chunk.length);
+    });
     child.on("error", (error) => reject(error));
     child.on("close", (code, signal) => {
       const stdout = stdoutTail.toString();

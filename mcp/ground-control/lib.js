@@ -27,6 +27,8 @@ export * from "./lib/grc-legacy-compat-3.js";
 export * from "./lib/grc-legacy-compat-4.js";
 export * from "./lib/codex-workflow-2.js";
 export * from "./lib/knowledge-capture.js";
+export * from "./lib/verification-attestation.js";
+export * from "./lib/verification-gates.js";
 export * from "./lib/doc-coverage.js";
 export * from "./lib/ci-watcher.js";
 export * from "./lib/grc-legacy-compat-5.js";

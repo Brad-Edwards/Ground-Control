@@ -53,6 +53,7 @@ describe("parseGroundControlYaml", () => {
         required_fields: [...DEFAULT_DEV_START_GATE_REQUIRED_FIELDS],
       },
       review_disposition: { enabled: false, mode: "shadow", max_auto_overrides: 1, judge: { enabled: false, model: null } },
+      verification: { toolchain_fingerprint_command: null },
     });
     assert.equal(result.value.sonarcloud, null);
     assert.equal(result.value.rules.plan_rules_path, null);

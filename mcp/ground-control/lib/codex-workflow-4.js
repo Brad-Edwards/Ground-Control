@@ -10,10 +10,11 @@ import { authorizeRequestedRequirementUid } from "./codex-workflow-3.js";
 import { GIT_OBJECT_ID_RE, IMPLEMENT_BASE_SYNC_ACTIONS, newImplementSyncRecordId, validateImplementBranchName } from "./codex-workflow.js";
 import { assertSafeImplementCheckoutConfiguration, authorizeImplementRepoRoot, ensureGitRepo, resolveMcpLaunchWorkspaceAuthorization } from "./grc-legacy-compat-4.js";
 import { runGetIssueThread } from "./issue-thread.js";
-import { postImplementBaseSyncRecord, readTrustedImplementSyncRecord, verifyPublishedImplementHead } from "./knowledge-capture.js";
+import { postImplementBaseSyncRecord, postImplementVerificationAttestation, readTrustedImplementSyncRecord, readTrustedImplementVerificationAttestations, verifyPublishedImplementHead } from "./knowledge-capture.js";
 import { isSafeGitRefName, resolveWorkflowPolicyCommand } from "./repo-context.js";
 import { getRepoGroundControlContext } from "./repo-vocabulary-2.js";
 import { execFile } from "./runtime-primitives.js";
+import { postFreshVerificationAttestation, resolveVerificationReuse } from "./verification-gates.js";
 
 export async function runSynchronizeImplementBranch(input, {
   workspaceAuthorizationResolver = resolveMcpLaunchWorkspaceAuthorization,
@@ -21,6 +22,8 @@ export async function runSynchronizeImplementBranch(input, {
   contextResolver = getRepoGroundControlContext,
   syncRecordReader = readTrustedImplementSyncRecord,
   issueThreadReader = runGetIssueThread,
+  attestationReader = readTrustedImplementVerificationAttestations,
+  attestationWriter = postImplementVerificationAttestation,
 } = {}) {
   if (
     input == null
@@ -127,6 +130,55 @@ export async function runSynchronizeImplementBranch(input, {
             next_action: "push_the_feature_branch_without_force_and_retry",
           };
         }
+        // Tiered verification reuse (issue #1497). An already-current tree may
+        // skip the authoritative gates only when a trusted attestation proves
+        // THIS exact tree passed them. Feature-off keeps the prior behavior; a
+        // miss (e.g. a post-verify review fix) re-runs full verification here
+        // rather than trusting an unverified tree, then attests the result.
+        const reuse = await resolveVerificationReuse({
+          context,
+          repoRoot,
+          owner: repoAuthorization.owner,
+          name: repoAuthorization.name,
+          issueNumber: input.issueNumber,
+          branchName: input.branchName,
+          baseSha: fetchedBaseSha,
+          requirementUid: authorizedRequirement.requirementUid,
+          commandRunner,
+          attestationReader,
+        });
+        if (reuse.active && !reuse.reused) {
+          let verifiedTree;
+          let verifiedToolchain;
+          try {
+            ({ treeOid: verifiedTree, toolchainDigest: verifiedToolchain } =
+              await runImplementFinalTreeGates(repoRoot, context, commandRunner, authorizedRequirement.requirementUid));
+          } catch (error) {
+            return {
+              ok: false,
+              error: error.code ?? "implement_base_sync_gate_failed",
+              message: `The already-current feature tree did not pass verification: ${error.message}`,
+              next_action: "fix_the_checkout_and_retry_completion",
+            };
+          }
+          // Attest the tree and toolchain the boundary just proved stable — never
+          // recomputed here — so the record binds exactly the content that passed.
+          await postFreshVerificationAttestation({
+            context,
+            repoRoot,
+            owner: repoAuthorization.owner,
+            name: repoAuthorization.name,
+            issueNumber: input.issueNumber,
+            branchName: input.branchName,
+            baseSha: fetchedBaseSha,
+            treeOid: verifiedTree,
+            toolchainDigest: verifiedToolchain,
+            requirementUid: authorizedRequirement.requirementUid,
+            commandRunner,
+            attestationReader,
+            attestationWriter,
+          });
+        }
         const record = {
           recordId,
           issueNumber: input.issueNumber,
@@ -217,6 +269,7 @@ export async function runSynchronizeImplementBranch(input, {
       .catch(() => null);
     let resultingFeatureSha;
     let verifiedTreeSha;
+    let verifiedToolchainDigest;
     if (mergeHead != null) {
       if (mergeHead !== input.fetchedBaseSha) {
         return {
@@ -249,12 +302,8 @@ export async function runSynchronizeImplementBranch(input, {
         };
       }
       try {
-        verifiedTreeSha = await runImplementFinalTreeGates(
-          repoRoot,
-          context,
-          commandRunner,
-          authorizedRequirement.requirementUid,
-        );
+        ({ treeOid: verifiedTreeSha, toolchainDigest: verifiedToolchainDigest } =
+          await runImplementFinalTreeGates(repoRoot, context, commandRunner, authorizedRequirement.requirementUid));
       } catch (error) {
         return {
           ok: false,
@@ -310,12 +359,8 @@ export async function runSynchronizeImplementBranch(input, {
     );
     if (mergeHead == null) {
       try {
-        verifiedTreeSha = await runImplementFinalTreeGates(
-          repoRoot,
-          context,
-          commandRunner,
-          authorizedRequirement.requirementUid,
-        );
+        ({ treeOid: verifiedTreeSha, toolchainDigest: verifiedToolchainDigest } =
+          await runImplementFinalTreeGates(repoRoot, context, commandRunner, authorizedRequirement.requirementUid));
       } catch (error) {
         return {
           ok: false,
@@ -333,6 +378,24 @@ export async function runSynchronizeImplementBranch(input, {
         next_action: "inspect_the_merge_graph_without_rewriting_history",
       };
     }
+    // Attest the merged tree that just passed the shared full-verification path
+    // (issue #1497), so a retry or re-invocation reuses it instead of gating the
+    // identical tree again. Best-effort and gated on the feature being active.
+    await postFreshVerificationAttestation({
+      context,
+      repoRoot,
+      owner: repoAuthorization.owner,
+      name: repoAuthorization.name,
+      issueNumber: input.issueNumber,
+      branchName: input.branchName,
+      baseSha: input.fetchedBaseSha,
+      treeOid: verifiedTreeSha,
+      toolchainDigest: verifiedToolchainDigest,
+      requirementUid: authorizedRequirement.requirementUid,
+      commandRunner,
+      attestationReader,
+      attestationWriter,
+    });
     await runImplementGit(
       repoRoot,
       ["push", "origin", `refs/heads/${input.branchName}:refs/heads/${input.branchName}`],

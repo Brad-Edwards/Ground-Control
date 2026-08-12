@@ -9,6 +9,7 @@ import { spawn as spawnChild } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { readImplementGitOid, readRemoteImplementBranchSha } from "./codex-workflow-2.js";
 import { buildImplementBaseSyncMarker, parseImplementBaseSyncMarkers } from "./codex-workflow.js";
+import { buildVerificationAttestationMarker, selectTrustedVerificationAttestations } from "./verification-attestation.js";
 import { detectSensitiveBodyContent } from "./grc-legacy-compat-2.js";
 import { readIssueCommentsWithAuthors, resolveExecutionObligationTrust } from "./grc-legacy-compat-3.js";
 import { GITHUB_ISSUE_COMMENT_BODY_MAX } from "./repo-vocabulary.js";
@@ -54,6 +55,56 @@ export async function postImplementBaseSyncRecord(
     commentUrl: typeof response?.html_url === "string" ? response.html_url : null,
     commentId: Number.isInteger(response?.id) ? response.id : null,
   };
+}
+export async function postImplementVerificationAttestation(
+  repoRoot,
+  owner,
+  name,
+  attestation,
+  commandRunner = execFile,
+) {
+  const marker = buildVerificationAttestationMarker(attestation);
+  const body = [
+    marker,
+    "",
+    "## Verification attestation",
+    "",
+    `- Attestation: \`${attestation.id}\``,
+    `- Verified tree: \`${attestation.tree}\``,
+    `- Base commit: \`${attestation.base}\``,
+  ].join("\n");
+  const sensitiveError = detectSensitiveBodyContent(body);
+  if (sensitiveError) throw new Error(sensitiveError);
+  if (Buffer.byteLength(body, "utf8") > GITHUB_ISSUE_COMMENT_BODY_MAX) {
+    throw new Error("Rendered verification attestation exceeds GitHub's issue-comment body limit");
+  }
+  const { stdout } = await commandRunner(
+    "gh",
+    [
+      "api",
+      "--method",
+      "POST",
+      `/repos/${owner}/${name}/issues/${attestation.issue}/comments`,
+      "-f",
+      `body=${body}`,
+    ],
+    { cwd: repoRoot },
+  );
+  const response = JSON.parse(stdout);
+  return {
+    commentUrl: typeof response?.html_url === "string" ? response.html_url : null,
+    commentId: Number.isInteger(response?.id) ? response.id : null,
+  };
+}
+export async function readTrustedImplementVerificationAttestations(
+  repoRoot,
+  owner,
+  name,
+  issueNumber,
+) {
+  const comments = await readIssueCommentsWithAuthors(repoRoot, owner, name, issueNumber);
+  const trust = await resolveExecutionObligationTrust(repoRoot, owner, name, comments);
+  return selectTrustedVerificationAttestations(comments, (comment) => trust.isTrusted(comment), issueNumber);
 }
 export async function verifyPublishedImplementHead(
   repoRoot,
@@ -129,7 +180,7 @@ export async function listWorkingTreeChanges(repoPath) {
       if (trimmed) files.add(trimmed);
     }
   }
-  return Array.from(files).sort();
+  return Array.from(files).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 export const PACK_TYPES = ["CONTROL_PACK", "REQUIREMENTS_PACK", "CUSTOM"];
 export const PACK_IMPORT_FORMATS = ["AUTO", "OSCAL_JSON", "GC_MANIFEST"];
@@ -347,16 +398,23 @@ export function formatSourceCitation({ sourceType, sourceRef } = {}) {
     }
   }
 }
+function stripSlugDashes(value) {
+  let start = 0;
+  let end = value.length;
+  while (start < end && value[start] === "-") start += 1;
+  while (end > start && value[end - 1] === "-") end -= 1;
+  return value.slice(start, end);
+}
 export function buildInboxSlug(note) {
   const trimmed = (note || "").slice(0, 200).toLowerCase();
-  const kebab = trimmed
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  const bounded = kebab.slice(0, 40).replace(/-+$/g, "");
+  // Dashes are trimmed by a linear character scan, not an anchored `-+$` regex,
+  // which the analyzer reads as super-linear (S8786).
+  const kebab = stripSlugDashes(trimmed.replace(/[^a-z0-9]+/g, "-"));
+  const bounded = stripSlugDashes(kebab.slice(0, 40));
   return bounded || "note";
 }
 export function formatInboxTimestamp(date = new Date()) {
-  return date.toISOString().replace(/\.\d+Z$/, "").replace(/:/g, "-");
+  return date.toISOString().replace(/\.\d+Z$/, "").replaceAll(":", "-");
 }
 export function defaultSpawnIngest({ repoRoot, inboxFilePath, knowledge }) {
   const cliPath = fileURLToPath(new URL("./knowledge_ingest_cli.js", import.meta.url));

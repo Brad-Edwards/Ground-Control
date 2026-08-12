@@ -103,7 +103,10 @@ describe("gcImplementMechanicalToolHandler async transport", () => {
     await flush();
     const done = pollAsyncJob(start.job_id);
     assert.equal(done.status, "done");
-    assert.deepEqual(done.result, {
+    // timings/dominant_gate carry non-deterministic durations (issue #1497); assert
+    // the stable envelope exactly and the timing shape separately.
+    const { timings, dominant_gate, ...stable } = done.result;
+    assert.deepEqual(stable, {
       ok: true,
       action: "verify",
       phase: "verification_complete",
@@ -112,6 +115,11 @@ describe("gcImplementMechanicalToolHandler async transport", () => {
       policy: "passed",
       next_action: "run_required_agent_reviews_or_publish",
     });
+    assert.deepEqual(timings.map((entry) => [entry.phase, entry.outcome]), [
+      ["completion", "passed"],
+      ["policy", "passed"],
+    ]);
+    assert.ok(["completion", "policy"].includes(dominant_gate));
   });
 
   it("keeps an expected mechanical gate failure under a completed job result", async () => {
