@@ -63,6 +63,31 @@ describe("async job registry (gc_codex_job, issues #937 and #1473)", () => {
     assert.deepEqual(pollAsyncJob(start.job_id), done);
   });
 
+  it("surfaces a bounded, sanitized progress snapshot from a running job (issue #1497)", async () => {
+    const { startAsyncJob, pollAsyncJob, _resetAsyncJobsForTest } = await import("./lib.js");
+    _resetAsyncJobsForTest();
+    let report;
+    const start = startAsyncJob("implement_mechanical_verify", (_signal, reportProgress) => {
+      report = reportProgress;
+      return new Promise(() => {}); // stays running
+    });
+    await flush();
+    // No snapshot yet → no progress key.
+    assert.equal(pollAsyncJob(start.job_id).progress, undefined);
+    // A snapshot is bounded to numbers + the known phase; stray fields are dropped.
+    report({ phase: "completion", phase_started_ms: 1000, last_activity_ms: 1500, stdout_bytes: 42, stderr_bytes: 3, secret: "leak", cmd: "make check" });
+    assert.deepEqual(pollAsyncJob(start.job_id).progress, {
+      phase: "completion",
+      phase_started_ms: 1000,
+      last_activity_ms: 1500,
+      stdout_bytes: 42,
+      stderr_bytes: 3,
+    });
+    // An unrecognized phase collapses to a generic label, never verbatim.
+    report({ phase: "evil", last_activity_ms: 2000 });
+    assert.equal(pollAsyncJob(start.job_id).progress.phase, "gate");
+  });
+
   it("pollAsyncJob rejects an unknown id without echoing caller input", async () => {
     const { pollAsyncJob, _resetAsyncJobsForTest } = await import("./lib.js");
     _resetAsyncJobsForTest();

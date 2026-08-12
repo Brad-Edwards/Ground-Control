@@ -69,6 +69,12 @@ export function emptyWorkflowConfig() {
     // unblock an auto_grant cycle. `max_auto_overrides` caps how many over-cap
     // cycles the auto path can ever grant per (issue, reviewer).
     review_disposition: { enabled: false, mode: "shadow", max_auto_overrides: 1, judge: { enabled: false, model: null } },
+    // Tiered publish verification (issue #1497). The optional
+    // toolchain_fingerprint_command binds non-tree gate inputs into the
+    // verification attestation. Absent (the default) means no attestation reuse:
+    // the attestation cannot be formed without it, so every gate runs in full —
+    // the fail-closed default that preserves current behavior.
+    verification: { toolchain_fingerprint_command: null },
   };
 }
 export const DEV_START_GATE_REQUIRED_FOR = Object.freeze(["source-bearing"]);

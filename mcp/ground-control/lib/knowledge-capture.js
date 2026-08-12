@@ -9,6 +9,7 @@ import { spawn as spawnChild } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { readImplementGitOid, readRemoteImplementBranchSha } from "./codex-workflow-2.js";
 import { buildImplementBaseSyncMarker, parseImplementBaseSyncMarkers } from "./codex-workflow.js";
+import { buildVerificationAttestationMarker, selectTrustedVerificationAttestations } from "./verification-attestation.js";
 import { detectSensitiveBodyContent } from "./grc-legacy-compat-2.js";
 import { readIssueCommentsWithAuthors, resolveExecutionObligationTrust } from "./grc-legacy-compat-3.js";
 import { GITHUB_ISSUE_COMMENT_BODY_MAX } from "./repo-vocabulary.js";
@@ -54,6 +55,56 @@ export async function postImplementBaseSyncRecord(
     commentUrl: typeof response?.html_url === "string" ? response.html_url : null,
     commentId: Number.isInteger(response?.id) ? response.id : null,
   };
+}
+export async function postImplementVerificationAttestation(
+  repoRoot,
+  owner,
+  name,
+  attestation,
+  commandRunner = execFile,
+) {
+  const marker = buildVerificationAttestationMarker(attestation);
+  const body = [
+    marker,
+    "",
+    "## Verification attestation",
+    "",
+    `- Attestation: \`${attestation.id}\``,
+    `- Verified tree: \`${attestation.tree}\``,
+    `- Base commit: \`${attestation.base}\``,
+  ].join("\n");
+  const sensitiveError = detectSensitiveBodyContent(body);
+  if (sensitiveError) throw new Error(sensitiveError);
+  if (Buffer.byteLength(body, "utf8") > GITHUB_ISSUE_COMMENT_BODY_MAX) {
+    throw new Error("Rendered verification attestation exceeds GitHub's issue-comment body limit");
+  }
+  const { stdout } = await commandRunner(
+    "gh",
+    [
+      "api",
+      "--method",
+      "POST",
+      `/repos/${owner}/${name}/issues/${attestation.issue}/comments`,
+      "-f",
+      `body=${body}`,
+    ],
+    { cwd: repoRoot },
+  );
+  const response = JSON.parse(stdout);
+  return {
+    commentUrl: typeof response?.html_url === "string" ? response.html_url : null,
+    commentId: Number.isInteger(response?.id) ? response.id : null,
+  };
+}
+export async function readTrustedImplementVerificationAttestations(
+  repoRoot,
+  owner,
+  name,
+  issueNumber,
+) {
+  const comments = await readIssueCommentsWithAuthors(repoRoot, owner, name, issueNumber);
+  const trust = await resolveExecutionObligationTrust(repoRoot, owner, name, comments);
+  return selectTrustedVerificationAttestations(comments, (comment) => trust.isTrusted(comment), issueNumber);
 }
 export async function verifyPublishedImplementHead(
   repoRoot,

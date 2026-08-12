@@ -5,13 +5,15 @@
 
 import { policyGateFindings, spotbugsGateFindings, valeGateFindings } from "../gate-finding-adapters.js";
 import { detectSensitiveBodyContent, extractInScopeRequirementUids, requestedRequirementUidAuthorization } from "../lib.js";
-import { execFile as execFileCb } from "node:child_process";
 import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import { z } from "zod";
+import { execFile } from "../lib/runtime-primitives.js";
 
-export const execFileAsync = promisify(execFileCb);
+// Re-exported (not a fresh promisify) so the production default runner has ONE
+// identity: the shared verification runner swaps in the size-safe gate runner
+// only for that identity, so verify and base synchronization both get it (#1497).
+export const execFileAsync = execFile;
 export const requirementShape = z.object({
   uid: z.string().min(1),
   status_intent: z.string().min(1).optional(),

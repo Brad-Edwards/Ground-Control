@@ -105,6 +105,9 @@ export function registerReviewCapDisposition(server, ctx) {
       "gc_codex_architecture_preflight, gc_test_quality_review, gc_test_quality_review_cycle, or " +
       "gc_implement_mechanical with async=true. action='poll' returns {ok:true,status:'running'} while " +
       "work continues, and {ok:true,status:'done',result:<original tool envelope>} once it finishes. " +
+      "A running poll may carry a bounded `progress` snapshot (current gate phase plus last child-output " +
+      "activity and byte counts) so a slow-but-healthy verification sweep is distinguishable from a dead job; " +
+      "it is observability only, never a liveness or cancellation guarantee. " +
       "Dispatch on result.next_action exactly as for the synchronous originating tool. A failed or cancelled " +
       "job returns ok=false. action='cancel' aborts only jobs whose complete execution path supports it; " +
       "review-cycle and mechanical jobs currently return job_not_cancellable and continue to their ordinary terminal result. " +

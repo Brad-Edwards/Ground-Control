@@ -28,6 +28,8 @@ import {
   startAsyncJob,
   asyncJobInputFingerprint,
   implementGateEnvironment,
+  postImplementVerificationAttestation,
+  readTrustedImplementVerificationAttestations,
 } from "./lib.js";
 import { createWorkflowRunLifecycleEmitter } from "./workflow-run-lifecycle.js";
 import {
@@ -135,6 +137,8 @@ const defaultDeps = {
   assertCompletion: runAssertCompletion,
   authorizeRequirementUid: authorizeRequestedRequirementUid,
   closeIssue: runCloseIssueAfterMerge,
+  postVerificationAttestation: postImplementVerificationAttestation,
+  readVerificationAttestations: readTrustedImplementVerificationAttestations,
 };
 function dispatch(args, deps) {
   switch (args.action) {
@@ -275,7 +279,9 @@ export async function gcImplementMechanicalToolHandler(args, overrides = {}) {
   const checkoutBound = args.action === "verify" || args.action === "publish";
   return startJob(
     `implement_mechanical_${args.action}`,
-    () => runImplementMechanical(normalizedArgs, mechanicalOverrides),
+    // The registry hands the run a progress reporter; verify threads it to the
+    // shared gate runner so a long sweep emits a bounded liveness snapshot (#1497).
+    (_signal, reportProgress) => runImplementMechanical(normalizedArgs, { ...mechanicalOverrides, reportProgress }),
     {
       idempotencyKey: args.idempotency_key,
       idempotencyNamespace:
