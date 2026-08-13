@@ -67,6 +67,127 @@ export async function runPublish(args, deps) {
       "remove_the_sensitive_path_from_the_change_and_retry",
     );
   }
+  // Cross-process mutation lease + write-ahead recovery journal (issue #1495).
+  // The lease (per-worktree Git metadata, distinct from /integrate's repo-wide
+  // lock) is held across every checkout mutation; the journal lets a later
+  // attempt reconcile an interrupted publish instead of blindly re-staging it.
+  const leaseDir = await resolvePublishLeaseDir(action, deps, repoRoot);
+  if (leaseDir.failure) return leaseDir.failure;
+  const gitDir = leaseDir.path;
+  let releaseLease;
+  try {
+    releaseLease = await deps.acquirePublishLock(gitDir);
+  } catch (error) {
+    if (error?.code === "ELOCKED") {
+      return failure(
+        action,
+        "implement_publish_lease_contended",
+        "Another publish is already mutating this checkout",
+        "wait_for_the_active_publish_to_finish_or_recover_it",
+      );
+    }
+    return commandFailure(action, "lease", error);
+  }
+  try {
+    // The synchronization-input (retry) path is the caller explicitly completing
+    // a known staged merge, so reconciliation — which refuses on a staged merge —
+    // runs only on the fresh path where a staged merge means an interrupted run.
+    if (!args.synchronization) {
+      const reconciled = await deps.reconcileInterruptedPublish({
+        repoRoot,
+        gitDir,
+        branchName,
+        issueNumber: args.issueNumber,
+        commandRunner: deps.execFile,
+      });
+      if (reconciled.resolved) return reconciled.resolved;
+      // The write-ahead journal is a precondition for mutating the checkout, not a
+      // best-effort aid: if it cannot be established, refuse before touching the
+      // tree so any later interruption always has an attributable recovery record.
+      const journalError = recordPublishJournal(deps, gitDir, {
+        issue_number: args.issueNumber,
+        branch: branchName,
+        base_branch: context?.workflow?.base_branch ?? "dev",
+        pre_publish_head: await readPublishHead(deps, repoRoot),
+        phase: "initializing",
+      });
+      if (journalError) return journalError;
+    }
+    const result = await runPublishMutation(args, deps, { repoRoot, branchName, context, authorized, publishPaths, gitDir });
+    await finalizePublishJournal(deps, gitDir, repoRoot, result);
+    return result;
+  } finally {
+    await releaseLease();
+  }
+}
+
+// Resolve the per-worktree Git directory the lease and journal live under, mapping
+// a resolution failure to a bounded refusal instead of throwing out of publish.
+async function resolvePublishLeaseDir(action, deps, repoRoot) {
+  try {
+    return { path: await deps.resolvePublishGitDir(repoRoot, deps.execFile) };
+  } catch (error) {
+    return { failure: commandFailure(action, "resolve_git_dir", error) };
+  }
+}
+
+async function readPublishHead(deps, repoRoot) {
+  try {
+    const { stdout } = await deps.runGit(repoRoot, ["rev-parse", "--verify", "HEAD"], deps.execFile);
+    const head = stdout.trim().toLowerCase();
+    return /^[0-9a-f]{40,64}$/.test(head) ? head : null;
+  } catch {
+    // A brand-new branch may not have a HEAD commit yet.
+    return null;
+  }
+}
+
+// Advance the write-ahead journal before/after a mutating step. Returns null on
+// success, or a bounded failure envelope when the journal cannot be written — the
+// caller refuses to mutate (or to proceed) without an attributable recovery
+// record rather than swallowing the failure (issue #1495).
+function recordPublishJournal(deps, gitDir, fields) {
+  try {
+    deps.writePublishJournal(gitDir, fields);
+    return null;
+  } catch {
+    return failure(
+      "publish",
+      "implement_publish_journal_write_failed",
+      "Could not establish the write-ahead recovery journal in the Git metadata directory",
+      "repair_the_git_metadata_directory_permissions_and_retry",
+    );
+  }
+}
+
+// Close the journal on a settled publish. A success clears it. A failure that left
+// an interrupted merge (MERGE_HEAD present) keeps it for reconciliation; any other
+// failure is ordinary repair-and-retry territory — a pre-commit failure, or a
+// committed-but-unpushed feature — so the journal is cleared instead of poisoning
+// the next attempt's reconciliation (issue #1495).
+async function finalizePublishJournal(deps, gitDir, repoRoot, result) {
+  if (result.ok) {
+    deps.removePublishJournal(gitDir);
+    return;
+  }
+  let mergeInProgress = false;
+  try {
+    const { stdout } = await deps.runGit(
+      repoRoot,
+      ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"],
+      deps.execFile,
+    );
+    mergeInProgress = stdout.trim() !== "";
+  } catch {
+    // `rev-parse --verify --quiet MERGE_HEAD` exits non-zero when no merge is in
+    // progress — the ordinary, non-interrupted case.
+    mergeInProgress = false;
+  }
+  if (!mergeInProgress) deps.removePublishJournal(gitDir);
+}
+
+async function runPublishMutation(args, deps, { repoRoot, branchName, context, authorized, publishPaths, gitDir }) {
+  const action = "publish";
   if (args.synchronization) {
     if (publishPaths.length > 0) {
       await deps.runGit(repoRoot, ["add", "-A"], deps.execFile);
@@ -140,6 +261,8 @@ export async function runPublish(args, deps) {
     } catch (error) {
       return commandFailure(action, "commit", error);
     }
+    const committedJournal = recordPublishJournal(deps, gitDir, { phase: "feature_committed" });
+    if (committedJournal) return committedJournal;
   }
   try {
     await deps.runGit(
@@ -150,6 +273,11 @@ export async function runPublish(args, deps) {
   } catch (error) {
     return commandFailure(action, "push", error);
   }
+  const pushedJournal = recordPublishJournal(deps, gitDir, {
+    published_pre_sync_head: await readPublishHead(deps, repoRoot),
+    phase: "feature_pushed",
+  });
+  if (pushedJournal) return pushedJournal;
   const started = await deps.synchronize({
     repoPath: repoRoot,
     issueNumber: args.issueNumber,
@@ -201,6 +329,17 @@ export async function runPublish(args, deps) {
       { synchronization: started },
     );
   }
+  // Record the staged-merge identities before the completion gates run, so an
+  // interruption between here and the merge commit is recoverable through the
+  // base-sync retry contract rather than an unattributable staged merge (#1495).
+  const mergeStagedJournal = recordPublishJournal(deps, gitDir, {
+    record_id: started.recordId,
+    published_pre_sync_head: started.preSyncSha,
+    fetched_base_sha: started.fetchedBaseSha,
+    expected_merge_head: started.fetchedBaseSha,
+    phase: "merge_staged",
+  });
+  if (mergeStagedJournal) return mergeStagedJournal;
   const completed = await deps.synchronize({
     repoPath: repoRoot,
     issueNumber: args.issueNumber,

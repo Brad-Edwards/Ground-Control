@@ -6,6 +6,7 @@
 
 import { realpathSync } from "node:fs";
 import { assertImplementSyncCheckout, fetchImplementBase, isImplementAncestor, readImplementGitOid, readImplementTreeOid, runImplementFinalTreeGates, runImplementGit } from "./codex-workflow-2.js";
+import { assertImplementMergeAttemptUnchanged } from "./implement-publish-recovery.js";
 import { authorizeRequestedRequirementUid } from "./codex-workflow-3.js";
 import { GIT_OBJECT_ID_RE, IMPLEMENT_BASE_SYNC_ACTIONS, newImplementSyncRecordId, validateImplementBranchName } from "./codex-workflow.js";
 import { assertSafeImplementCheckoutConfiguration, authorizeImplementRepoRoot, ensureGitRepo, resolveMcpLaunchWorkspaceAuthorization } from "./grc-legacy-compat-4.js";
@@ -271,36 +272,8 @@ export async function runSynchronizeImplementBranch(input, {
     let verifiedTreeSha;
     let verifiedToolchainDigest;
     if (mergeHead != null) {
-      if (mergeHead !== input.fetchedBaseSha) {
-        return {
-          ok: false,
-          error: "implement_base_sync_merge_head_mismatch",
-          message: "MERGE_HEAD does not match the fetched integration commit",
-          next_action: "return_to_the_synchronization_boundary",
-        };
-      }
-      const currentHead = await readImplementGitOid(repoRoot, "HEAD", commandRunner);
-      if (currentHead !== input.preSyncSha) {
-        return {
-          ok: false,
-          error: "implement_base_sync_pre_merge_head_mismatch",
-          message: "The merge started from a different feature commit",
-          next_action: "inspect_the_preserved_merge_state",
-        };
-      }
-      const { stdout: unmerged } = await runImplementGit(
-        repoRoot,
-        ["ls-files", "--unmerged"],
-        commandRunner,
-      );
-      if (unmerged.trim() !== "") {
-        return {
-          ok: false,
-          error: "implement_base_sync_conflicts_unresolved",
-          message: "Every merge conflict must be resolved before synchronization can complete",
-          next_action: "resolve_every_conflict_and_retry",
-        };
-      }
+      const preGate = await assertImplementMergeAttemptUnchanged(repoRoot, input, commandRunner);
+      if (preGate) return preGate;
       try {
         ({ treeOid: verifiedTreeSha, toolchainDigest: verifiedToolchainDigest } =
           await runImplementFinalTreeGates(repoRoot, context, commandRunner, authorizedRequirement.requirementUid));
@@ -312,6 +285,12 @@ export async function runSynchronizeImplementBranch(input, {
           next_action: "fix_the_preserved_merge_tree_and_retry_completion",
         };
       }
+      // The final-tree gates run for minutes. Re-read the merge control state
+      // immediately before the commit so an external recovery that aborted this
+      // merge and staged a different one — same tree, different parents — under
+      // the boundary is refused without mutation (issue #1495).
+      const preCommit = await assertImplementMergeAttemptUnchanged(repoRoot, input, commandRunner);
+      if (preCommit) return preCommit;
       await runImplementGit(
         repoRoot,
         ["commit", "-m", `Merge origin/${baseBranch} into ${input.branchName}`],

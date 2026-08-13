@@ -111,7 +111,11 @@ retrying the start because the transport response was lost. After repairing the
 reported condition, create a new key for the new logical attempt. `bootstrap`,
 `readiness`, and `finalize` remain synchronous. Mechanical jobs do not claim
 cancellation; `gc_codex_job action=cancel` returns `job_not_cancellable` while
-their existing command and polling call graph lacks end-to-end abort support.
+their command and polling call graph lacks end-to-end abort support. The
+`publish` hang this issue reports is closed not by cancellation but by the gate
+runner reaping its process tree on exit, a per-worktree mutation lease, a
+write-ahead recovery journal, a pre-commit compare-and-swap, and restart-time
+reconciliation (issue #1495).
 
 ## Step list (in order)
 

@@ -4,9 +4,7 @@
 // (docs/CODING_STANDARDS.md, Sonar S104). It contained no mutual recursion, so it was
 // split along its own dependency layering. lib.js remains the barrel every caller imports.
 
-import { realpathSync, statSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
-import properLockfile from "proper-lockfile";
+import { join } from "node:path";
 import { request } from "./api-controls-2.js";
 import { detectSensitiveBodyContent, extractGhErrorMessage } from "./grc-legacy-compat-2.js";
 import { getOwnerRepo } from "./grc-legacy-compat-3.js";
@@ -374,89 +372,7 @@ export async function runPostDecisionRecord({ repoPath, issueNumber, cycle, revi
     comment_id: apiResponse && Number.isInteger(apiResponse.id) ? apiResponse.id : null,
   };
 }
-async function _acquireFilesystemLock(canonicalDir, lockfileBasename, { retries = 0, lockedMessage } = {}) {
-  let release;
-  try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- canonicalDir is a caller-validated realpath
-    release = await properLockfile.lock(canonicalDir, {
-      stale: 60_000,
-      update: 10_000,
-      retries,
-      lockfilePath: join(canonicalDir, lockfileBasename),
-      realpath: false,
-    });
-  } catch (error) {
-    if (error.code === "ELOCKED") {
-      const msg = lockedMessage ?? `directory is already held by another process: ${canonicalDir}`;
-      const contended = new Error(msg);
-      contended.code = "ELOCKED";
-      contended.path = canonicalDir;
-      throw contended;
-    }
-    throw error;
-  }
-
-  let released = false;
-  return async function releaseHandle() {
-    if (released) return;
-    released = true;
-    try {
-      await release();
-    } catch (error) {
-      // "Lock is already released" is fine — observed release via another path.
-      if (error.code !== "ENOTACQUIRED" && !/already released/i.test(error.message)) {
-        throw error;
-      }
-    }
-  };
-}
-export async function acquireKnowledgeLock(knowledgeDir, { retries = 0 } = {}) {
-  if (typeof knowledgeDir !== "string" || !isAbsolute(knowledgeDir)) {
-    throw new Error("acquireKnowledgeLock: path must be an absolute directory path");
-  }
-  let canonical;
-  try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- absolute path validated above
-    canonical = realpathSync(knowledgeDir);
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      throw new Error(`acquireKnowledgeLock: path does not exist: ${knowledgeDir}`);
-    }
-    throw error;
-  }
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- canonical is a realpath
-  const stat = statSync(canonical);
-  if (!stat.isDirectory()) {
-    throw new Error(`acquireKnowledgeLock: path is not a directory: ${knowledgeDir}`);
-  }
-
-  return _acquireFilesystemLock(canonical, ".gc-lock", {
-    retries,
-    lockedMessage: `knowledge base is already held by another process: ${canonical}`,
-  });
-}
-export async function acquireIntegrationLock(repoRoot, { retries = 0 } = {}) {
-  if (typeof repoRoot !== "string" || !isAbsolute(repoRoot)) {
-    throw new Error("acquireIntegrationLock: path must be an absolute directory path");
-  }
-  let canonical;
-  try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- absolute path validated above
-    canonical = realpathSync(repoRoot);
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      throw new Error(`acquireIntegrationLock: path does not exist: ${repoRoot}`);
-    }
-    throw error;
-  }
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- canonical is a realpath
-  const stat = statSync(canonical);
-  if (!stat.isDirectory()) {
-    throw new Error(`acquireIntegrationLock: path is not a directory: ${repoRoot}`);
-  }
-
-  return _acquireFilesystemLock(canonical, ".gc-integration-lock", {
-    retries,
-    lockedMessage: `integration run is already in progress at: ${canonical}`,
-  });
-}
+// acquireKnowledgeLock / acquireIntegrationLock and the shared filesystem-lock
+// mechanics moved to lib/filesystem-lease.js when the mechanical publish base-sync
+// became the third real caller (issue #1495). The barrel re-exports them, so
+// existing import sites are unchanged.

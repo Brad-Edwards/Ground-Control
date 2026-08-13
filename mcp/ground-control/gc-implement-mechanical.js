@@ -30,6 +30,11 @@ import {
   implementGateEnvironment,
   postImplementVerificationAttestation,
   readTrustedImplementVerificationAttestations,
+  acquireImplementPublishLock,
+  resolvePublishGitDir,
+  reconcileInterruptedPublish,
+  writeImplementPublishJournal,
+  removeImplementPublishJournal,
 } from "./lib.js";
 import { createWorkflowRunLifecycleEmitter } from "./workflow-run-lifecycle.js";
 import {
@@ -139,6 +144,13 @@ const defaultDeps = {
   closeIssue: runCloseIssueAfterMerge,
   postVerificationAttestation: postImplementVerificationAttestation,
   readVerificationAttestations: readTrustedImplementVerificationAttestations,
+  // Mechanical-publish recovery seams (issue #1495). Injected so tests can stub
+  // the filesystem lease/journal while production holds the real per-worktree lease.
+  resolvePublishGitDir,
+  acquirePublishLock: acquireImplementPublishLock,
+  reconcileInterruptedPublish,
+  writePublishJournal: writeImplementPublishJournal,
+  removePublishJournal: removeImplementPublishJournal,
 };
 function dispatch(args, deps) {
   switch (args.action) {
@@ -289,6 +301,11 @@ export async function gcImplementMechanicalToolHandler(args, overrides = {}) {
       fingerprint: asyncJobInputFingerprint(normalizedArgs),
       executionScope: checkoutBound ? `implement_mechanical_checkout:${canonicalRepoPath}` : null,
       singleFlight: checkoutBound,
+      // Mechanical jobs stay non-cancellable: their full Git/GitHub/gate graph does
+      // not honour abort, so advertising cancellation would be false. The publish
+      // hang this issue reports is closed by the gate runner reaping its process
+      // tree and by lease + journal + restart reconciliation, not by cancellation
+      // (issue #1495).
       cancellable: false,
     },
   );
