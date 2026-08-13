@@ -186,73 +186,71 @@ async function finalizePublishJournal(deps, gitDir, repoRoot, result) {
   if (!mergeInProgress) deps.removePublishJournal(gitDir);
 }
 
-async function runPublishMutation(args, deps, { repoRoot, branchName, context, authorized, publishPaths, gitDir }) {
-  const action = "publish";
-  if (args.synchronization) {
-    if (publishPaths.length > 0) {
-      await deps.runGit(repoRoot, ["add", "-A"], deps.execFile);
-    }
-    const completed = await deps.synchronize({
-      repoPath: repoRoot,
-      issueNumber: args.issueNumber,
-      branchName,
-      action: "complete",
-      recordId: args.synchronization.record_id,
-      preSyncSha: args.synchronization.pre_sync_sha,
-      fetchedBaseSha: args.synchronization.fetched_base_sha,
-      outcome: args.synchronization.outcome,
-      requestedRequirementUid: authorized.requirementUid,
-    });
-    if (!completed.ok) {
-      return failure(
-        action,
-        completed.error,
-        completed.message,
-        completed.next_action ?? "repair_base_synchronization_and_retry",
-        { synchronization: completed },
-      );
-    }
-    return {
-      ok: true,
-      action,
-      phase: "publish_complete",
-      synchronization: completed,
-      next_action: "render_and_create_the_synchronized_pr",
-    };
-  }
+function publishComplete(synchronization) {
+  return {
+    ok: true,
+    action: "publish",
+    phase: "publish_complete",
+    synchronization,
+    next_action: "render_and_create_the_synchronized_pr",
+  };
+}
 
+function baseSyncFailure(sync) {
+  return failure(
+    "publish",
+    sync.error,
+    sync.message,
+    sync.next_action ?? "repair_base_synchronization_and_retry",
+    { synchronization: sync },
+  );
+}
+
+async function runPublishMutation(args, deps, ctx) {
+  if (args.synchronization) return runPublishSyncRetry(args, deps, ctx);
+  const staged = await stageCommitAndPushFeature(args, deps, ctx);
+  if (staged) return staged;
+  return runFeatureBaseSync(args, deps, ctx);
+}
+
+// The synchronization-input path: the caller is completing a merge the previous
+// attempt already staged, so this only re-stages, completes the sync, and returns.
+async function runPublishSyncRetry(args, deps, { repoRoot, branchName, authorized, publishPaths }) {
+  if (publishPaths.length > 0) {
+    await deps.runGit(repoRoot, ["add", "-A"], deps.execFile);
+  }
+  const completed = await deps.synchronize({
+    repoPath: repoRoot,
+    issueNumber: args.issueNumber,
+    branchName,
+    action: "complete",
+    recordId: args.synchronization.record_id,
+    preSyncSha: args.synchronization.pre_sync_sha,
+    fetchedBaseSha: args.synchronization.fetched_base_sha,
+    outcome: args.synchronization.outcome,
+    requestedRequirementUid: authorized.requirementUid,
+  });
+  if (!completed.ok) return baseSyncFailure(completed);
+  return publishComplete(completed);
+}
+
+// Stage + pre-commit + commit the feature work (when there is any), then push it,
+// journalling each mutating phase. Returns a bounded failure envelope on any gate
+// failure, or null when the feature is committed and pushed.
+async function stageCommitAndPushFeature(args, deps, { repoRoot, branchName, context, authorized, publishPaths, gitDir }) {
+  const action = "publish";
   if (publishPaths.length > 0) {
     const messageError = validateCommitMessage(args.commitMessage);
     if (messageError) {
-      return failure(
-        action,
-        "implement_mechanical_commit_message_invalid",
-        messageError,
-        "supply_a_safe_imperative_commit_message_and_retry",
-      );
+      return failure(action, "implement_mechanical_commit_message_invalid", messageError, "supply_a_safe_imperative_commit_message_and_retry");
     }
     await deps.runGit(repoRoot, ["add", "-A"], deps.execFile);
-    const { stdout: stagedPaths } = await deps.runGit(
-      repoRoot,
-      ["diff", "--cached", "--name-only"],
-      deps.execFile,
-    );
-    const paths = stagedPaths.split(/\r?\n/).filter(Boolean);
-    if (paths.length === 0) {
-      return failure(
-        action,
-        "implement_mechanical_nothing_to_commit",
-        "No staged content changes are available to publish",
-        "inspect_the_change_before_publishing",
-      );
+    const { stdout: stagedPaths } = await deps.runGit(repoRoot, ["diff", "--cached", "--name-only"], deps.execFile);
+    if (stagedPaths.split(/\r?\n/).filter(Boolean).length === 0) {
+      return failure(action, "implement_mechanical_nothing_to_commit", "No staged content changes are available to publish", "inspect_the_change_before_publishing");
     }
     try {
-      await deps.preCommit(
-        repoRoot,
-        deps.execFile,
-        context,
-        authorized.requirementUid,
-      );
+      await deps.preCommit(repoRoot, deps.execFile, context, authorized.requirementUid);
     } catch (error) {
       return commandFailure(action, "precommit", error);
     }
@@ -265,19 +263,19 @@ async function runPublishMutation(args, deps, { repoRoot, branchName, context, a
     if (committedJournal) return committedJournal;
   }
   try {
-    await deps.runGit(
-      repoRoot,
-      ["push", "-u", "origin", branchName],
-      deps.execFile,
-    );
+    await deps.runGit(repoRoot, ["push", "-u", "origin", branchName], deps.execFile);
   } catch (error) {
     return commandFailure(action, "push", error);
   }
-  const pushedJournal = recordPublishJournal(deps, gitDir, {
+  return recordPublishJournal(deps, gitDir, {
     published_pre_sync_head: await readPublishHead(deps, repoRoot),
     phase: "feature_pushed",
   });
-  if (pushedJournal) return pushedJournal;
+}
+
+// Run base synchronization: start it, journal a staged merge, then complete it.
+async function runFeatureBaseSync(args, deps, { repoRoot, branchName, authorized, gitDir }) {
+  const action = "publish";
   const started = await deps.synchronize({
     repoPath: repoRoot,
     issueNumber: args.issueNumber,
@@ -285,24 +283,8 @@ async function runPublishMutation(args, deps, { repoRoot, branchName, context, a
     action: "start",
     requestedRequirementUid: authorized.requirementUid,
   });
-  if (!started.ok) {
-    return failure(
-      action,
-      started.error,
-      started.message,
-      started.next_action ?? "repair_base_synchronization_and_retry",
-      { synchronization: started },
-    );
-  }
-  if (started.status === "complete") {
-    return {
-      ok: true,
-      action,
-      phase: "publish_complete",
-      synchronization: started,
-      next_action: "render_and_create_the_synchronized_pr",
-    };
-  }
+  if (!started.ok) return baseSyncFailure(started);
+  if (started.status === "complete") return publishComplete(started);
   if (started.status === "conflicts") {
     return failure(
       action,
@@ -321,13 +303,7 @@ async function runPublishMutation(args, deps, { repoRoot, branchName, context, a
     );
   }
   if (started.status !== "merge_ready") {
-    return failure(
-      action,
-      "implement_mechanical_sync_state_unknown",
-      `Unexpected synchronization state '${started.status}'`,
-      "inspect_the_preserved_synchronization_state",
-      { synchronization: started },
-    );
+    return failure(action, "implement_mechanical_sync_state_unknown", `Unexpected synchronization state '${started.status}'`, "inspect_the_preserved_synchronization_state", { synchronization: started });
   }
   // Record the staged-merge identities before the completion gates run, so an
   // interruption between here and the merge commit is recoverable through the
@@ -351,22 +327,8 @@ async function runPublishMutation(args, deps, { repoRoot, branchName, context, a
     outcome: started.outcome,
     requestedRequirementUid: authorized.requirementUid,
   });
-  if (!completed.ok) {
-    return failure(
-      action,
-      completed.error,
-      completed.message,
-      completed.next_action ?? "repair_base_synchronization_and_retry",
-      { synchronization: completed },
-    );
-  }
-  return {
-    ok: true,
-    action,
-    phase: "publish_complete",
-    synchronization: completed,
-    next_action: "render_and_create_the_synchronized_pr",
-  };
+  if (!completed.ok) return baseSyncFailure(completed);
+  return publishComplete(completed);
 }
 export async function runMonitor(args, deps) {
   const action = "monitor";

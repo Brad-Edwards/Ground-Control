@@ -1,6 +1,13 @@
 schema_version: 1
 project: ground-control
 github_repo: autarchy-ai/Ground-Control
+# Strict Sonar gate: with this block present the /implement monitor (Step 11)
+# enforces the SonarCloud result as a hard gate — quality gate OK AND zero open
+# issues AND zero open hotspots — instead of skipping it. Without it the gate was
+# a silent no-op, so open issues never failed a publish (issue #1495 follow-up).
+sonarcloud:
+  project_key: autarchy-ai_Ground-Control
+  organization: autarchy-ai
 workflow:
   # Ground Control is the MCP server for the /implement workflow over repo-local
   # files (issue #1500): no backend, database, or frontend. The repo's test gate

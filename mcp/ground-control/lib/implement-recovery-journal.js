@@ -68,6 +68,37 @@ export function implementPublishJournalPath(gitDir) {
   return join(canonical, IMPLEMENT_PUBLISH_JOURNAL_BASENAME);
 }
 
+const IMPLEMENT_PUBLISH_JOURNAL_KEYS = new Set([
+  "schema", "record_id", "issue_number", "phase", "classification",
+  "created_at", "updated_at", ...REQUIRED_STRING_FIELDS, ...OID_OR_NULL_FIELDS,
+]);
+
+// The per-field shape check, separate from the outer structure/schema gate so the
+// validator stays under the cognitive-complexity limit. Returns null when every
+// field is in shape, or "journal_shape_invalid" on the first malformed one.
+function journalFieldShapeError(parsed) {
+  if (parsed.record_id !== null && !(typeof parsed.record_id === "string" && RECORD_ID_RE.test(parsed.record_id))) {
+    return "journal_shape_invalid";
+  }
+  if (!Number.isInteger(parsed.issue_number) || parsed.issue_number <= 0) {
+    return "journal_shape_invalid";
+  }
+  for (const field of REQUIRED_STRING_FIELDS) {
+    if (typeof parsed[field] !== "string" || parsed[field].length === 0 || parsed[field].length > 200) {
+      return "journal_shape_invalid";
+    }
+  }
+  for (const field of OID_OR_NULL_FIELDS) {
+    if (!isOidOrNull(parsed[field])) return "journal_shape_invalid";
+  }
+  if (!IMPLEMENT_PUBLISH_JOURNAL_PHASES.includes(parsed.phase)) return "journal_shape_invalid";
+  if (!IMPLEMENT_PUBLISH_JOURNAL_CLASSIFICATIONS.includes(parsed.classification)) return "journal_shape_invalid";
+  if (typeof parsed.created_at !== "string" || typeof parsed.updated_at !== "string") {
+    return "journal_shape_invalid";
+  }
+  return null;
+}
+
 // Validate a parsed journal object against the closed v1 shape. Returns
 // { ok: true, record } or { ok: false, error }. Unknown keys, a wrong schema,
 // or a malformed field all fail closed.
@@ -78,36 +109,11 @@ export function validateImplementPublishJournalRecord(parsed) {
   if (parsed.schema !== IMPLEMENT_PUBLISH_JOURNAL_SCHEMA) {
     return { ok: false, error: "journal_schema_unknown" };
   }
-  const allowed = new Set([
-    "schema", "record_id", "issue_number", "phase", "classification",
-    "created_at", "updated_at", ...REQUIRED_STRING_FIELDS, ...OID_OR_NULL_FIELDS,
-  ]);
   for (const key of Object.keys(parsed)) {
-    if (!allowed.has(key)) return { ok: false, error: "journal_unknown_field" };
+    if (!IMPLEMENT_PUBLISH_JOURNAL_KEYS.has(key)) return { ok: false, error: "journal_unknown_field" };
   }
-  if (parsed.record_id !== null && !(typeof parsed.record_id === "string" && RECORD_ID_RE.test(parsed.record_id))) {
-    return { ok: false, error: "journal_shape_invalid" };
-  }
-  if (!Number.isInteger(parsed.issue_number) || parsed.issue_number <= 0) {
-    return { ok: false, error: "journal_shape_invalid" };
-  }
-  for (const field of REQUIRED_STRING_FIELDS) {
-    if (typeof parsed[field] !== "string" || parsed[field].length === 0 || parsed[field].length > 200) {
-      return { ok: false, error: "journal_shape_invalid" };
-    }
-  }
-  for (const field of OID_OR_NULL_FIELDS) {
-    if (!isOidOrNull(parsed[field])) return { ok: false, error: "journal_shape_invalid" };
-  }
-  if (!IMPLEMENT_PUBLISH_JOURNAL_PHASES.includes(parsed.phase)) {
-    return { ok: false, error: "journal_shape_invalid" };
-  }
-  if (!IMPLEMENT_PUBLISH_JOURNAL_CLASSIFICATIONS.includes(parsed.classification)) {
-    return { ok: false, error: "journal_shape_invalid" };
-  }
-  if (typeof parsed.created_at !== "string" || typeof parsed.updated_at !== "string") {
-    return { ok: false, error: "journal_shape_invalid" };
-  }
+  const shapeError = journalFieldShapeError(parsed);
+  if (shapeError) return { ok: false, error: shapeError };
   return { ok: true, record: parsed };
 }
 

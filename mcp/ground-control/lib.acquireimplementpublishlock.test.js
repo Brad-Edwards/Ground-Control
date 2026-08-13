@@ -57,8 +57,9 @@ describe("acquireImplementPublishLock", () => {
     const dir = makeLockTempDir();
     try {
       const release = await acquireImplementPublishLock(dir);
+      assert.equal(typeof release, "function");
       await release();
-      await release();
+      await assert.doesNotReject(release(), "a second release must be a no-op, not throw");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
