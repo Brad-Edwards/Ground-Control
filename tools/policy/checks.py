@@ -78,6 +78,12 @@ from .file_size import (  # noqa: F401
     MAX_LINES,
     run_file_size_limit_check,
 )
+from .ci_strictness import (  # noqa: F401
+    SONAR_QUALITY_GATE_ANCHOR,
+    SONAR_TOKEN_BINDING,
+    SONAR_WORKFLOW_PATH,
+    run_sonar_strictness_contract,
+)
 from .adr_guard import (  # noqa: F401
     _trigger_is_in_scope,
     changed_lines_for,
