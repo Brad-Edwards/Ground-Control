@@ -47,13 +47,29 @@ if they are absent, if their digest no longer matches, or if
    title, statement, status, and wave. If the run started from a UID, ensure that UID appears in
    the issue Requirements section.
 
-6. Read the requirement files' `## Traceability` sections for `GITHUB_ISSUE` entries naming the issue and cache them.
+6. Derive an informational `implementation_intent` from the issue labels and
+   body already returned by `gc_implement_mechanical action="bootstrap"`:
 
-7. Derive a compliant branch name `<issue-number>-<short-slug>` from two to
+   - `bug-fix` when a `bug` label, a semantic `## Bug` section, or the issue's
+     own requested outcome says shipped behavior is broken, regresses, crashes,
+     or returns a wrong result;
+   - `feature` when the issue asks for new behavior, a new requirement, or a
+     process/contract extension without a shipped-behavior defect;
+   - `mixed` when separate clauses contain both kinds of work.
+
+   Treat quoted examples, historical discussion, and out-of-scope text as
+   context rather than raw keyword matches. Cache the value for the semantic
+   steps only. It is an informational hint, not a gate, label, configuration
+   field, or authorization. Step 4's per-clause `tdd_path` classification is
+   authoritative and may correct the issue-level hint.
+
+7. Read the requirement files' `## Traceability` sections for `GITHUB_ISSUE` entries naming the issue and cache them.
+
+8. Derive a compliant branch name `<issue-number>-<short-slug>` from two to
    four words naming the change. The total is at most 50 characters and uses
    only lowercase ASCII letters, digits, and hyphens.
 
-8. Call `gc_prepare_implement_branch` with:
+9. Call `gc_prepare_implement_branch` with:
 
    - `repo_path`: `execution_contract.invocation_root`
    - `invocation_root`: `execution_contract.invocation_root`
@@ -76,7 +92,7 @@ if they are absent, if their digest no longer matches, or if
    decision request and keep it open. Workload or inconvenience is not a pause
    reason.
 
-9. Call `gc_mark_implement_issue_picked_up` with the invocation root, issue
+10. Call `gc_mark_implement_issue_picked_up` with the invocation root, issue
    number, driver, and exact branch returned by
    `gc_prepare_implement_branch`. This deterministic MCP operation owns all
    pickup-side GitHub mutations: it creates the `in-progress` label when
@@ -88,7 +104,7 @@ if they are absent, if their digest no longer matches, or if
    Surface any failure before Step 2. The label remains on partial/error paths
    because the work is active or paused, not finished.
 
-10. When `$TMUX` is set and `cfg.short_code` is non-null, best-effort rename
+11. When `$TMUX` is set and `cfg.short_code` is non-null, best-effort rename
     the current session to `<short_code>-<issue_number>`. This cosmetic action
     is non-fatal and adds no cached state.
 
@@ -105,6 +121,7 @@ if they are absent, if their digest no longer matches, or if
     "execution_contract": {},
     "development_principles_verbatim": "<exact canonical contents>",
     "in_scope_requirements": [],
+    "implementation_intent": "feature | bug-fix | mixed",
     "issue_thread_hash": "<sha256>",
     "issue_traceability_links": []
   }

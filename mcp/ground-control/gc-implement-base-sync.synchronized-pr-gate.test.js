@@ -257,6 +257,82 @@ describe("synchronized PR gate", () => {
     }
   });
 
+  it("finds an existing same-repository PR with the branch syntax gh actually accepts", async () => {
+    const calls = [];
+    let createCalled = false;
+    const runner = async (command, args) => {
+      calls.push([command, args]);
+      if (command === "gh") {
+        if (args[1] === "create") {
+          createCalled = true;
+          throw new Error("duplicate PR creation attempted");
+        }
+        const head = args[args.indexOf("--head") + 1];
+        if (head !== BRANCH) return { stdout: "[]\n" };
+        return {
+          stdout: JSON.stringify([{
+            number: 201,
+            url: "https://github.com/autarchy-ai/Ground-Control/pull/201",
+            baseRefName: "dev",
+            headRefName: BRANCH,
+            headRefOid: RESULT,
+            headRepository: { name: "Ground-Control" },
+            headRepositoryOwner: { login: "autarchy-ai" },
+            isCrossRepository: false,
+            title: "feat: require synchronized implement PRs",
+            body: renderedPrBody(),
+          }]),
+        };
+      }
+      const op = gitOperation(args);
+      if (op[0] === "symbolic-ref") return { stdout: `${BRANCH}\n` };
+      if (op[0] === "status") return { stdout: "" };
+      if (op[0] === "fetch" || op[0] === "merge-base") return { stdout: "" };
+      if (op[0] === "rev-parse") {
+        const ref = op[op.length - 1];
+        if (ref.endsWith("^{tree}")) return { stdout: `${TREE}\n` };
+        if (ref.startsWith("refs/remotes/origin/dev")) return { stdout: `${BASE}\n` };
+        return { stdout: `${RESULT}\n` };
+      }
+      if (op[0] === "ls-remote") return { stdout: `${RESULT}\trefs/heads/${BRANCH}\n` };
+      throw new Error(`unexpected operation: ${command} ${args.join(" ")}`);
+    };
+    const result = await runCreateSynchronizedImplementPr({
+      repoPath: REPO_ROOT,
+      issueNumber: ISSUE,
+      branchName: BRANCH,
+      recordId: RECORD,
+      title: "feat: require synchronized implement PRs",
+      body: renderedPrBody(),
+    }, {
+      workspaceAuthorizationResolver: workspaceAuthorization,
+      commandRunner: runner,
+      contextResolver: async () => context(),
+      issueThreadReader: requirementsThreadReader(),
+      syncRecordReader: async () => ({
+        ok: true,
+        record: {
+          recordId: RECORD,
+          issueNumber: ISSUE,
+          branchName: BRANCH,
+          baseBranch: "dev",
+          remoteRef: "refs/remotes/origin/dev",
+          preSyncSha: PRE,
+          fetchedBaseSha: BASE,
+          outcome: "already_current",
+          resultingFeatureSha: RESULT,
+          verifiedTreeSha: TREE,
+        },
+      }),
+    });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(result.already_exists, true);
+    assert.equal(result.pr_number, 201);
+    assert.equal(createCalled, false);
+    const listCall = calls.find(([command, args]) => command === "gh" && args[1] === "list");
+    assert.equal(listCall[1][listCall[1].indexOf("--head") + 1], BRANCH);
+  });
+
   it("refuses an existing PR whose base or rendered content does not match", async () => {
     let createCalled = false;
     const runner = async (command, args) => {

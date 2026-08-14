@@ -8,6 +8,23 @@ tier: medium
 
 Once Step 4 has posted the plan, implement using **TDD**. This is not optional except under the documentation-only carve-out below.
 
+## Four-path selection
+
+Apply the `tdd_path` assigned by the Step 4 plan to every requirement clause
+and acceptance criterion. Mixed work applies the paths clause by clause.
+
+| Path | Trigger | Discipline |
+|---|---|---|
+| **Path A — New requirement or feature** | The issue specifies new behavior or clauses to implement. | Use the mandatory red-green-refactor loop below. The first assertion may be narrow, but it must exercise the new behavior and be observed failing before implementation. |
+| **Path B — Bug fix on shipped code** | Existing shipped behavior is broken, regresses, crashes, or returns a wrong result. | Write the regression test against the unmodified buggy tree and observe it fail for the reported defect, not test wiring or an unrelated assertion. Only then apply the fix and observe the test pass. If no meaningful failing test can reproduce the defect, keep investigating; do not apply the fix yet. Commit the test and fix together. |
+| **Path C — Reviewer-finding fix** | A Codex, test-quality, refactor, or SonarCloud finding has `decision: "fix"`. | Apply the canonical fix-locks-itself rule in `_review-loop-rules.md`: executable fixes and runtime-consumed data-contract fixes need proportionate regression evidence in the same review-fix cycle. |
+| **Path D — Prose-only or static contract narrowing** | The affected clause changes only static prose such as an ADR, README, skill/workflow guidance, or design note. | The documentation-only carve-out below may apply, but only when every existing prerequisite holds. An executable rename, fixture, policy datum, runtime configuration, schema, or grammar is not Path D merely because its file looks like documentation. |
+
+A bug fix cannot use the documentation-only carve-out. In particular, a
+runtime-consumed configuration, schema, grammar, fixture, or policy-data edit
+still needs a test against its parser or consumer even when the edited path has
+a documentation-like extension.
+
 **Documentation-only carve-out.** Skip the red-green loop only when ALL of the following hold:
 
 - The entire planned diff is documentation: ADR, README, skill / workflow prose, design notes, or other static text (`CHANGELOG.md` is Release Please's, not a feature-PR doc path - see `docs/DEVELOPMENT_WORKFLOW.md § Release model`). A single function, helper, schema field, config knob, behavior change, or other executable line in the diff disqualifies the entire carve-out - the full TDD loop applies, and any documentation in the same diff rides along on the back of the executable behavior's tests rather than triggering a separate carve-out path.

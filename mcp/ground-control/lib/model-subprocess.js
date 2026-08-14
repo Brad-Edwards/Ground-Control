@@ -38,6 +38,208 @@ const MAX_BUFFER_DEFAULT = 1024 * 1024; // 1 MiB, matches Node's own execFile de
 // spawn(), reimplementing the small slice of execFile's behavior (buffered
 // stdout/stderr, maxBuffer enforcement, exit-code/signal error shape) that
 // every caller here relies on (issue #1518).
+class BufferedProcessExecution {
+  constructor(file, args, config, resolve, reject) {
+    this.file = file;
+    this.args = args;
+    this.config = config;
+    this.resolve = resolve;
+    this.reject = reject;
+    this.timedOut = false;
+    this.aborted = false;
+    this.maxBufferExceeded = null;
+    this.killTimer = null;
+    this.settled = false;
+    this.pendingCleanup = null;
+    this.stdoutChunks = [];
+    this.stderrChunks = [];
+    this.stdoutLen = 0;
+    this.stderrLen = 0;
+    this.stdoutDone = false;
+    this.stderrDone = false;
+    this.closeResult = null;
+  }
+
+  start() {
+    const { file, args, config } = this;
+    // Detached so child.pid is also its POSIX process-group id: signalling
+    // -pid reaches every subprocess the child spawns (e.g. a shell tool
+    // call), not just the direct child. A signal to the direct pid alone let
+    // a codex-spawned `ugrep` outlive its leader and run orphaned for 10+
+    // days once reparented to init (issue #1518).
+    this.child = spawn(file, args, { ...config.options, detached: true });
+    this.attachOutputHandlers();
+    this.attachLifecycleHandlers();
+    this.armTerminationTriggers();
+    if (config.input != null) this.child.stdin.end(config.input);
+  }
+
+  ensureGroupEmpty() {
+    // TERM the group, then SIGKILL anything still alive after the grace period,
+    // confirming the group is actually empty before resolving. Settlement awaits
+    // this (see the `close` handler) so a SIGTERM-ignoring descendant can't
+    // outlive a call that already resolved or rejected. Single-flight via
+    // `pendingCleanup`: concurrent triggers (timeout, abort, maxBuffer,
+    // leader-exit) collapse onto one in-flight escalation. The escalation itself
+    // is the shared terminateProcessGroup primitive (issue #1495).
+    if (this.pendingCleanup !== null) return this.pendingCleanup;
+    if (!this.child.pid || !isProcessGroupAlive(this.child.pid)) return Promise.resolve();
+    this.pendingCleanup = terminateProcessGroup(this.child.pid, {
+      killSignal: this.config.killSignal,
+      killGraceMs: this.config.killGraceMs,
+      label: this.file,
+    });
+    return this.pendingCleanup;
+  }
+
+  trackChunk(chunks, chunk, which, currentLen) {
+    const { maxBuffer } = this.config;
+    // Saturates currentLen to maxBuffer on overflow so every later chunk for
+    // this stream is dropped outright, instead of re-appending the same
+    // stale "remaining allowance" on every subsequent data event.
+    if (currentLen >= maxBuffer) return currentLen;
+    const length = Buffer.byteLength(chunk);
+    if (currentLen + length > maxBuffer) {
+      const allowed = maxBuffer - currentLen;
+      if (allowed > 0) chunks.push(chunk.slice(0, allowed));
+      if (!this.maxBufferExceeded && !this.timedOut && !this.aborted) {
+        this.maxBufferExceeded = which;
+        // maxBuffer is the first terminal cause. Cleanup can legitimately
+        // outlive timeoutMs, but that later timer must not rewrite the result.
+        if (this.killTimer) {
+          clearTimeout(this.killTimer);
+          this.killTimer = null;
+        }
+        this.ensureGroupEmpty();
+      }
+      return maxBuffer;
+    }
+    chunks.push(chunk);
+    return currentLen + length;
+  }
+
+  attachOutputHandlers() {
+    this.child.stdout.setEncoding("utf8");
+    this.child.stderr.setEncoding("utf8");
+    this.child.stdout.on("data", (chunk) => {
+      this.stdoutLen = this.trackChunk(this.stdoutChunks, chunk, "stdout", this.stdoutLen);
+    });
+    this.child.stderr.on("data", (chunk) => {
+      this.stderrLen = this.trackChunk(this.stderrChunks, chunk, "stderr", this.stderrLen);
+    });
+  }
+
+  markStreamDone(which) {
+    if (which === "stdout") this.stdoutDone = true;
+    else this.stderrDone = true;
+    this.maybeFinalize();
+  }
+
+  attachLifecycleHandlers() {
+    this.child.on("error", (error) => this.finish(this.reject, error));
+    // `close` is documented to fire only after the child's stdio streams
+    // have closed, but that ordering guarantee is not airtight in practice —
+    // Node has long-standing reports of a fast-exiting child's buffered
+    // stdout being reported as fully consumed before every 'data' event for
+    // it has actually been delivered (nodejs/node#9633, #7184, #4236).
+    // Waiting on each stream's own `end` (or `error`, so a stream fault
+    // can't hang this call forever) makes "every byte the child wrote before
+    // exiting was read" an explicit, per-stream guarantee instead of an
+    // inference from the child's own close event.
+    this.child.stdout.on("end", () => this.markStreamDone("stdout"));
+    this.child.stdout.on("error", () => this.markStreamDone("stdout"));
+    this.child.stderr.on("end", () => this.markStreamDone("stderr"));
+    this.child.stderr.on("error", () => this.markStreamDone("stderr"));
+    this.child.on("close", (code, closeSignal) => {
+      this.closeResult = { code, closeSignal };
+      this.maybeFinalize();
+    });
+    // The leader may exit while a background descendant it spawned (and did
+    // not wait on) is still running. `close` — which the handler above waits
+    // for — doesn't fire until every process sharing the child's stdio pipes
+    // exits, so a live straggler would otherwise hang this call forever.
+    // `exit` fires as soon as the leader itself terminates, independent of
+    // its descendants, which is what actually lets this reap them.
+    this.child.on("exit", () => this.ensureGroupEmpty());
+  }
+
+  maybeFinalize() {
+    if (!this.closeResult || !this.stdoutDone || !this.stderrDone) return;
+    // Await in-flight cleanup before settling so descendants cannot outlive the call.
+    Promise.resolve(this.pendingCleanup).then(() => this.settleFromClose());
+  }
+
+  settleFromClose() {
+    const { code, closeSignal } = this.closeResult;
+    const { timeoutMs, killSignal, killGraceMs } = this.config;
+    const stdout = this.stdoutChunks.join("");
+    const stderr = this.stderrChunks.join("");
+    if (this.timedOut || this.aborted) {
+      const error = new Error(
+        this.timedOut
+          ? `${this.file} did not exit within ${timeoutMs}ms (sent ${killSignal}, then SIGKILL after ${killGraceMs}ms grace)`
+          : `${this.file} aborted via AbortSignal`,
+      );
+      error.code = this.timedOut ? "ETIMEDOUT" : "ABORT_ERR";
+      if (this.aborted && !this.timedOut) error.name = "AbortError";
+      error.killed = true;
+      error.stdout = stdout;
+      error.stderr = stderr;
+      this.finish(this.reject, error);
+      return;
+    }
+    if (this.maxBufferExceeded) {
+      const error = new Error(`${this.file} exceeded maxBuffer on ${this.maxBufferExceeded}`);
+      error.code = "ERR_CHILD_PROCESS_STDIO_MAXBUFFER";
+      error.stdout = stdout;
+      error.stderr = stderr;
+      this.finish(this.reject, error);
+      return;
+    }
+    if (code !== 0 || closeSignal !== null) {
+      const error = new Error(`Command failed: ${this.file} ${this.args.join(" ")}\n${stderr}`);
+      error.code = code;
+      error.signal = closeSignal;
+      error.stdout = stdout;
+      error.stderr = stderr;
+      this.finish(this.reject, error);
+      return;
+    }
+    this.finish(this.resolve, { stdout, stderr });
+  }
+
+  finish(fn, value) {
+    if (this.settled) return;
+    this.settled = true;
+    if (this.killTimer) clearTimeout(this.killTimer);
+    fn(value);
+  }
+
+  armTerminationTriggers() {
+    const { timeoutMs, signal } = this.config;
+    if (timeoutMs && timeoutMs > 0) {
+      this.killTimer = setTimeout(() => {
+        if (this.maxBufferExceeded || this.aborted) return;
+        this.timedOut = true;
+        this.ensureGroupEmpty();
+      }, timeoutMs);
+    }
+    if (signal) {
+      const onAbort = () => {
+        if (this.timedOut || this.maxBufferExceeded || this.aborted) return;
+        this.aborted = true;
+        if (this.killTimer) {
+          clearTimeout(this.killTimer);
+          this.killTimer = null;
+        }
+        this.ensureGroupEmpty();
+      };
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+    }
+  }
+}
+
 export async function execFileWithInput(
   file,
   args,
@@ -51,10 +253,8 @@ export async function execFileWithInput(
     ...options
   } = {},
 ) {
-  // Ground Control and its CI run on Linux; POSIX process groups are the
-  // supported tree-termination contract. Fail closed rather than silently
-  // degrade to a direct-child-only kill on a platform that can't provide it
-  // (issue #1518).
+  // Ground Control and its CI run on Linux; fail closed when the supported
+  // POSIX process-group termination contract is unavailable (issue #1518).
   if (!isPosixProcessGroupCapable()) {
     throw new Error(
       `execFileWithInput requires POSIX process-group support to bound ${file}'s subprocess tree; `
@@ -62,177 +262,14 @@ export async function execFileWithInput(
     );
   }
   return await new Promise((resolve, reject) => {
-    let timedOut = false;
-    let aborted = false;
-    let maxBufferExceeded = null;
-    let killTimer = null;
-    let settled = false;
-    let pendingCleanup = null;
-
-    const finish = (fn, value) => {
-      if (settled) return;
-      settled = true;
-      if (killTimer) clearTimeout(killTimer);
-      fn(value);
-    };
-
-    // Detached so child.pid is also its POSIX process-group id: signalling
-    // -pid reaches every subprocess the child spawns (e.g. a shell tool
-    // call), not just the direct child. A signal to the direct pid alone let
-    // a codex-spawned `ugrep` outlive its leader and run orphaned for 10+
-    // days once reparented to init (issue #1518).
-    const child = spawn(file, args, { ...options, detached: true });
-
-    // TERM the group, then SIGKILL anything still alive after the grace period,
-    // confirming the group is actually empty before resolving. Settlement awaits
-    // this (see the `close` handler) so a SIGTERM-ignoring descendant can't
-    // outlive a call that already resolved or rejected. Single-flight via
-    // `pendingCleanup`: concurrent triggers (timeout, abort, maxBuffer,
-    // leader-exit) collapse onto one in-flight escalation. The escalation itself
-    // is the shared terminateProcessGroup primitive (issue #1495).
-    const ensureGroupEmpty = () => {
-      if (pendingCleanup) return pendingCleanup;
-      if (!child.pid || !isProcessGroupAlive(child.pid)) return Promise.resolve();
-      pendingCleanup = terminateProcessGroup(child.pid, { killSignal, killGraceMs, label: file });
-      return pendingCleanup;
-    };
-
-    const stdoutChunks = [];
-    const stderrChunks = [];
-    let stdoutLen = 0;
-    let stderrLen = 0;
-    // Saturates currentLen to maxBuffer on overflow so every later chunk for
-    // this stream is dropped outright, instead of re-appending the same
-    // stale "remaining allowance" on every subsequent data event.
-    const trackChunk = (chunks, chunk, which, currentLen) => {
-      if (currentLen >= maxBuffer) return currentLen;
-      const length = Buffer.byteLength(chunk);
-      if (currentLen + length > maxBuffer) {
-        const allowed = maxBuffer - currentLen;
-        if (allowed > 0) chunks.push(chunk.slice(0, allowed));
-        if (!maxBufferExceeded) {
-          maxBufferExceeded = which;
-          ensureGroupEmpty();
-        }
-        return maxBuffer;
-      }
-      chunks.push(chunk);
-      return currentLen + length;
-    };
-
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdoutLen = trackChunk(stdoutChunks, chunk, "stdout", stdoutLen);
-    });
-    child.stderr.on("data", (chunk) => {
-      stderrLen = trackChunk(stderrChunks, chunk, "stderr", stderrLen);
-    });
-
-    child.on("error", (error) => {
-      finish(reject, error);
-    });
-
-    // `close` is documented to fire only after the child's stdio streams
-    // have closed, but that ordering guarantee is not airtight in practice —
-    // Node has long-standing reports of a fast-exiting child's buffered
-    // stdout being reported as fully consumed before every 'data' event for
-    // it has actually been delivered (nodejs/node#9633, #7184, #4236).
-    // Waiting on each stream's own `end` (or `error`, so a stream fault
-    // can't hang this call forever) makes "every byte the child wrote before
-    // exiting was read" an explicit, per-stream guarantee instead of an
-    // inference from the child's own close event.
-    let stdoutDone = false;
-    let stderrDone = false;
-    let closeResult = null;
-    const markStreamDone = (which) => {
-      if (which === "stdout") stdoutDone = true;
-      else stderrDone = true;
-      maybeFinalize();
-    };
-    child.stdout.on("end", () => markStreamDone("stdout"));
-    child.stdout.on("error", () => markStreamDone("stdout"));
-    child.stderr.on("end", () => markStreamDone("stderr"));
-    child.stderr.on("error", () => markStreamDone("stderr"));
-
-    function maybeFinalize() {
-      if (!closeResult || !stdoutDone || !stderrDone) return;
-      const { code, closeSignal } = closeResult;
-      // Await any in-flight group cleanup before settling — a straggler
-      // descendant must be confirmed gone (or given its full TERM-then-KILL
-      // treatment) before the caller sees a terminal result, not just before
-      // the leader's own stdio has drained.
-      Promise.resolve(pendingCleanup).then(() => {
-        const stdout = stdoutChunks.join("");
-        const stderr = stderrChunks.join("");
-        if (timedOut || aborted) {
-          const e = new Error(
-            timedOut
-              ? `${file} did not exit within ${timeoutMs}ms (sent ${killSignal}, then SIGKILL after ${killGraceMs}ms grace)`
-              : `${file} aborted via AbortSignal`,
-          );
-          e.code = timedOut ? "ETIMEDOUT" : "ABORT_ERR";
-          if (aborted && !timedOut) e.name = "AbortError";
-          e.killed = true;
-          e.stdout = stdout;
-          e.stderr = stderr;
-          finish(reject, e);
-          return;
-        }
-        if (maxBufferExceeded) {
-          const e = new Error(`${file} exceeded maxBuffer on ${maxBufferExceeded}`);
-          e.code = "ERR_CHILD_PROCESS_STDIO_MAXBUFFER";
-          e.stdout = stdout;
-          e.stderr = stderr;
-          finish(reject, e);
-          return;
-        }
-        if (code !== 0 || closeSignal !== null) {
-          const e = new Error(`Command failed: ${file} ${args.join(" ")}\n${stderr}`);
-          e.code = code;
-          e.signal = closeSignal;
-          e.stdout = stdout;
-          e.stderr = stderr;
-          finish(reject, e);
-          return;
-        }
-        finish(resolve, { stdout, stderr });
-      });
-    }
-
-    child.on("close", (code, closeSignal) => {
-      closeResult = { code, closeSignal };
-      maybeFinalize();
-    });
-
-    // The leader may exit while a background descendant it spawned (and did
-    // not wait on) is still running. `close` — which the handler above waits
-    // for — doesn't fire until every process sharing the child's stdio pipes
-    // exits, so a live straggler would otherwise hang this call forever.
-    // `exit` fires as soon as the leader itself terminates, independent of
-    // its descendants, which is what actually lets this reap them.
-    child.on("exit", () => {
-      ensureGroupEmpty();
-    });
-
-    if (timeoutMs && timeoutMs > 0) {
-      killTimer = setTimeout(() => {
-        timedOut = true;
-        ensureGroupEmpty();
-      }, timeoutMs);
-    }
-
-    if (signal) {
-      const onAbort = () => {
-        aborted = true;
-        ensureGroupEmpty();
-      };
-      if (signal.aborted) onAbort();
-      else signal.addEventListener("abort", onAbort, { once: true });
-    }
-
-    if (input != null) {
-      child.stdin.end(input);
-    }
+    new BufferedProcessExecution(file, args, {
+      input,
+      timeoutMs,
+      killSignal,
+      killGraceMs,
+      signal,
+      maxBuffer,
+      options,
+    }, resolve, reject).start();
   });
 }

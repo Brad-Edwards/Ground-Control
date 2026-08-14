@@ -185,15 +185,37 @@ Pick the next unblocked requirement from the work order and implement it. Ground
 1. **Fetch requirement** from Ground Control
 2. **Create GitHub issue** and link it via traceability
 3. **Checkout feature branch** via `gh issue develop --name <issue-number>-<short-slug>`. The `--name` argument is mandatory (skipping it lets `gh` auto-derive a slug from the full issue title, which produces 100+ character branch names that break terminal display, copy-paste, CI breadcrumbs, and downstream shell quoting). Total branch name ≤ 50 characters, ASCII-only. **Then validate the actual checked-out branch against the same rule**. `gh` reuses an existing branch if the issue was already picked up, so a previous pickup that ran before this rule existed hands the agent a non-compliant branch. The post-check compares against the *remote* base (`origin/<base>` after a fetch; local base can be stale) and renames in place only when no commits or PR exist; otherwise the agent applies the in-progress signal first (so a paused picked-up issue is still visibly flagged) then stops and escalates to the user. The post-check is the dispositive enforcement (the `--name` flag only governs first-time pickups). See `skills/implement/SKILL.md` Step 1 sub-step 11 for the slug-derivation rule, the validation predicate, and worked examples. Then **flag the issue in-progress**: apply an `in-progress` label (created on demand if the repo lacks it) and post a pickup comment on the thread (driver, branch, timestamp) so a maintainer scanning the issue list, or another agent, can see at a glance that the issue is in flight. The in-progress label removal is optional best-effort after Step 17 completion (#1103); it is no longer a mandatory step gate. The GitHub issue itself closes via `Closes #<issue-number>` in the PR body when the user merges. (The label intentionally stays put if a run escalates without finishing.)
-4. **Plan implementation**: posted as a comment on the GitHub issue thread per ADR-029. The workflow proceeds directly to TDD without a synchronous user-approval gate; the user owns review at PR merge.
-5. **Write code, tests, docs**: clause-by-clause verification against the requirement statement. TDD is mandatory except for the narrow documentation-only carve-out documented in `skills/implement/SKILL.md` Step 4.4 (no executable behavior in the diff + every clause/criterion protected by a named structural gate; declared in the plan and re-stated on the issue thread). The completion gate re-validates the carve-out with a two-check sweep over the union of committed and uncommitted paths (both the path set and the diff hunk content must be doc-only) because a path-only check can miss executable behavior buried in a doc file, and an HEAD-only check would miss uncommitted changes still in the working tree.
-6. **Transition to ACTIVE** once implemented and verified; the API enforces `IMPLEMENTS-only-on-ACTIVE`, so transition MUST happen before the link-creation step.
-7. **Create traceability links** (after the transition above):
+4. **Plan implementation**: posted as a comment on the GitHub issue thread per ADR-029. The workflow proceeds directly to TDD without a synchronous user-approval gate; the user owns review at PR merge. The plan assigns a TDD path to every clause or acceptance criterion; the issue-level feature/bug-fix/mixed intent is only a hint.
+5. **Write code, tests, docs**: clause-by-clause verification against the requirement statement under the four-path framework below. TDD is mandatory except for the narrow documentation-only carve-out documented in `skills/implement/steps/step-04.4-tdd.md` (no executable behavior in the diff + every clause/criterion protected by a named structural gate; declared in the plan and re-stated on the issue thread). The completion gate re-validates the carve-out with a two-check sweep over the union of committed and uncommitted paths (both the path set and the diff hunk content must be doc-only) because a path-only check can miss executable behavior buried in a doc file, and an HEAD-only check would miss uncommitted changes still in the working tree.
+6. **After the user merges, transition to ACTIVE** during Phase E; the merge gate keeps requirement state behind shipped code, and the transition happens before traceability reconciliation.
+7. **Reconcile traceability links** against the merged diff (after the transition above):
    - `IMPLEMENTS` → code files that satisfy the requirement. When the diff finalizes/documents a requirement whose structural implementation lives in pre-existing files (shipped under a sibling requirement), `IMPLEMENTS` links are backfilled onto those pre-existing artifacts of record, bounded by the requirement's concrete subject matter.
    - `TESTS` → test files that verify the requirement
    - `DOCUMENTS` → ADRs or design docs that explain the approach (also used for forward-looking requirements that the diff references but does not yet ship)
 
 Before you stop, run `make policy` alongside the feature-specific verification commands. This catches ADR drift, missing controller/MCP/doc parity, migration companion updates, and PR body omissions before review.
+
+#### Four TDD paths
+
+- **Path A: new requirement or feature.** Observe a focused test fail against
+  the missing behavior, implement the behavior, then refactor green.
+- **Path B: bug fix on shipped code.** Reproduce the reported defect with a
+  test on the unmodified buggy tree. The failure must be the bug, not broken
+  test wiring. Apply the repair only after that red state; if the defect cannot
+  be reproduced meaningfully, keep investigating.
+- **Path C: reviewer-finding fix.** An accepted executable or runtime-data
+  fix locks itself with proportionate regression evidence in the same review
+  cycle. The evidence names the test path and case and must fail when the
+  defect is reintroduced. The existing auto-decision record is posted before
+  the repair, so post-fix evidence belongs to self-verification rather than a
+  misleading pre-fix rationale.
+- **Path D: prose-only or static contract narrowing.** The existing
+  documentation-only carve-out may apply. Runtime configuration, schemas,
+  grammars, fixtures, policy data, and executable renames remain executable
+  surfaces even when stored in documentation-like files.
+
+Mixed issues choose a path per clause. A heuristic issue-intent classification
+never waives the plan's clause-level discipline.
 
 ### Record Architectural Decisions
 

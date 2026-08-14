@@ -4,7 +4,7 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileWithInput } from "./lib/runtime-primitives.js";
@@ -192,6 +192,49 @@ describe("execFileWithInput — process-tree cleanup (issue #1518)", () => {
         return true;
       },
     );
+  });
+
+  it("keeps maxBuffer as the terminal cause when a later abort arrives during cleanup", { timeout: 10000 }, async () => {
+    const dir = mkdtempSync(join(tmpdir(), "gc-exec-cause-"));
+    const markerFile = join(dir, "wrote-past-cap");
+    const releaseFile = join(dir, "release");
+    const controller = new AbortController();
+    // The child must fill more than a pipe buffer before writing the marker,
+    // which proves Node drained enough stdout to trip maxBuffer. It then waits
+    // with SIGTERM ignored so a caller abort can deterministically race the
+    // already-active cleanup without relying on scheduler-sensitive timers.
+    const script = [
+      "trap '' TERM",
+      "for ((i=0; i<4096; i++)); do printf 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'; done",
+      ": > \"$1\"",
+      "while [ ! -e \"$2\" ]; do :; done",
+    ].join("; ");
+    try {
+      const rejection = assert.rejects(
+        execFileWithInput("bash", ["-c", script, "_", markerFile, releaseFile], {
+          signal: controller.signal,
+          killGraceMs: 5000,
+          maxBuffer: 32,
+        }),
+        (err) => err.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER",
+      );
+      const wrotePastCap = await waitUntil(() => {
+        try {
+          readFileSync(markerFile);
+          return true;
+        } catch {
+          return false;
+        }
+      }, { timeoutMs: 5000 });
+      controller.abort();
+      writeFileSync(releaseFile, "");
+      assert.equal(wrotePastCap, true, "child never proved it wrote beyond maxBuffer");
+      await rejection;
+    } finally {
+      controller.abort();
+      writeFileSync(releaseFile, "");
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   // Regression guard for issue #1521's CI investigation: Node's `close`

@@ -17,12 +17,7 @@ import { checkPrBodyShape, execFile, execFileWithInput, reviewEngineEnv } from "
 import { TEST_QUALITY_REVIEW_FINDINGS_SCHEMA } from "./test-quality-prompt.js";
 import { ReviewerCapConfigError } from "./test-quality-runner.js";
 
-export async function runCreateSynchronizedImplementPr(input, {
-  workspaceAuthorizationResolver = resolveMcpLaunchWorkspaceAuthorization,
-  commandRunner = execFile,
-  contextResolver = getRepoGroundControlContext,
-  syncRecordReader = readTrustedImplementSyncRecord,
-} = {}) {
+function validateSynchronizedImplementPrInput(input) {
   if (
     input == null
     || !Number.isInteger(input.issueNumber)
@@ -45,14 +40,189 @@ export async function runCreateSynchronizedImplementPr(input, {
       message: "body must satisfy the canonical Ground Control PR-body shape",
     };
   }
-  const sensitiveError = detectSensitiveBodyContent(input.body);
-  if (sensitiveError) {
-    return { ok: false, error: "implement_pr_body_rejected", message: sensitiveError };
+  const bodyError = detectSensitiveBodyContent(input.body)
+    ?? rejectReservedMarkerSequence(input.body, "body");
+  if (bodyError) {
+    return { ok: false, error: "implement_pr_body_rejected", message: bodyError };
   }
-  const reservedError = rejectReservedMarkerSequence(input.body, "body");
-  if (reservedError) {
-    return { ok: false, error: "implement_pr_body_rejected", message: reservedError };
+  return { ok: true };
+}
+
+async function findExistingSynchronizedImplementPr({
+  repoRoot,
+  repoAuthorization,
+  baseBranch,
+  input,
+  localSha,
+  commandRunner,
+}) {
+  const repoSlug = `${repoAuthorization.owner}/${repoAuthorization.name}`;
+  try {
+    const { stdout } = await commandRunner(
+      "gh",
+      [
+        "pr", "list",
+        "--repo", repoSlug,
+        "--state", "open",
+        // Same-repository PR lookup takes a branch, not owner:branch. The
+        // repository remains pinned by --repo and the identity check below.
+        "--head", input.branchName,
+        "--json",
+        "number,url,baseRefName,headRefName,headRefOid,headRepository,headRepositoryOwner,isCrossRepository,title,body",
+        "--limit", "2",
+      ],
+      { cwd: repoRoot },
+    );
+    const existing = JSON.parse(stdout);
+    if (!Array.isArray(existing) || existing.length > 1) {
+      return {
+        ok: false,
+        error: "implement_pr_existing_ambiguous",
+        message: "The synchronized feature branch must have at most one open pull request",
+        next_action: "inspect_the_existing_prs_without_bypassing_the_sync_gate",
+      };
+    }
+    if (existing.length === 0) return { ok: true, candidate: null, repoSlug };
+    const validation = validateExistingSynchronizedImplementPr(existing[0], {
+      owner: repoAuthorization.owner,
+      name: repoAuthorization.name,
+      baseBranch,
+      branchName: input.branchName,
+      featureSha: localSha,
+      title: input.title,
+      body: input.body,
+    });
+    if (!validation.ok) return validation;
+    return { ok: true, candidate: existing[0], repoSlug };
+  } catch (error) {
+    return {
+      ok: false,
+      error: "implement_pr_existing_lookup_failed",
+      message: extractGhErrorMessage(error),
+      next_action: "repair_the_repository_scoped_pr_lookup_and_retry",
+    };
   }
+}
+
+async function validateImplementSynchronization({
+  repoRoot,
+  repoAuthorization,
+  baseBranch,
+  input,
+  commandRunner,
+  syncRecordReader,
+}) {
+  await assertSafeImplementCheckoutConfiguration(repoRoot);
+  const checkout = await assertImplementSyncCheckout({
+    repoRoot,
+    issueNumber: input.issueNumber,
+    branchName: input.branchName,
+    commandRunner,
+  });
+  if (!checkout.ok) return checkout;
+  const trusted = await syncRecordReader(
+    repoRoot,
+    repoAuthorization.owner,
+    repoAuthorization.name,
+    input.issueNumber,
+    input.recordId,
+  );
+  if (!trusted.ok) {
+    return { ...trusted, next_action: "return_to_the_synchronization_boundary" };
+  }
+  const record = trusted.record;
+  if (
+    record.issueNumber !== input.issueNumber
+    || record.branchName !== input.branchName
+    || record.baseBranch !== baseBranch
+    || record.remoteRef !== `refs/remotes/origin/${baseBranch}`
+  ) {
+    return {
+      ok: false,
+      error: "implement_pr_sync_record_identity_mismatch",
+      message: "The synchronization record does not belong to this issue, branch, or configured base",
+      next_action: "return_to_the_synchronization_boundary",
+    };
+  }
+  const { fetchedBaseSha } = await fetchImplementBase(repoRoot, baseBranch, commandRunner);
+  const localSha = await readImplementGitOid(repoRoot, "HEAD", commandRunner);
+  const localTreeSha = await readImplementTreeOid(repoRoot, "HEAD", commandRunner);
+  const remoteSha = await readRemoteImplementBranchSha(repoRoot, input.branchName, commandRunner);
+  const current = fetchedBaseSha === record.fetchedBaseSha
+    && localSha === record.resultingFeatureSha
+    && localTreeSha === record.verifiedTreeSha
+    && remoteSha === record.resultingFeatureSha
+    && await isImplementAncestor(
+      repoRoot,
+      record.fetchedBaseSha,
+      record.resultingFeatureSha,
+      commandRunner,
+    );
+  if (!current) {
+    return {
+      ok: false,
+      error: "implement_pr_sync_stale",
+      message: "The base or feature branch changed after synchronization",
+      next_action: "return_to_the_synchronization_boundary",
+    };
+  }
+  return { ok: true, record, fetchedBaseSha, localSha };
+}
+
+async function createSynchronizedImplementPr({
+  repoRoot,
+  repoAuthorization,
+  repoSlug,
+  baseBranch,
+  input,
+  record,
+  fetchedBaseSha,
+  localSha,
+  commandRunner,
+}) {
+  const { stdout } = await commandRunner(
+    "gh",
+    [
+      "pr", "create",
+      "--repo", repoSlug,
+      "--base", baseBranch,
+      "--head", input.branchName,
+      "--title", input.title,
+      "--body", input.body,
+    ],
+    { cwd: repoRoot },
+  );
+  const prUrl = stdout.trim();
+  const expectedUrlPrefix =
+    `https://github.com/${repoAuthorization.owner}/${repoAuthorization.name}/pull/`.toLowerCase();
+  if (!prUrl.toLowerCase().startsWith(expectedUrlPrefix)) {
+    return {
+      ok: false,
+      error: "implement_pr_created_repository_mismatch",
+      message: "GitHub returned a PR outside the authorized repository",
+      next_action: "inspect_the_repository_scoped_pr_write",
+    };
+  }
+  const numberMatch = /\/pull\/(\d+)(?:\D|$)/.exec(prUrl);
+  return {
+    ok: true,
+    already_exists: false,
+    pr_number: numberMatch == null ? null : Number.parseInt(numberMatch[1], 10),
+    pr_url: prUrl,
+    synchronization_record_id: record.recordId,
+    fetched_base_sha: fetchedBaseSha,
+    feature_sha: localSha,
+  };
+}
+
+export async function runCreateSynchronizedImplementPr(input, {
+  workspaceAuthorizationResolver = resolveMcpLaunchWorkspaceAuthorization,
+  commandRunner = execFile,
+  contextResolver = getRepoGroundControlContext,
+  syncRecordReader = readTrustedImplementSyncRecord,
+} = {}) {
+  const inputValidation = validateSynchronizedImplementPrInput(input);
+  if (!inputValidation.ok) return inputValidation;
   let repoRoot;
   let context;
   try {
@@ -85,145 +255,46 @@ export async function runCreateSynchronizedImplementPr(input, {
     };
   }
   try {
-    await assertSafeImplementCheckoutConfiguration(repoRoot);
-    const checkout = await assertImplementSyncCheckout({
+    const synchronization = await validateImplementSynchronization({
       repoRoot,
-      issueNumber: input.issueNumber,
-      branchName: input.branchName,
+      repoAuthorization,
+      baseBranch,
+      input,
+      commandRunner,
+      syncRecordReader,
+    });
+    if (!synchronization.ok) return synchronization;
+    const { record, fetchedBaseSha, localSha } = synchronization;
+    const existingLookup = await findExistingSynchronizedImplementPr({
+      repoRoot,
+      repoAuthorization,
+      baseBranch,
+      input,
+      localSha,
       commandRunner,
     });
-    if (!checkout.ok) return checkout;
-    const trusted = await syncRecordReader(
+    if (!existingLookup.ok) return existingLookup;
+    if (existingLookup.candidate) {
+      return {
+        ok: true,
+        already_exists: true,
+        pr_number: existingLookup.candidate.number,
+        pr_url: existingLookup.candidate.url,
+        synchronization_record_id: record.recordId,
+      };
+    }
+    const { repoSlug } = existingLookup;
+    return await createSynchronizedImplementPr({
       repoRoot,
-      repoAuthorization.owner,
-      repoAuthorization.name,
-      input.issueNumber,
-      input.recordId,
-    );
-    if (!trusted.ok) {
-      return { ...trusted, next_action: "return_to_the_synchronization_boundary" };
-    }
-    const record = trusted.record;
-    if (
-      record.issueNumber !== input.issueNumber
-      || record.branchName !== input.branchName
-      || record.baseBranch !== baseBranch
-      || record.remoteRef !== `refs/remotes/origin/${baseBranch}`
-    ) {
-      return {
-        ok: false,
-        error: "implement_pr_sync_record_identity_mismatch",
-        message: "The synchronization record does not belong to this issue, branch, or configured base",
-        next_action: "return_to_the_synchronization_boundary",
-      };
-    }
-    const { fetchedBaseSha } = await fetchImplementBase(repoRoot, baseBranch, commandRunner);
-    const localSha = await readImplementGitOid(repoRoot, "HEAD", commandRunner);
-    const localTreeSha = await readImplementTreeOid(repoRoot, "HEAD", commandRunner);
-    const remoteSha = await readRemoteImplementBranchSha(repoRoot, input.branchName, commandRunner);
-    if (
-      fetchedBaseSha !== record.fetchedBaseSha
-      || localSha !== record.resultingFeatureSha
-      || localTreeSha !== record.verifiedTreeSha
-      || remoteSha !== record.resultingFeatureSha
-      || !await isImplementAncestor(
-        repoRoot,
-        record.fetchedBaseSha,
-        record.resultingFeatureSha,
-        commandRunner,
-      )
-    ) {
-      return {
-        ok: false,
-        error: "implement_pr_sync_stale",
-        message: "The base or feature branch changed after synchronization",
-        next_action: "return_to_the_synchronization_boundary",
-      };
-    }
-    const repoSlug = `${repoAuthorization.owner}/${repoAuthorization.name}`;
-    try {
-      const { stdout } = await commandRunner(
-        "gh",
-        [
-          "pr", "list",
-          "--repo", repoSlug,
-          "--state", "open",
-          "--head", `${repoAuthorization.owner}:${input.branchName}`,
-          "--json",
-          "number,url,baseRefName,headRefName,headRefOid,headRepository,headRepositoryOwner,isCrossRepository,title,body",
-          "--limit", "2",
-        ],
-        { cwd: repoRoot },
-      );
-      const existing = JSON.parse(stdout);
-      if (!Array.isArray(existing) || existing.length > 1) {
-        return {
-          ok: false,
-          error: "implement_pr_existing_ambiguous",
-          message: "The synchronized feature branch must have at most one open pull request",
-          next_action: "inspect_the_existing_prs_without_bypassing_the_sync_gate",
-        };
-      }
-      if (existing.length === 1) {
-        const validation = validateExistingSynchronizedImplementPr(existing[0], {
-          owner: repoAuthorization.owner,
-          name: repoAuthorization.name,
-          baseBranch,
-          branchName: input.branchName,
-          featureSha: localSha,
-          title: input.title,
-          body: input.body,
-        });
-        if (!validation.ok) return validation;
-        return {
-          ok: true,
-          already_exists: true,
-          pr_number: existing[0].number,
-          pr_url: existing[0].url,
-          synchronization_record_id: record.recordId,
-        };
-      }
-    } catch (error) {
-      return {
-        ok: false,
-        error: "implement_pr_existing_lookup_failed",
-        message: extractGhErrorMessage(error),
-        next_action: "repair_the_repository_scoped_pr_lookup_and_retry",
-      };
-    }
-    const { stdout } = await commandRunner(
-      "gh",
-      [
-        "pr", "create",
-        "--repo", repoSlug,
-        "--base", baseBranch,
-        "--head", input.branchName,
-        "--title", input.title,
-        "--body", input.body,
-      ],
-      { cwd: repoRoot },
-    );
-    const prUrl = stdout.trim();
-    const expectedUrlPrefix =
-      `https://github.com/${repoAuthorization.owner}/${repoAuthorization.name}/pull/`.toLowerCase();
-    if (!prUrl.toLowerCase().startsWith(expectedUrlPrefix)) {
-      return {
-        ok: false,
-        error: "implement_pr_created_repository_mismatch",
-        message: "GitHub returned a PR outside the authorized repository",
-        next_action: "inspect_the_repository_scoped_pr_write",
-      };
-    }
-    const numberMatch = /\/pull\/(\d+)(?:\D|$)/.exec(prUrl);
-    return {
-      ok: true,
-      already_exists: false,
-      pr_number: numberMatch == null ? null : Number.parseInt(numberMatch[1], 10),
-      pr_url: prUrl,
-      synchronization_record_id: record.recordId,
-      fetched_base_sha: fetchedBaseSha,
-      feature_sha: localSha,
-    };
+      repoAuthorization,
+      repoSlug,
+      baseBranch,
+      input,
+      record,
+      fetchedBaseSha,
+      localSha,
+      commandRunner,
+    });
   } catch (error) {
     return {
       ok: false,

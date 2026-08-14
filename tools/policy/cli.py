@@ -10,19 +10,14 @@ every name described a neighbour's contents. The modules are named for what they
 
 from __future__ import annotations
 import argparse
-import fnmatch
-import hashlib
 import json
 import os
-import posixpath
-import re
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
 from .file_size import run_file_size_limit_check
+from .ci_strictness import run_sonar_strictness_contract
 from .workflow_contracts import run_doc_coverage_anchor_contract, run_scan_floor_contract
 from .adr_guard import (
     read_changed_files,
@@ -62,6 +57,7 @@ from .requirement_specs import (
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run all repository policy checks and render their violations."""
     started = time.monotonic()
     args = parse_args(argv or sys.argv[1:])
     explicit_files = args.files if args.files is not None else args.paths
@@ -89,6 +85,7 @@ def main(argv: list[str] | None = None) -> int:
     violations.extend(run_test_quality_decision_record_contract())
     violations.extend(run_scan_floor_contract())
     violations.extend(run_doc_coverage_anchor_contract())
+    violations.extend(run_sonar_strictness_contract())
     violations.extend(run_file_size_limit_check())
     violations.extend(run_requirement_specs_frontmatter_check())
 
@@ -124,17 +121,20 @@ def _resolve_pr_refs(args: argparse.Namespace) -> tuple[str | None, str | None]:
     be determined (e.g. the local pre-push driver), so the body contract applies
     by default — only a positively-identified release PR is exempted.
     """
+    refs: tuple[str | None, str | None] = (None, None)
     event_path = args.event_path or os.getenv("GITHUB_EVENT_PATH")
     if event_path:
         try:
             event = json.loads(Path(event_path).read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
-            return None, None
-        pull_request = event.get("pull_request") or {}
-        base = (pull_request.get("base") or {}).get("ref")
-        head = (pull_request.get("head") or {}).get("ref")
-        return base, head
-    if args.pr_number is not None:
+            pass
+        else:
+            pull_request = event.get("pull_request") or {}
+            refs = (
+                (pull_request.get("base") or {}).get("ref"),
+                (pull_request.get("head") or {}).get("ref"),
+            )
+    elif args.pr_number is not None:
         try:
             result = subprocess.run(
                 ["gh", "pr", "view", str(args.pr_number), "--json", "baseRefName,headRefName"],
@@ -143,10 +143,10 @@ def _resolve_pr_refs(args: argparse.Namespace) -> tuple[str | None, str | None]:
                 text=True,
             )
             data = json.loads(result.stdout)
-            return data.get("baseRefName"), data.get("headRefName")
+            refs = data.get("baseRefName"), data.get("headRefName")
         except (subprocess.CalledProcessError, json.JSONDecodeError):
-            return None, None
-    return None, None
+            pass
+    return refs
 
 
 def _is_release_pr(base_ref: str | None, head_ref: str | None) -> bool:

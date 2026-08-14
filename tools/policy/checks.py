@@ -1,198 +1,63 @@
-"""Repo-native policy checks — entry point.
+"""Compatibility barrel for repository policy checks.
 
-The implementations live in sibling modules, split from a single 5,679-line file (issue #1355)
-that violated the repo's 500-LOC limit. This module re-exports the full surface so every
-existing `from tools.policy.checks import ...` keeps working and the CLI is unchanged.
-
-Add a new check to the module that owns its concern, then re-export it here.
+Policy implementations live in focused sibling modules. Attribute lookup keeps
+the historical ``tools.policy.checks`` import surface without a 169-name set of
+static re-export imports that analyzers correctly treat as unused locally.
 """
 
-from .core import (  # noqa: F401
-    require_scanned,
-    ADR_POLICY_PATH,
-    BRANCH_PROTECTION_BASELINE_PATH,
-    CI_PRE_COMMIT_HOOKS,
-    CI_STRICTNESS_BRANCHES,
-    CI_STRICTNESS_REQUIRED_CONTEXTS,
-    CI_WORKFLOW_PATH,
-    CODEOWNERS_PATH,
-    COMPOSE_ENV_INHERIT_FORM_RE,
-    COMPOSE_ENV_KEY_RE,
-    CONTRACT_REQUIRED_PATHS,
-    CONTROLLER_PATH_RE,
-    DEFERRAL_CASES_PATH,
-    DEPLOY_COMPOSE_PROD_PATH,
-    DESIGN_AUTHORITY_APPROVAL_DATA_RE,
-    DESIGN_AUTHORITY_APPROVAL_MARKER_PREFIX,
-    DESIGN_AUTHORITY_APPROVAL_MARKER_RE,
-    DESIGN_AUTHORITY_APPROVAL_SCHEMA_VERSION,
-    EXACT_REQUIREMENT_UID_RE,
-    FRONTEND_CONTRACT_SHIM_PATH,
-    GENERATED_CONTRACT_EXPORT,
-    GROUND_CONTROL_YAML_PATH,
-    HTML_ATTR_RE,
-    IMPLEMENTATION_PATH_SELECTORS,
-    MIGRATION_PATH_RE,
-    MODULE_GRAPH_EDGE_KEYS,
-    MODULE_GRAPH_IMPORT_RE,
-    MODULE_GRAPH_LOCK_LEVELS,
-    MODULE_GRAPH_MAX_RISK_SCORE,
-    MODULE_GRAPH_MODULE_KEYS,
-    MODULE_GRAPH_REQUIRED_MODULE_KEYS,
-    MODULE_GRAPH_SCANNED_SURFACES,
-    MODULE_GRAPH_SCAN_GLOBS,
-    MODULE_GRAPH_SURFACES,
-    PRE_COMMIT_CONFIG_PATH,
-    REPO_ROOT,
-    REQUIRED_ADR026_ALLOWLIST_SLOT_COUNT,
-    REQUIRED_ADR026_ALWAYS_SET_KEYS,
-    REQUIRED_ADR026_BACKEND_ENV_KEYS,
-    REQUIRED_ADR026_CREDENTIAL_SLOT_COUNT,
-    REQUIRED_ADR026_INHERIT_ONLY_KEYS,
-    REQUIREMENT_FREE_MARKER_RE,
-    RefUnreadableError,
-    SKIPPED_TEST_ADDITION_RE,
-    SONAR_NEW_ISSUE_GATE_PATH,
-    Violation,
-    _DEFERRAL_BARE_WORD_HISTORICAL_AFTER_RE,
-    _DEFERRAL_BARE_WORD_RE,
-    _DEFERRAL_DENIAL_GUIDANCE,
-    _DEFERRAL_NEGATION_BEFORE_RE,
-    _DEFERRAL_TIER1_PATTERNS,
-    _DEFERRAL_TIER1_RES,
-    _DEFERRAL_TIER2_PATTERNS,
-    _DEFERRAL_TIER2_RES,
-    _DEFERRAL_TIER2_SURFACES,
-    _required_adr026_backend_env_keys,
-    classify_deferral_language,
-    extract_requirement_uid_tokens,
-    extract_requirement_uids_section,
-    normalize_path,
-    run_no_deferral_disposition_check,
+from . import adr_guard
+from . import authz_matrix
+from . import ci_strictness
+from . import cli
+from . import cli_safety
+from . import core
+from . import decision_records
+from . import execution_contract
+from . import file_size
+from . import repo_identity
+from . import requirement_specs
+from . import version_mirror
+from . import workflow_routing
+from . import workflow_contracts
+
+
+_EXPORT_MODULES = (
+    core,
+    cli_safety,
+    file_size,
+    ci_strictness,
+    adr_guard,
+    version_mirror,
+    requirement_specs,
+    repo_identity,
+    authz_matrix,
+    decision_records,
+    workflow_routing,
+    execution_contract,
+    workflow_contracts,
+    cli,
 )
-from .cli_safety import (  # noqa: F401
-    safe_cli_path,
-    validate_git_ref,
+
+__all__ = sorted(
+    {
+        name
+        for module in _EXPORT_MODULES
+        for name in vars(module)
+        if not name.startswith("_")
+    }
 )
-from .file_size import (  # noqa: F401
-    MAX_LINES,
-    run_file_size_limit_check,
-)
-from .adr_guard import (  # noqa: F401
-    _trigger_is_in_scope,
-    changed_lines_for,
-    filter_matches,
-    get_repo_relative_files,
-    load_json,
-    matches_any,
-    merge_base_or,
-    read_changed_files,
-    run_adr_guard,
-    run_git,
-)
-from .version_mirror import (  # noqa: F401
-    RELEASE_PLEASE_CONFIG,
-    RELEASE_PLEASE_MANIFEST,
-    RELEASE_PLEASE_ROOT_PACKAGE,
-    _DOCUMENTATION_COVERAGE_FIXTURE,
-    _DOCUMENTATION_SECTION_RE,
-    _GENERIC_VERSION_ANNOTATION,
-    _QUOTED_VERSION_RE,
-    _extract_generic_version,
-    _extract_json_version,
-    _jsonpath_keys,
-    run_documentation_coverage_check,
-    run_version_mirror_consistency_check,
-)
-from .requirement_specs import (  # noqa: F401
-    FRONTMATTER_CODE,
-    PRIORITY_VALUES,
-    REQUIREMENT_SPECS_DIR,
-    STATUS_VALUES,
-    TYPE_VALUES,
-    run_requirement_specs_frontmatter_check,
-)
-from .repo_identity import (  # noqa: F401
-    BACKEND_JAVA_GLOB,
-    CANONICAL_REPO_OWNER,
-    CANONICAL_REPO_SLUG,
-    COMPOSE_ENVIRONMENT_KEY_RE,
-    COMPOSE_INHERIT_RE,
-    COMPOSE_VAR_REF_RE,
-    DEPLOY_CANONICAL_ARTIFACTS,
-    DEPLOY_DEAD_WRAPPER_PATH,
-    DEPLOY_DOCKER_DIR,
-    DEPLOY_WRAPPER_PATH,
-    ENV_TEMPLATE_ASSIGNMENT_RE,
-    ENV_TEMPLATE_CONTRACTS,
-    EnvTemplateContract,
-    JS_COMMENT_RE,
-    JS_STRING_RE,
-    REPO_IDENTITY_INVENTORY,
-    SHELL_ENV_LOOKUP_RE,
-    SHELL_EXPANSION_RE,
-    SHELL_INLINE_COMMENT_RE,
-    SHELL_SINGLE_QUOTED_RE,
-    SPRING_CLASS_RE,
-    SPRING_COLLECTION_RE,
-    SPRING_FIELD_RE,
-    SPRING_PLACEHOLDER_RE,
-    SPRING_PREFIX_RE,
-    STALE_REPO_OWNERS,
-    SpringBindingIndex,
-    SpringField,
-    YAML_TRAILING_COMMENT_RE,
-    _REPO_IDENTITY_ASSIGN_RE,
-    _REPO_IDENTITY_CONFIG_FILES,
-    _REPO_IDENTITY_SLUG_RE,
-    _REPO_IDENTITY_URL_RE,
-    _STALE_OWNER_RE,
-    _camel_to_env,
-    _code_lines,
-    _compose_consumed_names,
-    _env_template_keys,
-    _node_env_consumed_names,
-    _parse_env_schema,
-    _shell_consumed_names,
-    _yaml_placeholder_consumed_names,
-    run_repo_identity_drift,
-)
-from .authz_matrix import (  # noqa: F401
-    IMPLEMENT_SKILL_PATH,
-    IMPLEMENT_STEP_TEST_QUALITY_PATH,
-    _STEP_HEADING_RE,
-    check_pr_body,
-    extract_step_section,
-    run_pr_body_check,
-)
-from .decision_records import (  # noqa: F401
-    IMPLEMENT_STEP_17_PATH,
-    IMPLEMENT_STEP_20_PATH,
-    run_test_quality_decision_record_contract,
-)
-from .workflow_routing import (  # noqa: F401
-    parse_args,
-    render_and_exit,
-    run_workflow_routing_contract,
-    write_violations_json,
-)
-from .execution_contract import (  # noqa: F401
-    MCP_LIB_DIR,
-    MCP_LIB_PATH,
-    RELEASE_PLEASE_PR_HEAD_PREFIX,
-    RELEASE_PR_BASE,
-    RELEASE_PR_HEAD,
-    SYNC_PR_BASE,
-    SYNC_PR_HEAD,
-    _resolve_pr_body,
-    read_mcp_library,
-    read_mcp_registrations,
-    run_implement_execution_contract,
-)
-from .cli import (  # noqa: F401
-    run_doc_coverage_anchor_contract,
-    run_scan_floor_contract,
-    _is_release_pr,
-    _resolve_pr_refs,
-    main,
-)
+
+
+def __getattr__(name: str) -> object:
+    """Resolve a historical barrel export from its focused owner module."""
+    for module in _EXPORT_MODULES:
+        try:
+            return getattr(module, name)
+        except AttributeError:
+            continue
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    """Expose the compatibility surface to introspection and IDE tooling."""
+    return sorted({*globals(), *(__all__)})
