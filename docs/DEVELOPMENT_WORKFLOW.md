@@ -415,7 +415,13 @@ The guard is a pre-execution *lexical* policy control, not an OS sandbox. It pro
   (`measurement-catalogue-routing-stage-drift`). Adding a station or an alias is a
   catalogue edit; a breaking station-id or vocabulary change is a new schema version
   under ADR-082, never an in-place edit of a published one.
-- `make policy` is the common path for Claude, Codex, and CI
+- `make policy` is the common path for Claude, Codex, and CI; it runs the policy
+  tool tests, the MCP ESLint gate (`make mcp-lint`), `bin/policy`, and Vale. The CI
+  `policy` job runs the same `make mcp-lint` target as a required step, so an ESLint
+  error on the MCP server fails a required check (issue #255). `make mcp-lint`
+  delegates to the package-owned `npm --prefix mcp/ground-control run lint`, keeping
+  one canonical invocation; the current baseline reports advisory
+  `eslint-plugin-security` warnings and no errors
 - `make sync-ground-control-policy` and `make policy-live` keep Ground Control quality gates and ADR metadata aligned when a live GC instance is available
 
 Commit-time pre-commit activation is a separate per-clone contract from the

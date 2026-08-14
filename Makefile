@@ -1,4 +1,4 @@
-.PHONY: ground-control-mcp-install mcp-test graphify vale-install vale-lint \
+.PHONY: ground-control-mcp-install mcp-test mcp-lint graphify vale-install vale-lint \
        policy policy-tests hooks devmain ci-timings help
 
 # Ground Control is the MCP server for the /implement workflow over repo-local
@@ -13,6 +13,9 @@ ground-control-mcp-install: ## Install dependencies for the repo-local Ground Co
 
 mcp-test: ## Run the MCP server node test suite (primary test gate)
 	npm --prefix mcp/ground-control test
+
+mcp-lint: ## Run ESLint on the Ground Control MCP server (repo-native lint gate)
+	npm --prefix mcp/ground-control run lint
 
 # --- Comprehension index (opt-in) ---
 
@@ -48,7 +51,7 @@ vale-lint: vale-install ## Run Vale on .md docs changed vs BASE_REF, incl. uncom
 policy-tests: ## Run unit tests for repo policy tooling
 	python3 -m unittest discover -s tools/tests -p 'test_*.py'
 
-policy: policy-tests vale-lint ## Run repo-native policy checks shared by Claude and Codex
+policy: policy-tests mcp-lint vale-lint ## Run repo-native policy checks shared by Claude and Codex
 	@BASE_REF="$${BASE_REF:-origin/dev}"; \
 	python3 bin/policy --base "$$BASE_REF" --skip-pr-body $${GC_POLICY_JSON:+--json "$$GC_POLICY_JSON"}
 
