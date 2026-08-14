@@ -148,7 +148,11 @@ export async function runCreateSynchronizedImplementPr(input, {
           "pr", "list",
           "--repo", repoSlug,
           "--state", "open",
-          "--head", `${repoAuthorization.owner}:${input.branchName}`,
+          // `gh pr list --head` accepts the branch name for a same-repository
+          // PR; owner:branch produces an empty result and makes the later
+          // create attempt collide with the existing PR. Repository identity
+          // remains pinned by --repo and by the candidate validation below.
+          "--head", input.branchName,
           "--json",
           "number,url,baseRefName,headRefName,headRefOid,headRepository,headRepositoryOwner,isCrossRepository,title,body",
           "--limit", "2",
