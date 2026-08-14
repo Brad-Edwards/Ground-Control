@@ -29,6 +29,32 @@ MCP_LIB_PATH = "mcp/ground-control/lib.js"
 MCP_LIB_DIR = "mcp/ground-control/lib"
 
 
+STEP1_PATH = "skills/implement/steps/step-01-issue-branch-resolution.md"
+
+
+STEP9_PATH = "skills/implement/steps/step-09-pr-body.md"
+
+
+def _missing_token_violations(
+    surface: str,
+    tokens: tuple[str, ...],
+    code: str,
+    message: str,
+    detail_prefix: str = "missing token",
+) -> list[Violation]:
+    """Return one violation describing every required token absent from a surface."""
+    missing = [token for token in tokens if token not in surface]
+    if not missing:
+        return []
+    return [
+        Violation(
+            code=code,
+            message=message,
+            details=[f"{detail_prefix}: {token}" for token in missing],
+        )
+    ]
+
+
 def read_mcp_library(root: Path = REPO_ROOT) -> str | None:
     """The MCP shared library's full source, barrel plus every extracted module.
 
@@ -73,11 +99,11 @@ def _check_core_implement_contract(root: Path) -> list[Violation]:
     paths = {
         "skill": root / "skills/implement/SKILL.md",
         "principles": root / "skills/implement/_development-principles.md",
-        "step1": root / "skills/implement/steps/step-01-issue-branch-resolution.md",
+        "step1": root / STEP1_PATH,
         "step4": root / "skills/implement/steps/step-04-planning.md",
         "step4_4": root / "skills/implement/steps/step-04.4-tdd.md",
         "step8_5": root / "skills/implement/steps/step-08.5-sync-base.md",
-        "step9": root / "skills/implement/steps/step-09-pr-body.md",
+        "step9": root / STEP9_PATH,
         "completion": root / "skills/implement/steps/step-17-completion.md",
         "cursor": root / ".cursor/skills/implement/SKILL.md",
         "mcp_lib": root / "mcp/ground-control/lib.js",
@@ -115,15 +141,14 @@ def _check_core_implement_contract(root: Path) -> list[Violation]:
         '"checkout_mode": "same_checkout"',
         "Ground Control does not manufacture subagents",
     )
-    missing_tokens = [token for token in required_skill_tokens if token not in skill]
-    if missing_tokens:
-        violations.append(
-            Violation(
-                code="implement-contract-propagation",
-                message="Primary-session execution-contract propagation is incomplete.",
-                details=[f"missing token: {token}" for token in missing_tokens],
-            )
+    violations.extend(
+        _missing_token_violations(
+            skill,
+            required_skill_tokens,
+            "implement-contract-propagation",
+            "Primary-session execution-contract propagation is incomplete.",
         )
+    )
 
     pause_tokens = (
         "explicit workflow gate",
@@ -135,15 +160,14 @@ def _check_core_implement_contract(root: Path) -> list[Violation]:
         "enforced cycle cap",
         "Work size, difficulty,",
     )
-    missing_pauses = [token for token in pause_tokens if token not in principles_flat]
-    if missing_pauses:
-        violations.append(
-            Violation(
-                code="implement-pause-contract",
-                message="The development principles do not carry the closed pause-class contract.",
-                details=[f"missing token: {token}" for token in missing_pauses],
-            )
+    violations.extend(
+        _missing_token_violations(
+            principles_flat,
+            pause_tokens,
+            "implement-pause-contract",
+            "The development principles do not carry the closed pause-class contract.",
         )
+    )
 
     verification_tokens = (
         "Make local verification proportionate to risk",
@@ -154,17 +178,14 @@ def _check_core_implement_contract(root: Path) -> list[Violation]:
         "repository-wide completion and policy suites once",
         "mandatory pre-commit, completion, review, CI, Sonar, or final",
     )
-    missing_verification = [
-        token for token in verification_tokens if token not in principles_flat
-    ]
-    if missing_verification:
-        violations.append(
-            Violation(
-                code="implement-proportionate-verification-contract",
-                message="The development principles do not enforce risk-proportionate verification.",
-                details=[f"missing token: {token}" for token in missing_verification],
-            )
+    violations.extend(
+        _missing_token_violations(
+            principles_flat,
+            verification_tokens,
+            "implement-proportionate-verification-contract",
+            "The development principles do not enforce risk-proportionate verification.",
         )
+    )
 
     return violations
 
@@ -217,9 +238,7 @@ def _check_verification_surface_contract(root: Path) -> list[Violation]:
 def _check_tdd_and_fix_evidence_contract(root: Path) -> list[Violation]:
     """Enforce the four TDD paths and executable review-fix locks."""
     violations: list[Violation] = []
-    step1 = (root / "skills/implement/steps/step-01-issue-branch-resolution.md").read_text(
-        encoding="utf-8"
-    )
+    step1 = (root / STEP1_PATH).read_text(encoding="utf-8")
     step4 = (root / "skills/implement/steps/step-04-planning.md").read_text(
         encoding="utf-8"
     )
@@ -282,21 +301,9 @@ def _check_tdd_and_fix_evidence_contract(root: Path) -> list[Violation]:
     return violations
 
 
-def _check_pre_pr_sync_contract(root: Path) -> list[Violation]:
-    """Enforce same-checkout preparation and trusted pre-PR synchronization."""
+def _check_same_checkout_contract(step1: str) -> list[Violation]:
+    """Enforce the two same-checkout mutation boundaries."""
     violations: list[Violation] = []
-    step1 = (root / "skills/implement/steps/step-01-issue-branch-resolution.md").read_text(
-        encoding="utf-8"
-    )
-    step8_5 = (root / "skills/implement/steps/step-08.5-sync-base.md").read_text(
-        encoding="utf-8"
-    )
-    step9 = (root / "skills/implement/steps/step-09-pr-body.md").read_text(
-        encoding="utf-8"
-    )
-    mcp_lib = read_mcp_library(root) or ""
-    mcp_index = read_mcp_registrations(root)
-
     if "gc_prepare_implement_branch" not in step1 or "checkout_mode" not in step1:
         violations.append(
             Violation(
@@ -313,6 +320,19 @@ def _check_pre_pr_sync_contract(root: Path) -> list[Violation]:
                 details=["require gc_mark_implement_issue_picked_up in Step 1"],
             )
         )
+    return violations
+
+
+def _check_pre_pr_sync_contract(root: Path) -> list[Violation]:
+    """Enforce same-checkout preparation and trusted pre-PR synchronization."""
+    step1 = (root / STEP1_PATH).read_text(encoding="utf-8")
+    step8_5 = (root / "skills/implement/steps/step-08.5-sync-base.md").read_text(
+        encoding="utf-8"
+    )
+    step9 = (root / STEP9_PATH).read_text(encoding="utf-8")
+    mcp_lib = read_mcp_library(root) or ""
+    mcp_index = read_mcp_registrations(root)
+    violations = _check_same_checkout_contract(step1)
 
     sync_tokens = (
         "gc_synchronize_implement_branch",
@@ -370,9 +390,7 @@ def _check_pre_pr_sync_order(root: Path) -> list[Violation]:
     """Keep synchronized PR creation ordered and MCP-mediated."""
     violations: list[Violation] = []
     skill = (root / "skills/implement/SKILL.md").read_text(encoding="utf-8")
-    step9 = (root / "skills/implement/steps/step-09-pr-body.md").read_text(
-        encoding="utf-8"
-    )
+    step9 = (root / STEP9_PATH).read_text(encoding="utf-8")
     if re.search(r"\bgh\s+pr\s+create\b", step9):
         violations.append(
             Violation(

@@ -1,9 +1,3 @@
-// Extracted from lib.js (issue #1355).
-//
-// lib.js had reached 20,634 lines against the repo's 500-LOC limit
-// (docs/CODING_STANDARDS.md, Sonar S104). It contained no mutual recursion, so it was
-// split along its own dependency layering. lib.js remains the barrel every caller imports.
-
 import { realpathSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { GIT_OBJECT_ID_RE, IMPLEMENT_CHECKOUT_MODES, REQUIREMENT_UID_GATE_ENV_VAR, implementNetworkGitEnvironment, sanitizedImplementGitEnvironment, validateImplementBranchName } from "./codex-workflow.js";
@@ -41,6 +35,32 @@ function validatePrepareImplementBranchInput({
       ok: false,
       error: "implement_base_branch_invalid",
       message: "baseBranch is not a safe Git ref name",
+    };
+  }
+  return { ok: true };
+}
+
+function validatePreparedImplementCheckout({
+  after, before, pinnedRoot, activeBranch, issueNumber,
+}) {
+  if (
+    after.topLevel !== pinnedRoot
+    || after.gitDir !== before.gitDir
+    || after.origin !== before.origin
+  ) {
+    return {
+      ok: false,
+      error: "implement_checkout_relocated",
+      message: "Branch preparation changed the checkout root, Git directory, or origin; refusing to continue",
+    };
+  }
+  const branchValidation = validateImplementBranchName(activeBranch, issueNumber);
+  if (!branchValidation.ok) {
+    return {
+      ok: false,
+      error: "implement_active_branch_noncompliant",
+      message: branchValidation.message,
+      branch: activeBranch,
     };
   }
   return { ok: true };
@@ -124,26 +144,10 @@ export async function runPrepareImplementBranch({
       message: `Unable to verify the invocation checkout after branch preparation: ${error.message}`,
     };
   }
-  if (
-    after.topLevel !== pinnedRoot
-    || after.gitDir !== before.gitDir
-    || after.origin !== before.origin
-  ) {
-    return {
-      ok: false,
-      error: "implement_checkout_relocated",
-      message: "Branch preparation changed the checkout root, Git directory, or origin; refusing to continue",
-    };
-  }
-  const actualBranchValidation = validateImplementBranchName(activeBranch, issueNumber);
-  if (!actualBranchValidation.ok) {
-    return {
-      ok: false,
-      error: "implement_active_branch_noncompliant",
-      message: actualBranchValidation.message,
-      branch: activeBranch,
-    };
-  }
+  const postcondition = validatePreparedImplementCheckout({
+    after, before, pinnedRoot, activeBranch, issueNumber,
+  });
+  if (!postcondition.ok) return postcondition;
   return {
     ok: true,
     repo_path: pinnedRoot,

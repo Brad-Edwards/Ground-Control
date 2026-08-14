@@ -48,7 +48,7 @@ __all__ = sorted(
 )
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> object:
     """Resolve a historical barrel export from its focused owner module."""
     for module in _EXPORT_MODULES:
         try:

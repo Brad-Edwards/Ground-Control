@@ -6,6 +6,35 @@ from pathlib import Path
 from .core import Violation
 
 
+def _forbidden_implement_sources(
+    root: Path, implement_sources: list[Path], step1: Path
+) -> list[str]:
+    """Find workflow files that bypass the MCP mutation boundaries."""
+    forbidden = []
+    for path in implement_sources:
+        text = path.read_text(encoding="utf-8")
+        direct_branch = re.search(
+            r"\bgit\s+worktree\s+add\b|\bgh\s+issue\s+develop\b",
+            text,
+        )
+        direct_pickup = path == step1 and re.search(
+            r"\bgh\s+(?:api|label|issue)\b[^\n]*\bin-progress\b", text
+        )
+        if direct_branch or direct_pickup:
+            forbidden.append(str(path.relative_to(root)))
+    return forbidden
+
+
+def _contradictory_scope_sources(root: Path, implement_sources: list[Path]) -> list[str]:
+    """Find workflow files that permit scope-based non-action."""
+    contradictory = []
+    for path in implement_sources:
+        text = path.read_text(encoding="utf-8").lower()
+        if "outside the diff's scope" in text or "no scope creep" in text:
+            contradictory.append(str(path.relative_to(root)))
+    return contradictory
+
+
 def check_scope_and_completion_contract(root: Path) -> list[Violation]:
     """Reject bypass language and require completion-obligation enforcement."""
     violations: list[Violation] = []
@@ -24,19 +53,7 @@ def check_scope_and_completion_contract(root: Path) -> list[Violation]:
         paths["principles"],
         *sorted((root / "skills/implement/steps").glob("*.md")),
     ]
-    forbidden = []
-    for path in implement_sources:
-        text = path.read_text(encoding="utf-8")
-        direct_branch = re.search(
-            r"\bgit\s+worktree\s+add\b|\bgh\s+issue\s+develop\b",
-            text,
-        )
-        direct_pickup = (
-            path == paths["step1"]
-            and re.search(r"\bgh\s+(?:api|label|issue)\b[^\n]*\bin-progress\b", text)
-        )
-        if direct_branch or direct_pickup:
-            forbidden.append(str(path.relative_to(root)))
+    forbidden = _forbidden_implement_sources(root, implement_sources, paths["step1"])
     if forbidden:
         violations.append(
             Violation(
@@ -46,11 +63,7 @@ def check_scope_and_completion_contract(root: Path) -> list[Violation]:
             )
         )
 
-    contradictory = []
-    for path in implement_sources:
-        text = path.read_text(encoding="utf-8").lower()
-        if "outside the diff's scope" in text or "no scope creep" in text:
-            contradictory.append(str(path.relative_to(root)))
+    contradictory = _contradictory_scope_sources(root, implement_sources)
     if contradictory:
         violations.append(
             Violation(

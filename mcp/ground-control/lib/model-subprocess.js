@@ -82,7 +82,7 @@ class BufferedProcessExecution {
     // `pendingCleanup`: concurrent triggers (timeout, abort, maxBuffer,
     // leader-exit) collapse onto one in-flight escalation. The escalation itself
     // is the shared terminateProcessGroup primitive (issue #1495).
-    if (this.pendingCleanup) return this.pendingCleanup;
+    if (this.pendingCleanup !== null) return this.pendingCleanup;
     if (!this.child.pid || !isProcessGroupAlive(this.child.pid)) return Promise.resolve();
     this.pendingCleanup = terminateProcessGroup(this.child.pid, {
       killSignal: this.config.killSignal,
