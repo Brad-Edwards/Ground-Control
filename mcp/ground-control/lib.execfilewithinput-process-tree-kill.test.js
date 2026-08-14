@@ -194,6 +194,20 @@ describe("execFileWithInput — process-tree cleanup (issue #1518)", () => {
     );
   });
 
+  it("keeps maxBuffer as the terminal cause while process-group cleanup is still running", { timeout: 5000 }, async () => {
+    // Ignore SIGTERM so cleanup remains in flight beyond timeoutMs. Once the
+    // output cap has fired, that later wall-clock timer must not overwrite the
+    // first terminal cause with ETIMEDOUT.
+    await assert.rejects(
+      execFileWithInput(
+        "bash",
+        ["-c", "trap '' TERM; while :; do printf 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'; done"],
+        { timeoutMs: 500, killGraceMs: 1000, maxBuffer: 32 },
+      ),
+      (err) => err.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER",
+    );
+  });
+
   // Regression guard for issue #1521's CI investigation: Node's `close`
   // event is documented to fire only after a child's stdio streams have
   // closed, but that ordering has known gaps for a fast-exiting process with

@@ -110,8 +110,16 @@ export async function execFileWithInput(
       if (currentLen + length > maxBuffer) {
         const allowed = maxBuffer - currentLen;
         if (allowed > 0) chunks.push(chunk.slice(0, allowed));
-        if (!maxBufferExceeded) {
+        if (!maxBufferExceeded && !timedOut && !aborted) {
           maxBufferExceeded = which;
+          // maxBuffer is the first terminal cause. Cleanup can legitimately
+          // outlive timeoutMs (for example while waiting through the TERM
+          // grace period), but that later timer must not rewrite the result
+          // as ETIMEDOUT after the output cap already fired.
+          if (killTimer) {
+            clearTimeout(killTimer);
+            killTimer = null;
+          }
           ensureGroupEmpty();
         }
         return maxBuffer;
@@ -217,6 +225,7 @@ export async function execFileWithInput(
 
     if (timeoutMs && timeoutMs > 0) {
       killTimer = setTimeout(() => {
+        if (maxBufferExceeded || aborted) return;
         timedOut = true;
         ensureGroupEmpty();
       }, timeoutMs);
@@ -224,7 +233,12 @@ export async function execFileWithInput(
 
     if (signal) {
       const onAbort = () => {
+        if (timedOut || maxBufferExceeded || aborted) return;
         aborted = true;
+        if (killTimer) {
+          clearTimeout(killTimer);
+          killTimer = null;
+        }
         ensureGroupEmpty();
       };
       if (signal.aborted) onAbort();

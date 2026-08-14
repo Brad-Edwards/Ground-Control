@@ -139,7 +139,8 @@ export function implementGateEnvironment(
   baseEnv = process.env,
 ) {
   if (requestedRequirementUid == null || requestedRequirementUid === "") {
-    return baseEnv;
+    const { [REQUIREMENT_UID_GATE_ENV_VAR]: _ambientRequirementUid, ...cleanEnv } = baseEnv;
+    return cleanEnv;
   }
   if (!EXACT_REQUIREMENT_UID_RE.test(requestedRequirementUid)) {
     const error = new Error(

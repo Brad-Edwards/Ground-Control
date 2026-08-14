@@ -80,6 +80,8 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
         "skill": root / "skills/implement/SKILL.md",
         "principles": root / "skills/implement/_development-principles.md",
         "step1": root / "skills/implement/steps/step-01-issue-branch-resolution.md",
+        "step4": root / "skills/implement/steps/step-04-planning.md",
+        "step4_4": root / "skills/implement/steps/step-04.4-tdd.md",
         "step8_5": root / "skills/implement/steps/step-08.5-sync-base.md",
         "step9": root / "skills/implement/steps/step-09-pr-body.md",
         "completion": root / "skills/implement/steps/step-17-completion.md",
@@ -100,6 +102,8 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
     skill = paths["skill"].read_text(encoding="utf-8")
     principles = paths["principles"].read_text(encoding="utf-8")
     step1 = paths["step1"].read_text(encoding="utf-8")
+    step4 = paths["step4"].read_text(encoding="utf-8")
+    step4_4 = paths["step4_4"].read_text(encoding="utf-8")
     step8_5 = paths["step8_5"].read_text(encoding="utf-8")
     step9 = paths["step9"].read_text(encoding="utf-8")
     completion = paths["completion"].read_text(encoding="utf-8")
@@ -215,6 +219,53 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
                 code="implement-verification-boundary-drift",
                 message="/implement verification surfaces disagree on batching or mandatory boundaries.",
                 details=[f"missing token: {token}" for token in missing_surfaces],
+            )
+        )
+
+    four_path_tokens = (
+        (step1, "`implementation_intent`"),
+        (step1, "`feature`"),
+        (step1, "`bug-fix`"),
+        (step1, "`mixed`"),
+        (step4, "`tdd_path`"),
+        (step4, "per-clause classification is authoritative"),
+        (step4_4, "Path A — New requirement or feature"),
+        (step4_4, "Path B — Bug fix on shipped code"),
+        (step4_4, "Path C — Reviewer-finding fix"),
+        (step4_4, "Path D — Prose-only or static contract narrowing"),
+        (step4_4, "unmodified buggy tree"),
+        (step4_4, "cannot use the documentation-only carve-out"),
+        (step4_4, "runtime-consumed configuration"),
+    )
+    missing_four_path = [
+        token for surface, token in four_path_tokens if token not in surface
+    ]
+    if missing_four_path:
+        violations.append(
+            Violation(
+                code="implement-four-path-tdd-contract",
+                message="/implement's four-path TDD contract is incomplete.",
+                details=[f"missing semantic anchor: {token}" for token in missing_four_path],
+            )
+        )
+
+    fix_evidence_tokens = (
+        "Fix locks itself",
+        "executable code or a runtime-consumed data contract",
+        "fails when the named defect is reintroduced",
+        "test file path and test-case or describe-block name",
+        "prose-only, no executable surface to lock",
+        "auto-posted decision record is written before",
+    )
+    missing_fix_evidence = [
+        token for token in fix_evidence_tokens if token not in review_rules_flat
+    ]
+    if missing_fix_evidence:
+        violations.append(
+            Violation(
+                code="implement-review-fix-evidence-contract",
+                message="/implement's review-fix regression-evidence contract is incomplete.",
+                details=[f"missing semantic anchor: {token}" for token in missing_fix_evidence],
             )
         )
 

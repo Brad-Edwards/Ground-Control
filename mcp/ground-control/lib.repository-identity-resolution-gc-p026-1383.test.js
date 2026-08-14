@@ -318,13 +318,16 @@ describe("implementGateEnvironment (#1434)", () => {
     assert.equal(env.GIT_TERMINAL_PROMPT, "0");
   });
 
-  it("returns the base environment untouched when no UID is requested", () => {
-    // A branch that already carries its UID keeps deriving requirement context
-    // the way it always has; the fix must not start overriding that.
+  it("strips ambient requirement context when no UID is requested", () => {
+    const ambient = Object.freeze({
+      ...base,
+      [REQUIREMENT_UID_GATE_ENV_VAR]: "GC-STALE",
+    });
     for (const absent of [undefined, null, ""]) {
-      const env = implementGateEnvironment(absent, base);
+      const env = implementGateEnvironment(absent, ambient);
       assert.equal(REQUIREMENT_UID_GATE_ENV_VAR in env, false);
       assert.deepEqual(env, base);
+      assert.equal(ambient[REQUIREMENT_UID_GATE_ENV_VAR], "GC-STALE");
     }
   });
 

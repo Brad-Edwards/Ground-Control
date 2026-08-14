@@ -25,6 +25,23 @@ Both AI-assisted reviews run **pre-push**: codex review at Step 6.5, test-qualit
 
 4. **Fix every real finding regardless of provenance.** The zero-deferral rule applies: there is no `defer` decision - not "out of scope for this PR", not "follow-up issue to track it", not "addressed in a subsequent PR", not "deferred to a later iteration", not "TBD later" in a closing comment. Filing a tracking issue does **not** convert a deferral into a valid disposition. The PreToolUse hook (`.claude/hooks/block-defer-language.py`) and `bin/policy` enforce this mechanically. If repair requires significant architecture/security judgment or external authority, record an escalated execution obligation and ask the user; the obligation remains current work. `wontfix` requires explicit user approval. `not-applicable` is only for a condition that is factually false or does not apply to this codebase; a real problem outside the initiating diff is not `not-applicable`.
 
+   **Fix locks itself.** For every finding accepted as `decision: "fix"` that
+   touches executable code or a runtime-consumed data contract, add or extend
+   proportionate regression evidence in the same review-fix cycle. Use a test that
+   fails when the named defect is reintroduced. Record the test file path
+   and test-case or describe-block name in the self-verification evidence used
+   to leave the review band. A pure-prose repair may state "prose-only, no
+   executable surface to lock". A pure rename or defensive narrowing with no
+   behavior change may use a narrowly factual no-new-test rationale, but that
+   per-finding rationale does not make an executable diff eligible for Step
+   4.4's documentation-only carve-out.
+
+   The auto-posted decision record is written before the agent applies the
+   fix, so it cannot truthfully cite post-fix test evidence. Do not claim that
+   it does. The regression evidence belongs to the fix loop's self-verification
+   state unless a future versioned decision-record lifecycle adds an explicit
+   post-fix evidence field.
+
 5. **Decision records are auto-posted by the cycle tool.** The cycle wrapper (`gc_codex_review_cycle` / `gc_test_quality_review_cycle`) posts the per-cycle decision record automatically when the cycle ran. Every finding gets `decision: "fix"` with an auto-rationale - that is the only decision the cycle tool can record without user authorization. The `decision_record_url` is in the returned envelope.
 
    - **`wontfix` / `not-applicable` overrides.** If the agent obtains user authorization for a `wontfix` or marks a finding `not-applicable` with rationale, call `gc_post_decision_record` directly (with `user_authorization` for wontfix) AFTER the cycle, not through the wrapper. The wrapper handles only the auto-fix common path.

@@ -14,6 +14,12 @@ force delegation.
 
 1. **If the work is NOT yet complete**: produce a written plan and post it as an issue comment. Identify which files need to be created or modified, what tests to write, and what approach to take. Update length follows the canonical succinctness rule in `skills/implement/steps/_review-loop-rules.md`.
    - When `in_scope_requirements[]` is non-empty, the plan must cover every clause of every in-scope requirement. When it is empty, the plan must fully address every acceptance criterion in the issue body and any user clarifications in comments.
+   - Assign a `tdd_path` to each clause and acceptance criterion: Path A (new
+     requirement or feature), Path B (bug fix on shipped code), Path C
+     (reviewer-finding fix), or Path D (prose-only or static contract
+     narrowing). The issue-level `implementation_intent` from Step 1 is only a
+     hint; the plan's per-clause classification is authoritative, and mixed
+     work applies the paths independently.
    - **Structural-gate runs need a GC requirement, even when `in_scope_requirements[]` is empty.** If the plan introduces a new ADR-backed structural gate (a new MCP tool, a new policy check in `tools/policy/checks.py`, a new `/implement` step, or any other executable enforcement layer), the plan must anchor that gate on a Ground Control requirement so traceability links exist. Two valid paths: (a) link the new artifacts to an existing umbrella requirement when the work clearly fits one - for example, additions to the `/implement` gated workflow fit `GC-O007` "Gated Agentic Development Loop"; (b) create a new requirement file `docs/requirements/<UID>/requirement.md` (status `DRAFT`) when the gate has its own distinct contract that no existing requirement covers, then transition it to `ACTIVE` at Step 15. The architecture preflight's "no requirement introduced" non-goal is a starting recommendation, not a binding directive - the planner overrides when the diff ships a new gate. Shipping a structural gate without traceability is the failure mode this rule exists to prevent.
    - Plans must respect the coding standards and formal methods classification levels.
    - Add or update ADRs as appropriate.
