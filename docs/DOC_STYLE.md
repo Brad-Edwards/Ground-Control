@@ -1,5 +1,12 @@
 # Documentation style
 
+> **Sync note for issue #871 (2026-08-14, strict Sonar enforcement):** The SonarCloud workflow
+> now enforces zero open issues after the hosted quality gate, and repository policy protects that
+> ordering and failure behavior. The policy compatibility barrel resolves focused module exports
+> dynamically so analysis does not treat re-exports as unused code. ADR-054 records the policy
+> surface change. The documentation coverage classifier, outcome mapping, Vale rules, installer,
+> `.vale.ini`, and this file's style rules are unchanged.
+
 > **Sync note for issue #1506 (2026-08-09, dead GRC handler removal):** Removed the unregistered
 > GRC/backend tool-handler modules and their dead REST-wrapper functions left over from the #1500
 > teardown, plus `mcp/ground-control/index.js`'s dead import block, per the ADR-054 sync note for

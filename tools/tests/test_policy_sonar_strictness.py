@@ -19,6 +19,7 @@ class SonarStrictnessContractTest(unittest.TestCase):
             gate.parent.mkdir(parents=True)
             workflow.write_text(
                 "uses: SonarSource/sonarqube-quality-gate-action@pinned\n"
+                "if: ${{ !cancelled() }}\n"
                 "SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}\n",
                 encoding="utf-8",
             )
@@ -38,6 +39,7 @@ class SonarStrictnessContractTest(unittest.TestCase):
             workflow.write_text(
                 "run: python3 tools/sonar/assert_no_new_issues.py\n"
                 "uses: SonarSource/sonarqube-quality-gate-action@pinned\n"
+                "if: ${{ !cancelled() }}\n"
                 + "SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}\n" * 3,
                 encoding="utf-8",
             )
@@ -46,6 +48,25 @@ class SonarStrictnessContractTest(unittest.TestCase):
             codes = {item.code for item in run_sonar_strictness_contract(root)}
 
             self.assertIn("sonar-strictness-gate-order", codes)
+
+    def test_zero_issue_gate_must_run_after_hosted_gate_failure(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            workflow = root / ".github/workflows/sonarcloud.yml"
+            gate = root / "tools/sonar/assert_no_new_issues.py"
+            workflow.parent.mkdir(parents=True)
+            gate.parent.mkdir(parents=True)
+            workflow.write_text(
+                "uses: SonarSource/sonarqube-quality-gate-action@pinned\n"
+                "run: python3 tools/sonar/assert_no_new_issues.py\n"
+                + "SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}\n" * 3,
+                encoding="utf-8",
+            )
+            gate.write_text("raise SystemExit(0)\n", encoding="utf-8")
+
+            codes = {item.code for item in run_sonar_strictness_contract(root)}
+
+            self.assertIn("sonar-strictness-zero-issue-always-runs", codes)
 
 
 if __name__ == "__main__":

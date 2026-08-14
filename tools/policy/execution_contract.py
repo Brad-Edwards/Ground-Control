@@ -10,18 +10,11 @@ every name described a neighbour's contents. The modules are named for what they
 
 from __future__ import annotations
 import argparse
-import fnmatch
-import hashlib
 import json
 import os
-import posixpath
 import re
 import subprocess
-import sys
-import time
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
 from .core import (
     REPO_ROOT,
     Violation,
@@ -29,6 +22,7 @@ from .core import (
 from .cli_safety import (
     safe_cli_path,
 )
+from .implement_scope_contract import check_scope_and_completion_contract
 MCP_LIB_PATH = "mcp/ground-control/lib.js"
 
 
@@ -73,8 +67,8 @@ def read_mcp_registrations(root: Path = REPO_ROOT) -> str:
     return "\n".join(parts)
 
 
-def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
-    """Enforce /implement's pre-routing principles and persistence boundary."""
+def _check_core_implement_contract(root: Path) -> list[Violation]:
+    """Check required surfaces, principle loading, and verification semantics."""
     violations: list[Violation] = []
     paths = {
         "skill": root / "skills/implement/SKILL.md",
@@ -101,19 +95,7 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
 
     skill = paths["skill"].read_text(encoding="utf-8")
     principles = paths["principles"].read_text(encoding="utf-8")
-    step1 = paths["step1"].read_text(encoding="utf-8")
-    step4 = paths["step4"].read_text(encoding="utf-8")
-    step4_4 = paths["step4_4"].read_text(encoding="utf-8")
-    step8_5 = paths["step8_5"].read_text(encoding="utf-8")
-    step9 = paths["step9"].read_text(encoding="utf-8")
-    completion = paths["completion"].read_text(encoding="utf-8")
-    cursor = paths["cursor"].read_text(encoding="utf-8")
-    # Barrel plus every extracted module: lib.js alone holds no implementation since #1355.
-    mcp_lib = read_mcp_library(root) or ""
-    # Registrations moved out of index.js when it was decomposed; read the whole surface.
-    mcp_index = read_mcp_registrations(root)
     principles_flat = " ".join(principles.split())
-    cursor_flat = " ".join(cursor.split()).lower()
 
     principles_ref = skill.find("_development-principles.md")
     route_ref = skill.find("gc_resolve_workflow_route")
@@ -184,6 +166,13 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
             )
         )
 
+    return violations
+
+
+def _check_verification_surface_contract(root: Path) -> list[Violation]:
+    """Keep verification batching and mandatory boundaries aligned."""
+    violations: list[Violation] = []
+
     review_rules = (
         root / "skills/implement/steps/_review-loop-rules.md"
     ).read_text(encoding="utf-8")
@@ -221,6 +210,27 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
                 details=[f"missing token: {token}" for token in missing_surfaces],
             )
         )
+
+    return violations
+
+
+def _check_tdd_and_fix_evidence_contract(root: Path) -> list[Violation]:
+    """Enforce the four TDD paths and executable review-fix locks."""
+    violations: list[Violation] = []
+    step1 = (root / "skills/implement/steps/step-01-issue-branch-resolution.md").read_text(
+        encoding="utf-8"
+    )
+    step4 = (root / "skills/implement/steps/step-04-planning.md").read_text(
+        encoding="utf-8"
+    )
+    step4_4 = (root / "skills/implement/steps/step-04.4-tdd.md").read_text(
+        encoding="utf-8"
+    )
+    review_rules_flat = " ".join(
+        (root / "skills/implement/steps/_review-loop-rules.md")
+        .read_text(encoding="utf-8")
+        .split()
+    )
 
     four_path_tokens = (
         (step1, "`implementation_intent`"),
@@ -268,6 +278,24 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
                 details=[f"missing semantic anchor: {token}" for token in missing_fix_evidence],
             )
         )
+
+    return violations
+
+
+def _check_pre_pr_sync_contract(root: Path) -> list[Violation]:
+    """Enforce same-checkout preparation and trusted pre-PR synchronization."""
+    violations: list[Violation] = []
+    step1 = (root / "skills/implement/steps/step-01-issue-branch-resolution.md").read_text(
+        encoding="utf-8"
+    )
+    step8_5 = (root / "skills/implement/steps/step-08.5-sync-base.md").read_text(
+        encoding="utf-8"
+    )
+    step9 = (root / "skills/implement/steps/step-09-pr-body.md").read_text(
+        encoding="utf-8"
+    )
+    mcp_lib = read_mcp_library(root) or ""
+    mcp_index = read_mcp_registrations(root)
 
     if "gc_prepare_implement_branch" not in step1 or "checkout_mode" not in step1:
         violations.append(
@@ -334,6 +362,17 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
                 ],
             )
         )
+
+    return violations
+
+
+def _check_pre_pr_sync_order(root: Path) -> list[Violation]:
+    """Keep synchronized PR creation ordered and MCP-mediated."""
+    violations: list[Violation] = []
+    skill = (root / "skills/implement/SKILL.md").read_text(encoding="utf-8")
+    step9 = (root / "skills/implement/steps/step-09-pr-body.md").read_text(
+        encoding="utf-8"
+    )
     if re.search(r"\bgh\s+pr\s+create\b", step9):
         violations.append(
             Violation(
@@ -355,63 +394,24 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
                 details=[f"positions: {step_order}"],
             )
         )
-    implement_sources = [
-        paths["skill"],
-        paths["principles"],
-        *sorted((root / "skills/implement/steps").glob("*.md")),
-    ]
-    forbidden = []
-    for path in implement_sources:
-        text = path.read_text(encoding="utf-8")
-        direct_branch = re.search(
-            r"\bgit\s+worktree\s+add\b|\bgh\s+issue\s+develop\b",
-            text,
-        )
-        direct_pickup = (
-            path == paths["step1"]
-            and re.search(r"\bgh\s+(?:api|label|issue)\b[^\n]*\bin-progress\b", text)
-        )
-        if direct_branch or direct_pickup:
-            forbidden.append(str(path.relative_to(root)))
-    if forbidden:
-        violations.append(
-            Violation(
-                code="implement-direct-worktree-or-branch-command",
-                message="/implement workflow surfaces must use MCP branch and pickup boundaries.",
-                details=[f"direct branch/worktree/pickup command in {path}" for path in forbidden],
-            )
-        )
 
-    contradictory = []
-    for path in implement_sources:
-        text = path.read_text(encoding="utf-8").lower()
-        if "outside the diff's scope" in text or "no scope creep" in text:
-            contradictory.append(str(path.relative_to(root)))
-    if contradictory:
-        violations.append(
-            Violation(
-                code="implement-contradictory-scope-language",
-                message="Workflow text still permits scope-based non-action.",
-                details=contradictory,
-            )
-        )
+    return violations
 
-    if "completion_open_execution_obligations" not in completion:
-        violations.append(
-            Violation(
-                code="implement-obligation-completion-gate",
-                message="Step 17 must document completion refusal while obligations are open.",
-                details=["missing completion_open_execution_obligations"],
-            )
-        )
-    if "_development-principles.md" not in cursor or "before route resolution" not in cursor_flat:
-        violations.append(
-            Violation(
-                code="implement-driver-principles",
-                message="The Cursor driver wrapper must load the canonical principles before routing.",
-                details=["update .cursor/skills/implement/SKILL.md"],
-            )
-        )
+
+def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
+    """Enforce /implement's pre-routing principles and persistence boundary."""
+    core_violations = _check_core_implement_contract(root)
+    if any(item.code == "implement-execution-contract-missing" for item in core_violations):
+        return core_violations
+    violations = list(core_violations)
+    for check in (
+        _check_verification_surface_contract,
+        _check_tdd_and_fix_evidence_contract,
+        _check_pre_pr_sync_contract,
+        _check_pre_pr_sync_order,
+        check_scope_and_completion_contract,
+    ):
+        violations.extend(check(root))
     return violations
 
 
@@ -424,14 +424,16 @@ def _resolve_pr_body(args: argparse.Namespace) -> str | None:
 
     Returns ``None`` when no source is configured (the check is skipped).
     """
+    body = None
     if args.pr_body_file:
-        return safe_cli_path(args.pr_body_file).read_text(encoding="utf-8")
-    event_path = args.event_path or os.getenv("GITHUB_EVENT_PATH")
-    if event_path:
-        event = json.loads(safe_cli_path(event_path).read_text(encoding="utf-8"))
-        pull_request = event.get("pull_request") or {}
-        return pull_request.get("body") or ""
-    if args.pr_number is not None:
+        body = safe_cli_path(args.pr_body_file).read_text(encoding="utf-8")
+    else:
+        event_path = args.event_path or os.getenv("GITHUB_EVENT_PATH")
+        if event_path:
+            event = json.loads(safe_cli_path(event_path).read_text(encoding="utf-8"))
+            pull_request = event.get("pull_request") or {}
+            body = pull_request.get("body") or ""
+    if body is None and args.pr_number is not None:
         # str(int(...)) forces the CLI value to an integer literal so it cannot
         # smuggle an option or metacharacter into the gh argv (S8705).
         result = subprocess.run(
@@ -440,8 +442,8 @@ def _resolve_pr_body(args: argparse.Namespace) -> str | None:
             capture_output=True,
             text=True,
         )
-        return result.stdout
-    return None
+        body = result.stdout
+    return body
 
 
 # Automation PRs that carry no single requirement/traceability of their own, so the

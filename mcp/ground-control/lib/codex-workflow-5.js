@@ -104,6 +104,117 @@ async function findExistingSynchronizedImplementPr({
   }
 }
 
+async function validateImplementSynchronization({
+  repoRoot,
+  repoAuthorization,
+  baseBranch,
+  input,
+  commandRunner,
+  syncRecordReader,
+}) {
+  await assertSafeImplementCheckoutConfiguration(repoRoot);
+  const checkout = await assertImplementSyncCheckout({
+    repoRoot,
+    issueNumber: input.issueNumber,
+    branchName: input.branchName,
+    commandRunner,
+  });
+  if (!checkout.ok) return checkout;
+  const trusted = await syncRecordReader(
+    repoRoot,
+    repoAuthorization.owner,
+    repoAuthorization.name,
+    input.issueNumber,
+    input.recordId,
+  );
+  if (!trusted.ok) {
+    return { ...trusted, next_action: "return_to_the_synchronization_boundary" };
+  }
+  const record = trusted.record;
+  if (
+    record.issueNumber !== input.issueNumber
+    || record.branchName !== input.branchName
+    || record.baseBranch !== baseBranch
+    || record.remoteRef !== `refs/remotes/origin/${baseBranch}`
+  ) {
+    return {
+      ok: false,
+      error: "implement_pr_sync_record_identity_mismatch",
+      message: "The synchronization record does not belong to this issue, branch, or configured base",
+      next_action: "return_to_the_synchronization_boundary",
+    };
+  }
+  const { fetchedBaseSha } = await fetchImplementBase(repoRoot, baseBranch, commandRunner);
+  const localSha = await readImplementGitOid(repoRoot, "HEAD", commandRunner);
+  const localTreeSha = await readImplementTreeOid(repoRoot, "HEAD", commandRunner);
+  const remoteSha = await readRemoteImplementBranchSha(repoRoot, input.branchName, commandRunner);
+  const current = fetchedBaseSha === record.fetchedBaseSha
+    && localSha === record.resultingFeatureSha
+    && localTreeSha === record.verifiedTreeSha
+    && remoteSha === record.resultingFeatureSha
+    && await isImplementAncestor(
+      repoRoot,
+      record.fetchedBaseSha,
+      record.resultingFeatureSha,
+      commandRunner,
+    );
+  if (!current) {
+    return {
+      ok: false,
+      error: "implement_pr_sync_stale",
+      message: "The base or feature branch changed after synchronization",
+      next_action: "return_to_the_synchronization_boundary",
+    };
+  }
+  return { ok: true, record, fetchedBaseSha, localSha };
+}
+
+async function createSynchronizedImplementPr({
+  repoRoot,
+  repoAuthorization,
+  repoSlug,
+  baseBranch,
+  input,
+  record,
+  fetchedBaseSha,
+  localSha,
+  commandRunner,
+}) {
+  const { stdout } = await commandRunner(
+    "gh",
+    [
+      "pr", "create",
+      "--repo", repoSlug,
+      "--base", baseBranch,
+      "--head", input.branchName,
+      "--title", input.title,
+      "--body", input.body,
+    ],
+    { cwd: repoRoot },
+  );
+  const prUrl = stdout.trim();
+  const expectedUrlPrefix =
+    `https://github.com/${repoAuthorization.owner}/${repoAuthorization.name}/pull/`.toLowerCase();
+  if (!prUrl.toLowerCase().startsWith(expectedUrlPrefix)) {
+    return {
+      ok: false,
+      error: "implement_pr_created_repository_mismatch",
+      message: "GitHub returned a PR outside the authorized repository",
+      next_action: "inspect_the_repository_scoped_pr_write",
+    };
+  }
+  const numberMatch = /\/pull\/(\d+)(?:\D|$)/.exec(prUrl);
+  return {
+    ok: true,
+    already_exists: false,
+    pr_number: numberMatch == null ? null : Number.parseInt(numberMatch[1], 10),
+    pr_url: prUrl,
+    synchronization_record_id: record.recordId,
+    fetched_base_sha: fetchedBaseSha,
+    feature_sha: localSha,
+  };
+}
+
 export async function runCreateSynchronizedImplementPr(input, {
   workspaceAuthorizationResolver = resolveMcpLaunchWorkspaceAuthorization,
   commandRunner = execFile,
@@ -144,61 +255,16 @@ export async function runCreateSynchronizedImplementPr(input, {
     };
   }
   try {
-    await assertSafeImplementCheckoutConfiguration(repoRoot);
-    const checkout = await assertImplementSyncCheckout({
+    const synchronization = await validateImplementSynchronization({
       repoRoot,
-      issueNumber: input.issueNumber,
-      branchName: input.branchName,
+      repoAuthorization,
+      baseBranch,
+      input,
       commandRunner,
+      syncRecordReader,
     });
-    if (!checkout.ok) return checkout;
-    const trusted = await syncRecordReader(
-      repoRoot,
-      repoAuthorization.owner,
-      repoAuthorization.name,
-      input.issueNumber,
-      input.recordId,
-    );
-    if (!trusted.ok) {
-      return { ...trusted, next_action: "return_to_the_synchronization_boundary" };
-    }
-    const record = trusted.record;
-    if (
-      record.issueNumber !== input.issueNumber
-      || record.branchName !== input.branchName
-      || record.baseBranch !== baseBranch
-      || record.remoteRef !== `refs/remotes/origin/${baseBranch}`
-    ) {
-      return {
-        ok: false,
-        error: "implement_pr_sync_record_identity_mismatch",
-        message: "The synchronization record does not belong to this issue, branch, or configured base",
-        next_action: "return_to_the_synchronization_boundary",
-      };
-    }
-    const { fetchedBaseSha } = await fetchImplementBase(repoRoot, baseBranch, commandRunner);
-    const localSha = await readImplementGitOid(repoRoot, "HEAD", commandRunner);
-    const localTreeSha = await readImplementTreeOid(repoRoot, "HEAD", commandRunner);
-    const remoteSha = await readRemoteImplementBranchSha(repoRoot, input.branchName, commandRunner);
-    if (
-      fetchedBaseSha !== record.fetchedBaseSha
-      || localSha !== record.resultingFeatureSha
-      || localTreeSha !== record.verifiedTreeSha
-      || remoteSha !== record.resultingFeatureSha
-      || !await isImplementAncestor(
-        repoRoot,
-        record.fetchedBaseSha,
-        record.resultingFeatureSha,
-        commandRunner,
-      )
-    ) {
-      return {
-        ok: false,
-        error: "implement_pr_sync_stale",
-        message: "The base or feature branch changed after synchronization",
-        next_action: "return_to_the_synchronization_boundary",
-      };
-    }
+    if (!synchronization.ok) return synchronization;
+    const { record, fetchedBaseSha, localSha } = synchronization;
     const existingLookup = await findExistingSynchronizedImplementPr({
       repoRoot,
       repoAuthorization,
@@ -218,39 +284,17 @@ export async function runCreateSynchronizedImplementPr(input, {
       };
     }
     const { repoSlug } = existingLookup;
-    const { stdout } = await commandRunner(
-      "gh",
-      [
-        "pr", "create",
-        "--repo", repoSlug,
-        "--base", baseBranch,
-        "--head", input.branchName,
-        "--title", input.title,
-        "--body", input.body,
-      ],
-      { cwd: repoRoot },
-    );
-    const prUrl = stdout.trim();
-    const expectedUrlPrefix =
-      `https://github.com/${repoAuthorization.owner}/${repoAuthorization.name}/pull/`.toLowerCase();
-    if (!prUrl.toLowerCase().startsWith(expectedUrlPrefix)) {
-      return {
-        ok: false,
-        error: "implement_pr_created_repository_mismatch",
-        message: "GitHub returned a PR outside the authorized repository",
-        next_action: "inspect_the_repository_scoped_pr_write",
-      };
-    }
-    const numberMatch = /\/pull\/(\d+)(?:\D|$)/.exec(prUrl);
-    return {
-      ok: true,
-      already_exists: false,
-      pr_number: numberMatch == null ? null : Number.parseInt(numberMatch[1], 10),
-      pr_url: prUrl,
-      synchronization_record_id: record.recordId,
-      fetched_base_sha: fetchedBaseSha,
-      feature_sha: localSha,
-    };
+    return await createSynchronizedImplementPr({
+      repoRoot,
+      repoAuthorization,
+      repoSlug,
+      baseBranch,
+      input,
+      record,
+      fetchedBaseSha,
+      localSha,
+      commandRunner,
+    });
   } catch (error) {
     return {
       ok: false,

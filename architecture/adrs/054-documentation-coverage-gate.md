@@ -8,6 +8,15 @@ accepted
 
 2026-05-23
 
+> **Sync note for issue #871 (2026-08-14, strict Sonar enforcement):** The SonarCloud workflow
+> now runs the repository's zero-open-issues assertion after the hosted quality gate, including
+> when that gate has already failed, and `run_sonar_strictness_contract` prevents either boundary
+> from being removed or reordered. The policy package keeps `tools/policy/checks.py` as a dynamic
+> compatibility barrel while implementations remain in focused modules, including the extracted
+> implement scope/completion check. This is a CI and policy enforcement change. The documentation
+> coverage classifier, outcome mapping, Vale rules, installer, and `.vale.ini` are unchanged, and
+> no documentation style rule is established.
+
 > **Sync note for issue #1506 (2026-08-09, dead GRC handler removal):** Removed the ~63
 > unregistered GRC/backend tool handlers left over from the #1500 teardown—the top-level
 > `gc-asset.js`, `gc-audit.js`, `gc-control.js`, `gc-evidence.js`, `gc-finding.js`,

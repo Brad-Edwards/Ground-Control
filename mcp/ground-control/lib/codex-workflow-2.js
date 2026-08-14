@@ -13,16 +13,13 @@ import { isSafeGitRefName, resolveWorkflowPrecommitCommand } from "./repo-contex
 import { EXACT_REQUIREMENT_UID_RE, execFile, isRequirementUidToken } from "./runtime-primitives.js";
 import { runVerifiedGateBoundary } from "./verification-gates.js";
 
-export async function runPrepareImplementBranch({
-  repoPath,
+function validatePrepareImplementBranchInput({
   invocationRoot,
   issueNumber,
   branchName,
-  baseBranch = "dev",
-  checkoutMode = "same_checkout",
-}, {
-  workspaceAuthorizationResolver = resolveMcpLaunchWorkspaceAuthorization,
-} = {}) {
+  baseBranch,
+  checkoutMode,
+}) {
   if (!IMPLEMENT_CHECKOUT_MODES.includes(checkoutMode)) {
     return {
       ok: false,
@@ -46,6 +43,27 @@ export async function runPrepareImplementBranch({
       message: "baseBranch is not a safe Git ref name",
     };
   }
+  return { ok: true };
+}
+
+export async function runPrepareImplementBranch({
+  repoPath,
+  invocationRoot,
+  issueNumber,
+  branchName,
+  baseBranch = "dev",
+  checkoutMode = "same_checkout",
+}, {
+  workspaceAuthorizationResolver = resolveMcpLaunchWorkspaceAuthorization,
+} = {}) {
+  const inputValidation = validatePrepareImplementBranchInput({
+    invocationRoot,
+    issueNumber,
+    branchName,
+    baseBranch,
+    checkoutMode,
+  });
+  if (!inputValidation.ok) return inputValidation;
 
   let repoRoot;
   let pinnedRoot;

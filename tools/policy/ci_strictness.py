@@ -8,6 +8,7 @@ from .core import REPO_ROOT, SONAR_NEW_ISSUE_GATE_PATH, Violation
 SONAR_WORKFLOW_PATH = Path(".github/workflows/sonarcloud.yml")
 SONAR_QUALITY_GATE_ANCHOR = "SonarSource/sonarqube-quality-gate-action@"
 SONAR_TOKEN_BINDING = "SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}"
+SONAR_ALWAYS_RUN_ANCHOR = "if: ${{ !cancelled() }}"
 
 
 def run_sonar_strictness_contract(root: Path = REPO_ROOT) -> list[Violation]:
@@ -66,6 +67,14 @@ def run_sonar_strictness_contract(root: Path = REPO_ROOT) -> list[Violation]:
                 code="sonar-strictness-token-binding",
                 message="Every Sonar scan, quality, and zero-issue step must receive SONAR_TOKEN.",
                 details=["expected three step-scoped SONAR_TOKEN bindings"],
+            )
+        )
+    if SONAR_ALWAYS_RUN_ANCHOR not in workflow_text:
+        violations.append(
+            Violation(
+                code="sonar-strictness-zero-issue-always-runs",
+                message="The zero-open-issues check must run after a hosted gate failure.",
+                details=[f"missing {SONAR_ALWAYS_RUN_ANCHOR} on the zero-issue step"],
             )
         )
     return violations
