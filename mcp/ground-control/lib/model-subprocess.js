@@ -4,7 +4,7 @@
 // unchanged.
 
 import { spawn } from "node:child_process";
-import { isProcessGroupAlive, isPosixProcessGroupCapable, signalProcessGroup } from "./process-group.js";
+import { isProcessGroupAlive, isPosixProcessGroupCapable, terminateProcessGroup } from "./process-group.js";
 
 export const CODEX_TIMEOUT_MS_MIN = 1000; // 1 second floor
 export const CODEX_TIMEOUT_MS_MAX = 3600000; // 1 hour ceiling
@@ -66,7 +66,6 @@ export async function execFileWithInput(
     let aborted = false;
     let maxBufferExceeded = null;
     let killTimer = null;
-    let graceTimer = null;
     let settled = false;
     let pendingCleanup = null;
 
@@ -84,59 +83,17 @@ export async function execFileWithInput(
     // days once reparented to init (issue #1518).
     const child = spawn(file, args, { ...options, detached: true });
 
-    const killGroup = (sig) => {
-      if (!child.pid) return;
-      const result = signalProcessGroup(child.pid, sig);
-      if (!result.ok) {
-        // eslint-disable-next-line no-console
-        console.error(`[execFileWithInput] failed to signal ${file}'s process group with ${sig}: ${result.error.message}`);
-      }
-    };
-
-    // TERM the group, then SIGKILL anything still alive after the grace
-    // period, confirming the group is actually empty before resolving.
-    // Returns a promise that resolves only once that full escalation
-    // completes — settlement awaits it (see the `close` handler) so a
-    // SIGTERM-ignoring descendant can't outlive a call that already resolved
-    // or rejected. Polls rather than waiting out a single fixed delay: most
-    // signalled processes die well inside the grace window, and death is
-    // never instantaneous with the signal call returning (true even for
-    // SIGKILL — the kernel needs a moment to actually reap the group), so a
-    // one-shot check-then-settle races both directions. A no-op re-signal on
-    // an already-empty group is safe, so concurrent triggers (timeout,
-    // abort, maxBuffer, leader-exit) collapse onto this one in-flight
-    // escalation rather than racing separate ones.
-    const POLL_INTERVAL_MS = 20;
-    const POST_SIGKILL_CONFIRM_MS = 2000; // bounded; SIGKILL cannot be blocked, only delayed by the kernel
+    // TERM the group, then SIGKILL anything still alive after the grace period,
+    // confirming the group is actually empty before resolving. Settlement awaits
+    // this (see the `close` handler) so a SIGTERM-ignoring descendant can't
+    // outlive a call that already resolved or rejected. Single-flight via
+    // `pendingCleanup`: concurrent triggers (timeout, abort, maxBuffer,
+    // leader-exit) collapse onto one in-flight escalation. The escalation itself
+    // is the shared terminateProcessGroup primitive (issue #1495).
     const ensureGroupEmpty = () => {
       if (pendingCleanup) return pendingCleanup;
       if (!child.pid || !isProcessGroupAlive(child.pid)) return Promise.resolve();
-      const pgid = child.pid;
-      pendingCleanup = new Promise((settleCleanup) => {
-        killGroup(killSignal);
-        const termDeadline = Date.now() + killGraceMs;
-        let killSent = false;
-        let killDeadline = null;
-        const poll = () => {
-          if (!isProcessGroupAlive(pgid)) {
-            settleCleanup();
-            return;
-          }
-          const now = Date.now();
-          if (!killSent && now >= termDeadline) {
-            killGroup("SIGKILL");
-            killSent = true;
-            killDeadline = now + POST_SIGKILL_CONFIRM_MS;
-          } else if (killSent && now >= killDeadline) {
-            // eslint-disable-next-line no-console
-            console.error(`[execFileWithInput] ${file}'s process group survived SIGKILL (pgid ${pgid})`);
-            settleCleanup();
-            return;
-          }
-          graceTimer = setTimeout(poll, POLL_INTERVAL_MS);
-        };
-        graceTimer = setTimeout(poll, POLL_INTERVAL_MS);
-      });
+      pendingCleanup = terminateProcessGroup(child.pid, { killSignal, killGraceMs, label: file });
       return pendingCleanup;
     };
 

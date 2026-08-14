@@ -588,6 +588,62 @@ process-local waiting state. Existing issue-thread records, synchronization
 attestations, workflow-run lifecycle events, station attempts, routing stages,
 and telemetry retain authority and unchanged semantics.
 
+**2026-08-13 (issue #1495, bounded mechanical-publish recovery).**
+Mechanical jobs stay `job_not_cancellable`: their full Git/gate/GitHub subprocess
+and polling graph does not honour abort, so advertising cancellation (or a
+signal-driven wall-clock deadline, which only bites if the abort it raises is
+honoured) would be false. An earlier revision of this change marked `publish`
+cancellable and deadlined; review rejected it because the abort context reached
+only the final-tree gates, so a cancellation could keep mutating before the next
+gate and could report a terminal status without proving the checkout was
+reconciled. The reported hang (a `publish` left `running` with `MERGE_HEAD`
+present after every child had exited) is closed structurally instead:
+
+- The shared streaming gate runner now runs each gate as its own process-group
+  leader and reaps the group when the leader exits. A gate that spawned a
+  background descendant and returned previously left that descendant holding the
+  stdout pipe, so `close` never fired; reaping an already-empty group is a no-op,
+  so a well-behaved gate is unaffected. This is the direct fix for the observed
+  "running with no active subprocess" hang, and it protects every gate run
+  (`verify` and `publish` alike), not only publish.
+- `publish` holds a dedicated, heartbeat-backed filesystem lease for its
+  authorized per-worktree Git directory from before staging through final
+  reconciliation, releasing it on every settled path. In-memory single-flight
+  remains an optimization, not the mutation lock. This lease must not reuse
+  `/integrate`'s repo-wide lock; that lane has a distinct
+  isolated-worktree/rebase lifecycle.
+- A small versioned write-ahead recovery journal in the authorized per-worktree
+  Git metadata records the opaque sync record ID, pre-publish and pre-sync
+  identities, fetched-base and expected-merge SHAs, and a closed phase, updated
+  before/after each mutating phase and required (not best-effort) before a
+  mutation. It is operational recovery state, never a success attestation or PR
+  authority; only the trusted issue-thread synchronization record authorizes PR
+  creation. Its temporary file is created with an unpredictable name under
+  `O_EXCL|O_NOFOLLOW` with a regular-file check, so a planted symlink cannot
+  redirect the write. Recovery envelopes stay closed and scrubbed: phases,
+  timestamps, object IDs, branch/ref identity, and operation-state flags only;
+  never command text, output, environment, credentials, origin URLs, lock or
+  journal paths, or stack traces.
+- The base-sync completion re-reads `HEAD`, `MERGE_HEAD`, and the unmerged set
+  immediately before the merge commit (a compare-and-swap against the persisted
+  attempt), so a checkout that changed under the long gates (the incident's
+  externally recovered merge) is refused without mutating rather than committed
+  and then rejected against stale state.
+- After process loss, a later authorized `publish` acquires the lease and
+  reconciles the journal against `HEAD`, `MERGE_HEAD`, and the tree before doing
+  new work. A journal-matching staged merge is resumed through the existing
+  base-sync retry contract (`retry_input`); a dirty-but-not-merging tree is
+  ordinary repair-and-retry territory that clears the spent journal and proceeds;
+  a mismatched, foreign, or corrupt journal is a bounded refusal that preserves
+  the checkout. The tool never auto-aborts, resets, chooses a conflict side, or
+  attributes an unrecorded merge to the current issue.
+
+Job starts, polls, and reconciliation remain transport/operation facts: they add
+no station, lifecycle state, marker family, or measurement schema. Making the
+whole publish graph honour an abort context, and only then adopting a genuine
+server-owned deadline and cancellation, are prerequisites this change does not
+claim.
+
 The test-quality reviewer's child-process ceiling is 30 minutes. A repository-
 scale test cutover exceeded the former ten-minute ceiling while its async job
 was healthy, so the shorter bound incorrectly converted legitimate review work

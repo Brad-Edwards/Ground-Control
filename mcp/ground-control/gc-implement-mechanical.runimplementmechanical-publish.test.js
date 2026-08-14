@@ -63,6 +63,13 @@ function baseDeps(overrides = {}) {
     }),
     closeIssue: async () => ({ ok: true, closed: true }),
     execFile: async () => ({ stdout: "", stderr: "" }),
+    // Mechanical-publish recovery seams (issue #1495): stubbed so the publish
+    // tests exercise staging/commit/sync without touching a real filesystem lease.
+    resolvePublishGitDir: async () => "/repo/.git",
+    acquirePublishLock: async () => async () => {},
+    reconcileInterruptedPublish: async () => ({ proceed: true }),
+    writePublishJournal: () => {},
+    removePublishJournal: () => {},
   };
   Object.assign(deps, overrides);
   // Mirrors the production wiring: the authorizer binds the requested UID to

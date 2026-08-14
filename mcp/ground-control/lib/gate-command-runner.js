@@ -22,11 +22,13 @@
 // existing call sites and the shared failure formatters keep working.
 
 import { spawn } from "node:child_process";
+import { isPosixProcessGroupCapable, isProcessGroupAlive, terminateProcessGroup } from "./process-group.js";
 
 // 64 KiB per stream is far more than a failure diagnostic needs while staying a
 // hard ceiling on retained memory. A test suite's actionable failure output
 // lives at the tail, which is exactly what is kept.
 const GATE_TAIL_BYTES = 64 * 1024;
+const KILL_GRACE_MS_DEFAULT = 5000;
 
 // Retains only the last `limitBytes` of everything pushed. Concatenating then
 // slicing on each chunk keeps the live buffer at or below the cap; a truncated
@@ -50,11 +52,39 @@ export async function runGateCommand(file, args, options = {}) {
   // ever sees real child_process options. It fires on every drained chunk so a
   // caller can prove the child is still producing output — the signal that tells
   // a slow-but-healthy sweep from a dead job (issue #1497).
-  const { onActivity, ...spawnOptions } = options;
+  const {
+    onActivity,
+    killSignal = "SIGTERM",
+    killGraceMs = KILL_GRACE_MS_DEFAULT,
+    ...spawnOptions
+  } = options;
+  // Run the gate as its own process-group leader and reap the group when the
+  // leader exits. A gate that spawns a background descendant and returns would
+  // otherwise leave that descendant holding the stdout pipe, so `close` never
+  // fires and the runner hangs forever after every visible child has exited —
+  // the original publish-hang failure mode (issue #1495). Reaping an already-empty
+  // group is a no-op, so a well-behaved gate is unaffected. Windows has no tested
+  // tree-termination equivalent, so it falls back to a direct child there.
+  const detached = isPosixProcessGroupCapable();
   return await new Promise((resolve, reject) => {
-    const child = spawn(file, args, spawnOptions);
+    let settled = false;
+    let pendingCleanup = null;
+    const child = spawn(file, args, detached ? { ...spawnOptions, detached: true } : spawnOptions);
     const stdoutTail = boundedTail(GATE_TAIL_BYTES);
     const stderrTail = boundedTail(GATE_TAIL_BYTES);
+
+    const reapGroup = () => {
+      if (!detached || !child.pid || !isProcessGroupAlive(child.pid)) return Promise.resolve();
+      if (pendingCleanup) return pendingCleanup;
+      pendingCleanup = terminateProcessGroup(child.pid, { killSignal, killGraceMs, label: file });
+      return pendingCleanup;
+    };
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      fn(value);
+    };
+
     // Draining both pipes as data arrives is also what prevents the child from
     // blocking on a full OS pipe buffer once its output passes ~64 KiB — the
     // failure mode a "discard the output" runner that stopped reading would
@@ -67,20 +97,28 @@ export async function runGateCommand(file, args, options = {}) {
       stderrTail.push(chunk);
       if (typeof onActivity === "function") onActivity("stderr", chunk.length);
     });
-    child.on("error", (error) => reject(error));
-    child.on("close", (code, signal) => {
-      const stdout = stdoutTail.toString();
-      const stderr = stderrTail.toString();
-      if (code === 0 && signal == null) {
-        resolve({ stdout, stderr });
-        return;
-      }
-      const error = new Error(`Command failed: ${file} ${args.join(" ")}\n${stderr}`);
-      error.code = code ?? undefined;
-      error.signal = signal ?? undefined;
-      error.stdout = stdout;
-      error.stderr = stderr;
-      reject(error);
+    child.on("error", (error) => finish(reject, error));
+    child.on("close", (code, closeSignal) => {
+      // Await any in-flight group cleanup so a straggler descendant is confirmed
+      // gone before the caller sees a terminal result.
+      Promise.resolve(pendingCleanup).then(() => {
+        const stdout = stdoutTail.toString();
+        const stderr = stderrTail.toString();
+        if (code === 0 && closeSignal == null) {
+          finish(resolve, { stdout, stderr });
+          return;
+        }
+        const error = new Error(`Command failed: ${file} ${args.join(" ")}\n${stderr}`);
+        error.code = code ?? undefined;
+        error.signal = closeSignal ?? undefined;
+        error.stdout = stdout;
+        error.stderr = stderr;
+        finish(reject, error);
+      });
     });
+    // Reap the group when the leader exits so a lingering descendant cannot keep
+    // `close` from firing. On a clean exit the group is already empty, so this is
+    // a no-op.
+    if (detached) child.on("exit", () => reapGroup());
   });
 }

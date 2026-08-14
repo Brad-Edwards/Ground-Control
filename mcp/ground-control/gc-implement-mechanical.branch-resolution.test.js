@@ -117,6 +117,13 @@ describe("runPublish branch derivation", () => {
           seen.push(params);
           return { ok: true, status: "complete", recordId: "a".repeat(32) };
         },
+        // Publish recovery seams (issue #1495): stubbed so this branch-derivation
+        // unit test does not touch a real filesystem lease.
+        resolvePublishGitDir: async () => "/repo/.git",
+        acquirePublishLock: async () => async () => {},
+        reconcileInterruptedPublish: async () => ({ proceed: true }),
+        writePublishJournal: () => {},
+        removePublishJournal: () => {},
       },
     );
     assert.equal(result.ok, true);
