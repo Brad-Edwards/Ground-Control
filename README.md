@@ -61,7 +61,8 @@ Code (and Codex / Cursor per ADR-027). See the
 
 ```bash
 make mcp-test     # MCP node --test suite (primary test gate)
-make policy       # repo-native ADR/workflow/spec guardrails + Vale
+make mcp-lint     # ESLint on the MCP server (also run by `make policy`)
+make policy       # repo-native ADR/workflow/spec guardrails + MCP lint + Vale
 make vale-lint    # prose lint on changed docs
 make graphify     # (optional) rebuild the disposable Graphify index
 ```
