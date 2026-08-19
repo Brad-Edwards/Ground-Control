@@ -111,12 +111,63 @@ def _git_top_level_dirs(repo_root: Path) -> set[str]:
     return dirs
 
 
+def _coverage_violations(
+    actual: set[str], documented: set[str], exclusions: dict[str, str]
+) -> list[Violation]:
+    """Two-sided directory drift: required-but-undocumented and documented-but-absent."""
+    violations = [
+        Violation(
+            DRIFT_CODE,
+            f"top-level directory `{name}/` is not listed in the README Repository map",
+        )
+        for name in sorted(actual)
+        if name not in exclusions and name not in documented
+    ]
+    violations.extend(
+        Violation(
+            DRIFT_CODE,
+            f"Repository map lists `{name}/`, which is not a tracked top-level directory",
+        )
+        for name in sorted(documented)
+        if name not in actual
+    )
+    return violations
+
+
+def _stale_exclusion_violations(exclusions: dict[str, str], actual: set[str]) -> list[Violation]:
+    """Excluded directories that no longer exist (the exclusion set is shrink-only)."""
+    return [
+        Violation(
+            DRIFT_CODE,
+            f"excluded directory `{name}/` no longer exists; remove it from "
+            "MAP_EXCLUDED_DIRS in tools/policy/repo_map.py",
+        )
+        for name in sorted(exclusions)
+        if name not in actual
+    ]
+
+
+def _broken_link_violations(section: str, root: Path) -> list[Violation]:
+    """Repo-relative Markdown links in the section that do not resolve on disk."""
+    return [
+        Violation(LINK_CODE, f"Repository map links to `{target}`, which does not exist")
+        for target in _relative_link_targets(section)
+        if not (root / target).exists()
+    ]
+
+
 def run_repository_map_freshness_check(
     readme_path: Path | None = None,
     repo_root: Path | None = None,
     top_level_dirs: set[str] | None = None,
     excluded: dict[str, str] | None = None,
 ) -> list[Violation]:
+    """Enforce that the README "Repository map" section matches the repository.
+
+    Reports a violation when a tracked top-level directory is undocumented, a
+    documented directory is not tracked, an excluded directory has disappeared, or a
+    repo-relative link in the section does not resolve. See ADR-095 / GC-P029.
+    """
     readme = readme_path if readme_path is not None else README_PATH
     root = repo_root if repo_root is not None else REPO_ROOT
     exclusions = excluded if excluded is not None else MAP_EXCLUDED_DIRS
@@ -138,43 +189,8 @@ def run_repository_map_freshness_check(
     actual = set(top_level_dirs) if top_level_dirs is not None else _git_top_level_dirs(root)
     documented = _documented_dirs(section)
 
-    violations: list[Violation] = []
-
-    for name in sorted(actual):
-        if name not in exclusions and name not in documented:
-            violations.append(
-                Violation(
-                    DRIFT_CODE,
-                    f"top-level directory `{name}/` is not listed in the README Repository map",
-                )
-            )
-
-    for name in sorted(documented):
-        if name not in actual:
-            violations.append(
-                Violation(
-                    DRIFT_CODE,
-                    f"Repository map lists `{name}/`, which is not a tracked top-level directory",
-                )
-            )
-
-    for name in sorted(exclusions):
-        if name not in actual:
-            violations.append(
-                Violation(
-                    DRIFT_CODE,
-                    f"excluded directory `{name}/` no longer exists; remove it from "
-                    "MAP_EXCLUDED_DIRS in tools/policy/repo_map.py",
-                )
-            )
-
-    for target in _relative_link_targets(section):
-        if not (root / target).exists():
-            violations.append(
-                Violation(
-                    LINK_CODE,
-                    f"Repository map links to `{target}`, which does not exist",
-                )
-            )
-
-    return violations
+    return [
+        *_coverage_violations(actual, documented, exclusions),
+        *_stale_exclusion_violations(exclusions, actual),
+        *_broken_link_violations(section, root),
+    ]
