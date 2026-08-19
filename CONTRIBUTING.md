@@ -1,130 +1,99 @@
 # Contributing to Ground Control
 
-## Getting Started
+Ground Control is the MCP server for the `/implement` workflow over repo-local files
+(issue #1500). There is no backend, database, or frontend; if a doc still tells you to
+start PostgreSQL or run Gradle, it is stale (see the
+[architecture overview](docs/architecture/ARCHITECTURE.md)).
+
+## Getting started
 
 ### Prerequisites
 
-- Java 21 (Eclipse Temurin recommended)
-- Docker Engine 24+ and Docker Compose v2
-- Gradle 8.x (via included wrapper - no manual install needed)
+- Node.js 20+
+- `gh` CLI, authenticated (`gh auth status`)
+- `git`
+- Python 3 (for the repo policy tooling)
 
-### Local Development Setup
+### Local setup
 
 ```bash
-# 1. Clone and branch
+# 1. Clone and branch from dev
 git clone https://github.com/autarchy-ai/Ground-Control.git
 cd Ground-Control
-git checkout -b feature/your-feature dev
+git checkout -b <issue-number>-short-slug dev
 
-# 2. Activate commit-time hooks for THIS clone (required once per clone, ADR-079)
-make hooks                         # writes + verifies the pre-commit/pre-push hooks
+# 2. Activate commit-time hooks for THIS clone (once per clone, ADR-079)
+make hooks
 
-# 3. Start PostgreSQL and Redis
-cp .env.example .env
-make up
+# 3. Install the MCP server dependencies
+make ground-control-mcp-install   # npm ci in mcp/ground-control
 
-# 4. Build and test
-make rapid                         # Format + compile (~1s with warm daemon)
-make test                          # Unit tests
-
-# 5. Start development server
-make dev                           # Spring Boot on :8000
+# 4. Run the test and policy gates
+make mcp-test                     # node --test suite (primary gate)
+make policy                       # repo-native guardrails + MCP lint + Vale
 ```
 
-### Makefile Targets
+### Makefile targets
 
 | Target | Description |
 |--------|-------------|
-| `make hooks` | Activate + verify commit-time pre-commit hooks for this clone (run once per clone) |
-| `make rapid` | Format + compile, no tests or static analysis (~1 second warm) |
-| `make test` | Run unit tests (no static analysis) |
-| `make check` | Full build + tests + static analysis + coverage (CI-equivalent) |
-| `make verify` | check + integration tests + OpenJML ESC |
-| `make format` | Format code with Spotless |
-| `make lint` | Check formatting |
-| `make integration` | Integration tests (Testcontainers) |
-| `make dev` | Start Spring Boot development server |
-| `make up` | Start Docker Compose services (PostgreSQL, Redis) |
-| `make down` | Stop Docker Compose services |
-| `make clean` | Remove build artifacts |
+| `make ground-control-mcp-install` | `npm ci` in `mcp/ground-control` |
+| `make mcp-test` | Run the MCP `node --test` suite (primary test gate) |
+| `make mcp-lint` | ESLint on the MCP server |
+| `make policy` | Repo-native ADR/workflow/spec guardrails + MCP lint + Vale |
+| `make policy-tests` | Python unit tests for the policy tooling |
+| `make vale-lint` | Prose lint on changed docs |
+| `make hooks` | Activate + verify commit-time hooks for this clone |
+| `make graphify` | (Optional) rebuild the disposable Graphify index |
+| `make help` | List all targets |
 
-Use `make rapid` for the inner dev loop. Use `make check` before pushing.
+Run `make mcp-test` for the inner loop. Run `make policy` as well when you touch
+workflow, ADR, MCP, policy, or requirement-spec surfaces.
 
-## Branch Strategy
+## Branch strategy
 
-- `main` - production-ready, protected
-- `dev` - integration branch, all PRs target this
-- `feature/*` - feature branches, branched from `dev`
+- `main` is production-ready and protected.
+- `dev` is the integration branch; all PRs target it.
+- Work on a branch cut from `dev`, named `<issue-number>-short-slug`.
 
-## Coding Standards
+## Coding standards
 
-Read [`docs/CODING_STANDARDS.md`](docs/CODING_STANDARDS.md) for the complete reference. Key points below.
+Read [`docs/CODING_STANDARDS.md`](docs/CODING_STANDARDS.md) for the full reference. In
+short: Node.js ES modules with `zod` tool schemas and thin handlers delegating to
+`lib/`; one `node --test` test per significant behavior; no abstraction below three call
+sites; comments for non-obvious rationale only; and the 500-line file-size limit is
+enforced by policy.
 
-### Java Backend
+## Commit messages
 
-| Tool | Purpose | Command |
-|------|---------|---------|
-| Spotless + Palantir | Formatting | `cd backend && ./gradlew spotlessApply` |
-| Error Prone | Compile-time bug detection | Runs as part of `./gradlew check` |
-| SpotBugs | Static analysis | Runs as part of `./gradlew check` |
-| Checkstyle | Naming/coding patterns | Runs as part of `./gradlew check` |
-| JaCoCo | Test coverage | `cd backend && ./gradlew jacocoTestReport` |
+- Imperative subject: `Add repository-map gate`, not `Added repository-map gate`.
+- Do not edit `CHANGELOG.md`. Release Please owns the changelog and product version
+  (GC-P027): it derives both from Conventional Commit history on `main` and opens a
+  release PR that regenerates `CHANGELOG.md`. Feature PRs do not file a fragment.
 
-- **Records for DTOs**: Use Java records for command objects and API request/response types
-- **No `var` abuse**: Use `var` only when the type is obvious from the right-hand side
-- **Domain layer purity**: No Spring web imports in `domain/` (enforced by ArchUnit)
+## Pull requests
 
-### Naming Conventions (Java)
-
-| Element | Convention | Example |
-|---------|-----------|---------|
-| Packages | `lowercase` | `requirements.service` |
-| Classes | `PascalCase` | `RequirementService` |
-| Methods | `camelCase` | `createRelation()` |
-| Constants | `UPPER_SNAKE_CASE` | `MAX_RETRY_COUNT` |
-| Enums | `UPPER_SNAKE_CASE` | `DEPENDS_ON` |
-
-## Architecture Rules
-
-The dependency rule is enforced by ArchUnit in CI:
-
-```
-api/ -> domain/ <- infrastructure/
-```
-
-- `domain/` has **zero** Spring web imports (no controllers, no HTTP)
-- `api/` depends on `domain/` - never imports `infrastructure/`
-- `infrastructure/` implements interfaces defined in `domain/`
-
-Enforced by ArchUnit tests in `ArchitectureTest.java`.
-
-## Commit Messages
-
-- Imperative mood: `Add risk scoring engine` not `Added risk scoring engine`
-- Do not edit `CHANGELOG.md` directly. Release Please owns it (GC-P027): it derives the version bump and the changelog entries from Conventional Commit history on `main` and opens a release PR that regenerates `CHANGELOG.md` mechanically. Feature PRs do not file a fragment - the old `changelog.d/` / Towncrier convention is retired.
-
-## Pull Requests
-
-- Target `dev`, not `main`
-- **PR title must be a Conventional Commit** (`type(optional-scope): subject`, lowercase-leading subject) - enforced by CI (`.github/workflows/pr-title.yml`, `amannn/action-semantic-pull-request`). Release Please parses merged commit history to compute the next version and `CHANGELOG.md` entries, so the title is load-bearing, not cosmetic.
-- PRs require passing CI (build + tests + static analysis + ArchUnit)
-- No coverage regression
-- Use the [PR template](.github/PULL_REQUEST_TEMPLATE.md)
+- Target `dev`, not `main`.
+- **The PR title must be a Conventional Commit** (`type(optional-scope): lowercase
+  subject`), enforced by CI (`.github/workflows/pr-title.yml`). Release Please parses
+  merged commit history to compute the next version and changelog, so the title is
+  load-bearing, not cosmetic.
+- CI must pass: the `node --test` suite, `make policy` (guardrails, MCP lint, Vale), and
+  the SonarCloud gate.
+- Use the [PR template](.github/PULL_REQUEST_TEMPLATE.md).
 
 ## Testing
 
-```
-backend/src/test/java/com/keplerops/groundcontrol/
-├── unit/domain/   # Domain logic only. No DB, no Spring context. JUnit 5 + Mockito.
-├── integration/   # With real PostgreSQL (Testcontainers). Spring Boot test.
-│                  # Tags: @Tag("integration") for standard, @Tag("age") for AGE
-└── architecture/  # ArchUnit rules (layer enforcement, naming).
-```
+- **`node --test`** is the primary gate (`make mcp-test`); suites are `*.test.js` under
+  `mcp/ground-control/`. Property tests use `fast-check`.
+- **Python `unittest`** covers the policy tooling (`make policy-tests`,
+  `tools/tests/test_*.py`).
+- Write one test per significant behavior, and drive new behavior test-first. Test names
+  describe behavior, not implementation.
 
-- **JUnit 5** for unit and integration tests
-- **jqwik** for property-based testing (state machines, enums) - tagged `@Tag("slow")`
-- **Testcontainers** for integration tests (PostgreSQL 16, Apache AGE)
-- **ArchUnit** for architecture rule enforcement
-- **Repo policy checks** via `make policy` for ADR/workflow parity, controller docs/MCP parity, migration companion updates, and PR body requirements
-- Test names describe behavior: `archiveFromDraftFails`, not `testArchiveMethod`
-- Tests are independent - no shared mutable state (except ordered E2E tests using `@TestInstance(PER_CLASS)`)
+## The `/implement` workflow
+
+This repository is developed through its own gated `/implement` loop (plan, TDD, review,
+CI, requirement transition, traceability reconciliation), specified in
+[`docs/DEVELOPMENT_WORKFLOW.md`](docs/DEVELOPMENT_WORKFLOW.md). Requirements and ADRs are
+repo-local files reviewed in the PR like any other change.

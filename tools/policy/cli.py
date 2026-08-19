@@ -54,6 +54,9 @@ from .authz_matrix import (
 from .requirement_specs import (
     run_requirement_specs_frontmatter_check,
 )
+from .repo_map import (
+    run_repository_map_freshness_check,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -88,6 +91,7 @@ def main(argv: list[str] | None = None) -> int:
     violations.extend(run_sonar_strictness_contract())
     violations.extend(run_file_size_limit_check())
     violations.extend(run_requirement_specs_frontmatter_check())
+    violations.extend(run_repository_map_freshness_check())
 
     base_ref, head_ref = _resolve_pr_refs(args)
     if args.skip_pr_body or _is_release_pr(base_ref, head_ref):
