@@ -43,7 +43,7 @@ export function validateDocumentationOutcome(input) {
 const SURFACE_CLASS_MAP = [
   {
     surface_class: "workflow",
-    prefix_patterns: ["skills/implement/", "skills/quickfix/"],
+    prefix_patterns: ["skills/implement/", "skills/quickfix/", "skills/review/"],
     doc_targets: ["architecture/adrs/", "docs/DEVELOPMENT_WORKFLOW.md"],
     outcome_required: true,
   },

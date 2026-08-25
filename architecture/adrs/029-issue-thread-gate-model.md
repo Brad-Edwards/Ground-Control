@@ -597,3 +597,24 @@ the station, attempt count, and stable failure classes; it never requests a
 unchanged in every respect. The single-human-touchpoint contract (PR merge) and
 the reviewer-of-record invariant are unchanged. See
 `architecture/notes/unobserved-station-recovery-preflight.md`.
+
+**2026-08-19 (issue #1535, maintainer PR review lane).** A maintainer review of
+an existing pull request is not an `/implement` review cycle and does not create
+an issue-thread workflow record. Its default review phase is read-only: findings,
+follow-up candidates, accepted tradeoffs, verification freshness, and the merge
+recommendation return only through the invoking interface. That phase posts no
+PR or issue comment, review, label, marker, or other repository-visible record.
+It also performs no branch, worktree, file, PR-metadata, or issue mutation.
+
+Explicit user authorization may move the same invocation into remediation on
+the existing PR branch in the invocation checkout. GitHub and Git mutations
+remain inside the repository-bound MCP server boundary; the lane does not gain
+a direct agent-side `gh`, `git`, or token path. A successful remediation may
+post one succinct, neutral, technical PR comment describing the changes and
+their rationale. It does not publish the review prose or add an issue comment
+unless the user separately requests that message. Post-merge issue closure
+continues through `gc_close_issue_after_merge`, one explicitly selected,
+directly delivered issue at a time; a cross-reference alone does not make a
+parent epic or partially delivered issue eligible. The user still owns PR
+merge. These rules create no new durable marker family and do not weaken the
+issue-thread record required for `/implement` or `/quickfix`.
