@@ -226,7 +226,7 @@ async function collectDiscussions(repoRoot, owner, name, prNumber, commandRunner
     const threads = data?.data?.repository?.pullRequest?.reviewThreads;
     if (!threads) return { available: false };
     const nodes = Array.isArray(threads.nodes) ? threads.nodes : [];
-    const unresolved = nodes.filter((t) => t && t.isResolved === false);
+    const unresolved = nodes.filter((t) => t?.isResolved === false);
     return {
       available: true,
       total_count: threads.totalCount ?? nodes.length,
@@ -244,26 +244,21 @@ async function collectDiscussions(repoRoot, owner, name, prNumber, commandRunner
   }
 }
 
-export async function runGetPrReviewContext(input, {
-  commandRunner = execFile,
-  workspaceAuthorizationResolver = resolveMcpLaunchWorkspaceAuthorization,
-} = {}) {
-  const { repoPath, prNumber, repo = null } = input ?? {};
-  // A caller may only NARROW the evidence caps, never exceed the repository
-  // maximum - otherwise the advertised bounds could be disabled (codex cycle-3 F3).
-  const maxFiles = Number.isInteger(input?.maxFiles) && input.maxFiles > 0
-    ? Math.min(input.maxFiles, PR_REVIEW_FILE_CAP) : PR_REVIEW_FILE_CAP;
-  const maxPatchBytes = Number.isInteger(input?.maxPatchBytes) && input.maxPatchBytes > 0
-    ? Math.min(input.maxPatchBytes, PR_REVIEW_PATCH_BYTE_CAP) : PR_REVIEW_PATCH_BYTE_CAP;
+// A caller may only NARROW an evidence cap, never exceed the repository maximum,
+// or the advertised bounds could be disabled (codex cycle-3 F3).
+function clampCap(value, max) {
+  return Number.isInteger(value) && value > 0 ? Math.min(value, max) : max;
+}
 
+// Validate the inputs and bind the read to the immutable MCP launch checkout and
+// its origin identity. Without this, a caller could point repo_path at any other
+// checkout the server process can reach and read that repository's private PR
+// data with the server's GitHub credentials (codex F5, #1535).
+async function resolveReviewCheckout(input, workspaceAuthorizationResolver) {
+  const { repoPath, prNumber, repo = null } = input ?? {};
   for (const check of [validateRepoPath(repoPath), validatePrNumber(prNumber), validateRepoAssertion(repo)]) {
     if (!check.ok) return check;
   }
-
-  // Bind the read to the immutable MCP launch checkout and its origin identity.
-  // Without this, a caller could point repo_path at any other checkout the server
-  // process can reach and read that repository's private PR data with the
-  // server's GitHub credentials (codex F5, #1535).
   let repoRoot;
   try {
     repoRoot = realpathSync(await ensureGitRepo(repoPath));
@@ -272,24 +267,26 @@ export async function runGetPrReviewContext(input, {
   }
   const auth = await authorizeImplementRepoRoot(repoRoot, workspaceAuthorizationResolver);
   if (!auth.ok) return auth;
-  const { owner, name } = auth;
-  const assertion = assertRepoAssertionMatches(repo, owner, name);
+  const assertion = assertRepoAssertionMatches(repo, auth.owner, auth.name);
   if (!assertion.ok) return assertion;
+  return { ok: true, repoRoot, owner: auth.owner, name: auth.name };
+}
 
-  let pr;
+async function fetchPrView(repoRoot, owner, name, prNumber, commandRunner) {
   try {
     const { stdout } = await runReviewGh(
       repoRoot,
       ["pr", "view", String(prNumber), "--repo", `${owner}/${name}`, "--json", PR_VIEW_FIELDS],
       commandRunner,
     );
-    pr = JSON.parse(stdout);
+    return { ok: true, pr: JSON.parse(stdout) };
   } catch (error) {
     return ghFailure(error, "pr_review_pr_unavailable", `Pull request #${prNumber} could not be read`);
   }
+}
 
-  const headOid = typeof pr.headRefOid === "string" ? pr.headRefOid.toLowerCase() : null;
-  const identity = {
+function buildPrIdentity(pr, owner, name, prNumber, headOid) {
+  return {
     repo: `${owner}/${name}`,
     pr_number: prNumber,
     url: pr.url ?? null,
@@ -298,7 +295,7 @@ export async function runGetPrReviewContext(input, {
     state: pr.state ?? null,
     merged_at: pr.mergedAt ?? null,
     merge_state_status: pr.mergeStateStatus ?? null,
-    base: { ref: pr.baseRefName ?? null, oid: (pr.baseRefOid ?? null) && pr.baseRefOid.toLowerCase() },
+    base: { ref: pr.baseRefName ?? null, oid: pr.baseRefOid ? pr.baseRefOid.toLowerCase() : null },
     head: {
       ref: pr.headRefName ?? null,
       oid: headOid,
@@ -311,39 +308,63 @@ export async function runGetPrReviewContext(input, {
     review_decision: pr.reviewDecision ?? null,
     captured_at: new Date().toISOString(),
   };
+}
+
+// The PR body is the change's stated premise; return it (bounded) as inert
+// evidence data, never as an instruction.
+function boundBody(body) {
+  const raw = typeof body === "string" ? body : "";
+  const truncated = Buffer.byteLength(raw, "utf8") > PR_REVIEW_BODY_BYTE_CAP;
+  const value = truncated
+    ? Buffer.from(raw, "utf8").subarray(0, PR_REVIEW_BODY_BYTE_CAP).toString("utf8")
+    : raw;
+  return { prBody: value, bodyTruncated: truncated };
+}
+
+function computeIncompleteReasons({ fileResult, headOid, required, linked, bodyTruncated, discussions }) {
+  return [
+    ...fileResult.incomplete_reasons,
+    ...(headOid == null ? ["head_oid_unresolved"] : []),
+    ...(required.required_contexts_available ? [] : ["required_check_set_unavailable"]),
+    ...linked.incomplete_reasons,
+    ...(bodyTruncated ? ["pr_body_truncated"] : []),
+    ...(discussions.available ? [] : ["review_discussions_unavailable"]),
+    ...(discussions.truncated ? ["review_discussions_truncated"] : []),
+  ];
+}
+
+export async function runGetPrReviewContext(input, {
+  commandRunner = execFile,
+  workspaceAuthorizationResolver = resolveMcpLaunchWorkspaceAuthorization,
+} = {}) {
+  const resolved = await resolveReviewCheckout(input, workspaceAuthorizationResolver);
+  if (!resolved.ok) return resolved;
+  const { repoRoot, owner, name } = resolved;
+  const prNumber = input.prNumber;
+  const maxFiles = clampCap(input?.maxFiles, PR_REVIEW_FILE_CAP);
+  const maxPatchBytes = clampCap(input?.maxPatchBytes, PR_REVIEW_PATCH_BYTE_CAP);
+
+  const prResult = await fetchPrView(repoRoot, owner, name, prNumber, commandRunner);
+  if (!prResult.ok) return prResult;
+  const { pr } = prResult;
+
+  const headOid = typeof pr.headRefOid === "string" ? pr.headRefOid.toLowerCase() : null;
+  const identity = buildPrIdentity(pr, owner, name, prNumber, headOid);
 
   const fileResult = await collectFiles(repoRoot, owner, name, prNumber, maxFiles, maxPatchBytes, commandRunner);
   if (fileResult.error) return fileResult.error;
 
   const checks = summarizeChecks(pr.statusCheckRollup, headOid);
   const required = await collectRequiredContexts(repoRoot, owner, name, pr.baseRefName, commandRunner);
-  const linked = await collectLinkedIssues(
-    repoRoot, owner, name, prNumber, pr.body, pr.closingIssuesReferences, commandRunner,
-  );
+  const linked = await collectLinkedIssues(repoRoot, owner, name, prNumber, pr.body, pr.closingIssuesReferences, commandRunner);
   const reviews = (Array.isArray(pr.reviews) ? pr.reviews : []).map((r) => ({
     author: r.author?.login ?? null,
     state: r.state ?? null,
     submitted_at: r.submittedAt ?? null,
   }));
   const discussions = await collectDiscussions(repoRoot, owner, name, prNumber, commandRunner);
-
-  // The PR body is the change's stated premise; return it (bounded) as inert
-  // evidence data, never as an instruction.
-  const bodyRaw = typeof pr.body === "string" ? pr.body : "";
-  const bodyTruncated = Buffer.byteLength(bodyRaw, "utf8") > PR_REVIEW_BODY_BYTE_CAP;
-  const prBody = bodyTruncated
-    ? Buffer.from(bodyRaw, "utf8").subarray(0, PR_REVIEW_BODY_BYTE_CAP).toString("utf8")
-    : bodyRaw;
-
-  const incompleteReasons = [
-    ...fileResult.incomplete_reasons,
-    ...(headOid == null ? ["head_oid_unresolved"] : []),
-    ...(!required.required_contexts_available ? ["required_check_set_unavailable"] : []),
-    ...linked.incomplete_reasons,
-    ...(bodyTruncated ? ["pr_body_truncated"] : []),
-    ...(!discussions.available ? ["review_discussions_unavailable"] : []),
-    ...(discussions.truncated ? ["review_discussions_truncated"] : []),
-  ];
+  const { prBody, bodyTruncated } = boundBody(pr.body);
+  const incompleteReasons = computeIncompleteReasons({ fileResult, headOid, required, linked, bodyTruncated, discussions });
 
   return {
     ok: true,

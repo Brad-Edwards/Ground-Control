@@ -105,15 +105,14 @@ export function validateReviewedIdentity(identity) {
   if (!isPlainObject(identity)) {
     return refusal("pr_review_identity_invalid", "reviewed_identity must be an object");
   }
-  for (const [field, check] of [
-    ["base_ref", validateRef(identity.base_ref, "reviewed_identity.base_ref")],
-    ["head_ref", validateRef(identity.head_ref, "reviewed_identity.head_ref")],
-    ["base_oid", validateOid(identity.base_oid, "reviewed_identity.base_oid")],
-    ["head_oid", validateOid(identity.head_oid, "reviewed_identity.head_oid")],
-  ]) {
-    if (!check.ok) return check;
-    void field;
-  }
+  const checks = [
+    validateRef(identity.base_ref, "reviewed_identity.base_ref"),
+    validateRef(identity.head_ref, "reviewed_identity.head_ref"),
+    validateOid(identity.base_oid, "reviewed_identity.base_oid"),
+    validateOid(identity.head_oid, "reviewed_identity.head_oid"),
+  ];
+  const failed = checks.find((check) => !check.ok);
+  if (failed) return failed;
   if (typeof identity.cross_repository !== "boolean") {
     return refusal("pr_review_identity_invalid", "reviewed_identity.cross_repository must be a boolean");
   }
