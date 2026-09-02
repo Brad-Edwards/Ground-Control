@@ -19,9 +19,9 @@ import re
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, field
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 from .core import (
     ADR_POLICY_PATH,
     REPO_ROOT,
@@ -32,8 +32,13 @@ from .cli_safety import (
     validate_git_ref,
 )
 
+# `git diff`/`git ls-files` filter selecting added, copied, deleted, modified,
+# renamed, type-changed, unmerged, unknown, and broken-pairing paths.
+GIT_DIFF_FILTER = "--diff-filter=ACDMRTUXB"
+
 
 def run_git(args: list[str], root: Path = REPO_ROOT) -> str:
+    """Run ``git`` with ``args`` in ``root`` and return its captured stdout."""
     result = subprocess.run(
         ["git", *args],
         cwd=root,
@@ -78,6 +83,34 @@ def merge_base_or(base: str, ref: str = "HEAD", root: Path = REPO_ROOT) -> str:
     return result.stdout.strip() or base
 
 
+def _changed_file_lines(
+    *,
+    base: str | None,
+    staged: bool,
+    env_var: str | None,
+    root: Path,
+) -> list[str]:
+    """Return the raw, newline-split path list for the selected diff scope."""
+    if env_var:
+        return os.getenv(env_var, "").splitlines()
+    if base:
+        diff_base = merge_base_or(base, root=root)
+        lines = run_git(
+            ["diff", "--name-only", GIT_DIFF_FILTER, diff_base, "--"], root=root
+        ).splitlines()
+    elif staged:
+        lines = run_git(
+            ["diff", "--cached", "--name-only", GIT_DIFF_FILTER, "--"], root=root
+        ).splitlines()
+    else:
+        tracked = run_git(
+            ["diff", "--name-only", GIT_DIFF_FILTER, "HEAD", "--"], root=root
+        ).splitlines()
+        untracked = run_git(["ls-files", "--others", "--exclude-standard"], root=root).splitlines()
+        lines = tracked + untracked
+    return lines
+
+
 def read_changed_files(
     *,
     files: Iterable[str] | None = None,
@@ -86,39 +119,34 @@ def read_changed_files(
     env_var: str | None = None,
     root: Path = REPO_ROOT,
 ) -> list[str]:
+    """Resolve the sorted, de-duplicated set of changed repo-relative paths.
+
+    Selection is ordered: an explicit ``files`` list wins, otherwise the paths
+    come from an ``env_var`` listing, a diff against ``base``, the staged index,
+    or finally the working-tree diff plus untracked files.
+    """
     if files:
         return sorted({normalize_path(path) for path in files if path})
-    if env_var:
-        raw = os.getenv(env_var, "")
-        return sorted({normalize_path(path) for path in raw.splitlines() if path.strip()})
-    if base:
-        diff_base = merge_base_or(base, root=root)
-        output = run_git(
-            ["diff", "--name-only", "--diff-filter=ACDMRTUXB", diff_base, "--"], root=root
-        )
-        return sorted({normalize_path(path) for path in output.splitlines() if path.strip()})
-    if staged:
-        output = run_git(["diff", "--cached", "--name-only", "--diff-filter=ACDMRTUXB", "--"], root=root)
-        return sorted({normalize_path(path) for path in output.splitlines() if path.strip()})
-
-    tracked = run_git(["diff", "--name-only", "--diff-filter=ACDMRTUXB", "HEAD", "--"], root=root)
-    untracked = run_git(["ls-files", "--others", "--exclude-standard"], root=root)
-    combined = tracked.splitlines() + untracked.splitlines()
-    return sorted({normalize_path(path) for path in combined if path.strip()})
+    raw_lines = _changed_file_lines(base=base, staged=staged, env_var=env_var, root=root)
+    return sorted({normalize_path(path) for path in raw_lines if path.strip()})
 
 
 def matches_any(path: str, patterns: Iterable[str]) -> bool:
+    """Return True when ``path`` matches any of the fnmatch ``patterns``."""
     return any(fnmatch.fnmatch(path, pattern) for pattern in patterns)
 
 
 def filter_matches(paths: Iterable[str], patterns: Iterable[str]) -> list[str]:
+    """Return the sorted, de-duplicated ``paths`` matching any of ``patterns``."""
     return sorted({path for path in paths if matches_any(path, patterns)})
 
 
-def load_json(path: Path, *, reject_duplicate_keys: bool = False) -> dict:
+def load_json(path: Path, *, reject_duplicate_keys: bool = False) -> dict[str, Any]:
+    """Parse the JSON object at ``path``, optionally rejecting duplicate keys."""
     object_pairs_hook = None
     if reject_duplicate_keys:
         def reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+            """Build a dict from ``pairs``, raising ValueError on any repeated key."""
             result: dict[str, Any] = {}
             for key, value in pairs:
                 if key in result:
@@ -131,6 +159,7 @@ def load_json(path: Path, *, reject_duplicate_keys: bool = False) -> dict:
 
 
 def get_repo_relative_files(root: Path, glob_pattern: str) -> list[str]:
+    """Return sorted repo-relative file paths under ``root`` matching ``glob_pattern``."""
     return sorted(
         normalize_path(str(path.relative_to(root)))
         for path in root.glob(glob_pattern)
@@ -153,12 +182,12 @@ def changed_lines_for(path: str, base: str | None, root: Path = REPO_ROOT) -> st
     return "\n".join(
         line
         for line in output.splitlines()
-        if (line.startswith("+") or line.startswith("-")) and not line.startswith(("+++", "---"))
+        if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
     )
 
 
 def _trigger_is_in_scope(
-    path: str, rule: dict, base: str | None, root: Path
+    path: str, rule: dict[str, Any], base: str | None, root: Path
 ) -> bool:
     """Does this changed path actually touch the surface the rule guards?
 
@@ -184,43 +213,65 @@ def _trigger_is_in_scope(
     return re.search(pattern, changed) is not None
 
 
+def _rule_triggers(
+    rule: dict[str, Any], changed_files: list[str], base: str | None, root: Path
+) -> list[str]:
+    """Return the changed paths that trigger ``rule`` and fall within its scope."""
+    return [
+        path
+        for path in filter_matches(changed_files, rule.get("whenAny", []))
+        if _trigger_is_in_scope(path, rule, base, root)
+    ]
+
+
+def _missing_requirements(
+    rule: dict[str, Any], changed_files: list[str]
+) -> tuple[list[str], list[str]]:
+    """Return the (missing requireAll, missing requireAny) entries for ``rule``."""
+    missing_all = [
+        required
+        for required in rule.get("requireAll", [])
+        if required not in changed_files
+    ]
+    missing_any: list[str] = []
+    require_any = rule.get("requireAny", [])
+    if require_any and not any(required in changed_files for required in require_any):
+        missing_any.append(f"one of: {', '.join(require_any)}")
+    return missing_all, missing_any
+
+
+def _evaluate_rule(
+    rule: dict[str, Any], changed_files: list[str], base: str | None, root: Path
+) -> Violation | None:
+    """Return a Violation when ``rule`` fires but its required updates are absent."""
+    triggers = _rule_triggers(rule, changed_files, base, root)
+    if not triggers:
+        return None
+
+    missing_all, missing_any = _missing_requirements(rule, changed_files)
+    if not (missing_all or missing_any):
+        return None
+
+    details = [f"triggered by: {', '.join(triggers)}"]
+    if missing_all:
+        details.append(f"missing required file updates: {', '.join(missing_all)}")
+    details.extend(missing_any)
+    return Violation(
+        code=rule["id"],
+        message=rule["message"],
+        details=details,
+    )
+
+
 def run_adr_guard(
     changed_files: list[str], root: Path = REPO_ROOT, base: str | None = None
 ) -> list[Violation]:
+    """Evaluate the ADR/documentation coupling policy against ``changed_files``."""
     policy = load_json(ADR_POLICY_PATH)
     violations: list[Violation] = []
-
     for policy_entry in policy["policies"]:
         for rule in policy_entry.get("rules", []):
-            triggers = [
-                path
-                for path in filter_matches(changed_files, rule.get("whenAny", []))
-                if _trigger_is_in_scope(path, rule, base, root)
-            ]
-            if not triggers:
-                continue
-
-            missing_all = [
-                required
-                for required in rule.get("requireAll", [])
-                if required not in changed_files
-            ]
-            missing_any = []
-            require_any = rule.get("requireAny", [])
-            if require_any and not any(required in changed_files for required in require_any):
-                missing_any.append(f"one of: {', '.join(require_any)}")
-
-            if missing_all or missing_any:
-                details = [f"triggered by: {', '.join(triggers)}"]
-                if missing_all:
-                    details.append(f"missing required file updates: {', '.join(missing_all)}")
-                details.extend(missing_any)
-                violations.append(
-                    Violation(
-                        code=rule["id"],
-                        message=rule["message"],
-                        details=details,
-                    )
-                )
-
+            violation = _evaluate_rule(rule, changed_files, base, root)
+            if violation is not None:
+                violations.append(violation)
     return violations

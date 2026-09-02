@@ -13,6 +13,11 @@ import { buildInboxSlug, defaultSpawnIngest, formatInboxTimestamp, formatSourceC
 import { getRepoGroundControlContext } from "./repo-vocabulary-2.js";
 import { RequestError, addAuthorizationHeader, buildUrl, parseErrorBody } from "./test-quality-prompt.js";
 
+// The MCP server identifies itself as the actor on every backend request; both
+// the header name and its value recur across the request-shaping branches below.
+const ACTOR_HEADER = "X-Actor";
+const MCP_ACTOR = "mcp-server";
+
 export async function request(method, path, { body, rawBody, params, formData, signal } = {}) {
   const url = buildUrl(path, params);
   const options = { method };
@@ -21,19 +26,19 @@ export async function request(method, path, { body, rawBody, params, formData, s
   if (signal) options.signal = signal;
 
   if (formData) {
-    options.headers = { "X-Actor": "mcp-server" };
+    options.headers = { [ACTOR_HEADER]: MCP_ACTOR };
     options.body = formData;
     // Let fetch set Content-Type with boundary for multipart
   } else if (rawBody !== undefined) {
     // Pre-built camelCase object — skip toCamelCase() (used when the body
     // contains opaque-map fields whose inner keys must not be transformed).
-    options.headers = { "Content-Type": "application/json", "X-Actor": "mcp-server" };
+    options.headers = { "Content-Type": "application/json", [ACTOR_HEADER]: MCP_ACTOR };
     options.body = JSON.stringify(rawBody);
-  } else if (body !== undefined) {
-    options.headers = { "Content-Type": "application/json", "X-Actor": "mcp-server" };
-    options.body = JSON.stringify(toCamelCase(body));
+  } else if (body === undefined) {
+    options.headers = { [ACTOR_HEADER]: MCP_ACTOR };
   } else {
-    options.headers = { "X-Actor": "mcp-server" };
+    options.headers = { "Content-Type": "application/json", [ACTOR_HEADER]: MCP_ACTOR };
+    options.body = JSON.stringify(toCamelCase(body));
   }
   addAuthorizationHeader(path, options.headers);
 

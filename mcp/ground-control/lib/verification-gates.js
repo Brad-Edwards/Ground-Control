@@ -20,6 +20,56 @@ const SHA256_HEX_RE = /^[0-9a-f]{64}$/;
 // the poll cadence is coarse, so per-chunk reporting would be pure overhead.
 const PROGRESS_THROTTLE_MS = 500;
 
+// Per-phase progress reporter: the initial-and-throttled snapshot emitter plus
+// the onActivity byte counter the gate runner drives. Extracted so the gate loop
+// stays under the cognitive-complexity budget (S3776); the closures are unchanged.
+function _makeGateProgressReporter(report, phase, phaseStartedMs) {
+  let stdoutBytes = 0;
+  let stderrBytes = 0;
+  let lastReportMs = 0;
+  const emit = () => {
+    if (!report) return;
+    report({
+      phase,
+      phase_started_ms: phaseStartedMs,
+      last_activity_ms: Date.now(),
+      stdout_bytes: stdoutBytes,
+      stderr_bytes: stderrBytes,
+    });
+  };
+  const onActivity = report
+    ? (stream, bytes) => {
+      if (stream === "stdout") stdoutBytes += bytes;
+      else stderrBytes += bytes;
+      const now = Date.now();
+      if (now - lastReportMs >= PROGRESS_THROTTLE_MS) {
+        lastReportMs = now;
+        emit();
+      }
+    }
+    : undefined;
+  return { emit, onActivity };
+}
+
+// Run one gate to completion and return its timing plus the caught failure (or
+// null). Never throws for a gate failure — the caller owns the throw so it can
+// attach the accumulated timings.
+async function _runGatePhase({ phase, command, gateRunner, repoRoot, gateEnv, report }) {
+  const phaseStartedMs = Date.now();
+  const { emit, onActivity } = _makeGateProgressReporter(report, phase, phaseStartedMs);
+  emit();
+  let failure = null;
+  try {
+    await gateRunner("bash", ["-c", command], { cwd: repoRoot, env: gateEnv, onActivity });
+  } catch (error) {
+    failure = error;
+  }
+  return {
+    timing: { phase, duration_ms: Date.now() - phaseStartedMs, outcome: failure ? "failed" : "passed" },
+    failure,
+  };
+}
+
 /**
  * Run the configured completion gate, then the policy gate, through one
  * size-safe boundary. Returns `{ timings }`: a phase-ordered list of
@@ -53,45 +103,12 @@ export async function runImplementCompletionPolicyGates({
   const report = typeof reportProgress === "function" ? reportProgress : null;
   const timings = [];
   for (const { phase, command } of gates) {
-    const phaseStartedMs = Date.now();
-    let stdoutBytes = 0;
-    let stderrBytes = 0;
-    let lastReportMs = 0;
     // Snapshots carry only numbers and the phase name — never command text,
     // child output, paths, or environment (issue #1497).
-    const emit = () => {
-      if (!report) return;
-      report({
-        phase,
-        phase_started_ms: phaseStartedMs,
-        last_activity_ms: Date.now(),
-        stdout_bytes: stdoutBytes,
-        stderr_bytes: stderrBytes,
-      });
-    };
-    emit();
-    const onActivity = report
-      ? (stream, bytes) => {
-        if (stream === "stdout") stdoutBytes += bytes;
-        else stderrBytes += bytes;
-        const now = Date.now();
-        if (now - lastReportMs >= PROGRESS_THROTTLE_MS) {
-          lastReportMs = now;
-          emit();
-        }
-      }
-      : undefined;
-    let failure = null;
-    try {
-      await gateRunner("bash", ["-c", command], { cwd: repoRoot, env: gateEnv, onActivity });
-    } catch (error) {
-      failure = error;
-    }
-    timings.push({
-      phase,
-      duration_ms: Date.now() - phaseStartedMs,
-      outcome: failure ? "failed" : "passed",
+    const { timing, failure } = await _runGatePhase({
+      phase, command, gateRunner, repoRoot, gateEnv, report,
     });
+    timings.push(timing);
     if (failure) {
       failure.gatePhase = phase;
       failure.timings = timings;

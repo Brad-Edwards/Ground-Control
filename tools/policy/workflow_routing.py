@@ -19,7 +19,6 @@ import re
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 from .core import (
@@ -33,6 +32,7 @@ from .cli_safety import (
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
+    """Parse the policy CLI arguments from ``argv`` into a Namespace."""
     parser = argparse.ArgumentParser(description="Run repo policy checks.")
     parser.add_argument("--base", help="Git base ref to diff against.")
     parser.add_argument(
@@ -120,6 +120,7 @@ def write_violations_json(path: str, violations: list[Violation], duration_ms: i
 
 
 def render_and_exit(violations: list[Violation]) -> int:
+    """Print the policy result and return the exit code (0 when clean, else 1)."""
     if not violations:
         print("Policy checks passed.")
         return 0

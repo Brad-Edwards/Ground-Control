@@ -4,17 +4,18 @@
 // (docs/CODING_STANDARDS.md, Sonar S104). It contained no mutual recursion, so it was
 // split along its own dependency layering. lib.js remains the barrel every caller imports.
 
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { realpathSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { parsePhaseMarkers } from "./codex-review.js";
-import { codexEngineEnv } from "./codex-engine-env.js";
-import { MCP_LAUNCH_CWD, evaluateExecutionObligations, isDefaultImplementHooksPath, parseExecutionObligationMarkers, readGeneratedCodexSummary } from "./codex-workflow.js";
+import { MCP_LAUNCH_CWD, evaluateExecutionObligations, isDefaultImplementHooksPath, parseExecutionObligationMarkers } from "./codex-workflow.js";
 import { ENRICH_THREAD_PAGE_CAP } from "./grc-legacy-compat-2.js";
-import { getAuthenticatedGitHubLogin, getOwnerRepo, hasVerifiedStructuredWontfixAuthorization, readIssueCommentBodies, readIssueCommentsWithAuthors, resolveExecutionObligationTrust } from "./grc-legacy-compat-3.js";
+import { getAuthenticatedGitHubLogin, getOwnerRepo, hasVerifiedStructuredWontfixAuthorization, readIssueCommentsWithAuthors, resolveExecutionObligationTrust } from "./grc-legacy-compat-3.js";
 import { STATION_OBSERVATION_DISPOSITION, hasVerifiedStationReobservation } from "./execution-obligation-v2.js";
-import { buildCodexReviewExecArgs } from "./grc-legacy-compat.js";
-import { getDefaultCodexTimeoutMs, execFile, execFileWithInput, formatCommandFailure } from "./runtime-primitives.js";
+import { execFile, formatCommandFailure } from "./runtime-primitives.js";
+export * from "./grc-legacy-compat-7.js";
+
+// `git rev-parse --show-toplevel` recurs across the repo-root resolvers below.
+const GIT_SHOW_TOPLEVEL = "--show-toplevel";
 
 export async function ensureGitRepo(repoPath) {
   if (!repoPath || !isAbsolute(repoPath)) {
@@ -22,14 +23,14 @@ export async function ensureGitRepo(repoPath) {
   }
 
   try {
-    const { stdout } = await execFile("git", ["-C", repoPath, "rev-parse", "--show-toplevel"]);
+    const { stdout } = await execFile("git", ["-C", repoPath, "rev-parse", GIT_SHOW_TOPLEVEL]);
     return stdout.trim();
   } catch (error) {
     throw new Error(`repo_path is not a valid Git repository: ${formatCommandFailure("git", error)}`);
   }
 }
 async function captureImplementWorkspaceAuthorization(cwd) {
-  const { stdout } = await execFile("git", ["-C", cwd, "rev-parse", "--show-toplevel"]);
+  const { stdout } = await execFile("git", ["-C", cwd, "rev-parse", GIT_SHOW_TOPLEVEL]);
   const workspaceRoot = realpathSync(stdout.trim());
   const identity = await readGitIdentity(workspaceRoot);
   const { owner, name } = await getOwnerRepo(workspaceRoot, { allowGhFallback: false });
@@ -125,7 +126,7 @@ export async function authorizeImplementRepoRoot(repoRoot, workspaceAuthorizatio
 }
 export async function readGitIdentity(repoRoot) {
   const [top, gitDir, gitCommonDir, origin] = await Promise.all([
-    execFile("git", ["-C", repoRoot, "rev-parse", "--show-toplevel"]),
+    execFile("git", ["-C", repoRoot, "rev-parse", GIT_SHOW_TOPLEVEL]),
     execFile("git", ["-C", repoRoot, "rev-parse", "--absolute-git-dir"]),
     execFile("git", ["-C", repoRoot, "rev-parse", "--git-common-dir"]),
     execFile("git", ["-C", repoRoot, "remote", "get-url", "origin"]),
@@ -145,9 +146,26 @@ export async function readGitIdentity(repoRoot) {
     origin: origin.stdout.trim(),
   };
 }
+// Dangerous, caller-controlled executable Git config keys. Split from one large
+// alternation into per-key anchored patterns (S5843): the outer `^(?:A|B|…)$/i`
+// matches a whole key iff it fully matches one branch, so testing each branch
+// as its own `^(?:…)$/i` and OR-ing the results matches EXACTLY the same set.
+const DANGEROUS_GIT_CONFIG_KEY_RES = [
+  /^core\.(?:hookspath|sshcommand|askpass|fsmonitor)$/i,
+  /^credential(?:\.|$)$/i,
+  /^filter\..*\.(?:clean|smudge|process|required)$/i,
+  /^diff\..*\.command$/i,
+  /^merge\..*\.driver$/i,
+  /^include(?:if\..*)?\.path$/i,
+  /^url\..*\.(?:insteadof|pushinsteadof)$/i,
+  /^remote\..*\.(?:proxy|uploadpack|receivepack)$/i,
+];
+
+function isDangerousGitConfigKey(key) {
+  return DANGEROUS_GIT_CONFIG_KEY_RES.some((re) => re.test(key));
+}
+
 export async function assertSafeImplementCheckoutConfiguration(repoRoot) {
-  const dangerousKey =
-    /^(?:core\.(?:hookspath|sshcommand|askpass|fsmonitor)|credential(?:\.|$)|filter\..*\.(?:clean|smudge|process|required)|diff\..*\.command|merge\..*\.driver|include(?:if\..*)?\.path|url\..*\.(?:insteadof|pushinsteadof)|remote\..*\.(?:proxy|uploadpack|receivepack))$/i;
   const { stdout } = await execFile(
     "git",
     ["-C", repoRoot, "config", "--local", "--name-only", "--get-regexp", ".*"],
@@ -158,7 +176,7 @@ export async function assertSafeImplementCheckoutConfiguration(repoRoot) {
   let configuredDangerousKeys = stdout
     .split(/\r?\n/)
     .map((key) => key.trim())
-    .filter((key) => key !== "" && dangerousKey.test(key));
+    .filter((key) => key !== "" && isDangerousGitConfigKey(key));
   if (configuredDangerousKeys.some((key) => key.toLowerCase() === "core.hookspath")) {
     const [{ stdout: hooksPath }, { stdout: gitDir }, { stdout: gitCommonDir }] = await Promise.all([
       execFile("git", ["-C", repoRoot, "config", "--local", "--path", "--get", "core.hooksPath"]),
@@ -347,6 +365,19 @@ export async function fetchReviewCommentById(repoRoot, owner, name, commentId) {
   );
   return JSON.parse(stdout);
 }
+// Fold one page of GraphQL review threads into `result`, recording the thread
+// id for every wanted comment database id not already mapped. Extracted to keep
+// enrichCommentsWithThreadIds under the cognitive-complexity budget (S3776).
+function _absorbReviewThreadPage(threads, wanted, result) {
+  for (const node of threads.nodes || []) {
+    for (const c of node.comments?.nodes || []) {
+      if (wanted.has(c.databaseId) && !result.has(c.databaseId)) {
+        result.set(c.databaseId, node.id);
+      }
+    }
+  }
+}
+
 export async function enrichCommentsWithThreadIds({ repoRoot, owner, name, prNumber, commentIds }) {
   if (!commentIds || commentIds.length === 0) {
     return new Map();
@@ -391,107 +422,10 @@ export async function enrichCommentsWithThreadIds({ repoRoot, owner, name, prNum
     const data = JSON.parse(stdout);
     const threads = data?.data?.repository?.pullRequest?.reviewThreads;
     if (!threads) break;
-    for (const node of threads.nodes || []) {
-      for (const c of node.comments?.nodes || []) {
-        if (wanted.has(c.databaseId) && !result.has(c.databaseId)) {
-          result.set(c.databaseId, node.id);
-        }
-      }
-    }
+    _absorbReviewThreadPage(threads, wanted, result);
     if (!threads.pageInfo?.hasNextPage) break;
     cursor = threads.pageInfo.endCursor;
   }
 
   return result;
-}
-async function collectUnreviewedUntrackedPaths(repoRoot) {
-  const { stdout } = await execFile(
-    "git",
-    ["-C", repoRoot, "ls-files", "--others", "--exclude-standard", "-z"],
-    { maxBuffer: 10 * 1024 * 1024 },
-  );
-  return stdout.split("\0").filter((p) => p !== "");
-}
-export async function computeReviewDiff(repoRoot, baseBranch, uncommitted) {
-  if (uncommitted) {
-    const staged = await execFile("git", ["-C", repoRoot, "diff", "--staged"], { maxBuffer: 50 * 1024 * 1024 });
-    const unstaged = await execFile("git", ["-C", repoRoot, "diff"], { maxBuffer: 50 * 1024 * 1024 });
-    const stagedManifest = await execFile(
-      "git",
-      ["-C", repoRoot, "diff", "--staged", "--numstat"],
-      { maxBuffer: 10 * 1024 * 1024 },
-    );
-    const unstagedManifest = await execFile(
-      "git",
-      ["-C", repoRoot, "diff", "--numstat"],
-      { maxBuffer: 10 * 1024 * 1024 },
-    );
-    const unreviewedUntrackedPaths = await collectUnreviewedUntrackedPaths(repoRoot);
-    return {
-      diffText: `${staged.stdout}\n${unstaged.stdout}`.trim(),
-      manifest: [
-        "# staged",
-        stagedManifest.stdout.trim() || "(none)",
-        "",
-        "# unstaged",
-        unstagedManifest.stdout.trim() || "(none)",
-        // Count only: the manifest goes into the reviewer prompt, and a path
-        // can itself be revealing. The caller gets the full list off-prompt.
-        ...(unreviewedUntrackedPaths.length > 0
-          ? [
-              "",
-              `# untracked: ${unreviewedUntrackedPaths.length} path(s) present but NOT staged and NOT included in this review`,
-            ]
-          : []),
-      ].join("\n"),
-      baseRefDescriptor: null,
-      unreviewedUntrackedPaths,
-    };
-  }
-  const candidates = [`origin/${baseBranch}`, baseBranch, "origin/main", "main"];
-  for (const ref of candidates) {
-    try {
-      await execFile("git", ["-C", repoRoot, "rev-parse", "--verify", ref]);
-      const { stdout } = await execFile(
-        "git",
-        ["-C", repoRoot, "diff", `${ref}...HEAD`],
-        { maxBuffer: 50 * 1024 * 1024 },
-      );
-      const manifest = await execFile(
-        "git",
-        ["-C", repoRoot, "diff", `${ref}...HEAD`, "--numstat"],
-        { maxBuffer: 10 * 1024 * 1024 },
-      );
-      return {
-        diffText: stdout,
-        manifest: manifest.stdout.trim() || "(no files changed)",
-        baseRefDescriptor: ref,
-        unreviewedUntrackedPaths: [],
-      };
-    } catch {
-      continue;
-    }
-  }
-  throw new Error(`Unable to compute review diff: none of ${candidates.join(", ")} exist in ${repoRoot}`);
-}
-export async function runSingleCodexReview({ repoRoot, prompt, signal = undefined }) {
-  const tempDir = mkdtempSync(join(tmpdir(), "gc-codex-review-"));
-  const outputPath = join(tempDir, "codex-last-message.txt");
-  try {
-    await execFileWithInput(
-      "codex",
-      buildCodexReviewExecArgs({ repoPath: repoRoot, outputPath }),
-      {
-        input: prompt,
-        cwd: repoRoot,
-        maxBuffer: 10 * 1024 * 1024,
-        env: codexEngineEnv(),
-        timeoutMs: getDefaultCodexTimeoutMs(),
-        signal,
-      },
-    );
-    return readGeneratedCodexSummary(outputPath);
-  } finally {
-    rmSync(tempDir, { recursive: true, force: true });
-  }
 }

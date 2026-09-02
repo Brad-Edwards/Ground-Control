@@ -429,9 +429,9 @@ async function runBaseSyncComplete(args) {
   const remoteRef = `refs/remotes/origin/${baseBranch}`;
   const mergeHead = await readImplementGitOid(repoRoot, "MERGE_HEAD", commandRunner)
     .catch(() => null);
-  const prepared = mergeHead != null
-    ? await prepareMergeHeadCompletion(args)
-    : await prepareCommittedRetryCompletion(args);
+  const prepared = mergeHead == null
+    ? await prepareCommittedRetryCompletion(args)
+    : await prepareMergeHeadCompletion(args);
   if (prepared.ok === false) return prepared;
   let { resultingFeatureSha, verifiedTreeSha, verifiedToolchainDigest } = prepared;
   const { stdout: parentsOutput } = await runImplementGit(

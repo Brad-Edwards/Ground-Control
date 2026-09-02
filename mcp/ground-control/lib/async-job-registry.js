@@ -187,7 +187,11 @@ function _normalizedFingerprintValue(value) {
         .filter((key) => value[key] !== undefined)
         // Explicit, deterministic code-unit ordering (S2871): this feeds a
         // fingerprint, so the order must be identical across hosts and locales.
-        .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+        .sort((a, b) => {
+          if (a < b) return -1;
+          if (a > b) return 1;
+          return 0;
+        })
         .map((key) => [key, _normalizedFingerprintValue(value[key])]),
     );
   }
@@ -205,7 +209,7 @@ export function asyncJobInputFingerprint(value) {
 // namespace plus the caller-stable key for one logical attempt.
 export function startAsyncJob(kind, runFn, options = {}) {
   if (typeof runFn !== "function") {
-    throw new Error("startAsyncJob: runFn must be a function");
+    throw new TypeError("startAsyncJob: runFn must be a function");
   }
   const validated = _validateAsyncJobOptions(options);
   if (!validated.ok) return validated;

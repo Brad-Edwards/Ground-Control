@@ -15,13 +15,18 @@ import { EXACT_REQUIREMENT_UID_RE, PR_BODY_CHANGE_CLASSES, PR_BODY_GC_CHECK_LINE
 const CHANGELOG_FRAGMENT_RE =
   /^changelog\.d\/(?:[A-Za-z0-9._-]+|\+[A-Za-z0-9._-]+)\.(?:security|added|changed|deprecated|removed|fixed)\.md$/;
 
+// The two changelog-mode values recur across scalar validation, changelog
+// validation, and the checklist renderer.
+const CHANGELOG_MODE_FRAGMENTS = "fragments";
+const CHANGELOG_MODE_RELEASE_PLEASE = "release-please";
+
 const byteLength = (value) => Buffer.byteLength(value, "utf8");
 
 // --- validators (each returns an array of error strings) ---
 
 function validateScalars({ changelogMode, issueNumber, changeClass }) {
   const errors = [];
-  if (changelogMode !== "fragments" && changelogMode !== "release-please") {
+  if (changelogMode !== CHANGELOG_MODE_FRAGMENTS && changelogMode !== CHANGELOG_MODE_RELEASE_PLEASE) {
     errors.push('changelogMode must be "fragments" or "release-please" when set');
   }
   if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
@@ -92,7 +97,7 @@ function validateTraceability(traceability) {
 function validateChangelog({ changelogMode, changelogFragment, changeClass }) {
   // Release Please repos (#1399 / #1336, GC-P027): Release Please owns
   // CHANGELOG.md, so a per-PR changelog.d fragment is rejected and never required.
-  if (changelogMode === "release-please") {
+  if (changelogMode === CHANGELOG_MODE_RELEASE_PLEASE) {
     return changelogFragment == null
       ? []
       : ["changelogFragment is not accepted when changelogMode is 'release-please' (Release Please owns CHANGELOG.md; there is no changelog.d fragment)"];
@@ -146,7 +151,7 @@ function validateDocumentationOutcomeField(documentationOutcome) {
 // Aggregate all field validators, preserving the original error ordering.
 export function collectPrBodyErrors(input) {
   const { issueNumber, changeClass, requirementUids, adrRefs, summary, changes, traceability, changelogFragment, testNotes } = input;
-  const changelogMode = input.changelogMode == null ? "fragments" : input.changelogMode;
+  const changelogMode = input.changelogMode == null ? CHANGELOG_MODE_FRAGMENTS : input.changelogMode;
   return [
     ...validateScalars({ changelogMode, issueNumber, changeClass }),
     ...validateRequirementUids(requirementUids),
@@ -215,7 +220,7 @@ function traceabilityLines(traceability) {
 }
 
 function changelogChecklistLine(changelogMode, changeClass, changelogFragment) {
-  if (changelogMode === "release-please") {
+  if (changelogMode === CHANGELOG_MODE_RELEASE_PLEASE) {
     return "- [x] Changelog: owned by Release Please (generated from the Conventional Commit PR title; no per-PR fragment)";
   }
   if (changeClass === "doc-only") return "- Changelog fragment: N/A — docs-only change";
@@ -224,7 +229,7 @@ function changelogChecklistLine(changelogMode, changeClass, changelogFragment) {
 
 function checklistLines(input) {
   const { changeClass, changelogFragment } = input;
-  const changelogMode = input.changelogMode == null ? "fragments" : input.changelogMode;
+  const changelogMode = input.changelogMode == null ? CHANGELOG_MODE_FRAGMENTS : input.changelogMode;
   // Repo-neutral checklist (issue #1199): universally meaningful workflow evidence
   // only — not Ground Control's Java/domain rules and no hardcoded doc path.
   const lines = [

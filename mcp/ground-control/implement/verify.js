@@ -6,36 +6,44 @@
 import { dominantGate, implementGateEnvironment, isVerificationAttestationActive, produceVerificationAttestation, readImplementWorkingTreeOid, resolveWorkflowPolicyCommand, runImplementCompletionPolicyGates, runVerifiedGateBoundary } from "../lib.js";
 import { childGateArtifactPaths, commandFailure, emitPolicyAndValeAttempts, emitSpotbugsAttempt, failure, readStatus } from "./gate-helpers.js";
 
-export async function runVerify(args, deps) {
-  const action = "verify";
+// Resolve and validate everything verify needs before running gates: repository
+// context, an authorized mutation checkout, a configured completion command, and
+// the authorized requirement UID. Returns `{ failure }` on the first invalid input
+// so the caller surfaces it unchanged.
+async function resolveVerifyInputs(args, deps, action) {
   const context = await deps.getContext(args.repoPath);
   if (context?.status !== "ok") {
-    return failure(
-      action,
-      "implement_mechanical_context_invalid",
-      context?.errors?.join("; ") ?? "Ground Control repository context is unavailable",
-      "repair_ground_control_context_and_retry",
-    );
+    return {
+      failure: failure(
+        action,
+        "implement_mechanical_context_invalid",
+        context?.errors?.join("; ") ?? "Ground Control repository context is unavailable",
+        "repair_ground_control_context_and_retry",
+      ),
+    };
   }
   const authorization = await deps.authorizeRepo(args.repoPath);
   if (!authorization.ok) {
-    return failure(
-      action,
-      authorization.error,
-      authorization.message,
-      "repair_authorized_checkout_and_retry",
-    );
+    return {
+      failure: failure(
+        action,
+        authorization.error,
+        authorization.message,
+        "repair_authorized_checkout_and_retry",
+      ),
+    };
   }
-  const repoRoot = authorization.repoRoot;
   const command =
     context.workflow?.completion_command ?? context.workflow?.test_command;
   if (typeof command !== "string" || command.trim() === "") {
-    return failure(
-      action,
-      "implement_mechanical_completion_command_missing",
-      "No completion or test command is configured",
-      "configure_a_completion_command_and_retry",
-    );
+    return {
+      failure: failure(
+        action,
+        "implement_mechanical_completion_command_missing",
+        "No completion or test command is configured",
+        "configure_a_completion_command_and_retry",
+      ),
+    };
   }
   // The repository's gates may need the requirement under test, which they
   // normally read from the branch name. A run that targets a requirement whose
@@ -48,29 +56,21 @@ export async function runVerify(args, deps) {
     requestedRequirementUid: args.requestedRequirementUid,
   });
   if (!authorized.ok) {
-    return failure(action, authorized.error, authorized.message, authorized.next_action);
+    return { failure: failure(action, authorized.error, authorized.message, authorized.next_action) };
   }
-  const gateEnv = implementGateEnvironment(authorized.requirementUid);
-  // Child gates write their own structured artifacts so their facts come from the run that
-  // already happened. Nothing is re-executed to be measured, and no combined console transcript
-  // is parsed (issue #1355).
-  const artifacts = childGateArtifactPaths(repoRoot);
-  const childEnv = { ...gateEnv, GC_POLICY_JSON: artifacts.policy, GC_VALE_JSON: artifacts.vale };
-  const policyCommand = resolveWorkflowPolicyCommand(context);
-  const attestationActive = isVerificationAttestationActive(context);
-  // Measurement is emitted from the persisted gate artifacts after the run,
-  // independent of gate execution.
-  const gatesStartedAt = new Date();
+  return { context, repoRoot: authorization.repoRoot, command, authorized };
+}
+
+// Run the completion/policy gates through the attestation boundary (feature ON) or
+// the shared runner (feature OFF), emitting the persisted-artifact measurement on
+// both the success and failure paths. Returns the bound tree/toolchain identity and
+// timings, or `{ ok: false, failure }` mapping the gate error to a refusal.
+async function executeVerificationGates(
+  { deps, action, repoRoot, context, childEnv, artifacts, gatesStartedAt, attestationActive },
+) {
   let timings;
   let boundTreeOid = null;
   let boundToolchainDigest = null;
-  // Feature ON: run through the ONE shared invariant-preserving boundary — the
-  // same base synchronization uses (issue #1497) — which binds the working-tree
-  // content oid + toolchain digest and re-validates them after the fingerprint
-  // and after each gate, so the attestation can only describe the exact candidate
-  // every gate observed. Feature OFF: keep the cheap porcelain no-mutation guard,
-  // so a repo that never reuses pays nothing for the content-oid machinery.
-  const before = attestationActive ? null : await readStatus(repoRoot, deps.runGit, deps.execFile);
   try {
     if (attestationActive) {
       ({ treeOid: boundTreeOid, toolchainDigest: boundToolchainDigest, timings } = await runVerifiedGateBoundary({
@@ -94,22 +94,60 @@ export async function runVerify(args, deps) {
   } catch (error) {
     await emitVerificationMeasurement(deps.emitter, repoRoot, artifacts, error.timings ?? [], gatesStartedAt);
     if (error.code === "implement_mechanical_gate_tree_changed") {
-      return failure(action, error.code, error.message ?? "A verification boundary changed the checkout", "inspect_and_commit_or_revert_gate_generated_changes");
+      return { ok: false, failure: failure(action, error.code, error.message ?? "A verification boundary changed the checkout", "inspect_and_commit_or_revert_gate_generated_changes") };
     }
-    return commandFailure(action, `${error.gatePhase ?? "completion"}_gate`, error);
+    return { ok: false, failure: commandFailure(action, `${error.gatePhase ?? "completion"}_gate`, error) };
   }
   await emitVerificationMeasurement(deps.emitter, repoRoot, artifacts, timings, gatesStartedAt);
+  return { ok: true, timings, boundTreeOid, boundToolchainDigest };
+}
+
+// The feature-OFF porcelain guard: the completion/policy gates must not mutate the
+// checkout. Returns a bounded failure when the working tree changed, else null.
+async function assertNoTreeChange(action, repoRoot, deps, before) {
+  const after = await readStatus(repoRoot, deps.runGit, deps.execFile);
+  if (after !== before) {
+    return failure(
+      action,
+      "implement_mechanical_gate_tree_changed",
+      "The completion or policy gate changed the checkout",
+      "inspect_and_commit_or_revert_gate_generated_changes",
+    );
+  }
+  return null;
+}
+export async function runVerify(args, deps) {
+  const action = "verify";
+  const inputs = await resolveVerifyInputs(args, deps, action);
+  if (inputs.failure) return inputs.failure;
+  const { context, repoRoot, command, authorized } = inputs;
+  const gateEnv = implementGateEnvironment(authorized.requirementUid);
+  // Child gates write their own structured artifacts so their facts come from the run that
+  // already happened. Nothing is re-executed to be measured, and no combined console transcript
+  // is parsed (issue #1355).
+  const artifacts = childGateArtifactPaths(repoRoot);
+  const childEnv = { ...gateEnv, GC_POLICY_JSON: artifacts.policy, GC_VALE_JSON: artifacts.vale };
+  const policyCommand = resolveWorkflowPolicyCommand(context);
+  const attestationActive = isVerificationAttestationActive(context);
+  // Measurement is emitted from the persisted gate artifacts after the run,
+  // independent of gate execution.
+  // Feature ON: run through the ONE shared invariant-preserving boundary — the
+  // same base synchronization uses (issue #1497) — which binds the working-tree
+  // content oid + toolchain digest and re-validates them after the fingerprint
+  // and after each gate, so the attestation can only describe the exact candidate
+  // every gate observed. Feature OFF: keep the cheap porcelain no-mutation guard,
+  // so a repo that never reuses pays nothing for the content-oid machinery.
+  const gatesStartedAt = new Date();
+  const before = attestationActive ? null : await readStatus(repoRoot, deps.runGit, deps.execFile);
+  const gateOutcome = await executeVerificationGates({
+    deps, action, repoRoot, context, childEnv, artifacts, gatesStartedAt, attestationActive,
+  });
+  if (!gateOutcome.ok) return gateOutcome.failure;
+  const { timings, boundTreeOid, boundToolchainDigest } = gateOutcome;
 
   if (!attestationActive) {
-    const after = await readStatus(repoRoot, deps.runGit, deps.execFile);
-    if (after !== before) {
-      return failure(
-        action,
-        "implement_mechanical_gate_tree_changed",
-        "The completion or policy gate changed the checkout",
-        "inspect_and_commit_or_revert_gate_generated_changes",
-      );
-    }
+    const treeChangeFailure = await assertNoTreeChange(action, repoRoot, deps, before);
+    if (treeChangeFailure) return treeChangeFailure;
   }
   // Bind the boundary-proven tree + toolchain in a content-addressed attestation
   // so the publish band can reuse this authoritative verification instead of
@@ -148,7 +186,7 @@ export async function runVerify(args, deps) {
 // shared runner; a missing artifact is recorded as unmeasured, never a pass.
 function emitVerificationMeasurement(emitter, repoRoot, artifacts, timings, gatesStartedAt) {
   const completion = timings.find((entry) => entry.phase === "completion");
-  const policy = timings.find((entry) => entry.phase === "policy");
+  const policy = timings.some((entry) => entry.phase === "policy");
   const tasks = [];
   if (completion) {
     tasks.push(emitSpotbugsAttempt(emitter, repoRoot, {
@@ -175,11 +213,14 @@ export function validateCommitMessage(message) {
   }
   return null;
 }
-// Each top-level alternative is wrapped so the trailing `$` binds only to the
-// key-file branch, making operator precedence explicit (S5850); matching is
-// unchanged.
+// Sensitive staged paths, as one anchored alternation over three classes: a
+// `.secret` directory (optional trailing `s`), a `credential`/`credentials`
+// entry, or a private-key or certificate file by extension. The trailing `$`
+// sits inside the key-file alternative, so its precedence is explicit (S5850),
+// and factoring the shared path-boundary prefix keeps the whole pattern under
+// the regex-complexity limit (S5843). Matching is unchanged.
 export const SENSITIVE_STAGED_PATH_RE =
-  /(?:(?:^|\/)(?:\.secrets?(?:\/|$)|credentials?(?:\.|\/|$)))|(?:(?:^|\/)[^/]+\.(?:pem|key|p12|pfx)$)/i;
+  /(?:^|\/)(?:\.secrets?(?:\/|$)|credentials?(?:[./]|$)|[^/]+\.(?:pem|key|p12|pfx)$)/i;
 export function isSensitivePublishPath(path) {
   const basename = path.split("/").at(-1);
   const sensitiveEnv =

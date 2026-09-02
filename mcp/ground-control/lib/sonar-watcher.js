@@ -181,6 +181,39 @@ async function pollSonarQualityGateUntilReady({ projectKey, prNumber, token, tot
     }
   }
 }
+// Fetch the PR's open issues then hotspots. Returns `{ issues, hotspots }`, or
+// `{ earlyReturn }` carrying the exact failure envelope the caller returns.
+async function _fetchSonarIssuesAndHotspots({ projectKey, prNumber, token, qgStatus }) {
+  let issues = [];
+  let hotspots = [];
+  try {
+    issues = await _fetchSonarIssues({ projectKey, prNumber, token });
+  } catch (e) {
+    return {
+      earlyReturn: {
+        ok: false,
+        error: "sonar_watch_issues_fetch_failed",
+        message: e?.message ?? "sonar issues fetch failed",
+        pr_number: prNumber,
+        quality_gate: qgStatus,
+      },
+    };
+  }
+  try {
+    hotspots = await _fetchSonarHotspots({ projectKey, prNumber, token });
+  } catch (e) {
+    return {
+      earlyReturn: {
+        ok: false,
+        error: "sonar_watch_hotspots_fetch_failed",
+        message: e?.message ?? "sonar hotspots fetch failed",
+        pr_number: prNumber,
+        quality_gate: qgStatus,
+      },
+    };
+  }
+  return { issues, hotspots };
+}
 export async function runWatchSonarAnalysis({
   repoPath,
   prNumber,
@@ -243,38 +276,14 @@ export async function runWatchSonarAnalysis({
   if (pollResult.earlyReturn) return pollResult.earlyReturn;
   const qg = pollResult.qg;
 
-  let issues = [];
-  let hotspots = [];
-  try {
-    issues = await _fetchSonarIssues({
-      projectKey: sonarConfig.projectKey,
-      prNumber,
-      token,
-    });
-  } catch (e) {
-    return {
-      ok: false,
-      error: "sonar_watch_issues_fetch_failed",
-      message: e?.message ?? "sonar issues fetch failed",
-      pr_number: prNumber,
-      quality_gate: qg.status,
-    };
-  }
-  try {
-    hotspots = await _fetchSonarHotspots({
-      projectKey: sonarConfig.projectKey,
-      prNumber,
-      token,
-    });
-  } catch (e) {
-    return {
-      ok: false,
-      error: "sonar_watch_hotspots_fetch_failed",
-      message: e?.message ?? "sonar hotspots fetch failed",
-      pr_number: prNumber,
-      quality_gate: qg.status,
-    };
-  }
+  const fetched = await _fetchSonarIssuesAndHotspots({
+    projectKey: sonarConfig.projectKey,
+    prNumber,
+    token,
+    qgStatus: qg.status,
+  });
+  if (fetched.earlyReturn) return fetched.earlyReturn;
+  const { issues, hotspots } = fetched;
 
   const exportPath = _writeSonarExport(repoRoot, prNumber, {
     pr_number: prNumber,
