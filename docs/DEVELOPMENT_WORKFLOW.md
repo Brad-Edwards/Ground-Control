@@ -685,6 +685,36 @@ cat <repo>/.gc/integration-runs/<run-id>/halt.json
 
 Pass `--dry-run` to the `/integrate` skill to see what the queue would contain without acquiring a lock or touching any branch.
 
+## /review: Maintainer Pull Request Review
+
+The `/review` lane (GC-O015) is the workflow path for a maintainer reviewing a **single contributor pull request** - one that may have been opened outside Ground Control. It is distinct from the other lanes: `/implement` and `/quickfix` author a change under the ADR-029 issue-thread record; `/integrate` prepares a queue of already-approved PRs for merge; `/review` reviews one PR read-only by default and, only on explicit request, remediates it and closes the issues it delivered.
+
+### Invocation
+
+```
+/review <pr-number>
+```
+
+`<pr-number>` is a positive integer. The lane operates on the pull request in the current checkout's repository; an optional `--repo <owner>/<name>` is only asserted against the checkout `origin`, never used to select an alternate destination. There is no separate remediation or post-merge invocation - after the read-only review, the user asks for changes (Phase B) or, once merged, asks to close the delivered issues (Phase C), in the same session.
+
+### Phases
+
+1. **Review (read-only, always).** `gc_get_pr_review_context` returns one bounded evidence snapshot - identity, the real changed-file inventory with bounded patches and truncation flags, head-OID-bound checks, linked/closing-issue candidates, and completeness flags. The agent reads the actual diff and the relevant ADRs and reports findings-first (merge blockers → follow-up → accepted tradeoffs → stale/missing verification → merge recommendation) **through the invoking interface only**. Nothing is posted or mutated. Per the ADR-029 issue #1535 amendment, a read-only maintainer review creates no issue-thread record.
+2. **Remediation (only after an explicit user change request).** `gc_remediate_pull_request` gates every action behind a trusted-host confirmation the model cannot forge - a write-access maintainer applies the `review-remediation-approved` label to the PR out of band, verified server-side - plus the reviewed PR identity re-validated against the live PR by object id (the `authorization` field is the driver's relay of the user's request, recorded as intent, not a cryptographic capability; the approval label, object-id, same-repo, fast-forward, and gate bindings are what the server enforces). Remediation is limited to same-repository PRs; a fork PR is refused (`pr_remediation_fork_pr_unsupported`). `sync_base` updates a stale branch with a real `--no-ff` merge (never rebase/reset/force/worktree; conflicts are surfaced for manual resolution) after confirming the PR base matches the configured integration branch. `publish` stages the working tree itself (the skill runs no git), re-fetches the base immediately before pushing, commits the staged tree, and non-force pushes to the same PR branch; it deliberately does **not** run the repo's gate commands locally against the contributor tree (a credential-exfiltration surface), so verification is the PR's own isolated CI, surfaced by `gc_get_pr_review_context`. The approval label must also postdate the reviewed head (a stale label is refused). `comment` posts at most one scrubbed, neutral PR comment, and only after a successful publish is proven against the live PR head.
+3. **Post-merge closure (only after merge is confirmed).** The agent classifies the linked issues (directly delivered vs. partially delivered vs. parent/tracking) and closes only the directly delivered ones through the existing merge-gated `gc_close_issue_after_merge`, leaving epics and partials open.
+
+### What the lane does NOT do
+
+- No comment, review, label, or metadata change during the read-only review.
+- No merge, approval, auto-merge, queue, or PR close - the user owns merge.
+- No worktree, clone, new branch, rebase, reset, squash, force-push, or contributor-history rewrite.
+- No agent-side `gh`/`git`/`curl` - every side effect flows through the repository-bound MCP server (ADR-027).
+- No requirement status transition or traceability reconciliation - the lane reviews contributor work; it is not the requirement lifecycle.
+
+### MCP surface
+
+`gc_get_pr_review_context` (read-only context), `gc_remediate_pull_request` (`action: sync_base | publish | comment`, authorization-gated), and the reused `gc_close_issue_after_merge`. See `mcp/ground-control/README.md`.
+
 ## Standalone Skills
 
 Workflow skills live in **two** repo roots, each with its own installer. The two name sets are disjoint, so the two install paths can never resolve the same name to different definitions:
@@ -698,6 +728,7 @@ In both cases this repo is the source of truth: edit the `SKILL.md`, commit, and
 |-------|-----------|---------|
 | `/implement <issue-number \| uid>` | `skills/` | Full end-to-end: plan through PR-ready |
 | `/integrate` | `skills/` | Approved-PR integration manager: rebase, gate, verify, and push a queue of approved PRs (prepare-only; see GC-O011) |
+| `/review <pr-number>` | `skills/` | Maintainer PR review: read-only findings-first review, optional authorized remediation, optional post-merge issue closure (see GC-O015) |
 | `gc_test_quality_review` | `mcp/ground-control/` | Test-quality review - MCP tool (per #884 v2; replaces the prior `/review-tests` Skill) |
 | `/ship` | `.claude/skills/` | Ship an already-committed branch (CI, reviews, fix, report) |
 | `/stage` | `.claude/skills/` | Stage files + pre-commit loop |

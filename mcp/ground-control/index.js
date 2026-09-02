@@ -39,6 +39,8 @@
 //                                   gc_mark_implement_issue_picked_up,
 //                                   gc_authorize_execution_obligation_wontfix,
 //                                   gc_resolve_workflow_route, gc_codex_verify_finding
+//   tools/pr-review.js           — gc_get_pr_review_context,
+//                                   gc_remediate_pull_request (maintainer /review lane, #1535)
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -48,6 +50,7 @@ import { installToolTelemetry } from "./telemetry.js";
 import { registerQuery } from "./tools/query.js";
 import { registerPostDecisionRecord } from "./tools/post-decision-record.js";
 import { registerReviewCapDisposition } from "./tools/review-cap-disposition.js";
+import { registerPrReview } from "./tools/pr-review.js";
 
 
 // Load .env from cwd before any auth header is composed.
@@ -89,6 +92,7 @@ installToolTelemetry(server);
 registerQuery(server);
 registerPostDecisionRecord(server);
 registerReviewCapDisposition(server);
+registerPrReview(server);
 
 // ============================================================================
 // Startup

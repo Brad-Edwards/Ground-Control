@@ -477,3 +477,17 @@ decision request. Records use the new `gc.implement.execution-obligation/v2`
 marker family; v1 obligations keep their existing semantics and authorization
 checks. The single-human-touchpoint contract and review caps are unchanged. See
 ADR-029 and ADR-031 (amendments).
+
+**2026-08-19 (issue #1535).** A new workflow lane, `/review`, reviews a single
+contributor pull request (GC-O015). It is read-only by default - a findings-first
+review returned only through the invoking interface, creating no issue-thread
+record (ADR-029 amendment). Explicit user authorization moves it into remediation
+on the existing PR branch in the invocation checkout: a real `--no-ff` merge of
+the integration branch (never rebase/reset/force/worktree/history-rewrite), a
+non-force push to the same branch bound to the reviewed remote head, and at most
+one scrubbed, neutral PR comment. After merge it closes only the directly delivered
+issues through `gc_close_issue_after_merge`, leaving trackers open. Every side
+effect flows through the repository-bound MCP tools (`gc_get_pr_review_context`,
+`gc_remediate_pull_request`); the skill never runs `gh`/`git` (ADR-027). The
+single-human-touchpoint contract (PR merge stays the user's) is unchanged. See
+`docs/DEVELOPMENT_WORKFLOW.md § /review` and GC-O015.

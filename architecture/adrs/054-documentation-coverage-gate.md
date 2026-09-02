@@ -744,3 +744,15 @@ carried into the gate subprocess. The documentation-coverage classifier
 (`classifyChangedSurface`), its `outcome_required` mapping, the Vale rules,
 `tools/install-vale.sh`, and `.vale.ini` are unchanged; no new documentation
 classification or style rule is established.
+
+**2026-08-19 (#1535, maintainer `/review` lane).** The lane registers two MCP
+tools (`gc_get_pr_review_context`, `gc_remediate_pull_request`) in
+`mcp/ground-control/tools/pr-review.js`, wired in `mcp/ground-control/index.js`;
+their contract surface is the tool descriptions, the MCP README section, and
+`skills/review/SKILL.md`. This records a changed MCP tool/registration surface.
+The documentation-coverage classifier (`classifyChangedSurface`), its
+`outcome_required` mapping, doc targets, the Vale rule set,
+`tools/install-vale.sh`, and `.vale.ini` are unchanged; edits to
+`skills/review/` are gated by the ADR-021 `workflow-guardrail-sync` rule (which
+requires the two workflow documents plus a gate-model ADR), not by a new
+documentation-coverage surface class, and no new style rule is established.
