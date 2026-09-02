@@ -26,7 +26,7 @@ jobs:
           chmod +x "$RUNNER_TEMP/osv-scanner"
       - name: Scan dependencies for known vulnerabilities
         run: |
-          "$RUNNER_TEMP/osv-scanner" scan source --recursive .
+          "$RUNNER_TEMP/osv-scanner" scan source --recursive --config=osv-scanner.toml .
 
   trivy:
     runs-on: ubuntu-latest
