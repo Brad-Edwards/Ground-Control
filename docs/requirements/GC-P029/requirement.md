@@ -1,12 +1,12 @@
 ---
 id: GC-P029
 title: "Repository Map Freshness Enforced in Repo Policy"
-status: DRAFT
+status: ACTIVE
 type: CONSTRAINT
 priority: SHOULD
 wave: 2
 created_at: 2026-08-19T00:00:00Z
-updated_at: 2026-08-19T00:00:00Z
+updated_at: 2026-08-19T04:00:32Z
 ---
 
 # GC-P029 — Repository Map Freshness Enforced in Repo Policy
