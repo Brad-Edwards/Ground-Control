@@ -94,7 +94,10 @@ def check_scope_and_completion_contract(root: Path) -> list[Violation]:
         violations.append(
             Violation(
                 code="implement-phase-e-noop-contract",
-                message="Step 17 must document that a no-change Phase E resume commits nothing and runs no implementation verification.",
+                message=(
+                    "Step 17 must document that a no-change Phase E resume commits "
+                    "nothing and runs no implementation verification."
+                ),
                 details=[f"missing token: {token}" for token in missing_phase_e],
             )
         )
