@@ -1,4 +1,4 @@
-.PHONY: ground-control-mcp-install mcp-test graphify vale-install vale-lint \
+.PHONY: ground-control-mcp-install mcp-test mcp-lint graphify vale-install vale-lint \
        policy policy-tests hooks devmain ci-timings help
 
 # Ground Control is the MCP server for the /implement workflow over repo-local
@@ -14,6 +14,9 @@ ground-control-mcp-install: ## Install dependencies for the repo-local Ground Co
 mcp-test: ## Run the MCP server node test suite (primary test gate)
 	npm --prefix mcp/ground-control test
 
+mcp-lint: ## Run ESLint on the Ground Control MCP server (repo-native lint gate)
+	npm --prefix mcp/ground-control run lint
+
 # --- Comprehension index (opt-in) ---
 
 graphify: ## (Re)build the disposable Graphify code+docs index (opt-in; see docs/GRAPHIFY.md)
@@ -27,9 +30,9 @@ vale-install: ## Install Vale prose linter (tools/install-vale.sh → .tools/val
 
 # BASE_REF defaults to origin/dev for local invocation. CI sets it to
 # origin/<base-branch> for the current pull_request event.
-vale-lint: vale-install ## Run Vale on .md docs touched in the diff vs BASE_REF (default origin/dev)
+vale-lint: vale-install ## Run Vale on .md docs changed vs BASE_REF, incl. uncommitted (default origin/dev)
 	@BASE_REF="$${BASE_REF:-origin/dev}"; \
-	CHANGED_DOCS=$$(git diff --name-only --diff-filter=ACMR $$BASE_REF...HEAD 2>/dev/null | grep -E '\.(md|markdown)$$' || true); \
+	CHANGED_DOCS=$$(bash tools/changed-docs.sh "$$BASE_REF"); \
 	if [ -z "$$CHANGED_DOCS" ]; then \
 	  echo "vale-lint: no changed docs vs $$BASE_REF"; \
 	  exit 0; \
@@ -48,7 +51,7 @@ vale-lint: vale-install ## Run Vale on .md docs touched in the diff vs BASE_REF 
 policy-tests: ## Run unit tests for repo policy tooling
 	python3 -m unittest discover -s tools/tests -p 'test_*.py'
 
-policy: policy-tests vale-lint ## Run repo-native policy checks shared by Claude and Codex
+policy: policy-tests mcp-lint vale-lint ## Run repo-native policy checks shared by Claude and Codex
 	@BASE_REF="$${BASE_REF:-origin/dev}"; \
 	python3 bin/policy --base "$$BASE_REF" --skip-pr-body $${GC_POLICY_JSON:+--json "$$GC_POLICY_JSON"}
 

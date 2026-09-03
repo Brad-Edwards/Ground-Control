@@ -1,7 +1,4 @@
-import { execFile as execFileCb } from "node:child_process";
-import { readFileSync, readdirSync, realpathSync } from "node:fs";
-import { join } from "node:path";
-import { promisify } from "node:util";
+import { realpathSync } from "node:fs";
 import { z } from "zod";
 import { readRequirementByUid, findTraceabilityByArtifact } from "./lib/requirement-files.js";
 import {
@@ -17,31 +14,27 @@ import {
   runWatchSonarAnalysis,
   runAssertCompletion,
   runCloseIssueAfterMerge,
-  detectSensitiveBodyContent,
   EXACT_REQUIREMENT_UID_RE,
-  extractInScopeRequirementUids,
-  requestedRequirementUidAuthorization,
   authorizeRequestedRequirementUid,
   runImplementGitCommand,
   runImplementPreCommit,
-  resolveWorkflowPolicyCommand,
   startAsyncJob,
   asyncJobInputFingerprint,
-  implementGateEnvironment,
+  postImplementVerificationAttestation,
+  readTrustedImplementVerificationAttestations,
+  acquireImplementPublishLock,
+  resolvePublishGitDir,
+  reconcileInterruptedPublish,
+  writeImplementPublishJournal,
+  removeImplementPublishJournal,
 } from "./lib.js";
 import { createWorkflowRunLifecycleEmitter } from "./workflow-run-lifecycle.js";
-import {
-  ciGateFindings,
-  policyGateFindings,
-  spotbugsGateFindings,
-  valeGateFindings,
-} from "./gate-finding-adapters.js";
 import { MARKER_BY_ACTION, STATION_BY_ACTION, applyRunStateTransition, classifyStationResult, guardEmitter, resolveEmitter, runFinalize, runReadiness } from "./implement/completion.js";
 import { completionShape, execFileAsync, requirementShape, runBootstrap } from "./implement/gate-helpers.js";
 import { runMonitor, runPublish } from "./implement/publish.js";
 import { runVerify } from "./implement/verify.js";
 
-export { extractInScopeRequirementUids };
+export { extractInScopeRequirementUids } from "./lib.js";
 
 export const IMPLEMENT_MECHANICAL_ACTIONS = Object.freeze([
   "bootstrap",
@@ -98,6 +91,8 @@ export const GC_IMPLEMENT_MECHANICAL_DESCRIPTION =
   "readiness (pre-merge completion assertion), finalize (post-merge assertion + idempotent issue close). " +
   "Always pass action, repo_path, and issue_number. Depending on action, also pass invocation_root, branch_name, " +
   "base_branch, driver, requested_requirement_uid, requirements, commit_message, synchronization, pr_number, or completion. " +
+  "bootstrap requires branch_name; for publish and monitor branch_name is OPTIONAL and defaults to the checkout's current " +
+  "branch when it is this issue's branch (`<issue>-<slug>`), refusing a base/unrelated branch rather than acting on it. " +
   "Long actions verify, publish, and monitor accept async=true plus a required bounded idempotency_key; " +
   "poll the returned job_id through gc_codex_job and consume the terminal result as this tool's unchanged envelope. " +
   "Bootstrap, readiness, and finalize remain synchronous. " +
@@ -133,6 +128,15 @@ const defaultDeps = {
   assertCompletion: runAssertCompletion,
   authorizeRequirementUid: authorizeRequestedRequirementUid,
   closeIssue: runCloseIssueAfterMerge,
+  postVerificationAttestation: postImplementVerificationAttestation,
+  readVerificationAttestations: readTrustedImplementVerificationAttestations,
+  // Mechanical-publish recovery seams (issue #1495). Injected so tests can stub
+  // the filesystem lease/journal while production holds the real per-worktree lease.
+  resolvePublishGitDir,
+  acquirePublishLock: acquireImplementPublishLock,
+  reconcileInterruptedPublish,
+  writePublishJournal: writeImplementPublishJournal,
+  removePublishJournal: removeImplementPublishJournal,
 };
 function dispatch(args, deps) {
   switch (args.action) {
@@ -273,7 +277,9 @@ export async function gcImplementMechanicalToolHandler(args, overrides = {}) {
   const checkoutBound = args.action === "verify" || args.action === "publish";
   return startJob(
     `implement_mechanical_${args.action}`,
-    () => runImplementMechanical(normalizedArgs, mechanicalOverrides),
+    // The registry hands the run a progress reporter; verify threads it to the
+    // shared gate runner so a long sweep emits a bounded liveness snapshot (#1497).
+    (_signal, reportProgress) => runImplementMechanical(normalizedArgs, { ...mechanicalOverrides, reportProgress }),
     {
       idempotencyKey: args.idempotency_key,
       idempotencyNamespace:
@@ -281,6 +287,11 @@ export async function gcImplementMechanicalToolHandler(args, overrides = {}) {
       fingerprint: asyncJobInputFingerprint(normalizedArgs),
       executionScope: checkoutBound ? `implement_mechanical_checkout:${canonicalRepoPath}` : null,
       singleFlight: checkoutBound,
+      // Mechanical jobs stay non-cancellable: their full Git/GitHub/gate graph does
+      // not honour abort, so advertising cancellation would be false. The publish
+      // hang this issue reports is closed by the gate runner reaping its process
+      // tree and by lease + journal + restart reconciliation, not by cancellation
+      // (issue #1495).
       cancellable: false,
     },
   );

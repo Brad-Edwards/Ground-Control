@@ -229,6 +229,21 @@ Each drop is intentional and reversible mid-flight by re-invoking `/implement <s
 - **Requirement status transitions** (frontmatter `status:` edits) - `/quickfix` runs are requirement-free by definition.
 - **Traceability reconciliation** (`## Traceability` edits) - only the touched-file link-maintenance path runs (and even that is rare for a typical `/quickfix` run).
 
+## Deal with what the run surfaces — do not walk past it
+
+Lower *ceremony*, never lower *standards*. A `/quickfix` run routinely surfaces problems beyond the reported bug: a red CI gate, a flaky test, a SonarCloud finding on a pre-existing line the diff pulled into new-code scope, a latent bug in an adjacent code path. Every such problem gets dealt with — you do not route around it.
+
+Narrowing the *fix* to the reported bug is legitimate scoping. Using that narrowing to make a surfaced *problem* disappear from view is not. Reverting an edit to keep the change tight is fine; reverting it so a finding falls out of scope and then saying nothing is walking past the finding.
+
+Prohibited ways to reach green: re-running CI to get past a failure you have not diagnosed; dropping or un-touching a change purely to move a finding out of scope; marking a real finding a false positive; or leaving the fix for later. A finding is a false positive only when it is factually wrong, with a rationale that says why — never "inconvenient" or "out of scope." This mirrors the Review Fix Standards and the repo's never-weaken-a-gate rule.
+
+Two dispositions deal with a surfaced problem; pick by scope:
+
+1. **Fix it in this PR** — the default when it is in scope and straightforward (a gate finding on a line you touched, a flaky test you can make deterministic, a fixable lint/Sonar issue).
+2. **Open a tracked issue AND a PR that fixes it now** when it is a genuinely separate concern (unrelated subsystem, wider blast radius, or it would make this PR incoherent). Filing the issue alone is deferral; open the PR and do the work.
+
+If the surfaced problem means the *core* change now warrants full `/implement` discipline, that is the separate judgment in **Upgrading mid-flight** below.
+
 ## Upgrading mid-flight
 
 If at any step the agent realizes the work warrants `/implement` discipline (the diff grew, design forks surfaced, requirement transitions are needed, codex/test-quality reviews would have caught something), STOP and ask the user. Two options:
@@ -289,3 +304,13 @@ drivers execute stages in their primary session unless the user or runtime
 explicitly justifies delegation. The lane also adopts the shared mandatory
 remote integration-branch synchronization and synchronized PR-creation
 boundary between its initial push and PR creation.
+
+**2026-08-11 (issue #1526).** Added the **Deal with what the run surfaces — do
+not walk past it** section: a run fixes the problems it surfaces (red gates,
+flaky tests, findings its diff pulls into new-code scope) or opens a tracked
+issue AND a PR that fixes them now; re-running around an undiagnosed failure, or
+reverting an edit to drop a finding out of scope without dealing with it, is
+prohibited. Also hardened the flaky `execFileWithInput` maxBuffer test
+(`mcp/ground-control/lib.execfilewithinput-process-tree-kill.test.js`) to emit
+from an unbounded shell-builtin loop instead of a finite `$(seq …)` burst that
+was flaky under the CI suite's fork pressure.

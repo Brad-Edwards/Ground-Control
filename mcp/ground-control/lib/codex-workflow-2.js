@@ -1,27 +1,19 @@
-// Extracted from lib.js (issue #1355).
-//
-// lib.js had reached 20,634 lines against the repo's 500-LOC limit
-// (docs/CODING_STANDARDS.md, Sonar S104). It contained no mutual recursion, so it was
-// split along its own dependency layering. lib.js remains the barrel every caller imports.
-
 import { realpathSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { GIT_OBJECT_ID_RE, IMPLEMENT_CHECKOUT_MODES, REQUIREMENT_UID_GATE_ENV_VAR, implementNetworkGitEnvironment, sanitizedImplementGitEnvironment, validateImplementBranchName } from "./codex-workflow.js";
 import { extractGhErrorMessage } from "./grc-legacy-compat-2.js";
 import { assertSafeImplementCheckoutConfiguration, authorizeImplementRepoRoot, ensureGitRepo, readGitIdentity, resolveMcpLaunchWorkspaceAuthorization } from "./grc-legacy-compat-4.js";
-import { isSafeGitRefName, resolveWorkflowPolicyCommand, resolveWorkflowPrecommitCommand } from "./repo-context.js";
+import { isSafeGitRefName, resolveWorkflowPrecommitCommand } from "./repo-context.js";
 import { EXACT_REQUIREMENT_UID_RE, execFile, isRequirementUidToken } from "./runtime-primitives.js";
+import { runVerifiedGateBoundary } from "./verification-gates.js";
 
-export async function runPrepareImplementBranch({
-  repoPath,
+function validatePrepareImplementBranchInput({
   invocationRoot,
   issueNumber,
   branchName,
-  baseBranch = "dev",
-  checkoutMode = "same_checkout",
-}, {
-  workspaceAuthorizationResolver = resolveMcpLaunchWorkspaceAuthorization,
-} = {}) {
+  baseBranch,
+  checkoutMode,
+}) {
   if (!IMPLEMENT_CHECKOUT_MODES.includes(checkoutMode)) {
     return {
       ok: false,
@@ -45,6 +37,53 @@ export async function runPrepareImplementBranch({
       message: "baseBranch is not a safe Git ref name",
     };
   }
+  return { ok: true };
+}
+
+function validatePreparedImplementCheckout({
+  after, before, pinnedRoot, activeBranch, issueNumber,
+}) {
+  if (
+    after.topLevel !== pinnedRoot
+    || after.gitDir !== before.gitDir
+    || after.origin !== before.origin
+  ) {
+    return {
+      ok: false,
+      error: "implement_checkout_relocated",
+      message: "Branch preparation changed the checkout root, Git directory, or origin; refusing to continue",
+    };
+  }
+  const branchValidation = validateImplementBranchName(activeBranch, issueNumber);
+  if (!branchValidation.ok) {
+    return {
+      ok: false,
+      error: "implement_active_branch_noncompliant",
+      message: branchValidation.message,
+      branch: activeBranch,
+    };
+  }
+  return { ok: true };
+}
+
+export async function runPrepareImplementBranch({
+  repoPath,
+  invocationRoot,
+  issueNumber,
+  branchName,
+  baseBranch = "dev",
+  checkoutMode = "same_checkout",
+}, {
+  workspaceAuthorizationResolver = resolveMcpLaunchWorkspaceAuthorization,
+} = {}) {
+  const inputValidation = validatePrepareImplementBranchInput({
+    invocationRoot,
+    issueNumber,
+    branchName,
+    baseBranch,
+    checkoutMode,
+  });
+  if (!inputValidation.ok) return inputValidation;
 
   let repoRoot;
   let pinnedRoot;
@@ -105,26 +144,10 @@ export async function runPrepareImplementBranch({
       message: `Unable to verify the invocation checkout after branch preparation: ${error.message}`,
     };
   }
-  if (
-    after.topLevel !== pinnedRoot
-    || after.gitDir !== before.gitDir
-    || after.origin !== before.origin
-  ) {
-    return {
-      ok: false,
-      error: "implement_checkout_relocated",
-      message: "Branch preparation changed the checkout root, Git directory, or origin; refusing to continue",
-    };
-  }
-  const actualBranchValidation = validateImplementBranchName(activeBranch, issueNumber);
-  if (!actualBranchValidation.ok) {
-    return {
-      ok: false,
-      error: "implement_active_branch_noncompliant",
-      message: actualBranchValidation.message,
-      branch: activeBranch,
-    };
-  }
+  const postcondition = validatePreparedImplementCheckout({
+    after, before, pinnedRoot, activeBranch, issueNumber,
+  });
+  if (!postcondition.ok) return postcondition;
   return {
     ok: true,
     repo_path: pinnedRoot,
@@ -138,7 +161,9 @@ export function implementGateEnvironment(
   baseEnv = process.env,
 ) {
   if (requestedRequirementUid == null || requestedRequirementUid === "") {
-    return baseEnv;
+    const cleanEnv = { ...baseEnv };
+    delete cleanEnv[REQUIREMENT_UID_GATE_ENV_VAR];
+    return cleanEnv;
   }
   if (!EXACT_REQUIREMENT_UID_RE.test(requestedRequirementUid)) {
     const error = new Error(
@@ -149,46 +174,81 @@ export function implementGateEnvironment(
   }
   return { ...baseEnv, [REQUIREMENT_UID_GATE_ENV_VAR]: requestedRequirementUid };
 }
-export function extractInScopeRequirementUids(issueBody) {
-  if (typeof issueBody !== "string" || issueBody === "") return [];
+// These rewrite the lazy `\s+(.+?)\s*$` that reads as super-linear backtracking
+// (Sonar S8786), each exactly equivalent because heading titles are trimmed and
+// bullet tokens split on whitespace. Heading uses an unquantified `\s` before
+// `(.+)`, removing the quantifier-vs-quantifier ambiguity while still matching a
+// whitespace-only title (`##␠␠`) as the original did, so section breaks are
+// unchanged. Bullet keeps `\s+` (it must eat every space after the marker) and
+// anchors the capture at the first non-space `\S`; since `\s+` already consumed
+// the whitespace, that changes nothing behaviorally.
+const REQUIREMENTS_HEADING_RE = /^(#{1,6})\s(.+)$/;
+const REQUIREMENTS_BULLET_RE = /^\s*[-*+]\s+(\S.*)$/;
 
+const UID_TOKEN_LEADING_WRAPPERS = "`[(";
+const UID_TOKEN_TRAILING_WRAPPERS = "`)].:";
+
+// Strip wrapping punctuation a UID token may carry in prose (backticks,
+// brackets, parens, trailing sentence marks). A linear character scan; the
+// equivalent `[...]+$` regex reads as super-linear to the analyzer (S8786).
+function stripUidTokenWrappers(token) {
+  let start = 0;
+  let end = token.length;
+  while (start < end && UID_TOKEN_LEADING_WRAPPERS.includes(token[start])) start += 1;
+  while (end > start && UID_TOKEN_TRAILING_WRAPPERS.includes(token[end - 1])) end -= 1;
+  return token.slice(start, end);
+}
+
+// Collect the lines under a level 2-4 `## Requirements` section, ending at the
+// next heading of the same or higher level.
+function requirementsSectionLines(issueBody) {
   const sectionLines = [];
   let sectionLevel = null;
   for (const line of issueBody.split(/\r?\n/)) {
-    const heading = line.match(/^(#{1,6})\s+(.+?)\s*$/);
-    if (heading) {
-      const level = heading[1].length;
-      const title = heading[2].trim().toLowerCase();
-      if (sectionLevel == null) {
-        if (level >= 2 && level <= 4 && title === "requirements") {
-          sectionLevel = level;
-        }
-        continue;
-      }
-      if (level <= sectionLevel) break;
-      sectionLines.push(line);
+    const heading = REQUIREMENTS_HEADING_RE.exec(line);
+    if (!heading) {
+      if (sectionLevel != null) sectionLines.push(line);
       continue;
     }
-    if (sectionLevel != null) sectionLines.push(line);
+    const level = heading[1].length;
+    const title = heading[2].trim().toLowerCase();
+    if (sectionLevel == null) {
+      if (level >= 2 && level <= 4 && title === "requirements") sectionLevel = level;
+      continue;
+    }
+    if (level <= sectionLevel) break;
+    sectionLines.push(line);
   }
+  return sectionLines;
+}
 
+// Read the leading run of UID tokens from one bullet line, stopping at the first
+// token that is not a recognizable UID. Recognition, not identity validation:
+// these tokens come from free-form issue prose, so the bounded-identifier
+// contract would accept ordinary words. The anchored recognizer still finds
+// allocator-minted short UIDs like APP-2, so a requirement-backed run is not
+// silently reduced to a requirement-free one (issue #1425).
+function requirementUidsFromBullet(line) {
+  const bullet = REQUIREMENTS_BULLET_RE.exec(line);
+  if (!bullet) return [];
+  const uids = [];
+  for (const token of bullet[1].split(/[\s,;]+/)) {
+    const candidate = stripUidTokenWrappers(token);
+    if (!isRequirementUidToken(candidate)) break;
+    uids.push(candidate);
+  }
+  return uids;
+}
+
+export function extractInScopeRequirementUids(issueBody) {
+  if (typeof issueBody !== "string" || issueBody === "") return [];
   const seen = new Set();
   const result = [];
-  for (const line of sectionLines) {
-    const bullet = line.match(/^\s*[-*+]\s+(.+?)\s*$/);
-    if (!bullet) continue;
-    for (const token of bullet[1].split(/[\s,;]+/)) {
-      const candidate = token.replace(/^[`[(]+|[`)\].:]+$/g, "");
-      // Recognition, not identity validation: these tokens come from free-form
-      // issue prose, so the bounded-identifier contract would accept ordinary
-      // words. The anchored recognizer still finds allocator-minted short UIDs
-      // like APP-2, so a requirement-backed run is not silently reduced to a
-      // requirement-free one (issue #1425).
-      if (!isRequirementUidToken(candidate)) break;
-      if (!seen.has(candidate)) {
-        seen.add(candidate);
-        result.push(candidate);
-      }
+  for (const line of requirementsSectionLines(issueBody)) {
+    for (const candidate of requirementUidsFromBullet(line)) {
+      if (seen.has(candidate)) continue;
+      seen.add(candidate);
+      result.push(candidate);
     }
   }
   return result;
@@ -406,18 +466,13 @@ export async function runImplementFinalTreeGates(
     error.code = "implement_base_sync_completion_command_missing";
     throw error;
   }
-  const { stdout: beforeStatus } = await runImplementGit(
-    repoRoot,
-    ["status", "--porcelain=v1", "--untracked-files=normal"],
-    commandRunner,
-  );
+  const readStatus = async () =>
+    (await runImplementGit(repoRoot, ["status", "--porcelain=v1", "--untracked-files=normal"], commandRunner)).stdout;
   // The gates read the working tree, but the merge commit is built from the
-  // index. An unstaged modification or an untracked file therefore gets
-  // verified and then left behind, so the attestation would bind a tree the
-  // gates never saw. Staged entries (`X ` in porcelain v1) are the merge
-  // itself and are expected here; anything with a worktree-column status is
-  // not. Refuse before running the gates rather than after.
-  const unstaged = beforeStatus
+  // index. An unstaged modification or an untracked file gets verified and then
+  // left behind, so refuse before running the gates. Staged entries (`X ` in
+  // porcelain v1) are the merge itself and are expected here.
+  const unstaged = (await readStatus())
     .split(/\r?\n/)
     .filter((line) => line !== "")
     .filter((line) => line[1] !== " ");
@@ -429,30 +484,16 @@ export async function runImplementFinalTreeGates(
     error.code = "implement_base_sync_worktree_not_staged";
     throw error;
   }
-  const beforeTree = await readImplementIndexTreeOid(repoRoot, commandRunner);
-  const gateEnv = implementGateEnvironment(requestedRequirementUid);
-  await commandRunner(
-    "bash",
-    ["-c", completionCommand],
-    { cwd: repoRoot, env: gateEnv },
-  );
-  // Completion and policy are separate mandatory gates; neither substitutes
-  // for the other. Both run through the same repo-authored-command boundary.
-  await commandRunner(
-    "bash",
-    ["-c", resolveWorkflowPolicyCommand(context)],
-    { cwd: repoRoot, env: gateEnv },
-  );
-  const { stdout: afterStatus } = await runImplementGit(
+  // Completion and policy run through the ONE shared invariant-preserving
+  // boundary (issue #1497) so this path and Step 6 verify bind identical inputs
+  // and cannot drift; it re-validates the staged index tree after the fingerprint
+  // and after each gate. Returns { treeOid, toolchainDigest, timings }.
+  return runVerifiedGateBoundary({
     repoRoot,
-    ["status", "--porcelain=v1", "--untracked-files=normal"],
+    context,
+    gateEnv: implementGateEnvironment(requestedRequirementUid),
     commandRunner,
-  );
-  const afterTree = await readImplementIndexTreeOid(repoRoot, commandRunner);
-  if (afterTree !== beforeTree || afterStatus !== beforeStatus) {
-    const error = new Error("The final-tree gates changed the Git index or checkout");
-    error.code = "implement_base_sync_gate_tree_changed";
-    throw error;
-  }
-  return afterTree;
+    readTreeOid: () => readImplementIndexTreeOid(repoRoot, commandRunner),
+    readStatus,
+  });
 }

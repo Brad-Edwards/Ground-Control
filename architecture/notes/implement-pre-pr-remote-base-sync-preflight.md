@@ -155,6 +155,108 @@ the initial Step 8 publication. Do not silently duplicate the entire Step 7
 loop. The final completion and policy gates own integration-interaction
 verification for the merge result.
 
+### Bound publish execution and make interrupted state attributable
+
+Issue #1495 extends this design after an async composite pushed its feature
+commit, entered base synchronization, and then remained `running` with
+`MERGE_HEAD` present after every child process had exited. Process-local
+single-flight prevents two retained jobs from starting together, but it is not
+a checkout lease, a wall-clock bound, or recovery evidence.
+
+Keep the same-checkout decision above, but hold a dedicated lease for the
+authorized per-worktree Git directory across the whole publish action: initial
+state check, staging, pre-commit, feature commit and push, base fetch and merge,
+final-tree gates, merge commit and push, attestation, and terminal
+reconciliation. The lease is distinct from `/integrate`'s repo-wide lock and
+must not serialize independent linked-worktree indexes. Reuse the repository's
+heartbeat-backed filesystem-lock primitive, promoted out of its current
+knowledge/integration-specific home now that publish is its third real caller;
+do not copy lock acquisition, stale detection, or release handling into the
+mechanical tool. In-process `executionScope` remains a fast contention check,
+while the filesystem lease is the cross-process enforcement boundary.
+
+Before the first checkout mutation, create a small versioned recovery journal
+under the authorized per-worktree Git metadata, outside the working tree. Write
+it atomically and update it before and after each mutating phase. Its closed
+shape carries only:
+
+- opaque synchronization attempt/record ID and issue/branch/base identity;
+- pre-publish `HEAD`, the successfully published pre-sync feature head, and the
+  freshly fetched base SHA when each becomes known;
+- the expected merge head and a closed phase name;
+- timestamps needed to diagnose staleness; and
+- the last terminal/recovery classification.
+
+Do not store an idempotency key, command, output, environment value, credential,
+origin URL, diff, file content, or arbitrary error prose. The journal is
+operational recovery state, not an ADR-029 workflow record and not PR authority.
+Only a completed, trusted issue-thread synchronization attestation satisfies
+Step 9. Remove the journal only after the feature head is verified published,
+the success attestation is settled or idempotently recovered, and Git reports
+no operation head or unexpected checkout residue.
+
+Thread one internal execution context (`AbortSignal`, server-owned deadline,
+and bounded progress reporter) through the existing publish, Git, verification,
+and posting seams. Every reachable subprocess must honor it end to end and must
+settle only after its process group is empty. Extend the canonical streaming
+gate runner with the existing process-group termination behavior rather than
+creating another subprocess wrapper or exception shape. The deadline belongs
+in the generic async-job options as a validated server-provided duration, with
+the publish action selecting a finite constant; do not expose a timeout MCP
+input or add a `.ground-control.yaml` key. That options seam lets another
+mechanical action adopt a different server-owned bound later without editing
+the registry contract.
+
+Cancellation and timeout mean “stop safely and reconcile,” never “roll back.”
+After the abort signal, wait for child cleanup while retaining the lease, then
+inspect the active branch, `HEAD`, `MERGE_HEAD`, `CHERRY_PICK_HEAD` and other Git
+operation heads, unmerged index entries, staged/unstaged state, the journal,
+and the remote feature head. Return the ordinary terminal mechanical envelope:
+
+- clean, fully verified/published state is an idempotent success;
+- a journal-matching merge is `agent_required: true` with the existing
+  base-sync `retry_input` plus bounded exact state; and
+- missing, mismatched, unrelated, or ambiguous operation state is
+  `agent_required: true` with a refusal that preserves the checkout for
+  inspection.
+
+The same inspection runs when a new publish invocation finds an operation head
+or recovery journal, so MCP process loss cannot make a later run blindly stage,
+commit, abort, or misattribute the preserved merge. A caller-supplied
+`synchronization` object still passes the existing Zod shape and base-sync
+semantic checks; journal state cannot weaken SHA, issue, branch, repository, or
+merge-parent validation. An internal unforgeable lease capability lets the
+composite call the directly callable base-sync primitive without reacquiring
+its own lock; no public boolean or token may bypass lease acquisition.
+
+Polling stays a generic transport surface. Expand its closed progress phase
+vocabulary only for stable publish phases and keep repository reconciliation in
+the publish service, not in `pollAsyncJob`. A poll is not allowed to infer
+liveness merely from `status: running`; the registry deadline and the publish
+cleanup/reconciliation promise determine termination. Timeout and cancellation
+remain `not_evaluable` station attempts, not gate failures, and add no station,
+workflow state, marker family, exception hierarchy, or telemetry schema.
+
+**Delivered scope (issue #1495).** The cancellation and server-owned-deadline
+guidance above is the target end state, not what shipped. Making cancellation
+honest requires the abort context to reach every Git/gate/GitHub subprocess;
+partial coverage (abort reaching only the final-tree gates) would let a
+cancellation keep mutating before the next gate and report a terminal status
+without proving reconciliation, so review kept `publish` `job_not_cancellable`
+and dropped the signal-driven deadline. What shipped closes the reported hang
+structurally: the shared gate runner runs each gate as its own process-group
+leader and reaps the group when the leader exits (so a leaked descendant can no
+longer hold the stdout pipe after every visible child exits); `publish` holds a
+per-worktree heartbeat lease across its mutations; a required, versioned
+write-ahead recovery journal (secure-temp write) records the attempt; the
+base-sync completion re-reads `HEAD`/`MERGE_HEAD` immediately before the merge
+commit (compare-and-swap); and a fresh authorized `publish` reconciles a
+leftover journal, resuming a journal-matching merge through the base-sync
+`retry_input`, clearing a stale journal on an ordinary dirty tree, and refusing
+mismatched/foreign/corrupt state without mutating. Full-graph abort, and only
+then a genuine deadline and cancellation, are prerequisites this change does not
+claim. See ADR-036's 2026-08-13 amendment.
+
 ## Cross-Cutting Concerns to Reuse
 
 - **Configuration:** `gc_get_repo_ground_control_context`, the strict
@@ -170,6 +272,15 @@ verification for the merge result.
   external merge configuration, and non-interactive credential behavior.
   Keep network authentication in the host Git or `gh` credential boundary;
   never place a token in argv.
+- **Async execution and process cleanup:** `startAsyncJob`, `gc_codex_job`, the
+  existing idempotency/fingerprint/execution-scope options, `process-group.js`,
+  the model-subprocess TERM-to-KILL cleanup contract, and the shared streaming
+  gate runner. Cancellation must reach these incumbents rather than creating a
+  publish-only child-process abstraction.
+- **Filesystem coordination:** the existing `proper-lockfile`-backed primitive,
+  canonical realpath identity, heartbeat/stale handling, and idempotent release
+  handle. Give publish its own per-worktree lock namespace; do not reuse the
+  integration-manager lock or rely on the in-memory job map across processes.
 - **Durable records:** paginated issue-comment reads,
   deterministic marker rendering, trusted-author or effective-permission
   checks, reserved-marker rejection, sensitive-content screening, bounded
@@ -225,6 +336,16 @@ ActorHolder, or frontend change belongs in this work.
   `{ok, error, message, next_action}` envelopes. This is an MCP host boundary,
   not an HTTP boundary, so the Java exception hierarchy and web error envelope
   do not apply.
+- **Recovery persistence:** derive the per-worktree Git metadata directory only
+  after repository authorization; reject symlink/path escape, use restrictive
+  permissions and atomic replacement, validate the versioned journal on every
+  read, and expose no host path. Corrupt or mismatched state fails closed and is
+  never silently deleted.
+- **Async error envelope:** preserve the generic job/result layering and the
+  mechanical `failure()` bounds plus sensitive-content screening. Cancellation
+  becomes terminal only after cleanup and returns exact bounded Git facts under
+  the mechanical result; raw command errors and journal/lock paths stay out of
+  both progress and terminal responses.
 
 The MCP tool is still not an OS sandbox. Host filesystem permissions, trusted
 Git installation, credential-store ownership, and process isolation remain the
@@ -245,6 +366,14 @@ threats.
   `origin/dev` differs.
 - Pin the race in which the integration branch advances after synchronization
   but before PR creation. The PR operation must return to synchronization.
+- Pin cancellation and timeout in every publish phase, including a child that
+  spawns descendants. Prove the process group is empty before the lease is
+  released or the job becomes terminal.
+- Use temporary Git repositories to pin clean interruption, matching lingering
+  `MERGE_HEAD`, unresolved conflicts, committed-but-not-pushed merge, pushed but
+  unattested merge, stale/corrupt journal, unrelated operation head, lock
+  contention, stale-lock takeover, and restart-time reconciliation. Assert that
+  no case stages, commits, pushes, posts, aborts, or deletes ambiguous state.
 - Extend repo policy so the canonical step order, cached fields, durable
   record, MCP PR-creation call, and absence of direct `gh pr create` cannot
   drift independently.
@@ -271,6 +400,18 @@ Testcontainers, backend repository tests, and frontend tests do not apply.
   merge, rebase, squash, reset, force-push, or discard feature work.
 - Do not broaden the integration-manager abstraction or reuse its worktree,
   rebase, lock, or force-with-lease model.
+- Do not treat async-registry single-flight as a filesystem lease, release the
+  lease before child-tree cleanup and reconciliation, or make a fixed sleep/poll
+  count stand in for a deadline.
+- Do not mark a job cancelled merely because an abort signal was sent, and do
+  not report `running` indefinitely after the deadline or after every child has
+  exited.
+- Do not auto-run `git merge --abort`, delete a corrupt journal, adopt a merge
+  whose recorded SHAs do not match Git, or allow public input to claim an
+  internal lease.
+- Do not persist commands, output, diffs, credentials, environment values,
+  idempotency keys, raw origin URLs, or free-form exception text in recovery
+  state, progress, telemetry, or issue markers.
 - Do not duplicate base-branch, PR-body, title, sensitive-content, repository,
   or error-envelope validation in a new module.
 - Do not run completion and policy repeatedly during conflict editing, and do
@@ -283,8 +424,11 @@ Testcontainers, backend repository tests, and frontend tests do not apply.
 - No change to `/integrate` worktrees, rebases, locks, modes, or merge
   authority.
 - No new `.ground-control.yaml` key, remote selector, merge-strategy option, or
-  per-repository synchronization mode.
+  per-repository synchronization/timeout mode.
 - No backend REST endpoint, database persistence, frontend surface, workflow
   engine, or generic Git abstraction.
 - No automatic conflict choice, history rewrite, destructive recovery, or
   host bootstrap change.
+- No promise of transactional Git/GitHub atomicity across host or network
+  failure. The guarantee is bounded execution, exclusive checkout mutation,
+  attributable phase state, and safe deterministic reconciliation.

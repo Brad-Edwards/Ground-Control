@@ -8,6 +8,32 @@ accepted
 
 2026-05-23
 
+> **Sync note for issue #871 (2026-08-14, strict Sonar enforcement):** The SonarCloud workflow
+> now runs the repository's zero-open-issues assertion after the hosted quality gate, including
+> when that gate has already failed, and `run_sonar_strictness_contract` prevents either boundary
+> from being removed or reordered. The policy package keeps `tools/policy/checks.py` as a dynamic
+> compatibility barrel while implementations remain in focused modules, including the extracted
+> implement scope/completion check. This is a CI and policy enforcement change. The documentation
+> coverage classifier, outcome mapping, Vale rules, installer, and `.vale.ini` are unchanged, and
+> no documentation style rule is established.
+
+> **Sync note for issue #1506 (2026-08-09, dead GRC handler removal):** Removed the ~63
+> unregistered GRC/backend tool handlers left over from the #1500 teardown—the top-level
+> `gc-asset.js`, `gc-audit.js`, `gc-control.js`, `gc-evidence.js`, `gc-finding.js`,
+> `gc-identity-admin.js`, `gc-integrate.js`, `gc-observation.js`, `gc-query.js`,
+> `gc-research-provenance.js`, `gc-research-operation-authorization.js`, `gc-risk-governance.js`,
+> `gc-risk-scenario.js`, `gc-threat-model.js`, `gc-workflow-run.js`, `gc-workflow-run-ingest.js`,
+> `link-create.js` tool-handler modules (none registered a tool `tools/*.js` calls), their fixture
+> tests, and the dead REST-wrapper functions inside `mcp/ground-control/lib/api-controls-2.js`,
+> `lib/api-controls-3.js` (deleted), `lib/api-history.js` (deleted), `lib/api-workflow-run.js`,
+> `lib/assert-completion.js`, `lib/assert-traceability.js`, `lib/sonar-watcher.js`, and
+> `lib/pr-body.js`, plus `mcp/ground-control/index.js`'s ~290-line dead import block. Every removed
+> export was verified to have zero callers anywhere in the live MCP surface, including
+> barrel-mediated imports through `lib.js`, before deletion. This is a dead-code removal, not a
+> documentation-coverage extension: the classifier in `mcp/ground-control/lib/doc-coverage.js`, the
+> surviving surface classes, `outcome_required` mapping, Vale rule set, `tools/install-vale.sh`,
+> and `.vale.ini` are unchanged, and no `docs/DOC_STYLE.md` style rule is established.
+
 > **Sync note for issue #1437 (2026-07-30, Live Activity):** Added the project-scoped
 > `GET /api/v1/workflow-runs/activity` read projection, its generated OpenAPI/TypeScript contract,
 > deployment configuration, and console workspace. Documentation lives in ADR-061, `docs/API.md`,
@@ -718,3 +744,15 @@ carried into the gate subprocess. The documentation-coverage classifier
 (`classifyChangedSurface`), its `outcome_required` mapping, the Vale rules,
 `tools/install-vale.sh`, and `.vale.ini` are unchanged; no new documentation
 classification or style rule is established.
+
+**2026-08-19 (#1535, maintainer `/review` lane).** The lane registers two MCP
+tools (`gc_get_pr_review_context`, `gc_remediate_pull_request`) in
+`mcp/ground-control/tools/pr-review.js`, wired in `mcp/ground-control/index.js`;
+their contract surface is the tool descriptions, the MCP README section, and
+`skills/review/SKILL.md`. This records a changed MCP tool/registration surface.
+The documentation-coverage classifier (`classifyChangedSurface`), its
+`outcome_required` mapping, doc targets, the Vale rule set,
+`tools/install-vale.sh`, and `.vale.ini` are unchanged; edits to
+`skills/review/` are gated by the ADR-021 `workflow-guardrail-sync` rule (which
+requires the two workflow documents plus a gate-model ADR), not by a new
+documentation-coverage surface class, and no new style rule is established.

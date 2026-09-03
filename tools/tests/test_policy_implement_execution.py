@@ -14,8 +14,6 @@ from unittest.mock import patch
 
 from tools.policy.checks import (
     DEFERRAL_CASES_PATH,
-    ENUM_CONTRACT_INVENTORY,
-    FRONTEND_API_TYPES_PATH,
     MCP_LIB_PATH,
     REPO_ROOT,
     Violation,
@@ -27,31 +25,14 @@ from tools.policy.checks import (
     extract_step_section,
     main,
     parse_args,
-    parse_const_string_array,
-    parse_java_enum_constants,
-    parse_ts_union_literals,
     read_changed_files,
     run_adr_guard,
     _trigger_is_in_scope,
-    run_ci_strictness_contract,
-    run_authz_matrix_sync_check,
-    run_contract_invariant_enforcement_check,
-    run_contract_surface_check,
-    run_controller_contracts,
-    run_deploy_artifact_consistency,
-    run_deploy_compose_credential_passthrough,
     run_documentation_coverage_check,
-    run_enum_contract_check,
-    run_ghcr_namespace_drift,
     run_repo_identity_drift,
-    run_measurement_catalogue_check,
-    run_migration_policy,
     run_no_deferral_disposition_check,
-    run_ontology_binding_check,
-    run_ontology_crosswalk_check,
     run_pr_body_check,
     run_test_quality_decision_record_contract,
-    run_traceability_reconciliation_gate_contract,
     run_version_mirror_consistency_check,
     run_workflow_routing_contract,
     run_implement_execution_contract,
@@ -61,6 +42,59 @@ if __name__ == "__main__":
     unittest.main()
 
 class ImplementExecutionChecksTest(PolicyChecksFixture):
+    def test_implement_execution_contract_rejects_dropped_four_path_anchor(self):
+        mutations = (
+            (
+                "skills/implement/steps/step-01-issue-branch-resolution.md",
+                "implementation_intent",
+                "intent_hint",
+            ),
+            (
+                "skills/implement/steps/step-04-planning.md",
+                "tdd_path",
+                "test approach",
+            ),
+            (
+                "skills/implement/steps/step-04.4-tdd.md",
+                "Path B — Bug fix on shipped code",
+                "Bug-fix guidance",
+            ),
+            (
+                "skills/implement/steps/step-04.4-tdd.md",
+                "cannot use the documentation-only carve-out",
+                "usually needs a test",
+            ),
+        )
+        for rel, anchor, replacement in mutations:
+            with self.subTest(anchor=anchor), tempfile.TemporaryDirectory() as tmp_dir:
+                root = self._implement_contract_root(tmp_dir)
+                path = root / rel
+                text = path.read_text(encoding="utf-8")
+                self.assertIn(anchor, text)
+                path.write_text(text.replace(anchor, replacement), encoding="utf-8")
+                violations = run_implement_execution_contract(root=root)
+                self.assertIn(
+                    "implement-four-path-tdd-contract",
+                    {item.code for item in violations},
+                )
+
+    def test_implement_execution_contract_rejects_dropped_fix_evidence_anchor(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = self._implement_contract_root(tmp_dir)
+            rules = root / "skills/implement/steps/_review-loop-rules.md"
+            text = rules.read_text(encoding="utf-8")
+            anchor = "fails when the named defect is reintroduced"
+            self.assertIn(anchor, text)
+            rules.write_text(
+                text.replace(anchor, "covers the changed code"),
+                encoding="utf-8",
+            )
+            violations = run_implement_execution_contract(root=root)
+            self.assertIn(
+                "implement-review-fix-evidence-contract",
+                {item.code for item in violations},
+            )
+
     def test_implement_execution_contract_rejects_dropped_sync_policy_command_token(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = self._implement_contract_root(tmp_dir)

@@ -9,6 +9,7 @@ import { spawn as spawnChild } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { readImplementGitOid, readRemoteImplementBranchSha } from "./codex-workflow-2.js";
 import { buildImplementBaseSyncMarker, parseImplementBaseSyncMarkers } from "./codex-workflow.js";
+import { buildVerificationAttestationMarker, selectTrustedVerificationAttestations } from "./verification-attestation.js";
 import { detectSensitiveBodyContent } from "./grc-legacy-compat-2.js";
 import { readIssueCommentsWithAuthors, resolveExecutionObligationTrust } from "./grc-legacy-compat-3.js";
 import { GITHUB_ISSUE_COMMENT_BODY_MAX } from "./repo-vocabulary.js";
@@ -54,6 +55,56 @@ export async function postImplementBaseSyncRecord(
     commentUrl: typeof response?.html_url === "string" ? response.html_url : null,
     commentId: Number.isInteger(response?.id) ? response.id : null,
   };
+}
+export async function postImplementVerificationAttestation(
+  repoRoot,
+  owner,
+  name,
+  attestation,
+  commandRunner = execFile,
+) {
+  const marker = buildVerificationAttestationMarker(attestation);
+  const body = [
+    marker,
+    "",
+    "## Verification attestation",
+    "",
+    `- Attestation: \`${attestation.id}\``,
+    `- Verified tree: \`${attestation.tree}\``,
+    `- Base commit: \`${attestation.base}\``,
+  ].join("\n");
+  const sensitiveError = detectSensitiveBodyContent(body);
+  if (sensitiveError) throw new Error(sensitiveError);
+  if (Buffer.byteLength(body, "utf8") > GITHUB_ISSUE_COMMENT_BODY_MAX) {
+    throw new Error("Rendered verification attestation exceeds GitHub's issue-comment body limit");
+  }
+  const { stdout } = await commandRunner(
+    "gh",
+    [
+      "api",
+      "--method",
+      "POST",
+      `/repos/${owner}/${name}/issues/${attestation.issue}/comments`,
+      "-f",
+      `body=${body}`,
+    ],
+    { cwd: repoRoot },
+  );
+  const response = JSON.parse(stdout);
+  return {
+    commentUrl: typeof response?.html_url === "string" ? response.html_url : null,
+    commentId: Number.isInteger(response?.id) ? response.id : null,
+  };
+}
+export async function readTrustedImplementVerificationAttestations(
+  repoRoot,
+  owner,
+  name,
+  issueNumber,
+) {
+  const comments = await readIssueCommentsWithAuthors(repoRoot, owner, name, issueNumber);
+  const trust = await resolveExecutionObligationTrust(repoRoot, owner, name, comments);
+  return selectTrustedVerificationAttestations(comments, (comment) => trust.isTrusted(comment), issueNumber);
 }
 export async function verifyPublishedImplementHead(
   repoRoot,
@@ -129,7 +180,11 @@ export async function listWorkingTreeChanges(repoPath) {
       if (trimmed) files.add(trimmed);
     }
   }
-  return Array.from(files).sort();
+  return Array.from(files).sort((a, b) => {
+    if (a < b) return -1;
+    if (a > b) return 1;
+    return 0;
+  });
 }
 export const PACK_TYPES = ["CONTROL_PACK", "REQUIREMENTS_PACK", "CUSTOM"];
 export const PACK_IMPORT_FORMATS = ["AUTO", "OSCAL_JSON", "GC_MANIFEST"];
@@ -158,36 +213,50 @@ function _truncateForRationale(text) {
 }
 const _AUTO_FIX_SWEEP_EVIDENCE =
   "next review cycle re-reviews the full diff; structural sweep for analogues lives in the cycle loop";
+function _autoFixId(f, idx) {
+  return typeof f?.id === "string" && f.id.length > 0 ? f.id : `F${idx + 1}`;
+}
+function _autoFixTitle(f) {
+  return typeof f?.title === "string" && f.title.length > 0 ? f.title : "(no title)";
+}
+// Synthesize a location from path:line when available — gives the agent a stable
+// anchor when revisiting the finding in the next cycle. Null when no path.
+function _autoFixLocation(f) {
+  const path = typeof f?.path === "string" ? f.path : null;
+  if (!path) return null;
+  return typeof f?.line === "number" ? `${path}:${f.line}` : path;
+}
+function _autoFixSweepEvidence(f) {
+  return typeof f?.sweep_evidence === "string" && f.sweep_evidence.length > 0
+    ? f.sweep_evidence
+    : _AUTO_FIX_SWEEP_EVIDENCE;
+}
+function _autoFixInstances(f) {
+  return Array.isArray(f?.category?.instances)
+    ? f.category.instances.filter((s) => typeof s === "string" && s.length > 0)
+    : [];
+}
+function _buildAutoFixDecisionEntry(f, idx) {
+  const classification = f?.classification === "class" ? "class" : "one-off";
+  const entry = {
+    id: _autoFixId(f, idx),
+    title: _autoFixTitle(f),
+    classification,
+    decision: "fix",
+    rationale: _truncateForRationale(typeof f?.body === "string" ? f.body : ""),
+  };
+  const location = _autoFixLocation(f);
+  if (location) entry.location = location;
+  if (classification === "one-off") {
+    entry.sweep_evidence = _autoFixSweepEvidence(f);
+  } else {
+    entry.instances = _autoFixInstances(f);
+  }
+  return entry;
+}
 export function buildAutoFixDecisionFindings(findings) {
   const arr = Array.isArray(findings) ? findings : [];
-  return arr.map((f, idx) => {
-    const classification = f?.classification === "class" ? "class" : "one-off";
-    const entry = {
-      id: typeof f?.id === "string" && f.id.length > 0 ? f.id : `F${idx + 1}`,
-      title: typeof f?.title === "string" && f.title.length > 0 ? f.title : "(no title)",
-      classification,
-      decision: "fix",
-      rationale: _truncateForRationale(typeof f?.body === "string" ? f.body : ""),
-    };
-    // Synthesize a location from path:line when available — gives the agent
-    // a stable anchor when revisiting the finding in the next cycle.
-    const path = typeof f?.path === "string" ? f.path : null;
-    if (path) {
-      entry.location = typeof f?.line === "number" ? `${path}:${f.line}` : path;
-    }
-    if (classification === "one-off") {
-      const swe = typeof f?.sweep_evidence === "string" && f.sweep_evidence.length > 0
-        ? f.sweep_evidence
-        : _AUTO_FIX_SWEEP_EVIDENCE;
-      entry.sweep_evidence = swe;
-    } else {
-      const instances = Array.isArray(f?.category?.instances)
-        ? f.category.instances.filter((s) => typeof s === "string" && s.length > 0)
-        : [];
-      entry.instances = instances;
-    }
-    return entry;
-  });
+  return arr.map((f, idx) => _buildAutoFixDecisionEntry(f, idx));
 }
 export function summarizeReviewFindings(findings, topCategoriesLimit = 5) {
   const arr = Array.isArray(findings) ? findings : [];
@@ -267,7 +336,7 @@ export const KNOWLEDGE_SOURCE_TYPES = Object.freeze([
   "file",
 ]);
 const COMMIT_SHA_RE = /^[0-9a-f]{7,40}$/;
-const POSITIVE_INT_RE = /^[1-9][0-9]*$/;
+const POSITIVE_INT_RE = /^[1-9]\d*$/;
 const REPO_RELATIVE_PATH_RE = /^(?!\.\.(\/|$))(?!.*\/\.\.(\/|$))(?!\/)(?!.*\\)[^\s].*$/;
 export function formatSourceCitation({ sourceType, sourceRef } = {}) {
   if (typeof sourceType !== "string" || sourceType.trim() === "") {
@@ -282,10 +351,13 @@ export function formatSourceCitation({ sourceType, sourceRef } = {}) {
   if (typeof sourceRef !== "string" || sourceRef.trim() === "") {
     return { ok: false, error: "source_ref is required and must be a non-empty string" };
   }
+  return _normalizeSourceCitation(sourceType, sourceRef);
+}
 
-  // Normalize per type. Each branch produces a single-line canonical ref
-  // so the resulting citation is safe to embed in a YAML scalar, a markdown
-  // bullet, or a git commit message subject without escaping.
+// Normalize per type. Each branch produces a single-line canonical ref
+// so the resulting citation is safe to embed in a YAML scalar, a markdown
+// bullet, or a git commit message subject without escaping.
+function _normalizeSourceCitation(sourceType, sourceRef) {
   switch (sourceType) {
     case "commit": {
       const ref = sourceRef.trim().toLowerCase();
@@ -347,16 +419,23 @@ export function formatSourceCitation({ sourceType, sourceRef } = {}) {
     }
   }
 }
+function stripSlugDashes(value) {
+  let start = 0;
+  let end = value.length;
+  while (start < end && value[start] === "-") start += 1;
+  while (end > start && value[end - 1] === "-") end -= 1;
+  return value.slice(start, end);
+}
 export function buildInboxSlug(note) {
   const trimmed = (note || "").slice(0, 200).toLowerCase();
-  const kebab = trimmed
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  const bounded = kebab.slice(0, 40).replace(/-+$/g, "");
+  // Dashes are trimmed by a linear character scan, not an anchored `-+$` regex,
+  // which the analyzer reads as super-linear (S8786).
+  const kebab = stripSlugDashes(trimmed.replace(/[^a-z0-9]+/g, "-"));
+  const bounded = stripSlugDashes(kebab.slice(0, 40));
   return bounded || "note";
 }
 export function formatInboxTimestamp(date = new Date()) {
-  return date.toISOString().replace(/\.\d+Z$/, "").replace(/:/g, "-");
+  return date.toISOString().replace(/\.\d+Z$/, "").replaceAll(":", "-");
 }
 export function defaultSpawnIngest({ repoRoot, inboxFilePath, knowledge }) {
   const cliPath = fileURLToPath(new URL("./knowledge_ingest_cli.js", import.meta.url));

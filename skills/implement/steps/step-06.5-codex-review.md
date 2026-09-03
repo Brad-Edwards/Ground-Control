@@ -28,8 +28,9 @@ The codex review is THE review pass for the PR - there is no second post-push co
    non-cancellable because cancellation cannot roll back GitHub records.
 4. Dispatch on `next_action` exactly as specified by
    [_review-loop-rules.md](_review-loop-rules.md). Fix real findings in this
-   session, run proportionate targeted tests while iterating, and do not echo
-   findings instead of fixing them.
+   session, apply its canonical fix-locks-itself evidence rule, run
+   proportionate targeted tests while iterating, and do not echo findings
+   instead of fixing them.
 5. Keep verbatim findings in the server-posted durable record. Cache only the
    compact status, cycle count, summary, and decision-record URLs.
 

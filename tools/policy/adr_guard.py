@@ -1,4 +1,4 @@
-"""Policy checks: ADR guard and controller contracts.
+"""Policy checks: ADR guard.
 
 Extracted from tools/policy/checks.py (issue #1355), which had reached 5,679 lines against
 the repo's 500-LOC limit. checks.py remains the entry point and re-exports this module, so
@@ -19,19 +19,26 @@ import re
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, field
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 from .core import (
     ADR_POLICY_PATH,
-    CONTROLLER_PATH_RE,
     REPO_ROOT,
     Violation,
     normalize_path,
 )
+from .cli_safety import (
+    validate_git_ref,
+)
+
+# `git diff`/`git ls-files` filter selecting added, copied, deleted, modified,
+# renamed, type-changed, unmerged, unknown, and broken-pairing paths.
+GIT_DIFF_FILTER = "--diff-filter=ACDMRTUXB"
 
 
 def run_git(args: list[str], root: Path = REPO_ROOT) -> str:
+    """Run ``git`` with ``args`` in ``root`` and return its captured stdout."""
     result = subprocess.run(
         ["git", *args],
         cwd=root,
@@ -65,7 +72,7 @@ def merge_base_or(base: str, ref: str = "HEAD", root: Path = REPO_ROOT) -> str:
     """
     try:
         result = subprocess.run(
-            ["git", "merge-base", base, ref],
+            ["git", "merge-base", validate_git_ref(base), validate_git_ref(ref)],
             cwd=root,
             check=True,
             capture_output=True,
@@ -76,6 +83,34 @@ def merge_base_or(base: str, ref: str = "HEAD", root: Path = REPO_ROOT) -> str:
     return result.stdout.strip() or base
 
 
+def _changed_file_lines(
+    *,
+    base: str | None,
+    staged: bool,
+    env_var: str | None,
+    root: Path,
+) -> list[str]:
+    """Return the raw, newline-split path list for the selected diff scope."""
+    if env_var:
+        return os.getenv(env_var, "").splitlines()
+    if base:
+        diff_base = merge_base_or(base, root=root)
+        lines = run_git(
+            ["diff", "--name-only", GIT_DIFF_FILTER, diff_base, "--"], root=root
+        ).splitlines()
+    elif staged:
+        lines = run_git(
+            ["diff", "--cached", "--name-only", GIT_DIFF_FILTER, "--"], root=root
+        ).splitlines()
+    else:
+        tracked = run_git(
+            ["diff", "--name-only", GIT_DIFF_FILTER, "HEAD", "--"], root=root
+        ).splitlines()
+        untracked = run_git(["ls-files", "--others", "--exclude-standard"], root=root).splitlines()
+        lines = tracked + untracked
+    return lines
+
+
 def read_changed_files(
     *,
     files: Iterable[str] | None = None,
@@ -84,39 +119,34 @@ def read_changed_files(
     env_var: str | None = None,
     root: Path = REPO_ROOT,
 ) -> list[str]:
+    """Resolve the sorted, de-duplicated set of changed repo-relative paths.
+
+    Selection is ordered: an explicit ``files`` list wins, otherwise the paths
+    come from an ``env_var`` listing, a diff against ``base``, the staged index,
+    or finally the working-tree diff plus untracked files.
+    """
     if files:
         return sorted({normalize_path(path) for path in files if path})
-    if env_var:
-        raw = os.getenv(env_var, "")
-        return sorted({normalize_path(path) for path in raw.splitlines() if path.strip()})
-    if base:
-        diff_base = merge_base_or(base, root=root)
-        output = run_git(
-            ["diff", "--name-only", "--diff-filter=ACDMRTUXB", diff_base, "--"], root=root
-        )
-        return sorted({normalize_path(path) for path in output.splitlines() if path.strip()})
-    if staged:
-        output = run_git(["diff", "--cached", "--name-only", "--diff-filter=ACDMRTUXB", "--"], root=root)
-        return sorted({normalize_path(path) for path in output.splitlines() if path.strip()})
-
-    tracked = run_git(["diff", "--name-only", "--diff-filter=ACDMRTUXB", "HEAD", "--"], root=root)
-    untracked = run_git(["ls-files", "--others", "--exclude-standard"], root=root)
-    combined = tracked.splitlines() + untracked.splitlines()
-    return sorted({normalize_path(path) for path in combined if path.strip()})
+    raw_lines = _changed_file_lines(base=base, staged=staged, env_var=env_var, root=root)
+    return sorted({normalize_path(path) for path in raw_lines if path.strip()})
 
 
 def matches_any(path: str, patterns: Iterable[str]) -> bool:
+    """Return True when ``path`` matches any of the fnmatch ``patterns``."""
     return any(fnmatch.fnmatch(path, pattern) for pattern in patterns)
 
 
 def filter_matches(paths: Iterable[str], patterns: Iterable[str]) -> list[str]:
+    """Return the sorted, de-duplicated ``paths`` matching any of ``patterns``."""
     return sorted({path for path in paths if matches_any(path, patterns)})
 
 
-def load_json(path: Path, *, reject_duplicate_keys: bool = False) -> dict:
+def load_json(path: Path, *, reject_duplicate_keys: bool = False) -> dict[str, Any]:
+    """Parse the JSON object at ``path``, optionally rejecting duplicate keys."""
     object_pairs_hook = None
     if reject_duplicate_keys:
         def reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+            """Build a dict from ``pairs``, raising ValueError on any repeated key."""
             result: dict[str, Any] = {}
             for key, value in pairs:
                 if key in result:
@@ -129,6 +159,7 @@ def load_json(path: Path, *, reject_duplicate_keys: bool = False) -> dict:
 
 
 def get_repo_relative_files(root: Path, glob_pattern: str) -> list[str]:
+    """Return sorted repo-relative file paths under ``root`` matching ``glob_pattern``."""
     return sorted(
         normalize_path(str(path.relative_to(root)))
         for path in root.glob(glob_pattern)
@@ -151,12 +182,12 @@ def changed_lines_for(path: str, base: str | None, root: Path = REPO_ROOT) -> st
     return "\n".join(
         line
         for line in output.splitlines()
-        if (line.startswith("+") or line.startswith("-")) and not line.startswith(("+++", "---"))
+        if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
     )
 
 
 def _trigger_is_in_scope(
-    path: str, rule: dict, base: str | None, root: Path
+    path: str, rule: dict[str, Any], base: str | None, root: Path
 ) -> bool:
     """Does this changed path actually touch the surface the rule guards?
 
@@ -182,227 +213,65 @@ def _trigger_is_in_scope(
     return re.search(pattern, changed) is not None
 
 
+def _rule_triggers(
+    rule: dict[str, Any], changed_files: list[str], base: str | None, root: Path
+) -> list[str]:
+    """Return the changed paths that trigger ``rule`` and fall within its scope."""
+    return [
+        path
+        for path in filter_matches(changed_files, rule.get("whenAny", []))
+        if _trigger_is_in_scope(path, rule, base, root)
+    ]
+
+
+def _missing_requirements(
+    rule: dict[str, Any], changed_files: list[str]
+) -> tuple[list[str], list[str]]:
+    """Return the (missing requireAll, missing requireAny) entries for ``rule``."""
+    missing_all = [
+        required
+        for required in rule.get("requireAll", [])
+        if required not in changed_files
+    ]
+    missing_any: list[str] = []
+    require_any = rule.get("requireAny", [])
+    if require_any and not any(required in changed_files for required in require_any):
+        missing_any.append(f"one of: {', '.join(require_any)}")
+    return missing_all, missing_any
+
+
+def _evaluate_rule(
+    rule: dict[str, Any], changed_files: list[str], base: str | None, root: Path
+) -> Violation | None:
+    """Return a Violation when ``rule`` fires but its required updates are absent."""
+    triggers = _rule_triggers(rule, changed_files, base, root)
+    if not triggers:
+        return None
+
+    missing_all, missing_any = _missing_requirements(rule, changed_files)
+    if not (missing_all or missing_any):
+        return None
+
+    details = [f"triggered by: {', '.join(triggers)}"]
+    if missing_all:
+        details.append(f"missing required file updates: {', '.join(missing_all)}")
+    details.extend(missing_any)
+    return Violation(
+        code=rule["id"],
+        message=rule["message"],
+        details=details,
+    )
+
+
 def run_adr_guard(
     changed_files: list[str], root: Path = REPO_ROOT, base: str | None = None
 ) -> list[Violation]:
+    """Evaluate the ADR/documentation coupling policy against ``changed_files``."""
     policy = load_json(ADR_POLICY_PATH)
     violations: list[Violation] = []
-
     for policy_entry in policy["policies"]:
         for rule in policy_entry.get("rules", []):
-            triggers = [
-                path
-                for path in filter_matches(changed_files, rule.get("whenAny", []))
-                if _trigger_is_in_scope(path, rule, base, root)
-            ]
-            if not triggers:
-                continue
-
-            missing_all = [
-                required
-                for required in rule.get("requireAll", [])
-                if required not in changed_files
-            ]
-            missing_any = []
-            require_any = rule.get("requireAny", [])
-            if require_any and not any(required in changed_files for required in require_any):
-                missing_any.append(f"one of: {', '.join(require_any)}")
-
-            if missing_all or missing_any:
-                details = [f"triggered by: {', '.join(triggers)}"]
-                if missing_all:
-                    details.append(f"missing required file updates: {', '.join(missing_all)}")
-                details.extend(missing_any)
-                violations.append(
-                    Violation(
-                        code=rule["id"],
-                        message=rule["message"],
-                        details=details,
-                    )
-                )
-
-    return violations
-
-
-JAVA_MAIN_SOURCE_PREFIX = "backend/src/main/java/"
-
-
-JAVA_TEST_SOURCE_PREFIX = "backend/src/test/java/"
-
-
-WEBMVCTEST_ANNOTATION_RE = re.compile(r"@WebMvcTest\s*\(([^)]*)\)", re.DOTALL)
-
-
-# Dotted Java identifier (`a.b.C`). Matched WITHOUT a trailing `.class` literal:
-# a `(?:\.[\w$]+)*\.class` form overlaps the quantified segment with the final
-# `.class` and backtracks super-linearly (Sonar S8786). The `.class` suffix is
-# stripped in code instead, which keeps the match linear.
-JAVA_DOTTED_NAME_RE = re.compile(r"[\w$]+(?:\.[\w$]+)*")
-
-
-_CLASS_LITERAL_SUFFIX = ".class"
-
-
-# Non-static single-type imports only: `import static ...;` has a space after
-# `import` that `[\w.]+` cannot span, so it never matches here.
-JAVA_IMPORT_RE = re.compile(r"^\s*import\s+([\w.]+)\s*;", re.MULTILINE)
-
-
-def controller_fully_qualified_name(controller_path: str) -> str | None:
-    """Fully-qualified class name for a controller from its repo-relative path."""
-    normalized = normalize_path(controller_path)
-    if not normalized.startswith(JAVA_MAIN_SOURCE_PREFIX) or not normalized.endswith(".java"):
-        return None
-    relative = normalized[len(JAVA_MAIN_SOURCE_PREFIX) : -len(".java")]
-    return relative.replace("/", ".")
-
-
-def test_covers_controller(content: str, controller_fqcn: str) -> bool:
-    """True when a test's @WebMvcTest annotation resolves to ``controller_fqcn``.
-
-    Resolution mirrors Java name binding: a fully-qualified literal matches
-    directly; a simple name binds through the file's single-type import for that
-    name; absent such an import the simple name binds in the file's own package.
-    The import check is what disambiguates same-simple-name controllers in
-    different packages (issue #1167) — matching on the bare filename stem, or on
-    the annotation's simple name alone, cannot.
-    """
-    referenced: set[str] = set()
-    for args in WEBMVCTEST_ANNOTATION_RE.findall(content):
-        for token in JAVA_DOTTED_NAME_RE.findall(args):
-            if token.endswith(_CLASS_LITERAL_SUFFIX):
-                referenced.add(token[: -len(_CLASS_LITERAL_SUFFIX)])
-    if not referenced:
-        return False
-    if controller_fqcn in referenced:
-        return True
-    simple_name = controller_fqcn.rsplit(".", 1)[-1]
-    if simple_name not in referenced:
-        return False
-    imports = {imported.rsplit(".", 1)[-1]: imported for imported in JAVA_IMPORT_RE.findall(content)}
-    bound = imports.get(simple_name)
-    if bound is not None:
-        return bound == controller_fqcn
-    # No single-type import of the simple name: it binds in the test's own
-    # package (or via a wildcard import that cannot be resolved statically).
-    # The conflicting-import collision this check exists to prevent has already
-    # been excluded above, so accept the simple-name match.
-    return True
-
-
-def run_controller_contracts(changed_files: list[str], root: Path = REPO_ROOT) -> list[Violation]:
-    controllers = [path for path in changed_files if CONTROLLER_PATH_RE.match(path)]
-    if not controllers:
-        return []
-
-    violations: list[Violation] = []
-    missing: list[str] = []
-    if "docs/API.md" not in changed_files:
-        missing.append("docs/API.md")
-    if "mcp/ground-control/lib.js" not in changed_files:
-        missing.append("mcp/ground-control/lib.js")
-    # MCP server adapter companion: most tools register inline in index.js, but a few were
-    # factored into their own modules — gc_risk_governance, gc_risk_scenario, and gc_workflow_run
-    # (their Zod shapes, descriptions, and handlers live in gc-risk-governance.js,
-    # gc-risk-scenario.js, and gc-workflow-run.js; index.js only registers the imports). Any of
-    # those files satisfies the MCP-adapter requirement for its controller; index.js stays
-    # mandatory for any tool still registered inline.
-    adapter_files = (
-        "mcp/ground-control/index.js",
-        "mcp/ground-control/gc-risk-governance.js",
-        "mcp/ground-control/gc-risk-scenario.js",
-        "mcp/ground-control/gc-workflow-run.js",
-    )
-    if not any(adapter in changed_files for adapter in adapter_files):
-        missing.append("one of: " + ", ".join(adapter_files))
-    if missing:
-        violations.append(
-            Violation(
-                code="controller-parity",
-                message="Controller changes require API docs and MCP parity updates.",
-                details=[
-                    f"controllers changed: {', '.join(controllers)}",
-                    f"missing companion updates: {', '.join(missing)}",
-                ],
-            )
-        )
-
-    # Resolve each controller's @WebMvcTest companion by reverse-lookup on the
-    # controller's fully-qualified class, not its filename stem. The stem
-    # collides whenever two packages declare a same-named controller (issue
-    # #1167: api/audit/AuditController vs api/audits/AuditController).
-    repo_test_files = get_repo_relative_files(root, "backend/src/test/java/**/*.java")
-    changed_test_files = [
-        path
-        for path in changed_files
-        if path.startswith(JAVA_TEST_SOURCE_PREFIX) and path.endswith(".java")
-    ]
-
-    def covers(rel_path: str, fqcn: str) -> bool:
-        try:
-            content = (root / rel_path).read_text(encoding="utf-8")
-        except OSError:
-            return False
-        return test_covers_controller(content, fqcn)
-
-    for controller in controllers:
-        # A controller deleted in this diff has no request mapping left to slice-test,
-        # and its @WebMvcTest companion is deleted along with it. Demanding a companion
-        # for a file that no longer exists would make route removal unshippable.
-        if not (root / controller).exists():
-            continue
-        fqcn = controller_fully_qualified_name(controller)
-        if fqcn is None:
-            continue
-        simple_name = fqcn.rsplit(".", 1)[-1]
-
-        if any(covers(path, fqcn) for path in changed_test_files):
-            # The controller's @WebMvcTest companion was updated in this diff.
-            continue
-
-        existing = [path for path in repo_test_files if covers(path, fqcn)]
-        if existing:
-            violations.append(
-                Violation(
-                    code="controller-webmvctest-update",
-                    message="Controller changes require a matching @WebMvcTest update.",
-                    details=[
-                        f"changed {controller} but did not update its @WebMvcTest "
-                        f"companion; expected one of: {', '.join(existing)}"
-                    ],
-                )
-            )
-            continue
-
-        # No @WebMvcTest slice resolves to this controller. Distinguish "a
-        # same-named test exists but is not a slice" (annotation) from "no test
-        # exists at all" (missing) so the message points at the real gap.
-        stem_tests = get_repo_relative_files(
-            root, f"backend/src/test/java/**/{simple_name}Test.java"
-        )
-        non_slice_tests = [
-            path
-            for path in stem_tests
-            if "@WebMvcTest(" not in (root / path).read_text(encoding="utf-8")
-        ]
-        if non_slice_tests:
-            violations.append(
-                Violation(
-                    code="controller-webmvctest-annotation",
-                    message="Controller test exists but is not a @WebMvcTest.",
-                    details=[
-                        f"{', '.join(non_slice_tests)} must use @WebMvcTest for {controller}"
-                    ],
-                )
-            )
-            continue
-
-        violations.append(
-            Violation(
-                code="controller-webmvctest-missing",
-                message="Controller is missing a matching @WebMvcTest class.",
-                details=[f"no @WebMvcTest({simple_name}.class) slice found for {controller}"],
-            )
-        )
-
+            violation = _evaluate_rule(rule, changed_files, base, root)
+            if violation is not None:
+                violations.append(violation)
     return violations

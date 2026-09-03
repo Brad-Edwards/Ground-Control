@@ -61,6 +61,23 @@ function _safeAsyncJobError(error) {
   return raw.length <= max ? raw : `${raw.slice(0, max - 1)}…`;
 }
 
+const _ASYNC_JOB_PROGRESS_PHASES = new Set(["completion", "policy"]);
+
+// Sanitize a progress snapshot to numbers and a whitelisted phase name only, so
+// no command text, child output, path, or environment value can ride along in
+// the poll envelope (issue #1497).
+function _boundAsyncJobProgress(snapshot) {
+  if (snapshot == null || typeof snapshot !== "object") return null;
+  const num = (value) => (Number.isFinite(value) ? value : 0);
+  return {
+    phase: _ASYNC_JOB_PROGRESS_PHASES.has(snapshot.phase) ? snapshot.phase : "gate",
+    phase_started_ms: num(snapshot.phase_started_ms),
+    last_activity_ms: num(snapshot.last_activity_ms),
+    stdout_bytes: num(snapshot.stdout_bytes),
+    stderr_bytes: num(snapshot.stderr_bytes),
+  };
+}
+
 function _asyncJobEnvelope(job) {
   const base = {
     job_id: job.id,
@@ -68,7 +85,11 @@ function _asyncJobEnvelope(job) {
     elapsed_ms: (job.finishedAt ?? _asyncJobNow()) - job.startedAt,
   };
   if (job.status === "running") {
-    return { ok: true, status: "running", ...base };
+    // A closed, bounded progress snapshot (issue #1497). It proves only what it
+    // states — the current gate phase and the last observed child activity — so
+    // a slow-but-healthy sweep is distinguishable from a dead job. It is not a
+    // lease, cancellation proof, or liveness guarantee.
+    return { ok: true, status: "running", ...base, ...(job.progress ? { progress: job.progress } : {}) };
   }
   if (job.status === "done") {
     return { ok: true, status: "done", ...base, result: job.result };
@@ -164,7 +185,13 @@ function _normalizedFingerprintValue(value) {
     return Object.fromEntries(
       Object.keys(value)
         .filter((key) => value[key] !== undefined)
-        .sort()
+        // Explicit, deterministic code-unit ordering (S2871): this feeds a
+        // fingerprint, so the order must be identical across hosts and locales.
+        .sort((a, b) => {
+          if (a < b) return -1;
+          if (a > b) return 1;
+          return 0;
+        })
         .map((key) => [key, _normalizedFingerprintValue(value[key])]),
     );
   }
@@ -182,7 +209,7 @@ export function asyncJobInputFingerprint(value) {
 // namespace plus the caller-stable key for one logical attempt.
 export function startAsyncJob(kind, runFn, options = {}) {
   if (typeof runFn !== "function") {
-    throw new Error("startAsyncJob: runFn must be a function");
+    throw new TypeError("startAsyncJob: runFn must be a function");
   }
   const validated = _validateAsyncJobOptions(options);
   if (!validated.ok) return validated;
@@ -247,10 +274,14 @@ export function startAsyncJob(kind, runFn, options = {}) {
     idempotencyNamespace: validated.idempotencyNamespace,
     fingerprint: validated.fingerprint,
     executionScope: validated.executionScope,
+    progress: null,
   };
   _asyncJobs.set(id, job);
+  const reportProgress = (snapshot) => {
+    job.progress = _boundAsyncJobProgress(snapshot);
+  };
   Promise.resolve()
-    .then(() => runFn(controller.signal))
+    .then(() => runFn(controller.signal, reportProgress))
     .then((result) => {
       job.result = result;
       job.status = "done";

@@ -4,6 +4,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { runImplementMechanical } from "./gc-implement-mechanical.js";
+import { stripVolatileTimings } from "./gc-implement-mechanical.lifecycle-normalize.js";
 import { requestedRequirementUidAuthorization } from "./lib.js";
 
 const RECORD_ID = "c".repeat(32);
@@ -401,7 +402,11 @@ describe("runImplementMechanical live lifecycle emission", () => {
         { ...args },
         baseDeps({ createLifecycle: lifecycleSpy({ fail: true }).factory }),
       );
-      assert.deepEqual(withBrokenEmitter, withoutEmission, `action ${invocation.action} changed under a broken emitter`);
+      assert.deepEqual(
+        stripVolatileTimings(withBrokenEmitter),
+        stripVolatileTimings(withoutEmission),
+        `action ${invocation.action} changed under a broken emitter`,
+      );
     }
   });
 

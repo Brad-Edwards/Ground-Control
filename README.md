@@ -43,6 +43,29 @@ backend:
 Requirement status and traceability are recorded by the agent directly in the
 requirement file, reviewed in the PR like any other change.
 
+## Repository map
+
+Where each top-level directory belongs, so a contributor can tell where a new file
+goes. The [Documentation](#documentation) table further down is the reading index;
+this is the ownership map.
+
+| Path | What lives here |
+|------|-----------------|
+| `mcp/` | The MCP servers. `mcp/ground-control/` is the only running service (Node.js ES modules); see the [MCP server reference](mcp/ground-control/README.md). `mcp/citation/` is a separate research companion. |
+| `skills/` | Agent-neutral workflow skills. The gated `/implement` loop lives in [`skills/implement/`](skills/implement/); the [development workflow](docs/DEVELOPMENT_WORKFLOW.md) explains it. |
+| `docs/` | Requirements (`docs/requirements/<UID>/requirement.md`), the [architecture overview](docs/architecture/ARCHITECTURE.md), [coding standards](docs/CODING_STANDARDS.md), and the [knowledge base](docs/knowledge/). |
+| `architecture/` | Architecture Decision Records ([`architecture/adrs/`](architecture/adrs/)) and the machine-enforced [ADR policy](architecture/policies/adr-policy.json). |
+| `tools/` | Repo-native policy checks ([`tools/policy/`](tools/policy/)) and their tests, plus CI, Sonar, and release tooling. Run by `make policy`. |
+| `bin/` | Executable entry points for the gates ([`bin/policy`](bin/policy), `bin/adr-guard`, `bin/check-pr-body`). |
+| `scripts/` | Developer and CI shell helpers ([`scripts/`](scripts/)): hook install, bootstrap, PR-body checks. |
+| `.github/` | GitHub Actions [workflows](.github/workflows/), issue/PR templates, `CODEOWNERS`, and the branch-protection baseline. |
+
+Agent/editor tooling directories (`.claude`, `.cursor`, `.gc`, `.serena`, `.vale`)
+are configuration, not source surfaces, and are intentionally left out. The map is
+kept in sync with the tracked directory tree by a policy gate
+(`tools/policy/repo_map.py`, GC-P029 /
+[ADR-095](architecture/adrs/095-repository-map-freshness-gate.md)).
+
 ## Getting started
 
 **Prerequisites:** Node.js 20+, `gh` CLI (authenticated), `git`.
@@ -61,7 +84,8 @@ Code (and Codex / Cursor per ADR-027). See the
 
 ```bash
 make mcp-test     # MCP node --test suite (primary test gate)
-make policy       # repo-native ADR/workflow/spec guardrails + Vale
+make mcp-lint     # ESLint on the MCP server (also run by `make policy`)
+make policy       # repo-native ADR/workflow/spec guardrails + MCP lint + Vale
 make vale-lint    # prose lint on changed docs
 make graphify     # (optional) rebuild the disposable Graphify index
 ```

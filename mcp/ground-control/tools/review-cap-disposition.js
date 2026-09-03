@@ -38,6 +38,21 @@ import { ok, err } from "./respond.js";
 
 
 export function registerReviewCapDisposition(server, ctx) {
+  _registerGcReviewCapDisposition(server);
+  _registerGcCodexJob(server);
+  _registerGcWatchSonarAnalysis(server);
+  _registerGcPrepareImplementBranch(server);
+  _registerGcImplementMechanical(server);
+  _registerGcSynchronizeImplementBranch(server);
+  _registerGcCreateSynchronizedImplementPr(server);
+  _registerGcRecordExecutionObligation(server);
+  _registerGcMarkImplementIssuePickedUp(server);
+  _registerGcAuthorizeExecutionObligationWontfix(server);
+  _registerGcResolveWorkflowRoute(server);
+  _registerGcCodexVerifyFinding(server);
+}
+
+function _registerGcReviewCapDisposition(server) {
   server.tool(
     "gc_review_cap_disposition",
     "Optional, config-gated auto-disposition of the pre-push review cap (workflow.review_disposition; disabled by default — when disabled this returns {ok:true,skipped:true,disposition:null} and does nothing else). Scores the change with a deterministic risk model (diff size, changed-surface class, security-finding shape, prior auto-overrides) and returns one of disposition='proceed' | 'one_more_cycle' | 'escalate_to_human' with a next_action directive. Cap/cycle authority is derived SERVER-SIDE (the effective reviewer cap from config, the over-cap count from durable cycle markers); the passed cycle/cap are advisory display only, and the call is refused (disposition_before_cap_boundary) before the cap boundary is reached. In mode='shadow' (default) the returned next_action is clamped to escalation — the disposition is recorded for agreement data but never drives control flow. A one_more_cycle disposition records a durable over-cap auto-grant (carrying its issuance mode + server-derived cap boundary) that gc_codex_review_cycle / gc_test_quality_review_cycle verify (via auto_grant=true) before running an over-cap cycle — honored only when posted by the trusted MCP identity, issued under authoritative mode, bound to the current cap, and not already spent. The hard ceiling (max_auto_overrides) is enforced in the scorer and re-clamped after any judge so the auto path can never grant a 2nd over-cap cycle. Returns {ok, disposition, next_action, mode, effective_cap, rationale, decided_by, risk_score, signals_snapshot, over_cap_grant_number, decision_record_url}.",
@@ -98,13 +113,18 @@ export function registerReviewCapDisposition(server, ctx) {
       } catch (e) { return err(e); }
     },
   );
+}
 
+function _registerGcCodexJob(server) {
   server.tool(
     "gc_codex_job",
     "Poll or cancel a shared async job started by gc_codex_review, gc_codex_review_cycle, " +
       "gc_codex_architecture_preflight, gc_test_quality_review, gc_test_quality_review_cycle, or " +
       "gc_implement_mechanical with async=true. action='poll' returns {ok:true,status:'running'} while " +
       "work continues, and {ok:true,status:'done',result:<original tool envelope>} once it finishes. " +
+      "A running poll may carry a bounded `progress` snapshot (current gate phase plus last child-output " +
+      "activity and byte counts) so a slow-but-healthy verification sweep is distinguishable from a dead job; " +
+      "it is observability only, never a liveness or cancellation guarantee. " +
       "Dispatch on result.next_action exactly as for the synchronous originating tool. A failed or cancelled " +
       "job returns ok=false. action='cancel' aborts only jobs whose complete execution path supports it; " +
       "review-cycle and mechanical jobs currently return job_not_cancellable and continue to their ordinary terminal result. " +
@@ -122,7 +142,9 @@ export function registerReviewCapDisposition(server, ctx) {
       } catch (e) { return err(e); }
     },
   );
+}
 
+function _registerGcWatchSonarAnalysis(server) {
   server.tool(
     "gc_watch_sonar_analysis",
     "Poll SonarCloud for a PR's quality gate and open issues / hotspots server-side. Returns one compact terminal envelope: {quality_gate, issues_summary, hotspots_summary, full_issue_export_path}. Designed for /implement Step 11: the agent makes one tool call; the MCP server holds the connection through the analysis propagation wait (60s default) and quality-gate polling (30 min default). When the repo has no sonarcloud block in .ground-control.yaml the tool returns ok=true skipped=true quality_gate='NONE' (mirrors the existing skip behavior). SonarCloud REST authentication uses HTTP Basic with the SONAR_TOKEN env var as the username — the token is read at call time and passed only in the Authorization header (never argv, telemetry, export, or returned envelope). The full per-issue + per-hotspot payload is written server-side under `.gc/sonar/<pr>-<ts>.json` for on-demand drilldown; only summaries reach the caller.",
@@ -145,7 +167,9 @@ export function registerReviewCapDisposition(server, ctx) {
       } catch (e) { return err(e); }
     },
   );
+}
 
+function _registerGcPrepareImplementBranch(server) {
   server.tool(
     "gc_prepare_implement_branch",
     "Create or switch to an issue branch inside the exact checkout where /implement was invoked. " +
@@ -179,7 +203,9 @@ export function registerReviewCapDisposition(server, ctx) {
       } catch (e) { return err(e); }
     },
   );
+}
 
+function _registerGcImplementMechanical(server) {
   server.tool(
     "gc_implement_mechanical",
     GC_IMPLEMENT_MECHANICAL_DESCRIPTION,
@@ -190,7 +216,9 @@ export function registerReviewCapDisposition(server, ctx) {
       } catch (e) { return err(e); }
     },
   );
+}
 
+function _registerGcSynchronizeImplementBranch(server) {
   server.tool(
     "gc_synchronize_implement_branch",
     "Synchronize an /implement feature branch with the freshly fetched configured integration branch in the invocation checkout. " +
@@ -232,7 +260,9 @@ export function registerReviewCapDisposition(server, ctx) {
       } catch (e) { return err(e); }
     },
   );
+}
 
+function _registerGcCreateSynchronizedImplementPr(server) {
   server.tool(
     "gc_create_synchronized_implement_pr",
     "Create an /implement pull request only after revalidating a trusted pre-PR synchronization attestation. " +
@@ -263,7 +293,9 @@ export function registerReviewCapDisposition(server, ctx) {
       } catch (e) { return err(e); }
     },
   );
+}
 
+function _registerGcRecordExecutionObligation(server) {
   server.tool(
     "gc_record_execution_obligation",
     "Record a durable /implement execution-obligation event on the GitHub issue thread. " +
@@ -318,7 +350,9 @@ export function registerReviewCapDisposition(server, ctx) {
       } catch (e) { return err(e); }
     },
   );
+}
 
+function _registerGcMarkImplementIssuePickedUp(server) {
   server.tool(
     "gc_mark_implement_issue_picked_up",
     "Mark an /implement issue as actively owned through one server-side operation. " +
@@ -343,7 +377,9 @@ export function registerReviewCapDisposition(server, ctx) {
       } catch (e) { return err(e); }
     },
   );
+}
 
+function _registerGcAuthorizeExecutionObligationWontfix(server) {
   server.tool(
     "gc_authorize_execution_obligation_wontfix",
     "Convert an exact, durable user command into a structured wontfix authorization record. " +
@@ -369,7 +405,9 @@ export function registerReviewCapDisposition(server, ctx) {
       } catch (e) { return err(e); }
     },
   );
+}
 
+function _registerGcResolveWorkflowRoute(server) {
   server.tool(
     "gc_resolve_workflow_route",
     "Resolve the configured /implement route for a workflow stage or purpose. Returns the provider, agent, canonical model id, tier, fallback policy, and source, or a structured disabled/unavailable response. This is the executable routing contract; callers use it before delegated stages instead of relying on skill prose.",
@@ -388,7 +426,9 @@ export function registerReviewCapDisposition(server, ctx) {
       } catch (e) { return err(e); }
     },
   );
+}
 
+function _registerGcCodexVerifyFinding(server) {
   server.tool(
     "gc_codex_verify_finding",
     "Ask Codex to verify whether a specific PR review finding has been resolved. RESOLVED → mark thread resolved; UNRESOLVED → post threaded reply. Per-finding cap of 2 verify calls.",

@@ -207,8 +207,9 @@ Each routed step writes one JSONL line via `gc_log_step_telemetry` to
   never let the writer escape `.gc/telemetry/`.
 - Telemetry is opt-in per repo via `.ground-control.yaml`'s
   `telemetry.enabled` knob (default `false`).
-- `.gc/telemetry/` is gitignored. The summarizer (`make implement-cost-summary`)
-  aggregates per-step and per-model totals.
+- `.gc/telemetry/` is gitignored. The local summarizer (`make
+  implement-cost-summary`) that aggregated per-step and per-model totals was
+  removed in #1507 (see Amendments); this reference is historical.
 
 ### Forward compatibility with GC-O009
 
@@ -587,6 +588,62 @@ process-local waiting state. Existing issue-thread records, synchronization
 attestations, workflow-run lifecycle events, station attempts, routing stages,
 and telemetry retain authority and unchanged semantics.
 
+**2026-08-13 (issue #1495, bounded mechanical-publish recovery).**
+Mechanical jobs stay `job_not_cancellable`: their full Git/gate/GitHub subprocess
+and polling graph does not honour abort, so advertising cancellation (or a
+signal-driven wall-clock deadline, which only bites if the abort it raises is
+honoured) would be false. An earlier revision of this change marked `publish`
+cancellable and deadlined; review rejected it because the abort context reached
+only the final-tree gates, so a cancellation could keep mutating before the next
+gate and could report a terminal status without proving the checkout was
+reconciled. The reported hang (a `publish` left `running` with `MERGE_HEAD`
+present after every child had exited) is closed structurally instead:
+
+- The shared streaming gate runner now runs each gate as its own process-group
+  leader and reaps the group when the leader exits. A gate that spawned a
+  background descendant and returned previously left that descendant holding the
+  stdout pipe, so `close` never fired; reaping an already-empty group is a no-op,
+  so a well-behaved gate is unaffected. This is the direct fix for the observed
+  "running with no active subprocess" hang, and it protects every gate run
+  (`verify` and `publish` alike), not only publish.
+- `publish` holds a dedicated, heartbeat-backed filesystem lease for its
+  authorized per-worktree Git directory from before staging through final
+  reconciliation, releasing it on every settled path. In-memory single-flight
+  remains an optimization, not the mutation lock. This lease must not reuse
+  `/integrate`'s repo-wide lock; that lane has a distinct
+  isolated-worktree/rebase lifecycle.
+- A small versioned write-ahead recovery journal in the authorized per-worktree
+  Git metadata records the opaque sync record ID, pre-publish and pre-sync
+  identities, fetched-base and expected-merge SHAs, and a closed phase, updated
+  before/after each mutating phase and required (not best-effort) before a
+  mutation. It is operational recovery state, never a success attestation or PR
+  authority; only the trusted issue-thread synchronization record authorizes PR
+  creation. Its temporary file is created with an unpredictable name under
+  `O_EXCL|O_NOFOLLOW` with a regular-file check, so a planted symlink cannot
+  redirect the write. Recovery envelopes stay closed and scrubbed: phases,
+  timestamps, object IDs, branch/ref identity, and operation-state flags only;
+  never command text, output, environment, credentials, origin URLs, lock or
+  journal paths, or stack traces.
+- The base-sync completion re-reads `HEAD`, `MERGE_HEAD`, and the unmerged set
+  immediately before the merge commit (a compare-and-swap against the persisted
+  attempt), so a checkout that changed under the long gates (the incident's
+  externally recovered merge) is refused without mutating rather than committed
+  and then rejected against stale state.
+- After process loss, a later authorized `publish` acquires the lease and
+  reconciles the journal against `HEAD`, `MERGE_HEAD`, and the tree before doing
+  new work. A journal-matching staged merge is resumed through the existing
+  base-sync retry contract (`retry_input`); a dirty-but-not-merging tree is
+  ordinary repair-and-retry territory that clears the spent journal and proceeds;
+  a mismatched, foreign, or corrupt journal is a bounded refusal that preserves
+  the checkout. The tool never auto-aborts, resets, chooses a conflict side, or
+  attributes an unrecorded merge to the current issue.
+
+Job starts, polls, and reconciliation remain transport/operation facts: they add
+no station, lifecycle state, marker family, or measurement schema. Making the
+whole publish graph honour an abort context, and only then adopting a genuine
+server-owned deadline and cancellation, are prerequisites this change does not
+claim.
+
 The test-quality reviewer's child-process ceiling is 30 minutes. A repository-
 scale test cutover exceeded the former ten-minute ceiling while its async job
 was healthy, so the shorter bound incorrectly converted legitimate review work
@@ -654,9 +711,41 @@ consequences for its own surface:
   attempt.
 - The write is strictly fail-open and never falls back to a local authoritative
   file: a durable record is guaranteed only when `telemetry.enabled` and the
-  authenticated backend is reachable. Existing local JSONL files remain
-  historical input for the `make implement-cost-summary` summarizer; they are
-  not backfilled, dual-written, or promoted to a second source of truth.
+  authenticated backend is reachable. Any pre-existing local JSONL files are
+  inert historical artifacts; the local `make implement-cost-summary` summarizer
+  that read them was removed in #1507 (see Amendments). They are not
+  backfilled, dual-written, or promoted to a second source of truth.
 
 The routing table, the tier→model mapping, and the telemetry record's
 operational-only status are otherwise unchanged.
+
+**2026-08-04 (issue #1507).** The retired local `/implement` telemetry
+summarizer is deleted: `tools/summarize_implement_telemetry.py` and the
+`make implement-cost-summary` target (already removed with the #1500 backend
+teardown) no longer exist, and the dead local-JSONL data-contract helpers
+(`buildTelemetryRecord`, `buildTelemetryRelPath`, `sanitizeTelemetryBranch`) are
+removed with their tests. Earlier references in this ADR to the summarizer and
+that target are historical. Routing metadata, the durable ADR-061
+step-observation path (`gc_log_step_telemetry` / `buildStepObservationEvent`),
+and the `telemetry.enabled` contract are unchanged; a future run-economics
+summary must consume the durable projection, not revive per-clone
+`.gc/telemetry` scanning.
+
+**2026-08-04 (issue #1199, repo-neutral PR-body envelope).** `gc_render_pr_body`'s
+evidence envelope is made repo-neutral: the Test Plan, Ground Control Checks,
+migration reminder, and Checklist attest only gates the workflow enforces for
+every repository, named semantically, and never publish configured command
+strings. The Ground Control Checks drop the removed `gc_evaluate_quality_gates` /
+`gc_run_sweep` tools (retired with the #1500 teardown) for a two-line set
+(`Configured repository policy command passes`; `Pre-push code review and
+test-quality review completed…`), kept byte-identical to
+`tools/policy/authz_matrix.py::check_pr_body` via the render→check compose
+fixture. The Checklist drops Ground Control's Java/domain rules (Envers,
+framework-import layering, no-business-logic-in-API) and hardcoded documentation
+paths; the `source+migration` reminder names no framework, ORM, or test class.
+`test_notes` and the final rendered body gain explicit byte caps
+(`PR_BODY_TEST_NOTES_MAX`, `PR_BODY_MAX`). No stack/language flag and no
+`workflow.pr_body` config block were introduced; removing stack-specific claims
+solves the contract without a taxonomy that would immediately grow language and
+framework combinations. `.github/PULL_REQUEST_TEMPLATE.md` moves in lockstep. See
+`architecture/notes/repository-neutral-pr-body-rendering-preflight.md`.

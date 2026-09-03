@@ -31,6 +31,17 @@ const ASYNC_REVIEW_CYCLE_PARAM_DESC =
   "handle immediately. Passing false returns review_cycle_async_required and never runs synchronously.";
 
 export function registerPostDecisionRecord(server, ctx) {
+  _registerGcPostDecisionRecord(server);
+  _registerGcPostFinalReport(server);
+  _registerGcAssertCompletion(server);
+  _registerGcRenderPrBody(server);
+  _registerGcGetIssueThread(server);
+  _registerGcWatchCiRun(server);
+  _registerGcCodexReviewCycle(server);
+  _registerGcTestQualityReviewCycle(server);
+}
+
+function _registerGcPostDecisionRecord(server) {
   server.tool(
     "gc_post_decision_record",
     "Post the canonical review-cycle decision record as a comment on the GitHub issue (per ADR-029, the issue thread is the durable record). Renders the verdict envelope (verdict, architectural_read, blocking, notes) into the standard decision-record Markdown layout; rejects 'defer' decisions and any body containing detected secrets. Replaces free-prose decision comments from the Step 6.5 / 6.6 review loops. The verdict + architectural_read fields are optional for back-compat; new callers (issue #931) populate them. Returns the posted comment's URL and id. A GitHub update gives exactly what's needed — not more, not less. No restating context the reader already has, no padding sections, no hedging prose.",
@@ -72,7 +83,9 @@ export function registerPostDecisionRecord(server, ctx) {
       } catch (e) { return err(e); }
     },
   );
+}
 
+function _registerGcPostFinalReport(server) {
   server.tool(
     "gc_post_final_report",
     "Post the canonical /implement Step 19 final report (or the /quickfix Step Q19 slim close comment) as a comment on the GitHub issue. Renders structured input (plain_english_outcome, in-scope requirements, files-by-change-kind, reviews, traceability reconciliation, CI/SonarCloud status) into the standard final-report Markdown layout. `plain_english_outcome` is required for /implement and renders the short product/operator outcome section; lane='quickfix' keeps the slim payload where AI reviews and the outcome field are optional. Every gate (CI green, Sonar pass-or-legit-skipped, sensitive-content / no-defer / reserved-marker scrubs) still applies. Replaces free-prose Step 19 comments. Returns the posted comment's URL and id. A GitHub update gives exactly what's needed — not more, not less. No restating context the reader already has, no padding sections, no hedging prose.",
@@ -139,7 +152,9 @@ export function registerPostDecisionRecord(server, ctx) {
       } catch (e) { return err(e); }
     },
   );
+}
 
+function _registerGcAssertCompletion(server) {
   server.tool(
     "gc_assert_completion",
     "Run the completion assertions (traceability reconciliation) then post the final report in one deterministic call. " +
@@ -225,10 +240,12 @@ export function registerPostDecisionRecord(server, ctx) {
       } catch (e) { return err(e); }
     },
   );
+}
 
+function _registerGcRenderPrBody(server) {
   server.tool(
     "gc_render_pr_body",
-    "Render a PR body that satisfies the Ground Control policy gates (template sections, requirement UIDs, ADR impact, three Ground Control Checks, IMPLEMENTS/TESTS markers, no defer language). Returns the rendered body string for the caller to pass to `gh pr create --body`. change_class shapes a few cells: doc-only marks integration tests / changelog fragment N/A; source requires changelog fragment; source+migration adds the MigrationSmokeTest reminder. In `release-please` changelog_mode no per-PR changelog fragment is required or accepted (Release Please owns CHANGELOG.md, #1399). Pass dev_start_gate when the repo's configured PR policy requires a ## Dev-Start Gate section. A GitHub update gives exactly what's needed — not more, not less. No restating context the reader already has, no padding sections, no hedging prose.",
+    "Render a repo-neutral PR body that satisfies the Ground Control policy gates (template sections, requirement UIDs, ADR impact, two semantic Ground Control Checks, IMPLEMENTS/TESTS markers, no defer language). Returns the rendered body string to pass as the `body` input to `gc_create_synchronized_implement_pr` — the only canonical PR-write path (it revalidates body shape, repository identity, branch synchronization, and title immediately before the privileged GitHub write, per ADR-027); do not hand it to `gh pr create` from an agent sandbox. Attestations are repo-neutral and never publish configured command strings (issue #1199). change_class shapes a few cells: doc-only marks integration tests / changelog fragment N/A; source requires changelog fragment; source+migration adds a repo-neutral migration-verification reminder (no framework or test-class names). In `release-please` changelog_mode no per-PR changelog fragment is required or accepted (Release Please owns CHANGELOG.md, #1399). Pass dev_start_gate when the repo's configured PR policy requires a ## Dev-Start Gate section. A GitHub update gives exactly what's needed — not more, not less. No restating context the reader already has, no padding sections, no hedging prose.",
     {
       repo_path: z.string(),
       issue_number: z.number().int().positive(),
@@ -274,7 +291,9 @@ export function registerPostDecisionRecord(server, ctx) {
       } catch (e) { return err(e); }
     },
   );
+}
 
+function _registerGcGetIssueThread(server) {
   server.tool(
     "gc_get_issue_thread",
     "Fetch the GitHub issue body + comments with an in-memory content-addressed cache. First call returns the full payload + a sha256 hash; subsequent calls passing `expected_hash` return `{unchanged: true}` without re-fetching when the hash matches. Cache is keyed by (repo, issue_number) — NOT branch-keyed — and is operational only (the GitHub issue thread remains the durable record per ADR-029). Pass expected_hash=null to force a fresh fetch (use after a posting may have failed or when marker state is uncertain).",
@@ -293,7 +312,9 @@ export function registerPostDecisionRecord(server, ctx) {
       } catch (e) { return err(e); }
     },
   );
+}
 
+function _registerGcWatchCiRun(server) {
   server.tool(
     "gc_watch_ci_run",
     "Poll a GitHub Actions run to a terminal state server-side and return one compact terminal envelope (conclusion, failed steps, bounded log summary). Designed for the /implement Step 10 monitor: the agent makes one tool call; the MCP server holds the connection while polling so the agent's context is not burned by per-poll turns. Defaults: queued cap 5 min, total cap 45 min, poll every 15s. On queued-too-long or timeout the tool returns ok=true with conclusion='queued_too_long' or 'timed_out' so the caller can decide policy. If run_id is omitted, the latest run for the branch is resolved via `gh run list`. Raw CI logs stay server-side; only a bounded UTF-8 summary (default 4096 bytes from the tail of `--log-failed`) reaches the caller.",
@@ -318,7 +339,9 @@ export function registerPostDecisionRecord(server, ctx) {
       } catch (e) { return err(e); }
     },
   );
+}
 
+function _registerGcCodexReviewCycle(server) {
   server.tool(
     "gc_codex_review_cycle",
     "Async-only pre-push codex-review cycle wrapper. Requires one bounded idempotency_key per logical attempt, returns a gc_codex_job handle immediately, runs gc_codex_review (uncommitted=true), and auto-posts the canonical per-cycle decision record. Reuse the same key when the start response is lost; changed input conflicts and concurrent distinct starts for the same repository, issue, and reviewer are refused. Poll gc_codex_job for the compact terminal result: {ok, reviewer, cycle, cap, status, next_action, findings_summary, findings_record_url, decision_record_url, diff_mode, review_coverage}. Verbatim review prose remains server-side.",
@@ -360,7 +383,9 @@ export function registerPostDecisionRecord(server, ctx) {
       } catch (e) { return err(e); }
     },
   );
+}
 
+function _registerGcTestQualityReviewCycle(server) {
   server.tool(
     "gc_test_quality_review_cycle",
     "Async-only pre-push test-quality review cycle wrapper. Requires one bounded idempotency_key per logical attempt, returns a gc_codex_job handle immediately, runs gc_test_quality_review, and auto-posts the canonical per-cycle decision record. Reuse the same key when the start response is lost; changed input conflicts and concurrent distinct starts for the same repository, issue, and reviewer are refused. Poll gc_codex_job for the same compact terminal result as gc_codex_review_cycle. Verbatim reviewer prose remains server-side.",

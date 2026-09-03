@@ -5,6 +5,7 @@
 // split along its own dependency layering. lib.js remains the barrel every caller imports.
 
 import { isAbsolute, relative, resolve as resolvePath } from "node:path";
+export * from "./repo-context-3.js";
 
 export const SUPPORTED_GROUND_CONTROL_SCHEMA_VERSIONS = [1];
 export function resolveRepoRelativePath(repoRoot, rawPath, fieldName) {
@@ -69,6 +70,12 @@ export function emptyWorkflowConfig() {
     // unblock an auto_grant cycle. `max_auto_overrides` caps how many over-cap
     // cycles the auto path can ever grant per (issue, reviewer).
     review_disposition: { enabled: false, mode: "shadow", max_auto_overrides: 1, judge: { enabled: false, model: null } },
+    // Tiered publish verification (issue #1497). The optional
+    // toolchain_fingerprint_command binds non-tree gate inputs into the
+    // verification attestation. Absent (the default) means no attestation reuse:
+    // the attestation cannot be formed without it, so every gate runs in full —
+    // the fail-closed default that preserves current behavior.
+    verification: { toolchain_fingerprint_command: null },
   };
 }
 export const DEV_START_GATE_REQUIRED_FOR = Object.freeze(["source-bearing"]);
@@ -102,6 +109,47 @@ export function emptyDevStartGateConfig() {
     required_fields: [...DEFAULT_DEV_START_GATE_REQUIRED_FIELDS],
   };
 }
+function normalizePrTitleTypes(raw, value, errors) {
+  if (raw.types == null) {
+    value.types = null;
+    return;
+  }
+  if (!Array.isArray(raw.types)) {
+    errors.push("workflow.pr_title.types must be a list of strings");
+    return;
+  }
+  for (const t of raw.types) {
+    if (typeof t !== "string" || t.trim() === "") {
+      errors.push("workflow.pr_title.types entries must be non-empty strings");
+      break;
+    }
+  }
+  if (!errors.some((e) => e.includes("types"))) {
+    value.types = [...raw.types];
+  }
+}
+function normalizePrTitleSubjectPattern(raw, value, errors) {
+  if (raw.subject_pattern == null) {
+    value.subject_pattern = null;
+    return;
+  }
+  if (typeof raw.subject_pattern !== "string" || raw.subject_pattern.trim() === "") {
+    errors.push("workflow.pr_title.subject_pattern must be a non-empty string when set");
+    return;
+  }
+  value.subject_pattern = raw.subject_pattern;
+}
+function normalizePrTitleRequireScope(raw, value, errors) {
+  if (raw.require_scope == null) {
+    value.require_scope = null;
+    return;
+  }
+  if (typeof raw.require_scope !== "boolean") {
+    errors.push("workflow.pr_title.require_scope must be a boolean when set");
+    return;
+  }
+  value.require_scope = raw.require_scope;
+}
 export function normalizePrTitleConfig(raw) {
   if (raw == null) {
     return { ok: true, value: null };
@@ -109,49 +157,17 @@ export function normalizePrTitleConfig(raw) {
   if (typeof raw !== "object" || Array.isArray(raw)) {
     return { ok: false, errors: ["workflow.pr_title must be a mapping when set"] };
   }
-  const allowed = ["types", "subject_pattern", "require_scope"];
+  const allowed = new Set(["types", "subject_pattern", "require_scope"]);
   const errors = [];
   for (const key of Object.keys(raw)) {
-    if (!allowed.includes(key)) {
+    if (!allowed.has(key)) {
       errors.push(`workflow.pr_title has unknown key '${key}'`);
     }
   }
   const value = {};
-  if (raw.types != null) {
-    if (!Array.isArray(raw.types)) {
-      errors.push("workflow.pr_title.types must be a list of strings");
-    } else {
-      for (const t of raw.types) {
-        if (typeof t !== "string" || t.trim() === "") {
-          errors.push("workflow.pr_title.types entries must be non-empty strings");
-          break;
-        }
-      }
-      if (!errors.some((e) => e.includes("types"))) {
-        value.types = [...raw.types];
-      }
-    }
-  } else {
-    value.types = null;
-  }
-  if (raw.subject_pattern != null) {
-    if (typeof raw.subject_pattern !== "string" || raw.subject_pattern.trim() === "") {
-      errors.push("workflow.pr_title.subject_pattern must be a non-empty string when set");
-    } else {
-      value.subject_pattern = raw.subject_pattern;
-    }
-  } else {
-    value.subject_pattern = null;
-  }
-  if (raw.require_scope != null) {
-    if (typeof raw.require_scope !== "boolean") {
-      errors.push("workflow.pr_title.require_scope must be a boolean when set");
-    } else {
-      value.require_scope = raw.require_scope;
-    }
-  } else {
-    value.require_scope = null;
-  }
+  normalizePrTitleTypes(raw, value, errors);
+  normalizePrTitleSubjectPattern(raw, value, errors);
+  normalizePrTitleRequireScope(raw, value, errors);
   if (errors.length) return { ok: false, errors };
   return { ok: true, value };
 }
@@ -170,10 +186,10 @@ export function normalizeReviewerConfig(rawBlock, blockName) {
   if (typeof rawBlock !== "object" || Array.isArray(rawBlock)) {
     return { ok: false, errors: [`${blockName} must be a mapping when set`] };
   }
-  const allowed = ["pre_push_cap", "non_verdict_retry_limit"];
+  const allowed = new Set(["pre_push_cap", "non_verdict_retry_limit"]);
   const errors = [];
   for (const key of Object.keys(rawBlock)) {
-    if (!allowed.includes(key)) {
+    if (!allowed.has(key)) {
       errors.push(`${blockName} has unknown key '${key}'`);
     }
   }
@@ -222,6 +238,47 @@ export function isSafeLabelName(s) {
   // interior chars may include spaces (\x20) but no control chars or non-ASCII.
   return /^[\x21-\x7E][\x20-\x7E]*[\x21-\x7E]$/.test(s);
 }
+function normalizeIntegrationApprovalLabel(raw, errors) {
+  if (raw.approval_label == null) return null;
+  if (typeof raw.approval_label !== "string" || !isSafeLabelName(raw.approval_label)) {
+    errors.push(
+      "workflow.integration_manager.approval_label must be a 1–50 character printable ASCII string without leading or trailing whitespace",
+    );
+    return null;
+  }
+  return raw.approval_label;
+}
+function normalizeIntegrationOrdering(raw, errors) {
+  if (raw.ordering == null) return null;
+  if (INTEGRATION_MANAGER_ORDERINGS.includes(raw.ordering)) return raw.ordering;
+  errors.push(
+    `workflow.integration_manager.ordering must be one of: ${INTEGRATION_MANAGER_ORDERINGS.join(", ")}`,
+  );
+  return null;
+}
+function normalizeIntegrationMaxQueueSize(raw, errors) {
+  if (raw.max_queue_size == null) return null;
+  const v = raw.max_queue_size;
+  if (typeof v !== "number" || !Number.isInteger(v)) {
+    errors.push("workflow.integration_manager.max_queue_size must be an integer");
+    return null;
+  }
+  if (v < INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MIN || v > INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MAX) {
+    errors.push(
+      `workflow.integration_manager.max_queue_size must be between ${INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MIN} and ${INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MAX} inclusive`,
+    );
+    return null;
+  }
+  return v;
+}
+function normalizeIntegrationMergeStrategy(raw, errors) {
+  if (raw.merge_strategy == null) return null;
+  if (INTEGRATION_MANAGER_MERGE_STRATEGIES.includes(raw.merge_strategy)) return raw.merge_strategy;
+  errors.push(
+    `workflow.integration_manager.merge_strategy must be one of: ${INTEGRATION_MANAGER_MERGE_STRATEGIES.join(", ")}`,
+  );
+  return null;
+}
 export function normalizeIntegrationManagerConfig(raw) {
   if (raw == null) {
     return { ok: true, value: { approval_label: null, ordering: null, max_queue_size: null, merge_strategy: null } };
@@ -232,56 +289,17 @@ export function normalizeIntegrationManagerConfig(raw) {
       errors: ["workflow.integration_manager must be a mapping when set"],
     };
   }
-  const allowed = ["approval_label", "ordering", "max_queue_size", "merge_strategy"];
+  const allowed = new Set(["approval_label", "ordering", "max_queue_size", "merge_strategy"]);
   const errors = [];
   for (const key of Object.keys(raw)) {
-    if (!allowed.includes(key)) {
+    if (!allowed.has(key)) {
       errors.push(`workflow.integration_manager has unknown key '${key}'`);
     }
   }
-  let approval_label = null;
-  if (raw.approval_label != null) {
-    if (typeof raw.approval_label !== "string" || !isSafeLabelName(raw.approval_label)) {
-      errors.push(
-        "workflow.integration_manager.approval_label must be a 1–50 character printable ASCII string without leading or trailing whitespace",
-      );
-    } else {
-      approval_label = raw.approval_label;
-    }
-  }
-  let ordering = null;
-  if (raw.ordering != null) {
-    if (!INTEGRATION_MANAGER_ORDERINGS.includes(raw.ordering)) {
-      errors.push(
-        `workflow.integration_manager.ordering must be one of: ${INTEGRATION_MANAGER_ORDERINGS.join(", ")}`,
-      );
-    } else {
-      ordering = raw.ordering;
-    }
-  }
-  let max_queue_size = null;
-  if (raw.max_queue_size != null) {
-    const v = raw.max_queue_size;
-    if (typeof v !== "number" || !Number.isInteger(v)) {
-      errors.push("workflow.integration_manager.max_queue_size must be an integer");
-    } else if (v < INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MIN || v > INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MAX) {
-      errors.push(
-        `workflow.integration_manager.max_queue_size must be between ${INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MIN} and ${INTEGRATION_MANAGER_MAX_QUEUE_SIZE_MAX} inclusive`,
-      );
-    } else {
-      max_queue_size = v;
-    }
-  }
-  let merge_strategy = null;
-  if (raw.merge_strategy != null) {
-    if (!INTEGRATION_MANAGER_MERGE_STRATEGIES.includes(raw.merge_strategy)) {
-      errors.push(
-        `workflow.integration_manager.merge_strategy must be one of: ${INTEGRATION_MANAGER_MERGE_STRATEGIES.join(", ")}`,
-      );
-    } else {
-      merge_strategy = raw.merge_strategy;
-    }
-  }
+  const approval_label = normalizeIntegrationApprovalLabel(raw, errors);
+  const ordering = normalizeIntegrationOrdering(raw, errors);
+  const max_queue_size = normalizeIntegrationMaxQueueSize(raw, errors);
+  const merge_strategy = normalizeIntegrationMergeStrategy(raw, errors);
   if (errors.length) return { ok: false, errors };
   return { ok: true, value: { approval_label, ordering, max_queue_size, merge_strategy } };
 }
@@ -303,85 +321,6 @@ export function isSafeGitRefName(s) {
   ))) return false;
   return true;
 }
-export const REVIEW_DISPOSITION_MODES = ["shadow", "authoritative"];
-export const REVIEW_DISPOSITION_MAX_AUTO_OVERRIDES_MIN = 0;
-export const REVIEW_DISPOSITION_MAX_AUTO_OVERRIDES_MAX = 5;
-function emptyReviewDispositionConfig() {
-  return { enabled: false, mode: "shadow", max_auto_overrides: 1, judge: { enabled: false, model: null } };
-}
-export function normalizeReviewDispositionConfig(rawBlock) {
-  if (rawBlock == null) {
-    return { ok: true, value: emptyReviewDispositionConfig() };
-  }
-  if (typeof rawBlock !== "object" || Array.isArray(rawBlock)) {
-    return { ok: false, errors: ["workflow.review_disposition must be a mapping when set"] };
-  }
-  const allowed = ["enabled", "mode", "max_auto_overrides", "judge"];
-  const errors = [];
-  for (const key of Object.keys(rawBlock)) {
-    if (!allowed.includes(key)) {
-      errors.push(`workflow.review_disposition has unknown key '${key}'`);
-    }
-  }
-  const value = emptyReviewDispositionConfig();
-  if (rawBlock.enabled != null) {
-    if (typeof rawBlock.enabled !== "boolean") {
-      errors.push("workflow.review_disposition.enabled must be a boolean when set");
-    } else {
-      value.enabled = rawBlock.enabled;
-    }
-  }
-  if (rawBlock.mode != null) {
-    if (!REVIEW_DISPOSITION_MODES.includes(rawBlock.mode)) {
-      errors.push(`workflow.review_disposition.mode must be one of: ${REVIEW_DISPOSITION_MODES.join(", ")}`);
-    } else {
-      value.mode = rawBlock.mode;
-    }
-  }
-  if (rawBlock.max_auto_overrides != null) {
-    const v = rawBlock.max_auto_overrides;
-    if (typeof v !== "number" || !Number.isInteger(v)) {
-      errors.push("workflow.review_disposition.max_auto_overrides must be an integer");
-    } else if (
-      v < REVIEW_DISPOSITION_MAX_AUTO_OVERRIDES_MIN ||
-      v > REVIEW_DISPOSITION_MAX_AUTO_OVERRIDES_MAX
-    ) {
-      errors.push(
-        `workflow.review_disposition.max_auto_overrides must be between ${REVIEW_DISPOSITION_MAX_AUTO_OVERRIDES_MIN} and ${REVIEW_DISPOSITION_MAX_AUTO_OVERRIDES_MAX} inclusive`,
-      );
-    } else {
-      value.max_auto_overrides = v;
-    }
-  }
-  if (rawBlock.judge != null) {
-    if (typeof rawBlock.judge !== "object" || Array.isArray(rawBlock.judge)) {
-      errors.push("workflow.review_disposition.judge must be a mapping when set");
-    } else {
-      const judgeAllowed = ["enabled", "model"];
-      for (const key of Object.keys(rawBlock.judge)) {
-        if (!judgeAllowed.includes(key)) {
-          errors.push(`workflow.review_disposition.judge has unknown key '${key}'`);
-        }
-      }
-      if (rawBlock.judge.enabled != null) {
-        if (typeof rawBlock.judge.enabled !== "boolean") {
-          errors.push("workflow.review_disposition.judge.enabled must be a boolean when set");
-        } else {
-          value.judge.enabled = rawBlock.judge.enabled;
-        }
-      }
-      if (rawBlock.judge.model != null) {
-        if (typeof rawBlock.judge.model !== "string" || rawBlock.judge.model.trim() === "") {
-          errors.push("workflow.review_disposition.judge.model must be a non-empty string when set");
-        } else {
-          value.judge.model = rawBlock.judge.model.trim();
-        }
-      }
-    }
-  }
-  if (errors.length) return { ok: false, errors };
-  return { ok: true, value };
-}
 export function normalizeSonarcloudConfig(raw) {
   if (raw == null) {
     return { ok: true, value: null };
@@ -389,10 +328,10 @@ export function normalizeSonarcloudConfig(raw) {
   if (typeof raw !== "object" || Array.isArray(raw)) {
     return { ok: false, errors: ["sonarcloud must be a mapping, not a list or scalar"] };
   }
-  const allowed = ["project_key", "organization", "quality_gate"];
+  const allowed = new Set(["project_key", "organization", "quality_gate"]);
   const errors = [];
   for (const key of Object.keys(raw)) {
-    if (!allowed.includes(key)) {
+    if (!allowed.has(key)) {
       errors.push(`sonarcloud has unknown key '${key}'`);
     }
   }
@@ -424,10 +363,10 @@ export function normalizeRulesConfig(raw) {
   if (typeof raw !== "object" || Array.isArray(raw)) {
     return { ok: false, errors: ["rules must be a mapping"] };
   }
-  const allowed = ["plan_rules"];
+  const allowed = new Set(["plan_rules"]);
   const errors = [];
   for (const key of Object.keys(raw)) {
-    if (!allowed.includes(key)) {
+    if (!allowed.has(key)) {
       errors.push(`rules has unknown key '${key}'`);
     }
   }
@@ -458,11 +397,11 @@ export function normalizeDocsConfig(raw) {
   if (typeof raw !== "object" || Array.isArray(raw)) {
     return { ok: false, errors: ["docs must be a mapping, not a list or scalar"] };
   }
-  const allowed = ["adr_dir", "architecture_overview", "coding_standards", "workflow_reference", "knowledge_base"];
+  const allowed = new Set(["adr_dir", "architecture_overview", "coding_standards", "workflow_reference", "knowledge_base"]);
   const value = emptyDocsConfig();
   const errors = [];
   for (const key of Object.keys(raw)) {
-    if (!allowed.includes(key)) {
+    if (!allowed.has(key)) {
       errors.push(`docs has unknown key '${key}'`);
       continue;
     }

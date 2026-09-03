@@ -1,0 +1,53 @@
+name: SonarCloud
+
+# Restored for the slim MCP topology (issue #1155): SonarCloud analysis of the
+# Node.js MCP server + Python tooling with coverage. The pre-#1500 workflow built
+# a Java/Gradle backend that no longer exists; this one runs the scanner against
+# the repo-local sources declared in sonar-project.properties.
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Job id is the required-status-check context name (`sonar`); the scan action
+  # additionally posts the `SonarCloud Code Analysis` check with the quality-gate
+  # result.
+  sonar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # Full history so SonarCloud can attribute new code and blame.
+          fetch-depth: 0
+      - name: Install MCP server deps
+        run: npm --prefix mcp/ground-control ci
+      - name: JS coverage (c8 -> lcov)
+        # Run from the MCP dir so the lcov source paths resolve under
+        # mcp/ground-control; sonar-project.properties points the JS lcov path there.
+        working-directory: mcp/ground-control
+        run: npx --yes c8@10 --reporter=lcovonly --reports-dir=coverage npm test
+      - name: Python coverage (coverage.py -> xml)
+        run: |
+          python3 -m pip install --user coverage
+          python3 -m coverage run -m unittest discover -s tools/tests -p 'test_*.py'
+          python3 -m coverage xml -o coverage.xml
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      - name: SonarQube Quality Gate
+        uses: SonarSource/sonarqube-quality-gate-action@cf038b0e0cdecfa9e56c198bbb7d21d751d62c3b # v1.2.0
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      - name: SonarCloud zero-open-issues gate
+        if: ${{ !cancelled() }}
+        run: python3 tools/sonar/assert_no_new_issues.py --project-key autarchy-ai_Ground-Control
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

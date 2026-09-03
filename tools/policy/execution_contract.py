@@ -10,37 +10,100 @@ every name described a neighbour's contents. The modules are named for what they
 
 from __future__ import annotations
 import argparse
-import fnmatch
-import hashlib
 import json
 import os
-import posixpath
 import re
 import subprocess
-import sys
-import time
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
 from .core import (
     REPO_ROOT,
     Violation,
 )
-from .deploy_artifacts import (
-    read_mcp_library,
-    read_mcp_registrations,
+from .cli_safety import (
+    safe_cli_path,
 )
+from .implement_scope_contract import check_scope_and_completion_contract
+MCP_LIB_PATH = "mcp/ground-control/lib.js"
 
 
-def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
-    """Enforce /implement's pre-routing principles and persistence boundary."""
+MCP_LIB_DIR = "mcp/ground-control/lib"
+
+
+STEP1_PATH = "skills/implement/steps/step-01-issue-branch-resolution.md"
+
+
+STEP9_PATH = "skills/implement/steps/step-09-pr-body.md"
+
+
+def _missing_token_violations(
+    surface: str,
+    tokens: tuple[str, ...],
+    code: str,
+    message: str,
+    detail_prefix: str = "missing token",
+) -> list[Violation]:
+    """Return one violation describing every required token absent from a surface."""
+    missing = [token for token in tokens if token not in surface]
+    if not missing:
+        return []
+    return [
+        Violation(
+            code=code,
+            message=message,
+            details=[f"{detail_prefix}: {token}" for token in missing],
+        )
+    ]
+
+
+def read_mcp_library(root: Path = REPO_ROOT) -> str | None:
+    """The MCP shared library's full source, barrel plus every extracted module.
+
+    lib.js was a single 20,634-line file until issue #1355 split it under the repo's
+    500-LOC limit; it is now a barrel of star re-exports. A check that reads only that
+    file sees no implementation at all and silently passes, so every content check reads
+    the whole surface instead of one path.
+    """
+    barrel = root / MCP_LIB_PATH
+    if not barrel.exists():
+        return None
+    parts = [barrel.read_text(encoding="utf-8")]
+    lib_dir = root / MCP_LIB_DIR
+    if lib_dir.is_dir():
+        parts.extend(
+            path.read_text(encoding="utf-8") for path in sorted(lib_dir.glob("*.js"))
+        )
+    return "\n".join(parts)
+
+
+def read_mcp_registrations(root: Path = REPO_ROOT) -> str:
+    """The MCP tool-registration surface: index.js plus every module under tools/.
+
+    index.js was the single registration file until it was decomposed; the registrations now
+    live in mcp/ground-control/tools/*.js. A check that reads only index.js finds none of them,
+    which is the same shape as the lib.js barrel above: the subject moved, the scan matched
+    nothing, and the check reported on a surface it could no longer see.
+    """
+    parts = []
+    index = root / "mcp/ground-control/index.js"
+    if index.exists():
+        parts.append(index.read_text(encoding="utf-8"))
+    tools_dir = root / "mcp/ground-control/tools"
+    if tools_dir.is_dir():
+        parts.extend(path.read_text(encoding="utf-8") for path in sorted(tools_dir.rglob("*.js")))
+    return "\n".join(parts)
+
+
+def _check_core_implement_contract(root: Path) -> list[Violation]:
+    """Check required surfaces, principle loading, and verification semantics."""
     violations: list[Violation] = []
     paths = {
         "skill": root / "skills/implement/SKILL.md",
         "principles": root / "skills/implement/_development-principles.md",
-        "step1": root / "skills/implement/steps/step-01-issue-branch-resolution.md",
+        "step1": root / STEP1_PATH,
+        "step4": root / "skills/implement/steps/step-04-planning.md",
+        "step4_4": root / "skills/implement/steps/step-04.4-tdd.md",
         "step8_5": root / "skills/implement/steps/step-08.5-sync-base.md",
-        "step9": root / "skills/implement/steps/step-09-pr-body.md",
+        "step9": root / STEP9_PATH,
         "completion": root / "skills/implement/steps/step-17-completion.md",
         "cursor": root / ".cursor/skills/implement/SKILL.md",
         "mcp_lib": root / "mcp/ground-control/lib.js",
@@ -58,17 +121,7 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
 
     skill = paths["skill"].read_text(encoding="utf-8")
     principles = paths["principles"].read_text(encoding="utf-8")
-    step1 = paths["step1"].read_text(encoding="utf-8")
-    step8_5 = paths["step8_5"].read_text(encoding="utf-8")
-    step9 = paths["step9"].read_text(encoding="utf-8")
-    completion = paths["completion"].read_text(encoding="utf-8")
-    cursor = paths["cursor"].read_text(encoding="utf-8")
-    # Barrel plus every extracted module: lib.js alone holds no implementation since #1355.
-    mcp_lib = read_mcp_library(root) or ""
-    # Registrations moved out of index.js when it was decomposed; read the whole surface.
-    mcp_index = read_mcp_registrations(root)
     principles_flat = " ".join(principles.split())
-    cursor_flat = " ".join(cursor.split()).lower()
 
     principles_ref = skill.find("_development-principles.md")
     route_ref = skill.find("gc_resolve_workflow_route")
@@ -88,15 +141,14 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
         '"checkout_mode": "same_checkout"',
         "Ground Control does not manufacture subagents",
     )
-    missing_tokens = [token for token in required_skill_tokens if token not in skill]
-    if missing_tokens:
-        violations.append(
-            Violation(
-                code="implement-contract-propagation",
-                message="Primary-session execution-contract propagation is incomplete.",
-                details=[f"missing token: {token}" for token in missing_tokens],
-            )
+    violations.extend(
+        _missing_token_violations(
+            skill,
+            required_skill_tokens,
+            "implement-contract-propagation",
+            "Primary-session execution-contract propagation is incomplete.",
         )
+    )
 
     pause_tokens = (
         "explicit workflow gate",
@@ -108,15 +160,14 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
         "enforced cycle cap",
         "Work size, difficulty,",
     )
-    missing_pauses = [token for token in pause_tokens if token not in principles_flat]
-    if missing_pauses:
-        violations.append(
-            Violation(
-                code="implement-pause-contract",
-                message="The development principles do not carry the closed pause-class contract.",
-                details=[f"missing token: {token}" for token in missing_pauses],
-            )
+    violations.extend(
+        _missing_token_violations(
+            principles_flat,
+            pause_tokens,
+            "implement-pause-contract",
+            "The development principles do not carry the closed pause-class contract.",
         )
+    )
 
     verification_tokens = (
         "Make local verification proportionate to risk",
@@ -127,17 +178,21 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
         "repository-wide completion and policy suites once",
         "mandatory pre-commit, completion, review, CI, Sonar, or final",
     )
-    missing_verification = [
-        token for token in verification_tokens if token not in principles_flat
-    ]
-    if missing_verification:
-        violations.append(
-            Violation(
-                code="implement-proportionate-verification-contract",
-                message="The development principles do not enforce risk-proportionate verification.",
-                details=[f"missing token: {token}" for token in missing_verification],
-            )
+    violations.extend(
+        _missing_token_violations(
+            principles_flat,
+            verification_tokens,
+            "implement-proportionate-verification-contract",
+            "The development principles do not enforce risk-proportionate verification.",
         )
+    )
+
+    return violations
+
+
+def _check_verification_surface_contract(root: Path) -> list[Violation]:
+    """Keep verification batching and mandatory boundaries aligned."""
+    violations: list[Violation] = []
 
     review_rules = (
         root / "skills/implement/steps/_review-loop-rules.md"
@@ -177,6 +232,78 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
             )
         )
 
+    return violations
+
+
+def _check_tdd_and_fix_evidence_contract(root: Path) -> list[Violation]:
+    """Enforce the four TDD paths and executable review-fix locks."""
+    violations: list[Violation] = []
+    step1 = (root / STEP1_PATH).read_text(encoding="utf-8")
+    step4 = (root / "skills/implement/steps/step-04-planning.md").read_text(
+        encoding="utf-8"
+    )
+    step4_4 = (root / "skills/implement/steps/step-04.4-tdd.md").read_text(
+        encoding="utf-8"
+    )
+    review_rules_flat = " ".join(
+        (root / "skills/implement/steps/_review-loop-rules.md")
+        .read_text(encoding="utf-8")
+        .split()
+    )
+
+    four_path_tokens = (
+        (step1, "`implementation_intent`"),
+        (step1, "`feature`"),
+        (step1, "`bug-fix`"),
+        (step1, "`mixed`"),
+        (step4, "`tdd_path`"),
+        (step4, "per-clause classification is authoritative"),
+        (step4_4, "Path A — New requirement or feature"),
+        (step4_4, "Path B — Bug fix on shipped code"),
+        (step4_4, "Path C — Reviewer-finding fix"),
+        (step4_4, "Path D — Prose-only or static contract narrowing"),
+        (step4_4, "unmodified buggy tree"),
+        (step4_4, "cannot use the documentation-only carve-out"),
+        (step4_4, "runtime-consumed configuration"),
+    )
+    missing_four_path = [
+        token for surface, token in four_path_tokens if token not in surface
+    ]
+    if missing_four_path:
+        violations.append(
+            Violation(
+                code="implement-four-path-tdd-contract",
+                message="/implement's four-path TDD contract is incomplete.",
+                details=[f"missing semantic anchor: {token}" for token in missing_four_path],
+            )
+        )
+
+    fix_evidence_tokens = (
+        "Fix locks itself",
+        "executable code or a runtime-consumed data contract",
+        "fails when the named defect is reintroduced",
+        "test file path and test-case or describe-block name",
+        "prose-only, no executable surface to lock",
+        "auto-posted decision record is written before",
+    )
+    missing_fix_evidence = [
+        token for token in fix_evidence_tokens if token not in review_rules_flat
+    ]
+    if missing_fix_evidence:
+        violations.append(
+            Violation(
+                code="implement-review-fix-evidence-contract",
+                message="/implement's review-fix regression-evidence contract is incomplete.",
+                details=[f"missing semantic anchor: {token}" for token in missing_fix_evidence],
+            )
+        )
+
+    return violations
+
+
+def _check_same_checkout_contract(step1: str) -> list[Violation]:
+    """Enforce the two same-checkout mutation boundaries."""
+    violations: list[Violation] = []
     if "gc_prepare_implement_branch" not in step1 or "checkout_mode" not in step1:
         violations.append(
             Violation(
@@ -193,6 +320,19 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
                 details=["require gc_mark_implement_issue_picked_up in Step 1"],
             )
         )
+    return violations
+
+
+def _check_pre_pr_sync_contract(root: Path) -> list[Violation]:
+    """Enforce same-checkout preparation and trusted pre-PR synchronization."""
+    step1 = (root / STEP1_PATH).read_text(encoding="utf-8")
+    step8_5 = (root / "skills/implement/steps/step-08.5-sync-base.md").read_text(
+        encoding="utf-8"
+    )
+    step9 = (root / STEP9_PATH).read_text(encoding="utf-8")
+    mcp_lib = read_mcp_library(root) or ""
+    mcp_index = read_mcp_registrations(root)
+    violations = _check_same_checkout_contract(step1)
 
     sync_tokens = (
         "gc_synchronize_implement_branch",
@@ -242,6 +382,15 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
                 ],
             )
         )
+
+    return violations
+
+
+def _check_pre_pr_sync_order(root: Path) -> list[Violation]:
+    """Keep synchronized PR creation ordered and MCP-mediated."""
+    violations: list[Violation] = []
+    skill = (root / "skills/implement/SKILL.md").read_text(encoding="utf-8")
+    step9 = (root / STEP9_PATH).read_text(encoding="utf-8")
     if re.search(r"\bgh\s+pr\s+create\b", step9):
         violations.append(
             Violation(
@@ -263,63 +412,24 @@ def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
                 details=[f"positions: {step_order}"],
             )
         )
-    implement_sources = [
-        paths["skill"],
-        paths["principles"],
-        *sorted((root / "skills/implement/steps").glob("*.md")),
-    ]
-    forbidden = []
-    for path in implement_sources:
-        text = path.read_text(encoding="utf-8")
-        direct_branch = re.search(
-            r"\bgit\s+worktree\s+add\b|\bgh\s+issue\s+develop\b",
-            text,
-        )
-        direct_pickup = (
-            path == paths["step1"]
-            and re.search(r"\bgh\s+(?:api|label|issue)\b[^\n]*\bin-progress\b", text)
-        )
-        if direct_branch or direct_pickup:
-            forbidden.append(str(path.relative_to(root)))
-    if forbidden:
-        violations.append(
-            Violation(
-                code="implement-direct-worktree-or-branch-command",
-                message="/implement workflow surfaces must use MCP branch and pickup boundaries.",
-                details=[f"direct branch/worktree/pickup command in {path}" for path in forbidden],
-            )
-        )
 
-    contradictory = []
-    for path in implement_sources:
-        text = path.read_text(encoding="utf-8").lower()
-        if "outside the diff's scope" in text or "no scope creep" in text:
-            contradictory.append(str(path.relative_to(root)))
-    if contradictory:
-        violations.append(
-            Violation(
-                code="implement-contradictory-scope-language",
-                message="Workflow text still permits scope-based non-action.",
-                details=contradictory,
-            )
-        )
+    return violations
 
-    if "completion_open_execution_obligations" not in completion:
-        violations.append(
-            Violation(
-                code="implement-obligation-completion-gate",
-                message="Step 17 must document completion refusal while obligations are open.",
-                details=["missing completion_open_execution_obligations"],
-            )
-        )
-    if "_development-principles.md" not in cursor or "before route resolution" not in cursor_flat:
-        violations.append(
-            Violation(
-                code="implement-driver-principles",
-                message="The Cursor driver wrapper must load the canonical principles before routing.",
-                details=["update .cursor/skills/implement/SKILL.md"],
-            )
-        )
+
+def run_implement_execution_contract(root: Path = REPO_ROOT) -> list[Violation]:
+    """Enforce /implement's pre-routing principles and persistence boundary."""
+    core_violations = _check_core_implement_contract(root)
+    if any(item.code == "implement-execution-contract-missing" for item in core_violations):
+        return core_violations
+    violations = list(core_violations)
+    for check in (
+        _check_verification_surface_contract,
+        _check_tdd_and_fix_evidence_contract,
+        _check_pre_pr_sync_contract,
+        _check_pre_pr_sync_order,
+        check_scope_and_completion_contract,
+    ):
+        violations.extend(check(root))
     return violations
 
 
@@ -332,22 +442,26 @@ def _resolve_pr_body(args: argparse.Namespace) -> str | None:
 
     Returns ``None`` when no source is configured (the check is skipped).
     """
+    body = None
     if args.pr_body_file:
-        return Path(args.pr_body_file).read_text(encoding="utf-8")
-    event_path = args.event_path or os.getenv("GITHUB_EVENT_PATH")
-    if event_path:
-        event = json.loads(Path(event_path).read_text(encoding="utf-8"))
-        pull_request = event.get("pull_request") or {}
-        return pull_request.get("body") or ""
-    if args.pr_number is not None:
+        body = safe_cli_path(args.pr_body_file).read_text(encoding="utf-8")
+    else:
+        event_path = args.event_path or os.getenv("GITHUB_EVENT_PATH")
+        if event_path:
+            event = json.loads(safe_cli_path(event_path).read_text(encoding="utf-8"))
+            pull_request = event.get("pull_request") or {}
+            body = pull_request.get("body") or ""
+    if body is None and args.pr_number is not None:
+        # str(int(...)) forces the CLI value to an integer literal so it cannot
+        # smuggle an option or metacharacter into the gh argv (S8705).
         result = subprocess.run(
-            ["gh", "pr", "view", str(args.pr_number), "--json", "body", "--jq", ".body"],
+            ["gh", "pr", "view", str(int(args.pr_number)), "--json", "body", "--jq", ".body"],
             check=True,
             capture_output=True,
             text=True,
         )
-        return result.stdout
-    return None
+        body = result.stdout
+    return body
 
 
 # Automation PRs that carry no single requirement/traceability of their own, so the

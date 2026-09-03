@@ -1,5 +1,18 @@
 # Documentation style
 
+> **Sync note for issue #871 (2026-08-14, strict Sonar enforcement):** The SonarCloud workflow
+> now enforces zero open issues after the hosted quality gate, and repository policy protects that
+> ordering and failure behavior. The policy compatibility barrel resolves focused module exports
+> dynamically so analysis does not treat re-exports as unused code. ADR-054 records the policy
+> surface change. The documentation coverage classifier, outcome mapping, Vale rules, installer,
+> `.vale.ini`, and this file's style rules are unchanged.
+
+> **Sync note for issue #1506 (2026-08-09, dead GRC handler removal):** Removed the unregistered
+> GRC/backend tool-handler modules and their dead REST-wrapper functions left over from the #1500
+> teardown, plus `mcp/ground-control/index.js`'s dead import block, per the ADR-054 sync note for
+> this issue. The documentation-coverage classifier, `outcome_required` mapping, Vale rules,
+> installer, `.vale.ini`, and this file's style rules are unchanged.
+
 > **Sync note for issue #1500 (2026-08-03, context-graph teardown):** The backend, frontend, and
 > database were removed; Ground Control is now the MCP server over repo-local files. The
 > documentation-coverage classifier in `mcp/ground-control/lib/doc-coverage.js` dropped its
@@ -284,13 +297,16 @@ contract only.
 
 ## Operational lane docs
 
-Operational skill lanes (`/integrate`, `/implement`, `/quickfix`) document
-their contracts in `docs/DEVELOPMENT_WORKFLOW.md` and in their `SKILL.md`
-files. The style rules above apply to those files the same as to any other
-touched `.md` file: present tense, active voice, no forward guidance, at most
-one em-dash per paragraph. The `/integrate` lane's `mode=merge` extension is
+Operational skill lanes (`/integrate`, `/implement`, `/quickfix`, `/review`)
+document their contracts in `docs/DEVELOPMENT_WORKFLOW.md` and in their
+`SKILL.md` files. The style rules above apply to those files the same as to any
+other touched `.md` file: present tense, active voice, no forward guidance, at
+most one em-dash per paragraph. The `/integrate` lane's `mode=merge` extension is
 documented in `docs/DEVELOPMENT_WORKFLOW.md § /integrate § Configuration` and
 `skills/integrate/SKILL.md § Invocation`; no separate doc surface is required.
+The maintainer `/review` lane (GC-O015) documents its read-only default,
+authorized remediation, and post-merge closure in
+`docs/DEVELOPMENT_WORKFLOW.md § /review` and `skills/review/SKILL.md`.
 
 Per-PR documentation outcomes are recorded as a `## Documentation` section in
 the PR body and the Step 19 final-report comment. Pass the optional
