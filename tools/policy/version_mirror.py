@@ -187,7 +187,7 @@ def _parse_release_please_files(config_path: Path, manifest_path: Path) -> tuple
     return manifest, config
 
 
-def _require_manifest_version(manifest: Any) -> str:
+def _require_manifest_version(manifest: dict[str, object]) -> str:
     """Return the root-package version string, raising when it is absent or non-string."""
     manifest_version = manifest.get(RELEASE_PLEASE_ROOT_PACKAGE)
     if not isinstance(manifest_version, str):
@@ -227,7 +227,7 @@ def _load_version_mirror_context(root: Path) -> tuple[str | None, list[Any]]:
     return manifest_version, extra_files
 
 
-def _parse_extra_file_entry(entry: Any) -> tuple[str, str | None, str] | None:
+def _parse_extra_file_entry(entry: str | dict[str, object]) -> tuple[str, str | None, str] | None:
     """Return ``(path, jsonpath, kind)`` for an extra-files entry, or ``None`` to skip.
 
     ``None`` covers a malformed entry (neither string nor object) and an entry
@@ -293,7 +293,7 @@ def _version_drift_violations(
 
 
 def _version_mirror_entry_violations(
-    entry: Any, root: Path, manifest_version: str
+    entry: str | dict[str, object], root: Path, manifest_version: str
 ) -> list[Violation]:
     """Return the drift Violations (zero or one) for a single extra-files entry."""
     parsed = _parse_extra_file_entry(entry)
@@ -352,7 +352,7 @@ def _require_coverage_fixture() -> None:
         )
 
 
-def _invoke_coverage_fixture(fixture_input: dict[str, Any], root: Path) -> Any:
+def _invoke_coverage_fixture(fixture_input: dict[str, object], root: Path) -> dict[str, object]:
     """Run the Node classifier fixture and return its parsed JSON result.
 
     Raises ``_ShortCircuit`` carrying a ``doc-coverage-fixture-error`` Violation when
@@ -414,7 +414,7 @@ def _load_documentation_coverage_result(
         return None, [exc.violation]
 
 
-def _documentation_outcome_details(result: Any) -> list[str]:
+def _documentation_outcome_details(result: dict[str, object]) -> list[str]:
     """Build the detail lines (classified surfaces, suggested targets) for the outcome."""
     surface_classes = sorted({
         c["surface_class"]
@@ -430,7 +430,7 @@ def _documentation_outcome_details(result: Any) -> list[str]:
     return details
 
 
-def _documentation_outcome_violations(result: Any, pr_body: str | None) -> list[Violation]:
+def _documentation_outcome_violations(result: dict[str, object], pr_body: str | None) -> list[Violation]:
     """Return the outcome-missing Violation when a documented surface lacks the section.
 
     An empty list means no outcome is required, the PR body is unavailable (skip
