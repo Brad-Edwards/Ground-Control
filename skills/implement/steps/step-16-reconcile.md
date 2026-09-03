@@ -66,7 +66,7 @@ Requirements are repo-local files (ADR-093, issue #1500): traceability lives in 
    - A bullet that already exists is simply left in place — re-recording is a no-op.
    - Note: `gc_create_github_issue` seeds an `IMPLEMENTS` issue→requirement bullet during UID-first runs. For a forward-looking in-scope requirement this PR does not deliver, change that bullet to `DOCUMENTS` before this step exits.
 
-Reconciliation is idempotent: running it on an already-correct branch is a no-op. Commit the requirement-file edits on this run's branch.
+Reconciliation is idempotent: running it on an already-correct branch is a no-op. When it produces edits, commit those requirement-file edits on this run's branch — they are frontmatter / `## Traceability` documentation edits, gated by pre-commit plus the doc guardrails in `cfg.workflow.policy_command`, not by the implementation completion / test suite. When it produces **no** edits — the common case on a post-merge Phase E resume of already-shipped work whose traceability is already complete and consistent — there is nothing to commit; never fabricate a placeholder edit, and do not run the completion command or any other implementation verification to satisfy a bookkeeping phase (issue #1543). Proceed to Step 17.
 
 ## Return contract
 

@@ -193,6 +193,8 @@ Pick the next unblocked requirement from the work order and implement it. Ground
    - `TESTS` → test files that verify the requirement
    - `DOCUMENTS` → ADRs or design docs that explain the approach (also used for forward-looking requirements that the diff references but does not yet ship)
 
+When Phase E is resumed post-merge on already-shipped work whose requirement is already ACTIVE with complete, consistent traceability, steps 6 and 7 produce no edits. That empty diff is the expected terminal state, not a gap to fill: Phase E commits nothing, never manufactures a placeholder requirement-file edit, and runs no completion command, policy suite, review, or other implementation verification. Its only gate is `gc_implement_mechanical action="finalize"` (final report + idempotent close), which runs no `verify` (issue #1543).
+
 Before you stop, run `make policy` alongside the feature-specific verification commands. This catches ADR drift, missing controller/MCP/doc parity, migration companion updates, and PR body omissions before review.
 
 #### Four TDD paths

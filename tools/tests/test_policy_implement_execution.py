@@ -141,6 +141,24 @@ class ImplementExecutionChecksTest(PolicyChecksFixture):
                 "implement-verification-boundary-drift",
                 {item.code for item in violations},
             )
+    def test_implement_execution_contract_rejects_dropped_phase_e_noop_anchor(self):
+        anchors = (
+            "manufacture a placeholder requirement-file edit",
+            "finalize` runs no `verify` gate",
+        )
+        for anchor in anchors:
+            with self.subTest(anchor=anchor), tempfile.TemporaryDirectory() as tmp_dir:
+                root = self._implement_contract_root(tmp_dir)
+                path = root / "skills/implement/steps/step-17-completion.md"
+                text = path.read_text(encoding="utf-8")
+                self.assertIn(anchor, text)
+                path.write_text(text.replace(anchor, "REMOVED"), encoding="utf-8")
+                violations = run_implement_execution_contract(root=root)
+                self.assertIn(
+                    "implement-phase-e-noop-contract",
+                    {item.code for item in violations},
+                )
+
     def test_implement_verification_contract_is_proportionate_and_mandatory(self):
         principles = (
             REPO_ROOT / "skills/implement/_development-principles.md"

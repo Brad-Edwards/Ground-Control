@@ -81,6 +81,26 @@ def check_scope_and_completion_contract(root: Path) -> list[Violation]:
                 details=["missing completion_open_execution_obligations"],
             )
         )
+
+    # A no-change post-merge Phase E resume must not manufacture an edit or run
+    # implementation verification for bookkeeping (issue #1543). Step 17 is the
+    # completion boundary, so anchor the contract there.
+    phase_e_noop_tokens = (
+        "manufacture a placeholder requirement-file edit",
+        "finalize` runs no `verify` gate",
+    )
+    missing_phase_e = [token for token in phase_e_noop_tokens if token not in completion]
+    if missing_phase_e:
+        violations.append(
+            Violation(
+                code="implement-phase-e-noop-contract",
+                message=(
+                    "Step 17 must document that a no-change Phase E resume commits "
+                    "nothing and runs no implementation verification."
+                ),
+                details=[f"missing token: {token}" for token in missing_phase_e],
+            )
+        )
     if "_development-principles.md" not in cursor or "before route resolution" not in cursor_flat:
         violations.append(
             Violation(
