@@ -267,7 +267,7 @@ export function resolveWorkflowRouteFromConfig({ routing, stage, tier = null }) 
       stage: normalizedStage,
     };
   }
-  if (routing == null || routing.enabled !== true) {
+  if (routing?.enabled !== true) {
     return {
       ok: true,
       enabled: false,
