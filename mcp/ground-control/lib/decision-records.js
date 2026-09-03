@@ -150,10 +150,10 @@ export function validateDecisionRecordInput(input) {
     ...validateDecisionNotes(notes),
     ...validateDecisionVerdictConsistency({ verdict, findings }),
   ];
-  if (!Array.isArray(findings)) {
-    errors.push("findings must be an array (may be empty)");
-  } else {
+  if (Array.isArray(findings)) {
     findings.forEach((f, i) => errors.push(...validateDecisionFinding(f, i)));
+  } else {
+    errors.push("findings must be an array (may be empty)");
   }
   if (errors.length) return { ok: false, errors };
   return { ok: true };

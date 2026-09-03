@@ -19,11 +19,9 @@ import re
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 from .core import (
-    REPO_ROOT,
     REQUIREMENT_FREE_MARKER_RE,
     Violation,
     extract_requirement_uid_tokens,
@@ -40,16 +38,8 @@ def run_pr_body_check(event_path: Path) -> list[Violation]:
     return check_pr_body(body)
 
 
-def check_pr_body(body: str) -> list[Violation]:
-    """Validate a PR body against the Ground Control template requirements.
-
-    Pure function over the body string so it can be driven from GitHub event
-    payloads (CI), a local draft file (pre-push hook), or `gh pr view --json
-    body`. The CI path is `run_pr_body_check`; local tooling should call this
-    directly.
-    """
-    violations: list[Violation] = []
-
+def _check_required_headers(body: str) -> Violation | None:
+    """Return a Violation naming any required Ground Control section absent from ``body``."""
     required_headers = [
         "## Requirement UIDs",
         "## ADR Impact",
@@ -57,36 +47,41 @@ def check_pr_body(body: str) -> list[Violation]:
         "## Traceability",
     ]
     missing_headers = [header for header in required_headers if header not in body]
-    if missing_headers:
-        violations.append(
-            Violation(
-                code="pr-template-sections",
-                message="PR body is missing required Ground Control sections.",
-                details=[f"missing headers: {', '.join(missing_headers)}"],
-            )
-        )
-        return violations
+    if not missing_headers:
+        return None
+    return Violation(
+        code="pr-template-sections",
+        message="PR body is missing required Ground Control sections.",
+        details=[f"missing headers: {', '.join(missing_headers)}"],
+    )
 
+
+def _check_requirement_uid(body: str) -> Violation | None:
+    """Return a Violation when ``body`` names no requirement UID and no free marker."""
     if not extract_requirement_uid_tokens(body) and not REQUIREMENT_FREE_MARKER_RE.search(
         extract_requirement_uids_section(body)
     ):
-        violations.append(
-            Violation(
-                code="pr-requirement-uid",
-                message="PR body must name at least one requirement UID.",
-                details=["expected a UID like GC-O007 in the Requirement UIDs section"],
-            )
+        return Violation(
+            code="pr-requirement-uid",
+            message="PR body must name at least one requirement UID.",
+            details=["expected a UID like GC-O007 in the Requirement UIDs section"],
         )
+    return None
 
+
+def _check_adr_impact(body: str) -> Violation | None:
+    """Return a Violation when ``body`` neither cites an ADR nor waives one."""
     if "No ADR required" not in body and "ADR-" not in body:
-        violations.append(
-            Violation(
-                code="pr-adr-impact",
-                message="PR body must call out ADR impact or say 'No ADR required'.",
-                details=[],
-            )
+        return Violation(
+            code="pr-adr-impact",
+            message="PR body must call out ADR impact or say 'No ADR required'.",
+            details=[],
         )
+    return None
 
+
+def _check_ground_control_checks(body: str) -> Violation | None:
+    """Return a Violation naming any required verification checklist line missing from ``body``."""
     required_checks = [
         # Repo-neutral, semantically-named gates the /implement workflow actually
         # enforces for every repository (issues #1429, #1199). `workflow.policy_command`
@@ -101,24 +96,49 @@ def check_pr_body(body: str) -> list[Violation]:
     ]
     missing_checks = [entry for entry in required_checks if entry not in body]
     if missing_checks:
-        violations.append(
-            Violation(
-                code="pr-ground-control-checks",
-                message="PR body must record the Ground Control verification checklist.",
-                details=missing_checks,
-            )
+        return Violation(
+            code="pr-ground-control-checks",
+            message="PR body must record the Ground Control verification checklist.",
+            details=missing_checks,
         )
+    return None
 
+
+def _check_traceability(body: str) -> Violation | None:
+    """Return a Violation naming any IMPLEMENTS/TESTS traceability marker missing from ``body``."""
     traceability_markers = ["- IMPLEMENTS:", "- TESTS:"]
     missing_traceability = [marker for marker in traceability_markers if marker not in body]
     if missing_traceability:
-        violations.append(
-            Violation(
-                code="pr-traceability-summary",
-                message="PR body must summarize IMPLEMENTS and TESTS traceability.",
-                details=missing_traceability,
-            )
+        return Violation(
+            code="pr-traceability-summary",
+            message="PR body must summarize IMPLEMENTS and TESTS traceability.",
+            details=missing_traceability,
         )
+    return None
+
+
+def check_pr_body(body: str) -> list[Violation]:
+    """Validate a PR body against the Ground Control template requirements.
+
+    Pure function over the body string so it can be driven from GitHub event
+    payloads (CI), a local draft file (pre-push hook), or `gh pr view --json
+    body`. The CI path is `run_pr_body_check`; local tooling should call this
+    directly.
+    """
+    headers_violation = _check_required_headers(body)
+    if headers_violation is not None:
+        return [headers_violation]
+
+    violations: list[Violation] = []
+    for check in (
+        _check_requirement_uid,
+        _check_adr_impact,
+        _check_ground_control_checks,
+        _check_traceability,
+    ):
+        violation = check(body)
+        if violation is not None:
+            violations.append(violation)
 
     # The no-deferral check is composed into the PR-body validator so EVERY
     # PR-body validation route — bin/policy main(), run_pr_body_check (the

@@ -28,5 +28,5 @@ BASE_REF="${1:-origin/dev}"
       # `if` (no else) keeps the loop's exit status 0 even when the final
       # candidate no longer exists on disk — a bare `[ -f ] && …` would leave
       # the loop exiting non-zero on that last iteration.
-      if [ -f "$f" ]; then printf '%s\n' "$f"; fi
+      if [[ -f "$f" ]]; then printf '%s\n' "$f"; fi
     done

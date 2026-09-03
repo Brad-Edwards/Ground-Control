@@ -1,7 +1,4 @@
-import { execFile as execFileCb } from "node:child_process";
-import { readFileSync, readdirSync, realpathSync } from "node:fs";
-import { join } from "node:path";
-import { promisify } from "node:util";
+import { realpathSync } from "node:fs";
 import { z } from "zod";
 import { readRequirementByUid, findTraceabilityByArtifact } from "./lib/requirement-files.js";
 import {
@@ -17,17 +14,12 @@ import {
   runWatchSonarAnalysis,
   runAssertCompletion,
   runCloseIssueAfterMerge,
-  detectSensitiveBodyContent,
   EXACT_REQUIREMENT_UID_RE,
-  extractInScopeRequirementUids,
-  requestedRequirementUidAuthorization,
   authorizeRequestedRequirementUid,
   runImplementGitCommand,
   runImplementPreCommit,
-  resolveWorkflowPolicyCommand,
   startAsyncJob,
   asyncJobInputFingerprint,
-  implementGateEnvironment,
   postImplementVerificationAttestation,
   readTrustedImplementVerificationAttestations,
   acquireImplementPublishLock,
@@ -37,18 +29,12 @@ import {
   removeImplementPublishJournal,
 } from "./lib.js";
 import { createWorkflowRunLifecycleEmitter } from "./workflow-run-lifecycle.js";
-import {
-  ciGateFindings,
-  policyGateFindings,
-  spotbugsGateFindings,
-  valeGateFindings,
-} from "./gate-finding-adapters.js";
 import { MARKER_BY_ACTION, STATION_BY_ACTION, applyRunStateTransition, classifyStationResult, guardEmitter, resolveEmitter, runFinalize, runReadiness } from "./implement/completion.js";
 import { completionShape, execFileAsync, requirementShape, runBootstrap } from "./implement/gate-helpers.js";
 import { runMonitor, runPublish } from "./implement/publish.js";
 import { runVerify } from "./implement/verify.js";
 
-export { extractInScopeRequirementUids };
+export { extractInScopeRequirementUids } from "./lib.js";
 
 export const IMPLEMENT_MECHANICAL_ACTIONS = Object.freeze([
   "bootstrap",

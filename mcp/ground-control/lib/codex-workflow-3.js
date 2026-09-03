@@ -4,17 +4,12 @@
 // (docs/CODING_STANDARDS.md, Sonar S104). It contained no mutual recursion, so it was
 // split along its own dependency layering. lib.js remains the barrel every caller imports.
 
-import { load as parseYaml } from "js-yaml";
 import { extractInScopeRequirementUids, requestedRequirementUidAuthorization } from "./codex-workflow-2.js";
 import { summarizeTraceabilityLinks } from "./codex-workflow.js";
-import { normalizeCrossCuttingConcernsConfig, normalizeExamplePathsConfig, normalizeKnowledgeConfig, normalizeRequirementsConfig, normalizeTelemetryConfig } from "./constants.js";
 import { getOwnerRepo } from "./grc-legacy-compat-3.js";
 import { buildVocabularySection } from "./grc-legacy-compat-5.js";
 import { runGetIssueThread } from "./issue-thread.js";
-import { normalizeRoutingConfig, normalizeWorkflowConfig } from "./repo-context-2.js";
-import { SUPPORTED_GROUND_CONTROL_SCHEMA_VERSIONS, normalizeDocsConfig, normalizeRulesConfig, normalizeSonarcloudConfig } from "./repo-context.js";
-import { normalizeArchitectureConfig } from "./repo-vocabulary.js";
-import { GITHUB_REPO_RE, GROUND_CONTROL_PROJECT_RE, execFile } from "./runtime-primitives.js";
+import { GITHUB_REPO_RE, execFile } from "./runtime-primitives.js";
 
 export function pick(args, keys) {
   const out = {};
@@ -115,7 +110,7 @@ export async function createGitHubIssue({ title, body, labels, repo, repoRoot })
   if (!match) {
     throw new Error(`Could not parse issue number from gh output: ${url}`);
   }
-  const number = parseInt(match[1], 10);
+  const number = Number.parseInt(match[1], 10);
   return { url, number };
 }
 export async function authorizeRequestedRequirementUid(
@@ -236,10 +231,12 @@ export function buildCodexArchitecturePreflightPrompt({ requirement = null, trac
   // identify the SUBSET of the vocabulary that applies to this change so the
   // pre-push reviewers can anchor their architectural_read on the same dialect.
   if (vocabulary != null) {
-    lines.push(...buildVocabularySection(vocabulary));
-    lines.push("");
-    lines.push("Final response MUST include a section titled \"Design Vocabulary That Applies\" — a filtered subset of the vocabulary above listing the patterns, canonical helpers, boundary contract entries, binding ADRs, and anti-recommendations that the proposed work touches. The reviewers consume this section, so keep it accurate and bounded to what the diff will plausibly intersect.");
-    lines.push("");
+    lines.push(
+      ...buildVocabularySection(vocabulary),
+      "",
+      "Final response MUST include a section titled \"Design Vocabulary That Applies\" — a filtered subset of the vocabulary above listing the patterns, canonical helpers, boundary contract entries, binding ADRs, and anti-recommendations that the proposed work touches. The reviewers consume this section, so keep it accurate and bounded to what the diff will plausibly intersect.",
+      "",
+    );
   }
 
   if (hasRequirement) {

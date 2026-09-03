@@ -330,6 +330,13 @@ async function runFeatureBaseSync(args, deps, { repoRoot, branchName, authorized
   if (!completed.ok) return baseSyncFailure(completed);
   return publishComplete(completed);
 }
+// A repo with no sonarcloud block skips the gate: that is coverage, not a pass, and
+// counting it as one would inflate first-pass yield with runs Sonar never inspected.
+function sonarStationResult(sonar, sonarPassed) {
+  if (!sonar.ok) return "not_evaluable";
+  if (sonar.skipped === true) return "skipped_station";
+  return sonarPassed ? "pass" : "fail";
+}
 export async function runMonitor(args, deps) {
   const action = "monitor";
   const invalidPr = requireField(args, "prNumber", action);
@@ -405,9 +412,7 @@ export async function runMonitor(args, deps) {
     return {
       ok: sonarPassed,
       error: sonarPassed ? undefined : sonar.error ?? "sonar_findings_open",
-      // A repo with no sonarcloud block skips the gate: that is coverage, not a pass, and
-      // counting it as one would inflate first-pass yield with runs Sonar never inspected.
-      stationResult: sonar.ok ? (sonar.skipped === true ? "skipped_station" : sonarPassed ? "pass" : "fail") : "not_evaluable",
+      stationResult: sonarStationResult(sonar, sonarPassed),
       ...(Array.isArray(sonar.measurement_findings)
         ? { findings: sonar.measurement_findings, findingsDropped: sonar.measurement_findings_dropped }
         : {}),

@@ -8,11 +8,11 @@ import { readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { load as parseYaml } from "js-yaml";
 
-const ARCH_VOCABULARY_TOP_KEYS = ["patterns", "canonical_helpers", "boundary_contract", "binding_adrs", "anti_recommendations"];
-const ARCH_PATTERN_KEYS = ["name", "applies_to", "example_path"];
-const ARCH_HELPER_KEYS = ["name", "path", "purpose"];
-const ARCH_BOUNDARY_KEYS = ["description"];
-const ARCH_BINDING_ADR_KEYS = ["id", "one_liner"];
+const ARCH_VOCABULARY_TOP_KEYS = new Set(["patterns", "canonical_helpers", "boundary_contract", "binding_adrs", "anti_recommendations"]);
+const ARCH_PATTERN_KEYS = new Set(["name", "applies_to", "example_path"]);
+const ARCH_HELPER_KEYS = new Set(["name", "path", "purpose"]);
+const ARCH_BOUNDARY_KEYS = new Set(["description"]);
+const ARCH_BINDING_ADR_KEYS = new Set(["id", "one_liner"]);
 const ARCH_BINDING_ADR_ID_RE = /^ADR-\d{3}$/;
 function emptyArchitectureVocabularyConfig() {
   return {
@@ -23,6 +23,140 @@ function emptyArchitectureVocabularyConfig() {
     anti_recommendations: [],
   };
 }
+function validateVocabularyPatterns(rawPatterns, value, errors) {
+  if (!Array.isArray(rawPatterns)) {
+    errors.push("architecture.vocabulary.patterns must be a list when set");
+    return;
+  }
+  rawPatterns.forEach((entry, i) => {
+    const prefix = `architecture.vocabulary.patterns[${i}]`;
+    const before = errors.length;
+    if (entry == null || typeof entry !== "object" || Array.isArray(entry)) {
+      errors.push(`${prefix} must be a mapping`);
+      return;
+    }
+    for (const key of Object.keys(entry)) {
+      if (!ARCH_PATTERN_KEYS.has(key)) {
+        errors.push(`${prefix} has unknown key '${key}'`);
+      }
+    }
+    if (typeof entry.name !== "string" || entry.name.trim() === "") {
+      errors.push(`${prefix}.name must be a non-empty string`);
+    }
+    if (typeof entry.applies_to !== "string" || entry.applies_to.trim() === "") {
+      errors.push(`${prefix}.applies_to must be a non-empty string`);
+    }
+    if (entry.example_path != null && (typeof entry.example_path !== "string" || entry.example_path.trim() === "")) {
+      errors.push(`${prefix}.example_path must be a non-empty string when set`);
+    }
+    if (errors.length === before) {
+      value.patterns.push({
+        name: entry.name,
+        applies_to: entry.applies_to,
+        example_path: entry.example_path ?? null,
+      });
+    }
+  });
+}
+
+function validateVocabularyCanonicalHelpers(rawHelpers, value, errors) {
+  if (!Array.isArray(rawHelpers)) {
+    errors.push("architecture.vocabulary.canonical_helpers must be a list when set");
+    return;
+  }
+  rawHelpers.forEach((entry, i) => {
+    const prefix = `architecture.vocabulary.canonical_helpers[${i}]`;
+    const before = errors.length;
+    if (entry == null || typeof entry !== "object" || Array.isArray(entry)) {
+      errors.push(`${prefix} must be a mapping`);
+      return;
+    }
+    for (const key of Object.keys(entry)) {
+      if (!ARCH_HELPER_KEYS.has(key)) {
+        errors.push(`${prefix} has unknown key '${key}'`);
+      }
+    }
+    if (typeof entry.name !== "string" || entry.name.trim() === "") {
+      errors.push(`${prefix}.name must be a non-empty string`);
+    }
+    if (typeof entry.purpose !== "string" || entry.purpose.trim() === "") {
+      errors.push(`${prefix}.purpose must be a non-empty string`);
+    }
+    if (entry.path != null && (typeof entry.path !== "string" || entry.path.trim() === "")) {
+      errors.push(`${prefix}.path must be a non-empty string when set`);
+    }
+    if (errors.length === before) {
+      value.canonical_helpers.push({
+        name: entry.name,
+        purpose: entry.purpose,
+        path: entry.path ?? null,
+      });
+    }
+  });
+}
+
+function validateVocabularyBoundaryContract(rawBoundary, value, errors) {
+  if (typeof rawBoundary !== "object" || Array.isArray(rawBoundary)) {
+    errors.push("architecture.vocabulary.boundary_contract must be a mapping when set");
+    return;
+  }
+  for (const key of Object.keys(rawBoundary)) {
+    if (!ARCH_BOUNDARY_KEYS.has(key)) {
+      errors.push(`architecture.vocabulary.boundary_contract has unknown key '${key}'`);
+    }
+  }
+  if (typeof rawBoundary.description !== "string" || rawBoundary.description.trim() === "") {
+    errors.push("architecture.vocabulary.boundary_contract.description must be a non-empty string");
+  } else {
+    value.boundary_contract = { description: rawBoundary.description };
+  }
+}
+
+function validateVocabularyBindingAdrs(rawAdrs, value, errors) {
+  if (!Array.isArray(rawAdrs)) {
+    errors.push("architecture.vocabulary.binding_adrs must be a list when set");
+    return;
+  }
+  rawAdrs.forEach((entry, i) => {
+    const prefix = `architecture.vocabulary.binding_adrs[${i}]`;
+    const before = errors.length;
+    if (entry == null || typeof entry !== "object" || Array.isArray(entry)) {
+      errors.push(`${prefix} must be a mapping`);
+      return;
+    }
+    for (const key of Object.keys(entry)) {
+      if (!ARCH_BINDING_ADR_KEYS.has(key)) {
+        errors.push(`${prefix} has unknown key '${key}'`);
+      }
+    }
+    if (typeof entry.id !== "string" || !ARCH_BINDING_ADR_ID_RE.test(entry.id)) {
+      errors.push(`${prefix}.id must match ${ARCH_BINDING_ADR_ID_RE.source}`);
+    }
+    if (typeof entry.one_liner !== "string" || entry.one_liner.trim() === "") {
+      errors.push(`${prefix}.one_liner must be a non-empty string`);
+    }
+    if (errors.length === before) {
+      value.binding_adrs.push({ id: entry.id, one_liner: entry.one_liner });
+    }
+  });
+}
+
+function validateVocabularyAntiRecommendations(rawAnti, value, errors) {
+  if (!Array.isArray(rawAnti)) {
+    errors.push("architecture.vocabulary.anti_recommendations must be a list when set");
+    return;
+  }
+  const before = errors.length;
+  rawAnti.forEach((entry, i) => {
+    if (typeof entry !== "string" || entry.trim() === "") {
+      errors.push(`architecture.vocabulary.anti_recommendations[${i}] must be a non-empty string`);
+    }
+  });
+  if (errors.length === before) {
+    value.anti_recommendations = [...rawAnti];
+  }
+}
+
 function normalizeArchitectureVocabularyConfig(raw) {
   if (raw == null) return { ok: true, value: null };
   if (typeof raw !== "object" || Array.isArray(raw)) {
@@ -30,146 +164,16 @@ function normalizeArchitectureVocabularyConfig(raw) {
   }
   const errors = [];
   for (const key of Object.keys(raw)) {
-    if (!ARCH_VOCABULARY_TOP_KEYS.includes(key)) {
+    if (!ARCH_VOCABULARY_TOP_KEYS.has(key)) {
       errors.push(`architecture.vocabulary has unknown key '${key}'`);
     }
   }
   const value = emptyArchitectureVocabularyConfig();
-
-  if (raw.patterns != null) {
-    if (!Array.isArray(raw.patterns)) {
-      errors.push("architecture.vocabulary.patterns must be a list when set");
-    } else {
-      raw.patterns.forEach((entry, i) => {
-        const prefix = `architecture.vocabulary.patterns[${i}]`;
-        const before = errors.length;
-        if (entry == null || typeof entry !== "object" || Array.isArray(entry)) {
-          errors.push(`${prefix} must be a mapping`);
-          return;
-        }
-        for (const key of Object.keys(entry)) {
-          if (!ARCH_PATTERN_KEYS.includes(key)) {
-            errors.push(`${prefix} has unknown key '${key}'`);
-          }
-        }
-        if (typeof entry.name !== "string" || entry.name.trim() === "") {
-          errors.push(`${prefix}.name must be a non-empty string`);
-        }
-        if (typeof entry.applies_to !== "string" || entry.applies_to.trim() === "") {
-          errors.push(`${prefix}.applies_to must be a non-empty string`);
-        }
-        if (entry.example_path != null && (typeof entry.example_path !== "string" || entry.example_path.trim() === "")) {
-          errors.push(`${prefix}.example_path must be a non-empty string when set`);
-        }
-        if (errors.length === before) {
-          value.patterns.push({
-            name: entry.name,
-            applies_to: entry.applies_to,
-            example_path: entry.example_path ?? null,
-          });
-        }
-      });
-    }
-  }
-
-  if (raw.canonical_helpers != null) {
-    if (!Array.isArray(raw.canonical_helpers)) {
-      errors.push("architecture.vocabulary.canonical_helpers must be a list when set");
-    } else {
-      raw.canonical_helpers.forEach((entry, i) => {
-        const prefix = `architecture.vocabulary.canonical_helpers[${i}]`;
-        const before = errors.length;
-        if (entry == null || typeof entry !== "object" || Array.isArray(entry)) {
-          errors.push(`${prefix} must be a mapping`);
-          return;
-        }
-        for (const key of Object.keys(entry)) {
-          if (!ARCH_HELPER_KEYS.includes(key)) {
-            errors.push(`${prefix} has unknown key '${key}'`);
-          }
-        }
-        if (typeof entry.name !== "string" || entry.name.trim() === "") {
-          errors.push(`${prefix}.name must be a non-empty string`);
-        }
-        if (typeof entry.purpose !== "string" || entry.purpose.trim() === "") {
-          errors.push(`${prefix}.purpose must be a non-empty string`);
-        }
-        if (entry.path != null && (typeof entry.path !== "string" || entry.path.trim() === "")) {
-          errors.push(`${prefix}.path must be a non-empty string when set`);
-        }
-        if (errors.length === before) {
-          value.canonical_helpers.push({
-            name: entry.name,
-            purpose: entry.purpose,
-            path: entry.path ?? null,
-          });
-        }
-      });
-    }
-  }
-
-  if (raw.boundary_contract != null) {
-    if (typeof raw.boundary_contract !== "object" || Array.isArray(raw.boundary_contract)) {
-      errors.push("architecture.vocabulary.boundary_contract must be a mapping when set");
-    } else {
-      for (const key of Object.keys(raw.boundary_contract)) {
-        if (!ARCH_BOUNDARY_KEYS.includes(key)) {
-          errors.push(`architecture.vocabulary.boundary_contract has unknown key '${key}'`);
-        }
-      }
-      if (typeof raw.boundary_contract.description !== "string" || raw.boundary_contract.description.trim() === "") {
-        errors.push("architecture.vocabulary.boundary_contract.description must be a non-empty string");
-      } else {
-        value.boundary_contract = { description: raw.boundary_contract.description };
-      }
-    }
-  }
-
-  if (raw.binding_adrs != null) {
-    if (!Array.isArray(raw.binding_adrs)) {
-      errors.push("architecture.vocabulary.binding_adrs must be a list when set");
-    } else {
-      raw.binding_adrs.forEach((entry, i) => {
-        const prefix = `architecture.vocabulary.binding_adrs[${i}]`;
-        const before = errors.length;
-        if (entry == null || typeof entry !== "object" || Array.isArray(entry)) {
-          errors.push(`${prefix} must be a mapping`);
-          return;
-        }
-        for (const key of Object.keys(entry)) {
-          if (!ARCH_BINDING_ADR_KEYS.includes(key)) {
-            errors.push(`${prefix} has unknown key '${key}'`);
-          }
-        }
-        if (typeof entry.id !== "string" || !ARCH_BINDING_ADR_ID_RE.test(entry.id)) {
-          errors.push(`${prefix}.id must match ${ARCH_BINDING_ADR_ID_RE.source}`);
-        }
-        if (typeof entry.one_liner !== "string" || entry.one_liner.trim() === "") {
-          errors.push(`${prefix}.one_liner must be a non-empty string`);
-        }
-        if (errors.length === before) {
-          value.binding_adrs.push({ id: entry.id, one_liner: entry.one_liner });
-        }
-      });
-    }
-  }
-
-  if (raw.anti_recommendations != null) {
-    if (!Array.isArray(raw.anti_recommendations)) {
-      errors.push("architecture.vocabulary.anti_recommendations must be a list when set");
-    } else {
-      const before = errors.length;
-      raw.anti_recommendations.forEach((entry, i) => {
-        if (typeof entry !== "string" || entry.trim() === "") {
-          errors.push(`architecture.vocabulary.anti_recommendations[${i}] must be a non-empty string`);
-        }
-      });
-      if (errors.length === before) {
-        value.anti_recommendations = [...raw.anti_recommendations];
-      }
-    }
-  }
-
+  if (raw.patterns != null) validateVocabularyPatterns(raw.patterns, value, errors);
+  if (raw.canonical_helpers != null) validateVocabularyCanonicalHelpers(raw.canonical_helpers, value, errors);
+  if (raw.boundary_contract != null) validateVocabularyBoundaryContract(raw.boundary_contract, value, errors);
+  if (raw.binding_adrs != null) validateVocabularyBindingAdrs(raw.binding_adrs, value, errors);
+  if (raw.anti_recommendations != null) validateVocabularyAntiRecommendations(raw.anti_recommendations, value, errors);
   if (errors.length) return { ok: false, errors };
   return { ok: true, value };
 }
@@ -178,10 +182,10 @@ export function normalizeArchitectureConfig(raw) {
   if (typeof raw !== "object" || Array.isArray(raw)) {
     return { ok: false, errors: ["architecture must be a mapping, not a list or scalar"] };
   }
-  const allowed = ["vocabulary"];
+  const allowed = new Set(["vocabulary"]);
   const errors = [];
   for (const key of Object.keys(raw)) {
-    if (!allowed.includes(key)) {
+    if (!allowed.has(key)) {
       errors.push(`architecture has unknown key '${key}'`);
     }
   }

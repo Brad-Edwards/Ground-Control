@@ -8,12 +8,11 @@ import { detectSensitiveBodyContent, extractInScopeRequirementUids, requestedReq
 import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { execFile } from "../lib/runtime-primitives.js";
 
 // Re-exported (not a fresh promisify) so the production default runner has ONE
 // identity: the shared verification runner swaps in the size-safe gate runner
 // only for that identity, so verify and base synchronization both get it (#1497).
-export const execFileAsync = execFile;
+export { execFile as execFileAsync } from "../lib/runtime-primitives.js";
 export const requirementShape = z.object({
   uid: z.string().min(1),
   status_intent: z.string().min(1).optional(),
@@ -145,6 +144,61 @@ export async function readStatus(repoRoot, runGit, commandRunner) {
   );
   return stdout;
 }
+// Load the in-scope requirement records and the issue's traceability links for
+// bootstrap. Returns a bounded failure envelope when either read throws, so the
+// caller can surface it unchanged instead of unwinding through a thrown error.
+async function loadIssueRequirementContext(args, deps, context, requirementUids, action) {
+  try {
+    const requirements = await Promise.all(requirementUids.map(async (uid) => {
+      const requirement = await deps.getRequirement(uid, context.project);
+      return {
+        id: requirement.id,
+        uid: requirement.uid,
+        title: requirement.title,
+        statement: requirement.statement,
+        status: requirement.status,
+        wave: requirement.wave,
+      };
+    }));
+    const issueTraceabilityLinks = await deps.getTraceabilityByArtifact(
+      "GITHUB_ISSUE",
+      String(args.issueNumber),
+      context.project,
+    );
+    return { ok: true, requirements, issueTraceabilityLinks };
+  } catch (error) {
+    return failure(
+      action,
+      "implement_mechanical_issue_context_failed",
+      error.message,
+      "repair_requirement_or_traceability_access_and_retry",
+    );
+  }
+}
+
+// Record the /implement pickup comment unless the thread already carries one for
+// this branch. Returns the pickup record on success (reused or freshly written)
+// or a bounded failure envelope; both carry `ok`, so the caller branches on it.
+async function ensureIssuePickup(args, deps, thread, branch, action) {
+  const pickupAlreadyRecorded = (thread.comments ?? []).some((comment) =>
+    typeof comment?.body === "string"
+    && comment.body.includes("Picked up by /implement")
+    && comment.body.includes(`\`${branch}\``),
+  );
+  if (pickupAlreadyRecorded) {
+    return { ok: true, reused: true };
+  }
+  const pickup = await deps.markPickedUp({
+    repoPath: args.repoPath,
+    issueNumber: args.issueNumber,
+    driver: args.driver,
+    branchName: branch,
+  });
+  if (!pickup.ok) {
+    return failure(action, pickup.error, pickup.message, "repair_pickup_record_and_retry");
+  }
+  return pickup;
+}
 export async function runBootstrap(args, deps) {
   const action = "bootstrap";
   for (const field of ["invocationRoot", "branchName", "driver"]) {
@@ -188,50 +242,11 @@ export async function runBootstrap(args, deps) {
   if (!authorized.ok) {
     return failure(action, authorized.error, authorized.message, authorized.next_action);
   }
-  let requirements;
-  let issueTraceabilityLinks;
-  try {
-    requirements = await Promise.all(requirementUids.map(async (uid) => {
-      const requirement = await deps.getRequirement(uid, context.project);
-      return {
-        id: requirement.id,
-        uid: requirement.uid,
-        title: requirement.title,
-        statement: requirement.statement,
-        status: requirement.status,
-        wave: requirement.wave,
-      };
-    }));
-    issueTraceabilityLinks = await deps.getTraceabilityByArtifact(
-      "GITHUB_ISSUE",
-      String(args.issueNumber),
-      context.project,
-    );
-  } catch (error) {
-    return failure(
-      action,
-      "implement_mechanical_issue_context_failed",
-      error.message,
-      "repair_requirement_or_traceability_access_and_retry",
-    );
-  }
-  const pickupAlreadyRecorded = (thread.comments ?? []).some((comment) =>
-    typeof comment?.body === "string"
-    && comment.body.includes("Picked up by /implement")
-    && comment.body.includes(`\`${prepared.branch}\``),
-  );
-  let pickup = { ok: true, reused: true };
-  if (!pickupAlreadyRecorded) {
-    pickup = await deps.markPickedUp({
-      repoPath: args.repoPath,
-      issueNumber: args.issueNumber,
-      driver: args.driver,
-      branchName: prepared.branch,
-    });
-    if (!pickup.ok) {
-      return failure(action, pickup.error, pickup.message, "repair_pickup_record_and_retry");
-    }
-  }
+  const requirementContext = await loadIssueRequirementContext(args, deps, context, requirementUids, action);
+  if (!requirementContext.ok) return requirementContext;
+  const { requirements, issueTraceabilityLinks } = requirementContext;
+  const pickup = await ensureIssuePickup(args, deps, thread, prepared.branch, action);
+  if (!pickup.ok) return pickup;
   return {
     ok: true,
     action,

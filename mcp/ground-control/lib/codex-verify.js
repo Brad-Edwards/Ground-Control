@@ -19,6 +19,70 @@ import { listWorkingTreeChanges } from "./knowledge-capture.js";
 import { getRepoGroundControlContext } from "./repo-vocabulary-2.js";
 import { getDefaultCodexTimeoutMs, execFile, execFileWithInput, formatCommandFailure } from "./runtime-primitives.js";
 
+// Issue-first runs treat the GitHub issue as the authoritative contract. When no
+// requirement anchors the run, a loadable issue body is mandatory: if the issue
+// body could not be loaded (wrong repo, missing scope, gh CLI not authenticated,
+// etc.) there is nothing for codex to reason about and no way for the caller to
+// catch silent drift, so fail fast with a specific error that names the issue
+// number and the underlying reason.
+//
+// Empty bodies are acceptable — GitHub returns `"body": ""` for valid title-only
+// issues (common for bugs and refactors), and the title plus the diff still gives
+// codex a usable context. Only fail when the body field is missing entirely
+// (lookup failure) or when getIssueContext attached a `warning` field indicating
+// the gh CLI call did not succeed.
+function assertPreflightIssueContext(requirement, issueContext, issueNumber) {
+  if (requirement != null) return;
+  const lookupFailed =
+    !issueContext
+    || issueContext.warning !== undefined
+    || !("body" in issueContext);
+  if (!lookupFailed) return;
+  const detail = issueContext?.warning
+    ?? (issueContext == null
+      ? "getIssueContext returned null"
+      : "issue context has no body field");
+  throw new Error(
+    `gc_codex_architecture_preflight: issue-only run requires a loadable GitHub issue but failed to fetch issue #${issueNumber}: ${detail}`,
+  );
+}
+
+// Best-effort read of the repo's architecture.vocabulary (issue #931) so the
+// preflight can emit a "Design Vocabulary That Applies" section the pre-push
+// reviewers consume. A missing or invalid block yields null and never blocks
+// preflight.
+async function resolvePreflightVocabulary(repoRoot) {
+  try {
+    const cfg = await getRepoGroundControlContext(repoRoot);
+    if (cfg.status === "ok" && cfg.architecture?.vocabulary) {
+      return cfg.architecture.vocabulary;
+    }
+  } catch {
+    // best-effort
+  }
+  return null;
+}
+
+// Record the `preflight` phase marker on the issue thread so downstream tools
+// (gc_post_implementation_plan etc.) can detect that preflight ran before they
+// let the workflow advance. Marker post is best-effort — a failed post does not
+// invalidate the preflight; the worst case is the next gating tool sees no marker
+// and refuses, prompting the agent to re-run preflight (the correct fallback).
+async function postPreflightPhaseMarker(repoRoot, issueNumber) {
+  if (issueNumber == null) return null;
+  try {
+    const { owner, name } = await getOwnerRepo(repoRoot);
+    await postPhaseMarker(repoRoot, owner, name, issueNumber, "preflight");
+    return { phase: "preflight", issue_number: issueNumber };
+  } catch (markerError) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[gc_codex_architecture_preflight] phase marker post failed for issue #${issueNumber}: ${markerError.message}`,
+    );
+    return null;
+  }
+}
+
 export async function runCodexArchitecturePreflight({
   requirementUid,
   project,
@@ -61,47 +125,16 @@ export async function runCodexArchitecturePreflight({
   // working directory from leaking into the lookup.
   const issueContext = await getIssueContext(issueNumber, repo, { cwd: repoRoot });
 
-  // Issue-first runs treat the GitHub issue as the authoritative contract.
-  // If the issue body could not be loaded (wrong repo, missing scope, gh
-  // CLI not authenticated, etc.), there is nothing for codex to reason about
-  // and no way for the caller to catch silent drift. Fail fast with a
-  // specific error that names the issue number and the underlying reason.
-  //
-  // Empty bodies are acceptable — GitHub returns `"body": ""` for valid
-  // title-only issues (common shape for bugs and refactors), and the title
-  // plus the diff still gives codex a usable context. Only fail when the
-  // body field is missing entirely (lookup failure) or when getIssueContext
-  // attached a `warning` field indicating the gh CLI call did not succeed.
-  if (requirement == null) {
-    const lookupFailed =
-      !issueContext
-      || issueContext.warning !== undefined
-      || !("body" in issueContext);
-    if (lookupFailed) {
-      const detail = issueContext?.warning
-        ?? (issueContext == null
-          ? "getIssueContext returned null"
-          : "issue context has no body field");
-      throw new Error(
-        `gc_codex_architecture_preflight: issue-only run requires a loadable GitHub issue but failed to fetch issue #${issueNumber}: ${detail}`,
-      );
-    }
-  }
+  // Issue-first runs treat the GitHub issue as the authoritative contract; a
+  // requirement-free run demands a loadable issue body before codex can reason.
+  assertPreflightIssueContext(requirement, issueContext, issueNumber);
 
   const preexistingChangedFiles = await listWorkingTreeChanges(repoRoot);
 
   // Pass the repo's architecture.vocabulary (issue #931) so the preflight can
   // emit a "Design Vocabulary That Applies" section the pre-push reviewers
   // consume. Best-effort: a missing or invalid block does not block preflight.
-  let preflightVocabulary = null;
-  try {
-    const cfg = await getRepoGroundControlContext(repoRoot);
-    if (cfg.status === "ok" && cfg.architecture && cfg.architecture.vocabulary) {
-      preflightVocabulary = cfg.architecture.vocabulary;
-    }
-  } catch {
-    // best-effort
-  }
+  const preflightVocabulary = await resolvePreflightVocabulary(repoRoot);
 
   const tempDir = mkdtempSync(join(tmpdir(), "gc-codex-preflight-"));
   const outputPath = join(tempDir, "codex-last-message.txt");
@@ -131,23 +164,8 @@ export async function runCodexArchitecturePreflight({
 
     // Record the `preflight` phase marker on the issue thread so downstream
     // tools (gc_post_implementation_plan etc.) can detect that preflight ran
-    // before they let the workflow advance. Marker post is best-effort — a
-    // failed post does not invalidate the preflight; the worst case is the
-    // next gating tool sees no marker and refuses, prompting the agent to
-    // re-run preflight (which is the correct fallback).
-    let phaseMarker = null;
-    if (issueNumber != null) {
-      try {
-        const { owner, name } = await getOwnerRepo(repoRoot);
-        await postPhaseMarker(repoRoot, owner, name, issueNumber, "preflight");
-        phaseMarker = { phase: "preflight", issue_number: issueNumber };
-      } catch (markerError) {
-        // eslint-disable-next-line no-console
-        console.error(
-          `[gc_codex_architecture_preflight] phase marker post failed for issue #${issueNumber}: ${markerError.message}`,
-        );
-      }
-    }
+    // before they let the workflow advance.
+    const phaseMarker = await postPreflightPhaseMarker(repoRoot, issueNumber);
 
     return {
       requirement_uid: requirementUid ?? null,
@@ -164,6 +182,138 @@ export async function runCodexArchitecturePreflight({
     rmSync(tempDir, { recursive: true, force: true });
   }
 }
+
+// Fetch the review comment and confirm its author is trusted. Accept the
+// allowlisted set or the PR author — in a local dev workflow gc_codex_review
+// posts via the user's gh auth, so comments are authored by the user, not a bot.
+async function fetchAuthorizedReviewComment({ repoRoot, owner, name, prNumber, commentId }) {
+  const comment = await fetchReviewCommentById(repoRoot, owner, name, commentId);
+  const author = comment?.user?.login;
+  const allowed = getRuntimeAllowedAuthors();
+  let prAuthorLogin = null;
+  try {
+    const { stdout } = await execFile(
+      "gh",
+      ["pr", "view", String(prNumber), "--json", "author"],
+      { cwd: repoRoot },
+    );
+    prAuthorLogin = JSON.parse(stdout)?.author?.login || null;
+  } catch {
+    prAuthorLogin = null;
+  }
+  if (!author || (!allowed.has(author) && author !== prAuthorLogin)) {
+    throw new Error(
+      `Refusing to verify comment ${commentId}: author "${author}" is not in the allowlist and is not the PR author. ` +
+        `Set GH_VERIFY_FINDING_AUTHORS to a comma-separated list of additional trusted logins if needed.`,
+    );
+  }
+  return comment;
+}
+
+// Build the verify prompt, run codex read-only against the finding, and return
+// its parsed tail verdict.
+async function runCodexVerify({ repoRoot, comment, filePath, fileContents, line }) {
+  const prompt = buildCodexVerifyPrompt({
+    findingBody: String(comment.body || ""),
+    filePath,
+    fileContents,
+    line,
+  });
+
+  let stdout;
+  try {
+    ({ stdout } = await execFileWithInput(
+      "codex",
+      ["exec", "--sandbox", "read-only", "-C", repoRoot, "-"],
+      {
+        input: prompt,
+        cwd: repoRoot,
+        maxBuffer: 10 * 1024 * 1024,
+        env: codexEngineEnv(),
+        timeoutMs: getDefaultCodexTimeoutMs(),
+      },
+    ));
+  } catch (error) {
+    throw new Error(`Codex verify failed: ${formatCommandFailure("codex", error)}`);
+  }
+
+  return parseCodexVerifyTail(stdout);
+}
+
+// Record the verify cycle marker after a successful run (whether the finding
+// came back RESOLVED or UNRESOLVED — both are completed cycles). Marker-post
+// failures are non-fatal, same policy as the cycle marker.
+async function recordCodexVerifyCycleMarker({ repoRoot, owner, name, prNumber, commentId, verifyDecision }) {
+  try {
+    await postCodexVerifyCycleMarker(
+      repoRoot,
+      owner,
+      name,
+      prNumber,
+      commentId,
+      verifyDecision.nextCycle,
+      { override: verifyDecision.override === true, overrideReason: verifyDecision.override_reason ?? null },
+    );
+  } catch (markerError) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[gc_codex_verify_finding] cycle marker post failed for PR #${prNumber} comment #${commentId}: ${markerError.message}`,
+    );
+  }
+}
+
+// Resolved → mark the review thread resolved; unresolved → post the codex reply
+// as a threaded reply on the original comment. Returns the terminal verify
+// envelope for either outcome.
+async function finalizeCodexVerifyResult({ repoRoot, owner, name, prNumber, commentId, threadId, parsed, verifyDecision }) {
+  const capFields = {
+    cycle: verifyDecision.nextCycle,
+    cap: verifyDecision.cap,
+    next_action: verifyDecision.next_action ?? null,
+    override: verifyDecision.override === true,
+    override_reason: verifyDecision.override_reason ?? null,
+  };
+
+  if (parsed.status === "resolved") {
+    if (!threadId) {
+      throw new Error(
+        `Codex reported RESOLVED but no review thread was found for comment ${commentId}. Cannot mark the thread resolved.`,
+      );
+    }
+    const resolved = await resolveReviewThread(repoRoot, threadId);
+    return {
+      repo_path: repoRoot,
+      pr_number: prNumber,
+      comment_id: commentId,
+      thread_id: threadId,
+      status: "resolved",
+      thread_resolved: resolved,
+      ...capFields,
+    };
+  }
+
+  // Unresolved — post the reply as a threaded reply on the original comment.
+  const replyComment = await postReviewCommentReply(
+    repoRoot,
+    owner,
+    name,
+    prNumber,
+    commentId,
+    parsed.reply,
+  );
+  return {
+    repo_path: repoRoot,
+    pr_number: prNumber,
+    comment_id: commentId,
+    thread_id: threadId,
+    status: "unresolved",
+    reply_comment_id: replyComment.id,
+    reply_body: parsed.reply,
+    reply_html_url: replyComment.html_url || null,
+    ...capFields,
+  };
+}
+
 export async function runCodexVerifyFinding({
   repoPath,
   prNumber,
@@ -206,30 +356,7 @@ export async function runCodexVerifyFinding({
     };
   }
 
-  const comment = await fetchReviewCommentById(repoRoot, owner, name, commentId);
-
-  // Only accept comments authored by the allowlisted set or the PR author.
-  const author = comment?.user?.login;
-  const allowed = getRuntimeAllowedAuthors();
-  // Also accept the PR author — in a local dev workflow gc_codex_review posts
-  // via the user's gh auth, so the comments are authored by the user, not a bot.
-  let prAuthorLogin = null;
-  try {
-    const { stdout } = await execFile(
-      "gh",
-      ["pr", "view", String(prNumber), "--json", "author"],
-      { cwd: repoRoot },
-    );
-    prAuthorLogin = JSON.parse(stdout)?.author?.login || null;
-  } catch {
-    prAuthorLogin = null;
-  }
-  if (!author || (!allowed.has(author) && author !== prAuthorLogin)) {
-    throw new Error(
-      `Refusing to verify comment ${commentId}: author "${author}" is not in the allowlist and is not the PR author. ` +
-        `Set GH_VERIFY_FINDING_AUTHORS to a comma-separated list of additional trusted logins if needed.`,
-    );
-  }
+  const comment = await fetchAuthorizedReviewComment({ repoRoot, owner, name, prNumber, commentId });
 
   // Path and line the finding is anchored to. Prefer the current-diff line
   // when present, fall back to the original commit position.
@@ -257,96 +384,18 @@ export async function runCodexVerifyFinding({
   });
   const threadId = threadMap.get(commentId) || null;
 
-  const prompt = buildCodexVerifyPrompt({
-    findingBody: String(comment.body || ""),
-    filePath,
-    fileContents,
-    line,
-  });
+  const parsed = await runCodexVerify({ repoRoot, comment, filePath, fileContents, line });
 
-  let stdout;
-  try {
-    ({ stdout } = await execFileWithInput(
-      "codex",
-      ["exec", "--sandbox", "read-only", "-C", repoRoot, "-"],
-      {
-        input: prompt,
-        cwd: repoRoot,
-        maxBuffer: 10 * 1024 * 1024,
-        env: codexEngineEnv(),
-        timeoutMs: getDefaultCodexTimeoutMs(),
-      },
-    ));
-  } catch (error) {
-    throw new Error(`Codex verify failed: ${formatCommandFailure("codex", error)}`);
-  }
+  await recordCodexVerifyCycleMarker({ repoRoot, owner, name, prNumber, commentId, verifyDecision });
 
-  const parsed = parseCodexVerifyTail(stdout);
-
-  // Record the verify cycle marker after a successful run (whether the
-  // finding came back RESOLVED or UNRESOLVED — both are completed cycles).
-  // Marker-post failures are non-fatal, same policy as the cycle marker.
-  try {
-    await postCodexVerifyCycleMarker(
-      repoRoot,
-      owner,
-      name,
-      prNumber,
-      commentId,
-      verifyDecision.nextCycle,
-      { override: verifyDecision.override === true, overrideReason: verifyDecision.override_reason ?? null },
-    );
-  } catch (markerError) {
-    // eslint-disable-next-line no-console
-    console.error(
-      `[gc_codex_verify_finding] cycle marker post failed for PR #${prNumber} comment #${commentId}: ${markerError.message}`,
-    );
-  }
-
-  if (parsed.status === "resolved") {
-    if (!threadId) {
-      throw new Error(
-        `Codex reported RESOLVED but no review thread was found for comment ${commentId}. Cannot mark the thread resolved.`,
-      );
-    }
-    const resolved = await resolveReviewThread(repoRoot, threadId);
-    return {
-      repo_path: repoRoot,
-      pr_number: prNumber,
-      comment_id: commentId,
-      thread_id: threadId,
-      status: "resolved",
-      thread_resolved: resolved,
-      cycle: verifyDecision.nextCycle,
-      cap: verifyDecision.cap,
-      next_action: verifyDecision.next_action ?? null,
-      override: verifyDecision.override === true,
-      override_reason: verifyDecision.override_reason ?? null,
-    };
-  }
-
-  // Unresolved — post the reply as a threaded reply on the original comment.
-  const replyComment = await postReviewCommentReply(
+  return finalizeCodexVerifyResult({
     repoRoot,
     owner,
     name,
     prNumber,
     commentId,
-    parsed.reply,
-  );
-  return {
-    repo_path: repoRoot,
-    pr_number: prNumber,
-    comment_id: commentId,
-    thread_id: threadId,
-    status: "unresolved",
-    reply_comment_id: replyComment.id,
-    reply_body: parsed.reply,
-    reply_html_url: replyComment.html_url || null,
-    cycle: verifyDecision.nextCycle,
-    cap: verifyDecision.cap,
-    next_action: verifyDecision.next_action ?? null,
-    override: verifyDecision.override === true,
-    override_reason: verifyDecision.override_reason ?? null,
-  };
+    threadId,
+    parsed,
+    verifyDecision,
+  });
 }

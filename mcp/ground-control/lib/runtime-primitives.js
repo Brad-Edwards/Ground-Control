@@ -57,7 +57,7 @@ export function buildGroundControlContextSnippet(project = "your-project-id") {
     "Agents read it via the `gc_get_repo_ground_control_context` MCP tool.",
   ].join("\n");
 }
-export function buildSuggestedGroundControlYaml(project = "your-project-id") {
+function suggestedYamlWorkflowSection(project) {
   return [
     "schema_version: 1",
     `project: ${project}`,
@@ -114,6 +114,10 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     "#   # gate. Absent (default) = no reuse, every gate runs in full (fail-closed).",
     "#   verification:",
     "#     toolchain_fingerprint_command: <command emitting one lowercase sha256>",
+  ];
+}
+function suggestedYamlPackagingSection() {
+  return [
     "# sonarcloud:",
     "#   project_key: <sonar-project-key>",
     "#   organization: <sonar-org>",
@@ -156,6 +160,10 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     "# telemetry:",
     "#   enabled: false",
     "",
+  ];
+}
+function suggestedYamlArchitectureSection() {
+  return [
     "# Repo design vocabulary (issue #931). Optional. Codex preflight and the",
     "# pre-push reviewers anchor their architectural_read on this vocabulary",
     "# when present, so 'use the canonical helper' findings name a real helper.",
@@ -177,6 +185,13 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     "#     anti_recommendations:",
     "#       - Do not introduce new abstractions below 3 call-sites",
     "",
+  ];
+}
+export function buildSuggestedGroundControlYaml(project = "your-project-id") {
+  return [
+    ...suggestedYamlWorkflowSection(project),
+    ...suggestedYamlPackagingSection(),
+    ...suggestedYamlArchitectureSection(),
   ].join("\n");
 }
 // Default fallback-auth file (issue #1500). A launcher — Codex especially, or
@@ -288,13 +303,13 @@ export function resolveWorkflowRouteFromConfig({ routing, stage, tier = null }) 
   };
 }
 export const PR_BODY_CHANGE_CLASSES = Object.freeze(["doc-only", "source", "source+migration"]);
-export const PR_REQUIREMENT_RE = /\b[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-[A-Z0-9]*[0-9]\b/;
+export const PR_REQUIREMENT_RE = /\b[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-[A-Z0-9]*\d\b/;
 export const REQUIREMENT_UID_MAX_LENGTH = 50;
 export const EXACT_REQUIREMENT_UID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,49}$/;
 export function isRequirementUidToken(token) {
   if (typeof token !== "string" || !EXACT_REQUIREMENT_UID_RE.test(token)) return false;
-  const match = token.match(PR_REQUIREMENT_RE);
-  return match != null && match[0] === token;
+  const match = PR_REQUIREMENT_RE.exec(token);
+  return match?.[0] === token;
 }
 export function findRequirementUidTokens(text) {
   if (typeof text !== "string" || text === "") return [];
@@ -331,23 +346,76 @@ const PR_BODY_REQUIRED_HEADERS = Object.freeze([
   "## Ground Control Checks",
   "## Traceability",
 ]);
+// Sonar S5843 caps a single regex literal's complexity at 20. The three richest
+// deferral patterns exceed that, so each is composed at module load from simple
+// sub-pattern literals via `new RegExp`. Every composed `source` is byte-identical
+// to the literal it replaces (the fragments concatenate to the original pattern),
+// so the matched language is unchanged — only per-literal complexity drops.
+const DEFERRAL_FIXED_IN_FOLLOWUP_HEAD = /\b(?:will be |is |are |gets? |get )?(?:fixed|handled|landed?|done) (?:in|as) /;
+const DEFERRAL_FIXED_IN_FOLLOWUP_TAIL = /(?:a |the )?(?:follow[- ]?up|subsequent) (?:PR|issue|pull request)\b/;
+const DEFERRAL_REFUSAL_ACTION_HEAD = /\b(?:not|won'?t|will\s+not|cannot|can'?t|skip(?:ping)?)\s+(?:be\s+)?/;
+const DEFERRAL_REFUSAL_ACTION_TAIL = /(?:fix|fixing|address|addressing|repair|repairing|resolve|resolving|handle|handling)\b/;
+const DEFERRAL_BECAUSE_GAP = /[^.\n]{0,80}\b(?:because|since|as)\b[^.\n]{0,60}\b/;
+const DEFERRAL_SCOPE_SO_GAP = /[^.\n]{0,80}(?:\b(?:so|therefore|means)\b|[;:])[^.\n]{0,60}\b/;
+const DEFERRAL_REFUSAL_TRAILING = /(?:not|won'?t|will\s+not|skip(?:ping)?|left\s+unresolved|leave\s+unresolved)\b/;
+const DEFERRAL_SCOPE_BRANCHES = [
+  /pre-existing/,
+  /unrelated/,
+  /outside\s+(?:this\s+)?(?:PR'?s?\s+)?scope/,
+  /out\s+of\s+scope/,
+];
+function deferralScopeGroupSource(ownedByBranch) {
+  return `(?:${[...DEFERRAL_SCOPE_BRANCHES, ownedByBranch].map((r) => r.source).join("|")})${/\b/.source}`;
+}
+// eslint-disable-next-line security/detect-non-literal-regexp -- composed from module-local literal fragments; source is byte-identical to the original pattern
+const DEFERRAL_FIXED_IN_FOLLOWUP_RE = new RegExp(
+  DEFERRAL_FIXED_IN_FOLLOWUP_HEAD.source + DEFERRAL_FIXED_IN_FOLLOWUP_TAIL.source,
+  "i",
+);
+// eslint-disable-next-line security/detect-non-literal-regexp -- composed from module-local literal fragments; source is byte-identical to the original pattern
+const DEFERRAL_REFUSAL_BECAUSE_SCOPE_RE = new RegExp(
+  DEFERRAL_REFUSAL_ACTION_HEAD.source
+    + DEFERRAL_REFUSAL_ACTION_TAIL.source
+    + DEFERRAL_BECAUSE_GAP.source
+    + deferralScopeGroupSource(/owned\s+by/),
+  "i",
+);
+// eslint-disable-next-line security/detect-non-literal-regexp -- composed from module-local literal fragments; source is byte-identical to the original pattern
+const DEFERRAL_SCOPE_THEN_REFUSAL_RE = new RegExp(
+  /\b/.source
+    + deferralScopeGroupSource(/owned\s+by[^,.;\n]{0,40}/)
+    + DEFERRAL_SCOPE_SO_GAP.source
+    + DEFERRAL_REFUSAL_TRAILING.source,
+  "i",
+);
 const DEFERRAL_TIER1_PATTERNS = Object.freeze([
   /\bdeferred to (?:a |the )?(?:follow[- ]?up|subsequent|later|next)\b/i,
   /\bdefer(?:red)? (?:to |until )?(?:a |the )?(?:follow[- ]?up|subsequent|later iteration)\b/i,
   /\b(?:will be |is |are )?addressed in (?:a |the )?follow[- ]?up\b/i,
-  /\b(?:will be |is |are |gets? |get )?(?:fixed|handled|landed?|done) (?:in|as) (?:a |the )?(?:follow[- ]?up|subsequent) (?:PR|issue|pull request)\b/i,
+  DEFERRAL_FIXED_IN_FOLLOWUP_RE,
   /\bTBD later\b/i,
   /\bto be (?:done|filed|landed?) (?:later|separately)\b/i,
-  /\b(?:not|won'?t|will\s+not|cannot|can'?t|skip(?:ping)?)\s+(?:be\s+)?(?:fix|fixing|address|addressing|repair|repairing|resolve|resolving|handle|handling)\b[^.\n]{0,80}\b(?:because|since|as)\b[^.\n]{0,60}\b(?:pre-existing|unrelated|outside\s+(?:this\s+)?(?:PR'?s?\s+)?scope|out\s+of\s+scope|owned\s+by)\b/i,
-  /\b(?:pre-existing|unrelated|outside\s+(?:this\s+)?(?:PR'?s?\s+)?scope|out\s+of\s+scope|owned\s+by[^,.;\n]{0,40})\b[^.\n]{0,80}(?:\b(?:so|therefore|means)\b|[;:])[^.\n]{0,60}\b(?:not|won'?t|will\s+not|skip(?:ping)?|left\s+unresolved|leave\s+unresolved)\b/i,
+  DEFERRAL_REFUSAL_BECAUSE_SCOPE_RE,
+  DEFERRAL_SCOPE_THEN_REFUSAL_RE,
 ]);
 export function detectDeferralDisposition(text) {
   if (typeof text !== "string" || text === "") return null;
   for (const re of DEFERRAL_TIER1_PATTERNS) {
-    const m = text.match(re);
+    const m = re.exec(text);
     if (m) return `deferral-disposition phrase '${m[0]}' detected (ADR-029 forbids deferral)`;
   }
   return null;
+}
+// Strip a leading run and a trailing run of backticks (a markdown inline-code
+// wrapper like `GC-X001`). A linear scan rather than /^`+|`+$/g, which the regex
+// engine matches with super-linear backtracking (Sonar S8786); interior
+// backticks are left untouched, exactly as the anchored global replace did.
+function stripEdgeBackticks(s) {
+  let start = 0;
+  let end = s.length;
+  while (start < end && s[start] === "`") start += 1;
+  while (end > start && s[end - 1] === "`") end -= 1;
+  return s.slice(start, end);
 }
 function extractRequirementUidsSection(body) {
   const start = body.indexOf("## Requirement UIDs");
@@ -369,7 +437,7 @@ export function extractRequirementUidTokensFromSection(body) {
     // corpus cannot distinguish a UID from a word without a lookup. Requiring
     // the bullet to be exactly one token keeps the gate decidable while still
     // accepting every UID the structured path accepts.
-    const candidate = bullet[1].replace(/^[`]+|[`]+$/g, "").trim();
+    const candidate = stripEdgeBackticks(bullet[1]).trim();
     if (!EXACT_REQUIREMENT_UID_RE.test(candidate)) continue;
     if (!tokens.includes(candidate)) tokens.push(candidate);
   }

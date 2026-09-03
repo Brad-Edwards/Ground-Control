@@ -83,6 +83,47 @@ function validateStringList(raw, fieldName, { uid = false } = {}) {
   if (errors.length) return { ok: false, errors };
   return { ok: true, value };
 }
+function normalizeDevStartGateEnabled(raw, value, errors) {
+  if (raw.enabled == null) return;
+  if (typeof raw.enabled !== "boolean") {
+    errors.push("workflow.dev_start_gate.enabled must be a boolean when set");
+    return;
+  }
+  value.enabled = raw.enabled;
+}
+function normalizeDevStartGateRequiredFor(raw, value, errors) {
+  if (raw.required_for == null) return;
+  if (DEV_START_GATE_REQUIRED_FOR.includes(raw.required_for)) {
+    value.required_for = raw.required_for;
+    return;
+  }
+  errors.push(`workflow.dev_start_gate.required_for must be one of: ${DEV_START_GATE_REQUIRED_FOR.join(", ")}`);
+}
+function normalizeDevStartGatePlanSection(raw, value, errors) {
+  if (raw.plan_section == null) return;
+  if (typeof raw.plan_section !== "string" || raw.plan_section.trim() === "") {
+    errors.push("workflow.dev_start_gate.plan_section must be a non-empty string when set");
+    return;
+  }
+  if (raw.plan_section.includes("\n") || raw.plan_section.includes("\r")) {
+    errors.push("workflow.dev_start_gate.plan_section must be a single-line string");
+    return;
+  }
+  value.plan_section = raw.plan_section.trim();
+}
+function normalizeDevStartGateBlockerUids(raw, value, errors) {
+  if (raw.blocker_uids == null) return;
+  const r = validateStringList(raw.blocker_uids, "workflow.dev_start_gate.blocker_uids", { uid: true });
+  if (r.ok) value.blocker_uids = r.value;
+  else errors.push(...r.errors);
+}
+function normalizeDevStartGateRequiredFields(raw, value, errors) {
+  if (raw.required_fields == null) return;
+  const r = validateStringList(raw.required_fields, "workflow.dev_start_gate.required_fields");
+  if (!r.ok) errors.push(...r.errors);
+  else if (r.value.length === 0) errors.push("workflow.dev_start_gate.required_fields must not be empty when set");
+  else value.required_fields = r.value;
+}
 export function normalizeDevStartGateConfig(raw) {
   const value = emptyDevStartGateConfig();
   if (raw == null) {
@@ -91,45 +132,16 @@ export function normalizeDevStartGateConfig(raw) {
   if (typeof raw !== "object" || Array.isArray(raw)) {
     return { ok: false, errors: ["workflow.dev_start_gate must be a mapping when set"] };
   }
-  const allowed = ["enabled", "required_for", "plan_section", "blocker_uids", "required_fields"];
+  const allowed = new Set(["enabled", "required_for", "plan_section", "blocker_uids", "required_fields"]);
   const errors = [];
   for (const key of Object.keys(raw)) {
-    if (!allowed.includes(key)) errors.push(`workflow.dev_start_gate has unknown key '${key}'`);
+    if (!allowed.has(key)) errors.push(`workflow.dev_start_gate has unknown key '${key}'`);
   }
-  if (raw.enabled != null) {
-    if (typeof raw.enabled !== "boolean") {
-      errors.push("workflow.dev_start_gate.enabled must be a boolean when set");
-    } else {
-      value.enabled = raw.enabled;
-    }
-  }
-  if (raw.required_for != null) {
-    if (!DEV_START_GATE_REQUIRED_FOR.includes(raw.required_for)) {
-      errors.push(`workflow.dev_start_gate.required_for must be one of: ${DEV_START_GATE_REQUIRED_FOR.join(", ")}`);
-    } else {
-      value.required_for = raw.required_for;
-    }
-  }
-  if (raw.plan_section != null) {
-    if (typeof raw.plan_section !== "string" || raw.plan_section.trim() === "") {
-      errors.push("workflow.dev_start_gate.plan_section must be a non-empty string when set");
-    } else if (raw.plan_section.includes("\n") || raw.plan_section.includes("\r")) {
-      errors.push("workflow.dev_start_gate.plan_section must be a single-line string");
-    } else {
-      value.plan_section = raw.plan_section.trim();
-    }
-  }
-  if (raw.blocker_uids != null) {
-    const r = validateStringList(raw.blocker_uids, "workflow.dev_start_gate.blocker_uids", { uid: true });
-    if (!r.ok) errors.push(...r.errors);
-    else value.blocker_uids = r.value;
-  }
-  if (raw.required_fields != null) {
-    const r = validateStringList(raw.required_fields, "workflow.dev_start_gate.required_fields");
-    if (!r.ok) errors.push(...r.errors);
-    else if (r.value.length === 0) errors.push("workflow.dev_start_gate.required_fields must not be empty when set");
-    else value.required_fields = r.value;
-  }
+  normalizeDevStartGateEnabled(raw, value, errors);
+  normalizeDevStartGateRequiredFor(raw, value, errors);
+  normalizeDevStartGatePlanSection(raw, value, errors);
+  normalizeDevStartGateBlockerUids(raw, value, errors);
+  normalizeDevStartGateRequiredFields(raw, value, errors);
   if (errors.length) return { ok: false, errors };
   return { ok: true, value };
 }
@@ -140,10 +152,10 @@ export function normalizeVerificationConfig(raw) {
   if (typeof raw !== "object" || Array.isArray(raw)) {
     return { ok: false, errors: ["workflow.verification must be a mapping when set"] };
   }
-  const allowed = ["toolchain_fingerprint_command"];
+  const allowed = new Set(["toolchain_fingerprint_command"]);
   const errors = [];
   for (const key of Object.keys(raw)) {
-    if (!allowed.includes(key)) {
+    if (!allowed.has(key)) {
       errors.push(`workflow.verification has unknown key '${key}'`);
     }
   }
@@ -163,26 +175,13 @@ export function normalizeVerificationConfig(raw) {
   if (errors.length) return { ok: false, errors };
   return { ok: true, value: { toolchain_fingerprint_command: command } };
 }
-export function normalizeWorkflowConfig(raw) {
-  if (raw == null || typeof raw !== "object") {
-    return { ok: true, value: emptyWorkflowConfig() };
-  }
-  if (Array.isArray(raw)) {
-    return { ok: false, errors: ["workflow must be a mapping, not a list"] };
-  }
-  // Scalar string-typed keys handled inline; nested-mapping keys delegated to
-  // their own normalizers below.
-  const allowedScalar = ["test_command", "completion_command", "lint_command", "format_command", "policy_command", "precommit_command", "base_branch"];
-  const allowedNested = ["codex_review", "test_quality_review", "pr_title", "integration_manager", "dev_start_gate", "review_disposition", "verification"];
-  const allowed = [...allowedScalar, ...allowedNested];
-  const value = emptyWorkflowConfig();
-  const errors = [];
+function applyWorkflowScalarKeys(raw, value, allowed, allowedNested, errors) {
   for (const key of Object.keys(raw)) {
-    if (!allowed.includes(key)) {
+    if (!allowed.has(key)) {
       errors.push(`workflow has unknown key '${key}'`);
       continue;
     }
-    if (allowedNested.includes(key)) continue; // handled below
+    if (allowedNested.has(key)) continue; // handled by applyWorkflowNestedKeys
     const v = raw[key];
     if (v == null) continue;
     if (typeof v !== "string" || v.trim() === "") {
@@ -197,29 +196,69 @@ export function normalizeWorkflowConfig(raw) {
     }
     value[key] = v;
   }
-  const codexResult = normalizeReviewerConfig(raw.codex_review, "workflow.codex_review");
-  if (!codexResult.ok) errors.push(...codexResult.errors);
-  else value.codex_review = codexResult.value;
-  const testQualityResult = normalizeReviewerConfig(raw.test_quality_review, "workflow.test_quality_review");
-  if (!testQualityResult.ok) errors.push(...testQualityResult.errors);
-  else value.test_quality_review = testQualityResult.value;
-  const prTitleResult = normalizePrTitleConfig(raw.pr_title);
-  if (!prTitleResult.ok) errors.push(...prTitleResult.errors);
-  else value.pr_title = prTitleResult.value;
-  const integrationManagerResult = normalizeIntegrationManagerConfig(raw.integration_manager);
-  if (!integrationManagerResult.ok) errors.push(...integrationManagerResult.errors);
-  else value.integration_manager = integrationManagerResult.value;
-  const devStartGateResult = normalizeDevStartGateConfig(raw.dev_start_gate);
-  if (!devStartGateResult.ok) errors.push(...devStartGateResult.errors);
-  else value.dev_start_gate = devStartGateResult.value;
-  const reviewDispositionResult = normalizeReviewDispositionConfig(raw.review_disposition);
-  if (!reviewDispositionResult.ok) errors.push(...reviewDispositionResult.errors);
-  else value.review_disposition = reviewDispositionResult.value;
-  const verificationResult = normalizeVerificationConfig(raw.verification);
-  if (!verificationResult.ok) errors.push(...verificationResult.errors);
-  else value.verification = verificationResult.value;
+}
+function applyWorkflowNestedKeys(raw, value, errors) {
+  const nested = [
+    ["codex_review", () => normalizeReviewerConfig(raw.codex_review, "workflow.codex_review")],
+    ["test_quality_review", () => normalizeReviewerConfig(raw.test_quality_review, "workflow.test_quality_review")],
+    ["pr_title", () => normalizePrTitleConfig(raw.pr_title)],
+    ["integration_manager", () => normalizeIntegrationManagerConfig(raw.integration_manager)],
+    ["dev_start_gate", () => normalizeDevStartGateConfig(raw.dev_start_gate)],
+    ["review_disposition", () => normalizeReviewDispositionConfig(raw.review_disposition)],
+    ["verification", () => normalizeVerificationConfig(raw.verification)],
+  ];
+  for (const [key, run] of nested) {
+    const result = run();
+    if (result.ok) value[key] = result.value;
+    else errors.push(...result.errors);
+  }
+}
+export function normalizeWorkflowConfig(raw) {
+  if (raw == null || typeof raw !== "object") {
+    return { ok: true, value: emptyWorkflowConfig() };
+  }
+  if (Array.isArray(raw)) {
+    return { ok: false, errors: ["workflow must be a mapping, not a list"] };
+  }
+  // Scalar string-typed keys handled inline; nested-mapping keys delegated to
+  // their own normalizers below.
+  const allowedScalar = ["test_command", "completion_command", "lint_command", "format_command", "policy_command", "precommit_command", "base_branch"];
+  const allowedNested = new Set(["codex_review", "test_quality_review", "pr_title", "integration_manager", "dev_start_gate", "review_disposition", "verification"]);
+  const allowed = new Set([...allowedScalar, ...allowedNested]);
+  const value = emptyWorkflowConfig();
+  const errors = [];
+  applyWorkflowScalarKeys(raw, value, allowed, allowedNested, errors);
+  applyWorkflowNestedKeys(raw, value, errors);
   if (errors.length) return { ok: false, errors };
   return { ok: true, value };
+}
+function normalizeRoutingEnabled(raw, errors) {
+  if (raw.enabled == null) return false;
+  if (typeof raw.enabled !== "boolean") {
+    errors.push("routing.enabled must be a boolean when set");
+    return false;
+  }
+  return raw.enabled;
+}
+function normalizeRoutingDefaultProvider(raw, errors) {
+  if (raw.default_provider == null) return "claude";
+  if (ROUTING_PROVIDERS.includes(raw.default_provider)) return raw.default_provider;
+  errors.push(`routing.default_provider must be one of: ${ROUTING_PROVIDERS.join(", ")}`);
+  return "claude";
+}
+function normalizeRoutingStages(raw, defaultProvider, errors) {
+  const stages = {};
+  if (raw.stages == null) return stages;
+  if (typeof raw.stages !== "object" || Array.isArray(raw.stages)) {
+    errors.push("routing.stages must be a mapping from stage name to route config");
+    return stages;
+  }
+  for (const [stage, route] of Object.entries(raw.stages)) {
+    const normalized = normalizeRoutingStageConfig(stage, route, { defaultProvider });
+    if (normalized.ok) stages[stage] = normalized.value;
+    else errors.push(...normalized.errors);
+  }
+  return stages;
 }
 export function normalizeRoutingConfig(raw) {
   if (raw == null) {
@@ -228,44 +267,16 @@ export function normalizeRoutingConfig(raw) {
   if (typeof raw !== "object" || Array.isArray(raw)) {
     return { ok: false, errors: ["routing must be a mapping, not a list or scalar"] };
   }
-  const allowed = ["enabled", "default_provider", "stages"];
+  const allowed = new Set(["enabled", "default_provider", "stages"]);
   const errors = [];
   for (const key of Object.keys(raw)) {
-    if (!allowed.includes(key)) {
+    if (!allowed.has(key)) {
       errors.push(`routing has unknown key '${key}'`);
     }
   }
-  let enabled = false;
-  if (raw.enabled != null) {
-    if (typeof raw.enabled !== "boolean") {
-      errors.push("routing.enabled must be a boolean when set");
-    } else {
-      enabled = raw.enabled;
-    }
-  }
-  let defaultProvider = "claude";
-  if (raw.default_provider != null) {
-    if (!ROUTING_PROVIDERS.includes(raw.default_provider)) {
-      errors.push(`routing.default_provider must be one of: ${ROUTING_PROVIDERS.join(", ")}`);
-    } else {
-      defaultProvider = raw.default_provider;
-    }
-  }
-  const stages = {};
-  if (raw.stages != null) {
-    if (typeof raw.stages !== "object" || Array.isArray(raw.stages)) {
-      errors.push("routing.stages must be a mapping from stage name to route config");
-    } else {
-      for (const [stage, route] of Object.entries(raw.stages)) {
-        const normalized = normalizeRoutingStageConfig(stage, route, { defaultProvider });
-        if (!normalized.ok) {
-          errors.push(...normalized.errors);
-        } else {
-          stages[stage] = normalized.value;
-        }
-      }
-    }
-  }
+  const enabled = normalizeRoutingEnabled(raw, errors);
+  const defaultProvider = normalizeRoutingDefaultProvider(raw, errors);
+  const stages = normalizeRoutingStages(raw, defaultProvider, errors);
   if (errors.length) return { ok: false, errors };
   return { ok: true, value: { enabled, default_provider: defaultProvider, stages } };
 }
@@ -278,9 +289,9 @@ function normalizeRoutingStageConfig(stage, raw, { defaultProvider }) {
   if (raw == null || typeof raw !== "object" || Array.isArray(raw)) {
     return { ok: false, errors: [...errors, `${prefix} must be a mapping`] };
   }
-  const allowed = ["tier", "provider", "model"];
+  const allowed = new Set(["tier", "provider", "model"]);
   for (const key of Object.keys(raw)) {
-    if (!allowed.includes(key)) {
+    if (!allowed.has(key)) {
       errors.push(`${prefix} has unknown key '${key}'`);
     }
   }
@@ -293,7 +304,7 @@ function normalizeRoutingStageConfig(stage, raw, { defaultProvider }) {
     errors.push(`${prefix}.provider must be one of: ${ROUTING_PROVIDERS.join(", ")}`);
   }
   const model = raw.model ?? CLAUDE_MODEL_BY_TIER[tier];
-  if (provider === "claude" && typeof model === "string" && !/^claude-(haiku|sonnet|opus)-[0-9]+(-[0-9]+)?$/.test(model)) {
+  if (provider === "claude" && typeof model === "string" && !/^claude-(haiku|sonnet|opus)-\d+(-\d+)?$/.test(model)) {
     errors.push(`${prefix}.model must be a canonical Claude model id like claude-sonnet-5`);
   } else if (typeof model !== "string" || model.trim() === "") {
     errors.push(`${prefix}.model must be a non-empty string`);
@@ -310,7 +321,7 @@ export function parseCodexReviewCycleMarkers(commentBodies, prNumber) {
   let count = 0;
   for (const body of commentBodies) {
     if (typeof body !== "string") continue;
-    const match = body.match(CODEX_REVIEW_CYCLE_MARKER_RE);
+    const match = CODEX_REVIEW_CYCLE_MARKER_RE.exec(body);
     if (!match) continue;
     const markerPr = Number.parseInt(match[2], 10);
     if (markerPr === prNumber) count += 1;
