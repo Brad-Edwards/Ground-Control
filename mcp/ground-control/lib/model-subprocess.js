@@ -67,7 +67,7 @@ class BufferedProcessExecution {
     // call), not just the direct child. A signal to the direct pid alone let
     // a codex-spawned `ugrep` outlive its leader and run orphaned for 10+
     // days once reparented to init (issue #1518).
-    this.child = spawn(file, args, { ...config.options, detached: true });
+    this.child = this.config.spawnImpl(file, args, { ...config.options, detached: true });
     this.attachOutputHandlers();
     this.attachLifecycleHandlers();
     this.armTerminationTriggers();
@@ -250,6 +250,12 @@ export async function execFileWithInput(
     killGraceMs = KILL_GRACE_MS_DEFAULT,
     signal,
     maxBuffer = MAX_BUFFER_DEFAULT,
+    // Test seam only: lets a unit test drive the buffering/settle state machine
+    // with a fake child (a controllable stream) so the maxBuffer-bounding and
+    // maxBuffer-vs-abort-precedence contracts are asserted deterministically
+    // instead of racing a real child's scheduling under load (issue #1532).
+    // Production callers never pass this; it defaults to the real spawn().
+    spawnImpl = spawn,
     ...options
   } = {},
 ) {
@@ -269,6 +275,7 @@ export async function execFileWithInput(
       killGraceMs,
       signal,
       maxBuffer,
+      spawnImpl,
       options,
     }, resolve, reject).start();
   });

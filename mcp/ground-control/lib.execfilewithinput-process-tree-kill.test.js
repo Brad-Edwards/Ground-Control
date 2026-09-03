@@ -4,10 +4,45 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import { execFileWithInput } from "./lib/runtime-primitives.js";
+
+// A controllable stand-in for a spawned child, injected via the `spawnImpl`
+// test seam. The buffering/settle contracts (maxBuffer bounding, and maxBuffer
+// staying the terminal cause when a later abort arrives) are pure state-machine
+// behavior; driving them through a fake child makes them deterministic instead
+// of racing a real child's stdout scheduling under CPU load (issue #1532). The
+// pid is null so the process-group cleanup path short-circuits without touching
+// any real process — those real-reaping guarantees are covered by the
+// subprocess integration tests below.
+function makeFakeChild() {
+  const child = new EventEmitter();
+  child.pid = null;
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  child.stdin = new PassThrough();
+  child.kill = () => {};
+  return child;
+}
+
+// Flush the microtask/immediate queue so a PassThrough write's `data` event is
+// delivered to the handler before the test drives the next step.
+function flush() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+async function endFakeChild(child, { code = 0, signal = null } = {}) {
+  child.stdout.end();
+  child.stderr.end();
+  await flush();
+  child.emit("exit", code, signal);
+  child.emit("close", code, signal);
+  await flush();
+}
 
 function isAlive(pid) {
   try {
@@ -162,79 +197,58 @@ describe("execFileWithInput — process-tree cleanup (issue #1518)", () => {
     }
   });
 
-  it("stops growing buffered output once maxBuffer is exceeded, instead of appending forever", { timeout: 15000 }, async () => {
-    // Emit well past maxBuffer across many small chunks so a saturation bug
-    // (re-appending the same stale "remaining allowance" on every later
-    // chunk) would blow the cap many times over instead of stopping near it.
-    //
-    // The emitter is an unbounded loop of shell builtins (`while`/`printf`, no
-    // fork per iteration) rather than a finite `for i in $(seq …)` burst. The
-    // finite form was flaky under the full suite's fork pressure in CI: the
-    // `$(seq …)` command substitution could come back empty (zero-iteration
-    // loop → zero output → clean exit), or the fast-exiting child could hit the
-    // close/end-before-data stdio ordering gap (nodejs/node#9633) — either way
-    // maxBuffer was never tripped and the call resolved. An unbounded emitter
-    // trips the cap deterministically while the child is still running, so it is
-    // reliably reported as a maxBuffer rejection.
+  it("stops growing buffered output once maxBuffer is exceeded, instead of appending forever", async () => {
+    // Drive the buffering state machine with a fake child so the saturation
+    // contract is deterministic. A bug that re-appended the same stale
+    // "remaining allowance" on every later chunk would blow the cap many times
+    // over; a correct implementation caps stdout at exactly maxBuffer and drops
+    // every later byte. Formerly a real `bash` emitter racing stdout scheduling,
+    // which flaked under the suite's CPU load in CI (issue #1532).
     const maxBuffer = 1024;
-    await assert.rejects(
-      execFileWithInput(
-        "bash",
-        ["-c", "while :; do printf 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'; done"],
-        { timeoutMs: 10000, maxBuffer },
-      ),
-      (err) => {
-        assert.equal(err.code, "ERR_CHILD_PROCESS_STDIO_MAXBUFFER");
-        assert.ok(
-          err.stdout.length <= maxBuffer * 2,
-          `stdout grew to ${err.stdout.length} bytes, far past the ${maxBuffer}-byte cap — maxBuffer is not bounding output`,
-        );
-        return true;
-      },
-    );
+    const child = makeFakeChild();
+    const call = execFileWithInput("fake-emitter", [], { maxBuffer, spawnImpl: () => child });
+    // Attach the rejection expectation before driving events so the eventual
+    // rejection is never momentarily unhandled.
+    const rejection = assert.rejects(call, (err) => {
+      assert.equal(err.code, "ERR_CHILD_PROCESS_STDIO_MAXBUFFER");
+      assert.equal(
+        err.stdout.length,
+        maxBuffer,
+        `stdout is ${err.stdout.length} bytes; a correctly-bounded buffer stops exactly at the ${maxBuffer}-byte cap`,
+      );
+      return true;
+    });
+    await flush(); // let start() attach the stdout/stderr handlers
+    for (let i = 0; i < 8; i += 1) {
+      child.stdout.write("x".repeat(50_000)); // each write is ~49x the cap
+      await flush();
+    }
+    await endFakeChild(child);
+    await rejection;
   });
 
-  it("keeps maxBuffer as the terminal cause when a later abort arrives during cleanup", { timeout: 10000 }, async () => {
-    const dir = mkdtempSync(join(tmpdir(), "gc-exec-cause-"));
-    const markerFile = join(dir, "wrote-past-cap");
-    const releaseFile = join(dir, "release");
+  it("keeps maxBuffer as the terminal cause when a later abort arrives", async () => {
+    // maxBuffer is the first terminal cause; a later abort must NOT rewrite it to
+    // ABORT_ERR. Driven deterministically in the exact order the production guard
+    // must honor — maxBuffer trips, THEN the caller aborts, THEN the child closes
+    // — so the "onAbort is a no-op once maxBuffer has fired" contract is asserted
+    // without racing a real child's stdout scheduling against the abort under
+    // load (issue #1532).
     const controller = new AbortController();
-    // The child must fill more than a pipe buffer before writing the marker,
-    // which proves Node drained enough stdout to trip maxBuffer. It then waits
-    // with SIGTERM ignored so a caller abort can deterministically race the
-    // already-active cleanup without relying on scheduler-sensitive timers.
-    const script = [
-      "trap '' TERM",
-      "for ((i=0; i<4096; i++)); do printf 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'; done",
-      ": > \"$1\"",
-      "while [ ! -e \"$2\" ]; do :; done",
-    ].join("; ");
-    try {
-      const rejection = assert.rejects(
-        execFileWithInput("bash", ["-c", script, "_", markerFile, releaseFile], {
-          signal: controller.signal,
-          killGraceMs: 5000,
-          maxBuffer: 32,
-        }),
-        (err) => err.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER",
-      );
-      const wrotePastCap = await waitUntil(() => {
-        try {
-          readFileSync(markerFile);
-          return true;
-        } catch {
-          return false;
-        }
-      }, { timeoutMs: 5000 });
-      controller.abort();
-      writeFileSync(releaseFile, "");
-      assert.equal(wrotePastCap, true, "child never proved it wrote beyond maxBuffer");
-      await rejection;
-    } finally {
-      controller.abort();
-      writeFileSync(releaseFile, "");
-      rmSync(dir, { recursive: true, force: true });
-    }
+    const child = makeFakeChild();
+    const call = execFileWithInput("fake-emitter", [], {
+      maxBuffer: 32,
+      signal: controller.signal,
+      spawnImpl: () => child,
+    });
+    const rejection = assert.rejects(call, (err) => err.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER");
+    await flush(); // let start() attach handlers and the abort listener
+    child.stdout.write("x".repeat(4096)); // well past the 32-byte cap
+    await flush(); // maxBuffer trips here, before the abort
+    controller.abort(); // this later abort must be ignored
+    await flush();
+    await endFakeChild(child);
+    await rejection;
   });
 
   // Regression guard for issue #1521's CI investigation: Node's `close`
