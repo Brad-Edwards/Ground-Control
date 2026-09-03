@@ -25,7 +25,7 @@ For both phases, `gc_assert_completion` re-reads the trusted
 Caller summaries or cached arrays cannot override this gate. Repair and verify
 every obligation, record its resolution, then retry completion.
 
-**Precondition (post_merge only)**: Steps 15 (requirement `status:` frontmatter edits) and 16 (requirement `## Traceability` edits) must have been committed in Phase E. The post-merge final report must reflect the reconciled requirement files; the pre-merge readiness record must not claim a reconciliation that has not happened.
+**Precondition (post_merge only)**: any requirement `status:` frontmatter edit from Step 15 and any requirement `## Traceability` edit from Step 16 must have been committed in Phase E. When Steps 15 and 16 are no-ops — the requirement is already ACTIVE and its traceability is already complete and consistent, the expected state for a post-merge resume of already-shipped work — they produce **no** edits and there is nothing to commit. Do **not** manufacture a placeholder requirement-file edit to satisfy this precondition, and do **not** run the completion command, the policy suite, the pre-push reviews, or any other implementation verification for Phase E: `finalize` runs no `verify` gate (issue #1543). The post-merge final report must reflect the reconciled requirement files; the pre-merge readiness record must not claim a reconciliation that has not happened.
 
 **You MUST NOT merge the PR. You MUST NOT run `gh pr merge`. The user reviews and merges.**
 

@@ -34,6 +34,8 @@ For each UID in `in_scope_requirements[]`:
 
 If `in_scope_requirements[]` is empty, this step is a no-op. Proceed to Step 16 anyway — reconciliation still runs to catch drift on other requirements whose files this diff touched.
 
+A no-op transition — an empty scope, or an in-scope requirement that is already ACTIVE — produces **no** edit and therefore nothing to commit. That is the expected state on a post-merge Phase E resume of already-shipped work; never fabricate a `status:` edit just to create a diff (issue #1543).
+
 ## Return contract
 
 ```json
