@@ -53,8 +53,13 @@ tier: low
    - If a PR already exists for the branch, the tool returns its number and URL
      without creating another one.
 
-4. Note the PR number and URL. The renderer emits `Closes #<issue-number>`
-   under Related Issues, so GitHub's UI cross-link is wired automatically.
+4. Note the PR number and URL. Under Related Issues the renderer emits a
+   **non-closing `Refs #<issue-number>` for a requirement-backed run** (non-empty
+   `requirement_uids`) so GitHub does not auto-close the issue at merge ahead of
+   Phase E's merged-requirement-state validation; the validated
+   `gc_close_issue_after_merge` (Step 20) is the sole closer. For a
+   requirement-free run it emits `Closes #<issue-number>` and GitHub auto-closes at
+   merge (issue #1541). Either way the GitHub UI cross-link is wired automatically.
 
 ## Return contract
 

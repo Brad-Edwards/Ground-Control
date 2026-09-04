@@ -50,6 +50,10 @@ export async function runFinalize(args, deps) {
     repoPath: args.repoPath,
     issueNumber: args.issueNumber,
     prNumber: args.prNumber,
+    // In the finalize flow the post-merge assertion already posted the validated
+    // final-report marker (bound to this PR), so the close marker gate passes. A
+    // genuine bypass is authorized only by a trusted issue-thread override comment,
+    // never a caller field (issue #1541 security review).
   });
   if (!close.ok) {
     return failure(

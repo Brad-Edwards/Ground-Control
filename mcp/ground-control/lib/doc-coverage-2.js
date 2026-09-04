@@ -16,12 +16,97 @@ import { GITHUB_ISSUE_COMMENT_BODY_MAX, rejectReservedMarkerSequence } from "./r
 import { detectDeferralDisposition, execFile } from "./runtime-primitives.js";
 import { FINAL_REPORT_FILE_KINDS } from "./test-quality-prompt.js";
 
+// Each section returns a `string[]` so buildFinalReport assembles the body by
+// spreading them into one array (kept under the S138 length cap and the S7778
+// no-repeated-push rule without changing a byte of the rendered output).
+function _finalReportHeader({ isPreMerge, issueNumber, prNumber, planCommentUrl, plainEnglishOutcome, summary }) {
+  return [
+    isPreMerge
+      ? `<!-- gc:phase phase="ready_for_review" issue="${issueNumber}" -->`
+      : buildFinalReportMarker({ issueNumber, prNumber }),
+    "",
+    isPreMerge ? `## Ready for review — issue #${issueNumber}` : `## Final report — issue #${issueNumber} complete`,
+    "",
+    `**PR:** #${prNumber}  `,
+    ...(planCommentUrl ? [`**Plan:** ${planCommentUrl}`] : []),
+    "",
+    "### Outcome",
+    "",
+    plainEnglishOutcome.trim(),
+    ...(summary ? ["", summary.trim()] : []),
+  ];
+}
+
+// Pre-merge readiness names PR-head state as PROPOSED; only the merge revision is
+// authoritative. Post-merge renders the OBSERVED merged values and cites the revision
+// they were verified at (issue #1541).
+function _finalReportRequirementsSection({ requirements, isPreMerge, mergeRevision, requirementStateOverrideReason }) {
+  if (requirements.length === 0) return [];
+  let authorityNote = [];
+  if (isPreMerge) authorityNote = ["_Proposed state in this PR — authoritative only after merge._", ""];
+  else if (typeof mergeRevision === "string" && mergeRevision !== "") authorityNote = [`_Verified at merge revision \`${mergeRevision.slice(0, 12)}\`._`, ""];
+  const bullets = requirements.map((r) => {
+    const note = r.note ? ` — ${r.note}` : "";
+    const proposed = isPreMerge ? " (proposed)" : "";
+    return `- \`${r.uid}\` (${r.title}) — ${r.status}${proposed}${note}`;
+  });
+  const overrideNote =
+    !isPreMerge && typeof requirementStateOverrideReason === "string" && requirementStateOverrideReason.trim() !== ""
+      ? ["", `- ⚠️ Merged requirement-state validation OVERRIDDEN: ${requirementStateOverrideReason.trim()}`]
+      : [];
+  return ["", `### In-scope requirements`, "", ...authorityNote, ...bullets, ...overrideNote];
+}
+
+function _finalReportFilesSection(files) {
+  const fileLines = [];
+  for (const kind of FINAL_REPORT_FILE_KINDS) {
+    const list = Array.isArray(files[kind]) ? files[kind] : [];
+    if (list.length === 0) continue;
+    fileLines.push(`**${kind[0].toUpperCase() + kind.slice(1)}:**`, "", ...list.map((p) => `- \`${p}\``), "");
+  }
+  if (fileLines.length === 0) fileLines.push("- (none)", "");
+  return ["", `### Files changed`, "", ...fileLines];
+}
+
+function _finalReportReviewsSection(reviews) {
+  if (reviews.length === 0) return [];
+  return [`### Reviews`, "", ...reviews.map((r) => `- **${r.reviewer}:** ${r.summary}`), ""];
+}
+
+function _finalReportTraceabilitySection({ isPreMerge, traceability }) {
+  if (isPreMerge) {
+    return [`### Traceability reconciliation`, "", `- Pending — requirement status transition and IMPLEMENTS/TESTS reconciliation run in Phase E once the PR merges.`];
+  }
+  const count = (key) => (Array.isArray(traceability[key]) ? traceability[key].length : 0);
+  const notes =
+    typeof traceability.notes === "string" && traceability.notes.trim() !== "" ? ["", traceability.notes.trim()] : [];
+  return [
+    `### Traceability reconciliation`, "",
+    `- IMPLEMENTS / TESTS / DOCUMENTS added: ${count("added")}`,
+    `- Links updated: ${count("updated")}`,
+    `- Stale links removed: ${count("deleted")}`,
+    ...notes,
+  ];
+}
+
+function _finalReportStatusSection({ isPreMerge, ciStatus, sonarStatus, documentation_outcome }) {
+  return [
+    "", `### Status`, "",
+    `- CI: ${renderCiStatus(ciStatus)}`,
+    `- SonarCloud: ${renderSonarStatus(sonarStatus)}`,
+    isPreMerge
+      ? `- PR ready for user review and merge. Ground Control reconciliation (requirement status + traceability) runs on merge (Phase E).`
+      : `- PR ready for user review and merge.`,
+    ...(documentation_outcome == null ? [] : ["", ...renderDocumentationSection(documentation_outcome)]),
+  ];
+}
+
 export function buildFinalReport(input) {
   const validation = validateFinalReportInput(input);
   if (!validation.ok) {
     throw new Error(`buildFinalReport input invalid: ${validation.errors.join("; ")}`);
   }
-  const { issueNumber, prNumber, requirements, files = {}, reviews, traceability = {}, ciStatus, sonarStatus, planCommentUrl, summary, lane, plainEnglishOutcome, phase = "post_merge" } = input;
+  const { issueNumber, prNumber, requirements, files = {}, reviews, traceability = {}, ciStatus, sonarStatus, planCommentUrl, summary, lane, plainEnglishOutcome, phase = "post_merge", mergeRevision = null, requirementStateOverrideReason = null } = input;
   // Slim quickfix renderer (issue #906 codex cycle-3 F2). When lane='quickfix'
   // the close comment is structurally smaller: no "In-scope requirements",
   // no "Traceability reconciliation", no "Reviews" section when empty.
@@ -34,97 +119,18 @@ export function buildFinalReport(input) {
   }
   // Phase D (pre_merge) renders a "ready for review" record carrying a
   // `ready_for_review` phase marker; the requirement-status transition and
-  // traceability reconciliation have NOT run yet — they land in Phase E after
-  // the PR merges (issue #963). Phase E (post_merge, default) renders the
-  // reconciled final report carrying the `gc:final-report` marker.
+  // traceability reconciliation have run pre-publish in the delivery PR
+  // (issue #1541). Phase E (post_merge, default) renders the reconciled final
+  // report carrying the `gc:final-report` marker.
   const isPreMerge = phase === "pre_merge";
-  const lines = [];
-  lines.push(
-    isPreMerge
-      ? `<!-- gc:phase phase="ready_for_review" issue="${issueNumber}" -->`
-      : buildFinalReportMarker({ issueNumber, prNumber }),
-  );
-  lines.push("");
-  lines.push(
-    isPreMerge
-      ? `## Ready for review — issue #${issueNumber}`
-      : `## Final report — issue #${issueNumber} complete`,
-  );
-  lines.push("");
-  lines.push(`**PR:** #${prNumber}  `);
-  if (planCommentUrl) lines.push(`**Plan:** ${planCommentUrl}`);
-  lines.push("");
-  lines.push("### Outcome");
-  lines.push("");
-  lines.push(plainEnglishOutcome.trim());
-  if (summary) {
-    lines.push("");
-    lines.push(summary.trim());
-  }
-  if (requirements.length > 0) {
-    lines.push("");
-    lines.push(`### In-scope requirements`);
-    lines.push("");
-    for (const r of requirements) {
-      const note = r.note ? ` — ${r.note}` : "";
-      lines.push(`- \`${r.uid}\` (${r.title}) — ${r.status}${note}`);
-    }
-  }
-  lines.push("");
-  lines.push(`### Files changed`);
-  lines.push("");
-  let anyFiles = false;
-  for (const kind of FINAL_REPORT_FILE_KINDS) {
-    const list = Array.isArray(files[kind]) ? files[kind] : [];
-    if (list.length === 0) continue;
-    anyFiles = true;
-    lines.push(`**${kind[0].toUpperCase() + kind.slice(1)}:**`);
-    lines.push("");
-    for (const p of list) lines.push(`- \`${p}\``);
-    lines.push("");
-  }
-  if (!anyFiles) {
-    lines.push("- (none)");
-    lines.push("");
-  }
-  if (reviews.length > 0) {
-    lines.push(`### Reviews`);
-    lines.push("");
-    for (const r of reviews) lines.push(`- **${r.reviewer}:** ${r.summary}`);
-    lines.push("");
-  }
-  lines.push(`### Traceability reconciliation`);
-  lines.push("");
-  if (isPreMerge) {
-    lines.push(`- Pending — requirement status transition and IMPLEMENTS/TESTS reconciliation run in Phase E once the PR merges.`);
-  } else {
-    const tAdded = Array.isArray(traceability.added) ? traceability.added : [];
-    const tUpdated = Array.isArray(traceability.updated) ? traceability.updated : [];
-    const tDeleted = Array.isArray(traceability.deleted) ? traceability.deleted : [];
-    lines.push(`- IMPLEMENTS / TESTS / DOCUMENTS added: ${tAdded.length}`);
-    lines.push(`- Links updated: ${tUpdated.length}`);
-    lines.push(`- Stale links removed: ${tDeleted.length}`);
-    if (typeof traceability.notes === "string" && traceability.notes.trim() !== "") {
-      lines.push("");
-      lines.push(traceability.notes.trim());
-    }
-  }
-  lines.push("");
-  lines.push(`### Status`);
-  lines.push("");
-  lines.push(`- CI: ${renderCiStatus(ciStatus)}`);
-  lines.push(`- SonarCloud: ${renderSonarStatus(sonarStatus)}`);
-  lines.push(
-    isPreMerge
-      ? `- PR ready for user review and merge. Ground Control reconciliation (requirement status + traceability) runs on merge (Phase E).`
-      : `- PR ready for user review and merge.`,
-  );
-  // Optional documentation outcome section (issue #896, ADR-054).
-  if (input.documentation_outcome != null) {
-    lines.push("");
-    for (const l of renderDocumentationSection(input.documentation_outcome)) lines.push(l);
-  }
-  return lines.join("\n");
+  return [
+    ..._finalReportHeader({ isPreMerge, issueNumber, prNumber, planCommentUrl, plainEnglishOutcome, summary }),
+    ..._finalReportRequirementsSection({ requirements, isPreMerge, mergeRevision, requirementStateOverrideReason }),
+    ..._finalReportFilesSection(files),
+    ..._finalReportReviewsSection(reviews),
+    ..._finalReportTraceabilitySection({ isPreMerge, traceability }),
+    ..._finalReportStatusSection({ isPreMerge, ciStatus, sonarStatus, documentation_outcome: input.documentation_outcome }),
+  ].join("\n");
 }
 export async function runPostFinalReport(input) {
   const { repoPath } = input;
@@ -267,6 +273,7 @@ export async function runPostFinalReport(input) {
     ["plainEnglishOutcome", rest.plainEnglishOutcome],
     ["summary", rest.summary],
     ["planCommentUrl", rest.planCommentUrl],
+    ["requirementStateOverrideReason", rest.requirementStateOverrideReason],
   ];
   if (rest.traceability && typeof rest.traceability === "object") {
     callerStringFields.push(["traceability.notes", rest.traceability.notes]);

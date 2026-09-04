@@ -10,8 +10,14 @@
 // keep the two in step.
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
+import { EXACT_REQUIREMENT_UID_RE, execFile } from "./runtime-primitives.js";
 
 const SPECS_SUBDIR = join("docs", "requirements");
+
+// A full Git object id (sha1 = 40 hex, sha256 = 64 hex). The revision-scoped
+// reader accepts only a full, server-resolved OID — never a branch name, HEAD, or
+// an abbreviated hash — so completion can never validate a mutable ref (issue #1541).
+const FULL_GIT_OID_RE = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
 // `- <linkType> → <artifactType> `<artifactIdentifier>`` with an optional ` (<artifactTitle>)`.
 const TRACE_LINE_RE = /^-\s+(\S+)\s+→\s+(\S+)\s+`([^`]+)`(?:\s+\((.+)\))?\s*$/;
@@ -118,6 +124,58 @@ export async function readRequirementByUid(repoPath, uid) {
 export async function readTraceabilityLinks(repoPath, uid) {
   const requirement = await readRequirementByUid(repoPath, uid);
   return requirement ? requirement.traceabilityLinks : [];
+}
+
+// Repo-root-relative POSIX path for a requirement file, for use as a Git pathspec.
+// Git addresses tree entries with forward slashes on every platform, so this is
+// deliberately a plain template string rather than path.join()/path.sep.
+function requirementGitPath(uid) {
+  return `docs/requirements/${uid}/requirement.md`;
+}
+
+// Read one requirement from an IMMUTABLE Git revision (a full commit object id),
+// never the working tree. The post-merge completion assertion uses this to verify
+// requirement state at the merged tree without checking anything out (issue #1541),
+// so a final report can never claim a lifecycle state that is absent from the
+// authoritative target branch.
+//
+// Returns a discriminated result so the caller can fail closed on each distinct
+// condition WITHOUT surfacing requirement bodies or raw Git output:
+//   { found: false }                  — bad UID/revision, or path absent at the revision
+//   { found: true, malformed: true }  — file present but frontmatter missing/unterminated
+//   { found: true, malformed: false, frontmatterId, requirement }
+// `frontmatterId` is the RAW frontmatter `id:` (null when absent). It deliberately
+// does NOT apply readRequirementByUid's `id || uid` fallback, so a missing or
+// mismatched frontmatter id cannot be hidden on the verification path.
+export async function readRequirementAtRevision(repoPath, uid, revision) {
+  if (typeof uid !== "string" || !EXACT_REQUIREMENT_UID_RE.test(uid)) {
+    return { found: false, malformed: false };
+  }
+  if (typeof revision !== "string" || !FULL_GIT_OID_RE.test(revision)) {
+    return { found: false, malformed: false };
+  }
+  let text;
+  try {
+    // Fixed argv, no shell: `git show <revision>:<path>`. execFile does not spawn a
+    // shell, so the revision and path are literal arguments (no interpolation risk).
+    ({ stdout: text } = await execFile(
+      "git",
+      ["show", `${revision}:${requirementGitPath(uid)}`],
+      { cwd: repoPath },
+    ));
+  } catch {
+    // Absent path at the revision, or an object not present locally: fail closed and
+    // let the caller report a bounded reason. Git's stderr is intentionally dropped.
+    return { found: false, malformed: false };
+  }
+  const parsed = parse(text);
+  if (!parsed) return { found: true, malformed: true };
+  return {
+    found: true,
+    malformed: false,
+    frontmatterId: parsed.frontmatter.id ?? null,
+    requirement: toRequirement(uid, parsed),
+  };
 }
 
 // Read every requirement in the repo (one pass over docs/requirements/*/requirement.md).

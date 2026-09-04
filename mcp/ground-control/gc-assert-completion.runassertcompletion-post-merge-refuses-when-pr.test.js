@@ -170,6 +170,13 @@ if (permissionEndpoint) {
   process.exit(1);
 }
 
+// Issue-body fetch for runGetIssueThread post-merge scope derivation (issue #1541).
+// Empty body → no in-scope requirements → verification is skipped (requirement-free).
+if (argv[0] === "api" && typeof argv[1] === "string" && argv[1].startsWith("/repos/fake/repo/issues/") && !argv[1].endsWith("/comments")) {
+  process.stdout.write(JSON.stringify({ number: 1, title: "t", body: "", state: "open", html_url: "https://github.com/fake/repo/issues/1", labels: [] }));
+  process.exit(0);
+}
+
 for (const route of cfg.routes) {
   if (match(route.argv_prefix)) {
     if (route.exit_code != null && route.exit_code !== 0) {
