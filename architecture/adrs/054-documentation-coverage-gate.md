@@ -8,6 +8,24 @@ accepted
 
 2026-05-23
 
+> **Sync note for issue #633 (2026-09-04, MCP server identity and documentation):**
+> Three corrections to how the MCP server describes itself. (1) `mcp/ground-control/index.js` reads
+> the version it advertises in the `initialize` handshake from `mcp/ground-control/package.json`
+> instead of a hard-coded `1.0.0` literal, so a tool-surface change can no longer ship without a
+> semantic version bump; the package moved to 1.1.0 and `server-version.test.js` asserts the
+> handshake matches it. (2) The PR-body renderer's pre-push review attestation became lane-aware:
+> `gc_render_pr_body` takes `lane` and `pre_push_reviews`, and `_check_ground_control_checks` accepts
+> either accurate attestation, so a `/quickfix` run with the reviewers off no longer claims they
+> completed. The attestation stays mandatory. The PR-body policy surface moved to
+> `mcp/ground-control/lib/pr-body-policy.js` to keep `runtime-primitives.js` under the 500-LOC gate.
+> (3) `README.md` and the `index.js` environment header were rewritten against the registered
+> surface; both still described the REST backend deleted by #1500 and the entity tools removed by
+> #1506 - a required `GC_BASE_URL`, bearer tokens for `/api/v1/**`, the `GC_MCP_ADMIN` opt-in (read
+> nowhere in the server), `gc_query`, and roughly 80 unregistered `gc_*` tools. None of this is a
+> documentation-coverage extension: the classifier in `mcp/ground-control/lib/doc-coverage.js`, its
+> surface classes, the `outcome_required` mapping, the Vale rule set, `tools/install-vale.sh`, and
+> `.vale.ini` are unchanged, and no `docs/DOC_STYLE.md` style rule is established.
+
 > **Sync note for issue #871 (2026-08-14, strict Sonar enforcement):** The SonarCloud workflow
 > now runs the repository's zero-open-issues assertion after the hosted quality gate, including
 > when that gate has already failed, and `run_sonar_strictness_contract` prevents either boundary

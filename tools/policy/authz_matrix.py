@@ -80,21 +80,34 @@ def _check_adr_impact(body: str) -> Violation | None:
     return None
 
 
+# Repo-neutral, semantically-named gates the workflow actually enforces for every
+# repository (issues #1429, #1199). `workflow.policy_command` decides what the
+# policy line runs. Byte-identical to the constants in
+# `mcp/ground-control/lib/runtime-primitives.js` — the render→check compose
+# fixture is the parity contract. The former `gc_evaluate_quality_gates` /
+# `gc_run_sweep` lines named tools removed with the #1500 teardown.
+PR_BODY_POLICY_CHECK_LINE = "- [x] Configured repository policy command passes"
+
+# The pre-push review attestation (Steps 6.5/6.6) has two accurate forms
+# (issue #1551): /implement runs both reviewers before the body is rendered,
+# while /quickfix leaves them off unless the user passes --review. A body must
+# carry exactly one of these; the attestation is never optional, only accurate.
+PR_BODY_REVIEW_CHECK_LINES = (
+    "- [x] Pre-push code review and test-quality review completed; all findings fixed or dispositioned",
+    "- [x] Pre-push code review and test-quality review not run for this lane; "
+    "CI and repository policy gates enforced",
+)
+
+
 def _check_ground_control_checks(body: str) -> Violation | None:
     """Return a Violation naming any required verification checklist line missing from ``body``."""
-    required_checks = [
-        # Repo-neutral, semantically-named gates the /implement workflow actually
-        # enforces for every repository (issues #1429, #1199). `workflow.policy_command`
-        # decides what the policy line runs; the second line attests the pre-push
-        # code + test-quality reviews (Steps 6.5/6.6) that run before the PR body
-        # is rendered. Byte-identical to `PR_BODY_GC_CHECK_LINES` in
-        # `mcp/ground-control/lib/runtime-primitives.js` — the render→check compose
-        # fixture is the parity contract. The former `gc_evaluate_quality_gates` /
-        # `gc_run_sweep` lines named tools removed with the #1500 teardown.
-        "- [x] Configured repository policy command passes",
-        "- [x] Pre-push code review and test-quality review completed; all findings fixed or dispositioned",
-    ]
-    missing_checks = [entry for entry in required_checks if entry not in body]
+    missing_checks: list[str] = []
+    if PR_BODY_POLICY_CHECK_LINE not in body:
+        missing_checks.append(PR_BODY_POLICY_CHECK_LINE)
+    if not any(line in body for line in PR_BODY_REVIEW_CHECK_LINES):
+        missing_checks.append(
+            "one of the pre-push review attestations: " + " | ".join(PR_BODY_REVIEW_CHECK_LINES)
+        )
     if missing_checks:
         return Violation(
             code="pr-ground-control-checks",

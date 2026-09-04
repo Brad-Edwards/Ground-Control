@@ -1,26 +1,37 @@
 #!/usr/bin/env node
 // Ground Control MCP Server
 //
-// Environment variables consumed by this server (see mcp/ground-control/lib.js):
-//   GC_BASE_URL                              Base URL of the Ground Control backend.
-//   GROUND_CONTROL_API_TOKEN                 Bearer token forwarded on every
-//                                             /api/v1/** request when the backend
-//                                             has groundcontrol.security.enabled=true.
-//   GROUND_CONTROL_PACK_REGISTRY_ADMIN_TOKEN Legacy admin-only token; forwarded only
-//                                             on paths requiring ROLE_ADMIN. Fallback
-//                                             when GROUND_CONTROL_API_TOKEN is unset.
+// The server requires no environment configuration: it starts, and every
+// registered tool works, with none of the variables below set. They are read
+// from the consumer repo's `.env` file at startup (a shell-exported value wins),
+// and each one only switches on an optional behavior. See README.md.
 //
-// These values are read from the consumer repo's `.env` file at startup.
+//   GC_BASE_URL                              Sink for workflow-run lifecycle
+//                                             measurement emission. Unset disables
+//                                             the emitter; nothing is dispatched.
+//   GROUND_CONTROL_API_TOKEN                 Bearer token for that emission, when
+//                                             the sink requires one.
+//   GROUND_CONTROL_PACK_REGISTRY_ADMIN_TOKEN Legacy token, preferred over the above
+//                                             for the two cross-project rollups.
+//   GC_CODEX_TIMEOUT_MS                      Per-invocation timeout for the
+//                                             Codex-backed tools.
+//   GC_CODEX_REVIEW_PARALLEL                 Run the core and security reviewers
+//                                             concurrently.
+//   GC_CODEX_REVIEW_MAX_DIFF_BYTES           Diff-slice budget for a review cycle.
+//   SONAR_TOKEN                              Lets gc_watch_sonar_analysis read the
+//                                             SonarCloud quality gate.
 //
 // ============================================================================
 // TOOL SURFACE (issue #1500 re-platform)
 // ============================================================================
 //
-// The MCP server over repo-local files (issue #1500) exposes ~27 tools that
-// back the /implement, /quickfix, and /integrate workflow mechanics plus the
+// The MCP server over repo-local files (issue #1500) exposes 30 tools that
+// back the /implement, /quickfix, and /review workflow mechanics plus the
 // coding-agent<->reviewer separation. There is no backend, database, or
 // generic entity CRUD surface — requirements and ADRs are read/edited as
-// repo files directly. Registration lives in ./tools/*.js:
+// repo files directly. The /integrate lane's gc_integration_manager was removed
+// as dead code in #1506 and is not registered here (issue #1553).
+// Registration lives in ./tools/*.js:
 //   tools/query.js               — gc_get_repo_ground_control_context,
 //                                   gc_create_github_issue, gc_remember,
 //                                   gc_codex_architecture_preflight,
@@ -51,6 +62,7 @@ import { registerQuery } from "./tools/query.js";
 import { registerPostDecisionRecord } from "./tools/post-decision-record.js";
 import { registerReviewCapDisposition } from "./tools/review-cap-disposition.js";
 import { registerPrReview } from "./tools/pr-review.js";
+import pkg from "./package.json" with { type: "json" };
 
 
 // Load .env from cwd before any auth header is composed.
@@ -80,7 +92,10 @@ function loadDotenvFromCwd() {
 }
 loadDotenvFromCwd();
 
-const server = new McpServer({ name: "ground-control", version: "1.0.0" });
+// The version advertised to clients in the initialize handshake is sourced from
+// package.json so it cannot drift from the package it ships in (issue #633). See
+// README.md "Server version and client compatibility" for the bump policy.
+const server = new McpServer({ name: "ground-control", version: pkg.version });
 
 // Install per-tool telemetry capture (ADR-059, issue #1104).
 // Must run BEFORE any server.tool / server.registerTool registration so all

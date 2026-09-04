@@ -1,5 +1,13 @@
 # Documentation style
 
+> **Sync note for issue #633 (2026-09-04, MCP server identity and documentation):** The MCP server
+> now advertises the version from `mcp/ground-control/package.json` in the `initialize` handshake,
+> `gc_render_pr_body` renders a lane-accurate pre-push review attestation (`lane` /
+> `pre_push_reviews`, with `tools/policy/authz_matrix.py` accepting either form), and the server's
+> README and `index.js` environment header were rewritten against the registered tool surface.
+> ADR-054 records the change. The documentation-coverage classifier, `outcome_required` mapping,
+> Vale rules, installer, `.vale.ini`, and this file's style rules are unchanged.
+
 > **Sync note for issue #871 (2026-08-14, strict Sonar enforcement):** The SonarCloud workflow
 > now enforces zero open issues after the hosted quality gate, and repository policy protects that
 > ordering and failure behavior. The policy compatibility barrel resolves focused module exports
