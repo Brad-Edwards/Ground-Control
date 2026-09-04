@@ -34,7 +34,7 @@ function renderedPrBody() {
   return [
     "## Summary", "", "summary", "",
     "## Requirement UIDs", "", "- `GC-O007`", "",
-    "## Related Issues", "", "Closes #1421", "",
+    "## Related Issues", "", "Refs #1421", "",
     "## ADR Impact", "", "- ADR-021", "",
     "## Changes", "", "- change", "",
     "## Test Plan", "", "- tests", "",

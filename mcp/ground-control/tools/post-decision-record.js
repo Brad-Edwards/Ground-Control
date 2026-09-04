@@ -205,11 +205,9 @@ function _registerGcAssertCompletion(server) {
       }).optional(),
       touched_files: z.array(z.string()).optional(),
       project: z.string().optional(),
-      override: z.boolean().optional(),
-      override_reason: z.string().optional(),
       phase: z.enum(["pre_merge", "post_merge"]).optional(),
     },
-    async ({ repo_path, issue_number, pr_number, requirements, files, reviews, traceability, ci_status, sonar_status, plan_comment_url, summary, plain_english_outcome, documentation_outcome, touched_files, project, override, override_reason, phase }) => {
+    async ({ repo_path, issue_number, pr_number, requirements, files, reviews, traceability, ci_status, sonar_status, plan_comment_url, summary, plain_english_outcome, documentation_outcome, touched_files, project, phase }) => {
       try {
         return ok(JSON.stringify(await runAssertCompletion({
           repoPath: repo_path,
@@ -233,8 +231,6 @@ function _registerGcAssertCompletion(server) {
           documentation_outcome: documentation_outcome ?? null,
           touchedFiles: touched_files ?? [],
           project: project ?? null,
-          override: Boolean(override),
-          overrideReason: override_reason ?? null,
           phase: phase ?? "post_merge",
         }), null, 2));
       } catch (e) { return err(e); }

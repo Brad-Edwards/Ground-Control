@@ -6,7 +6,7 @@
 
 import { TO_CAMEL } from "./field-mapping.js";
 import { extractGhErrorMessage } from "./grc-legacy-compat-2.js";
-import { getOwnerRepo, readIssueCommentBodies, validateSourceDevStartGate } from "./grc-legacy-compat-3.js";
+import { getOwnerRepo, readIssueCommentBodies, readIssueCommentsWithAuthors, resolveExecutionObligationTrust, validateSourceDevStartGate } from "./grc-legacy-compat-3.js";
 import { ensureGitRepo } from "./grc-legacy-compat-4.js";
 import { devStartGateConfigFailure, devStartGateFailure, readDevStartPlanFields, readSourceBearingDecision, validateNonSourceDevStartGate } from "./grc-legacy-compat.js";
 import { buildCodexReviewCycleMarker, normalizeDevStartGateConfig, parseCodexReviewCycleMarkers } from "./repo-context-2.js";
@@ -144,10 +144,10 @@ async function findPrForIssue(repoRoot, owner, name, issueNumber) {
             nodes {
               __typename
               ... on CrossReferencedEvent {
-                source { __typename ... on PullRequest { number state mergedAt url } }
+                source { __typename ... on PullRequest { number state mergedAt url baseRefName mergeCommit { oid } } }
               }
               ... on ConnectedEvent {
-                subject { __typename ... on PullRequest { number state mergedAt url } }
+                subject { __typename ... on PullRequest { number state mergedAt url baseRefName mergeCommit { oid } } }
               }
             }
           }
@@ -262,6 +262,47 @@ export async function resolvePrForClose({ repoRoot, owner, name, issueNumber, pr
   }
   return { pr: matched };
 }
+// A trusted `gc:final-report` marker is the proof that post-merge requirement-state
+// validation succeeded (runAssertCompletion posts the report only after validation;
+// buildFinalReportMarker in doc-coverage.js owns the marker's exact shape). The close
+// path requires it before closing an OPEN issue so the canonical close can never run
+// ahead of validation (issue #1541). The marker is bound to THIS PR, not just the
+// issue: a stale final-report from an earlier linked PR on the same issue must not
+// authorize a later close (issue #1541 review). Trust is repo write-permission on the
+// marker's author, so a forged marker from an unprivileged commenter does not satisfy
+// the gate.
+async function hasTrustedFinalReportMarker(repoRoot, owner, name, issueNumber, prNumber) {
+  const comments = await readIssueCommentsWithAuthors(repoRoot, owner, name, issueNumber);
+  const markerText = `gc:final-report issue="${issueNumber}" pr="${prNumber}"`;
+  const markerComments = comments.filter(
+    (c) => typeof c.body === "string" && c.body.includes(markerText),
+  );
+  if (markerComments.length === 0) return false;
+  const trust = await resolveExecutionObligationTrust(repoRoot, owner, name, comments);
+  return markerComments.some((c) => trust.isTrusted(c));
+}
+
+// The merged-requirement-state escape hatch. Authority is a TRUSTED issue-thread
+// comment authored by a repo-write human that names THIS PR — never a caller-supplied
+// DTO field, because a request boolean is a claim, not authorization (issue #1541
+// security review). Binding to the PR stops an authorization for one PR from unlocking
+// a later PR on the same issue, and the comment itself is the durable record of the
+// bypass (ADR-029). A human authorizes by commenting `gc-authorize-merge-state-override
+// pr=<n> <reason>` on the issue. Returns { authorized, reason }.
+const MERGE_STATE_OVERRIDE_RE = /(?:^|\s)gc-authorize-merge-state-override\s+pr=(\d+)\b/i;
+export async function readTrustedMergeStateOverride(repoRoot, owner, name, issueNumber, prNumber) {
+  const comments = await readIssueCommentsWithAuthors(repoRoot, owner, name, issueNumber);
+  const candidates = comments.filter((c) => {
+    if (typeof c.body !== "string") return false;
+    const match = MERGE_STATE_OVERRIDE_RE.exec(c.body);
+    return match != null && Number(match[1]) === prNumber;
+  });
+  if (candidates.length === 0) return { authorized: false, reason: null };
+  const trust = await resolveExecutionObligationTrust(repoRoot, owner, name, comments);
+  const authorizing = candidates.find((c) => trust.isTrusted(c));
+  if (!authorizing) return { authorized: false, reason: null };
+  return { authorized: true, reason: authorizing.body.trim().slice(0, 300) };
+}
 export async function runCloseIssueAfterMerge({ repoPath, issueNumber, prNumber = null }) {
   if (issueNumber == null || !Number.isInteger(issueNumber) || issueNumber <= 0) {
     throw new Error("gc_close_issue_after_merge requires a positive integer issue_number");
@@ -322,6 +363,43 @@ async function closeIssueIdempotently({ repoRoot, owner, name, issueNumber, pr }
       pr_number: pr.number,
       pr_merged_at: pr.mergedAt,
       next_action: "no_op",
+    };
+  }
+
+  // The issue is still open — the requirement-backed path, where the PR body uses a
+  // non-closing `Refs #n` so GitHub cannot auto-close ahead of validation. Require a
+  // trusted final-report marker for THIS PR (proof of merged requirement-state
+  // validation), OR a trusted issue-thread override authorizing this PR, before closing
+  // (issue #1541). Requirement-free runs use `Closes #n` and auto-close at merge, so
+  // they reach the already-closed no-op above and never hit this gate.
+  let closeAuthorized;
+  try {
+    closeAuthorized = await hasTrustedFinalReportMarker(repoRoot, owner, name, issueNumber, pr.number);
+    if (!closeAuthorized) {
+      const override = await readTrustedMergeStateOverride(repoRoot, owner, name, issueNumber, pr.number);
+      closeAuthorized = override.authorized;
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      error: "close_final_report_lookup_failed",
+      message: `gc_close_issue_after_merge could not read the issue's final-report / authorization markers for issue #${issueNumber}: ${extractGhErrorMessage(error)}`,
+      issue_number: issueNumber,
+      pr_number: pr.number,
+    };
+  }
+  if (!closeAuthorized) {
+    return {
+      ok: false,
+      error: "close_requirement_state_unverified",
+      message:
+        `gc_close_issue_after_merge refuses to close issue #${issueNumber}: no trusted gc:final-report marker for PR #${pr.number} is present, ` +
+        `so merged requirement-state validation has not been recorded. Post the validated final report ` +
+        `(gc_assert_completion phase=post_merge) first, or have a repo-write user comment ` +
+        `\`gc-authorize-merge-state-override pr=${pr.number} <reason>\` on the issue.`,
+      issue_number: issueNumber,
+      pr_number: pr.number,
+      next_action: "post_the_validated_final_report_first_or_post_a_trusted_override_authorization",
     };
   }
 

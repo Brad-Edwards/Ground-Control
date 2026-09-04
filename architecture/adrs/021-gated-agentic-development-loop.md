@@ -238,3 +238,22 @@ to `requireAny`: the change must be recorded in at least one of them, and the
 author picks the one the change actually concerns. The rule does not become a
 no-op - a guardrail change that records itself nowhere in the gate model still
 fails - and no gate is skipped, weakened, or made non-blocking.
+
+**2026-09-03 (issue #1543, Phase E is bookkeeping-only).** A post-merge Phase E
+resume on already-shipped work whose requirement is already ACTIVE with
+complete, consistent traceability finds Steps 15 and 16 to be idempotent no-ops
+that produce no edits. That empty diff is the expected terminal state, not a gap
+to fill: Phase E must not manufacture a placeholder requirement-file edit to
+create something to commit, and must not run the completion command, the policy
+suite, the pre-push reviews, or any other implementation / code-change
+verification for bookkeeping. Phase E's only mechanical gate is
+`gc_implement_mechanical action="finalize"` (the merge-gated final report plus
+idempotent issue close), which runs no `verify`; when Steps 15/16 do produce
+edits, those are frontmatter / traceability documentation edits gated by the
+pre-commit and policy boundaries, not by the completion / test suite. No
+mandatory pre-commit, completion, review, CI, SonarCloud, or final policy gate
+is removed; the change only stops a no-change bookkeeping phase from
+manufacturing work. The phase structure A-E, the single human touchpoint at PR
+merge, the zero-deferral rule, cycle caps, and post-merge reconciliation are
+unchanged. Enforced by the `implement-phase-e-noop-contract` policy check
+(`tools/policy/implement_scope_contract.py`) against `skills/implement/steps/step-17-completion.md`.

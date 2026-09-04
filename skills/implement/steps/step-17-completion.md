@@ -14,10 +14,10 @@ deterministic call.
 
 This step calls `gc_assert_completion`, and it is invoked **twice across the run** with a different `phase` (issue #963):
 
-- **Phase D terminal - `phase="pre_merge"`.** Runs after Step 11 (SonarCloud) once all automated gates are green. It posts a **readiness record** (a "Ready for review" comment carrying a `ready_for_review` phase marker - *not* a `gc:final-report` marker). It does **not** run the traceability assertion, because the requirement transition and traceability reconciliation have not happened yet. Then the run **STOPS** for the user to review and merge the PR. This is the single human touchpoint.
-- **Phase E completion - `phase="post_merge"` (default).** Runs after the user merges, following Step 15 (transition) and Step 16 (reconcile). It is **merge-gated**: it refuses with `completion_pr_not_merged` unless the linked PR is merged, then runs the traceability assertion and posts the reconciled final report. Steps 17–19 from the original workflow are collapsed into this single tool call per issue #1103.
+- **Phase D terminal - `phase="pre_merge"`.** Runs after Step 11 (SonarCloud) once all automated gates are green. The requirement `status:` transition (Step 15) and `## Traceability` reconciliation (Step 16) have already been made in the delivery diff (issue #1541), so this record names that state as **proposed** — authoritative only after merge. It posts a **readiness record** (a "Ready for review" comment carrying a `ready_for_review` phase marker - *not* a `gc:final-report` marker) and does not verify against a merge revision (there is none yet). Then the run **STOPS** for the user to review and merge the PR. This is the single human touchpoint.
+- **Phase E completion - `phase="post_merge"` (default).** Runs after the user merges. It performs **no** requirement-file mutation. It is **merge-gated**: it refuses with `completion_pr_not_merged` unless the linked PR is merged, then re-derives the in-scope UID set from the issue and **verifies every requirement at the linked PR's immutable merge revision** (exact UID path, frontmatter id, expected lifecycle status, required traceability). It fails closed — `completion_requirement_state_unverified` (or `completion_scope_mismatch`) — before posting anything, and renders the **observed merged values**, not caller-supplied status. Only on success does it post the final report. Steps 17–19 from the original workflow are collapsed into this single tool call per issue #1103.
 
-The pre-merge/post-merge split (issue #963) exists so the requirement `DRAFT→ACTIVE` transition, traceability links, and the durable final report never land ahead of shipped code - the same coherence the #1058 post-merge close already enforces.
+The pre-merge/post-merge split exists so requirement state and the durable final report never claim more than the merged target branch actually holds. Issue #1541 moves the transition and traceability edits into the delivery PR (superseding the #963 post-merge mutation ordering) and makes Phase E verify them at the immutable merge result rather than trusting caller-supplied status.
 
 For both phases, `gc_assert_completion` re-reads the trusted
 `gc:execution-obligation` ledger from the issue thread. It refuses with
@@ -25,17 +25,16 @@ For both phases, `gc_assert_completion` re-reads the trusted
 Caller summaries or cached arrays cannot override this gate. Repair and verify
 every obligation, record its resolution, then retry completion.
 
-**Precondition (post_merge only)**: Steps 15 (requirement `status:` frontmatter edits) and 16 (requirement `## Traceability` edits) must have been committed in Phase E. The post-merge final report must reflect the reconciled requirement files; the pre-merge readiness record must not claim a reconciliation that has not happened.
+**Precondition (post_merge only)**: the requirement `status:` transition (Step 15) and `## Traceability` reconciliation (Step 16) must already be part of the merged delivery PR — they were committed pre-publish (issue #1541), not in Phase E. Phase E makes **no** requirement-file edits: do **not** manufacture a placeholder requirement-file edit, and do **not** run the completion command, the policy suite, the pre-push reviews, or any other implementation verification for Phase E — `finalize` runs no `verify` gate (issue #1543). The tool instead reads the merged requirement files at the immutable merge revision and refuses if their state does not match; the pre-merge readiness record names only proposed state.
 
 **You MUST NOT merge the PR. You MUST NOT run `gh pr merge`. The user reviews and merges.**
 
 ## What gc_assert_completion does (`phase="post_merge"`)
 
-Call `gc_assert_completion` with `phase="post_merge"` (the default) once Step 15/16 have run in Phase E. The tool first verifies the linked PR is merged (`merged_at` non-null AND state `MERGED`) - refusing with `completion_pr_not_merged` / `next_action:"wait_for_user_to_merge_the_pr"` otherwise - then posts the final report:
+Call `gc_assert_completion` with `phase="post_merge"` (the default) after the user merges. The tool first verifies the linked PR is merged (`merged_at` non-null AND state `MERGED`) - refusing with `completion_pr_not_merged` / `next_action:"wait_for_user_to_merge_the_pr"` otherwise - then verifies merged requirement state and posts the final report:
 
-Before calling it, confirm each in-scope requirement's `docs/requirements/<UID>/requirement.md` is ACTIVE and its `## Traceability` section records the Step 16 entries; if anything is missing, loop back to Step 16 first. There is no backend traceability reconciliation — the requirement files edited in Steps 15/16 are the record.
-
-1. **Final report** (`gc_post_final_report`): renders the structured final-report Markdown and posts it as a comment. It enforces the real gates — CI green, Sonar pass-or-legit-skipped, the mandatory Codex review, and the sensitive/defer/reserved-marker scrubs.
+1. **Merged-state verification** (issue #1541): the tool re-derives the in-scope UID set from the issue, requires the caller `requirements[]` to match it exactly, resolves the PR's merge-commit OID, and reads each `docs/requirements/<UID>/requirement.md` at that immutable revision. Any missing file, malformed record, UID mismatch, status mismatch, or missing required traceability fails closed (`completion_requirement_state_unverified`) before the final report — identifying the UID plus expected/observed state without leaking requirement bodies. `override` + `override_reason` is the recorded escape hatch. Requirement-free runs skip this.
+2. **Final report** (`gc_post_final_report`): renders the structured final-report Markdown (with the **observed** merged status, cited against the merge revision) and posts it as a comment. It enforces the real gates — CI green, Sonar pass-or-legit-skipped, the mandatory Codex review, and the sensitive/defer/reserved-marker scrubs.
 
 The tool returns `{ok, assertions[], final_report}`. The `assertions` array contains one entry per assertion: `{name, ok, comment_url, comment_id}`.
 
@@ -54,12 +53,12 @@ Pass to `gc_assert_completion`:
 - `plan_comment_url`: URL cached in Step 4
 - `touched_files` (optional): list of files touched, for the traceability assertion
 - `project` (optional): Ground Control project key. When omitted, inferred from `repo_path`'s `.ground-control.yaml`; an explicit value overrides the config.
-- `override` / `override_reason` (optional): traceability override if user-authorized
+- `override` / `override_reason` (optional): user-authorized escape hatch for the post-merge merged-requirement-state assertion; fail-closed by default and recorded in the final report when used
 - `phase`: `"post_merge"` (default) for the Phase E completion; `"pre_merge"` for the Phase D readiness call.
 
 ## The pre-merge readiness call (`phase="pre_merge"`)
 
-At the end of Phase D (after Step 11), call `gc_assert_completion` with `phase="pre_merge"` and the same inputs as above **except** there is no reconciliation yet - pass `requirements` (their current `DRAFT`/`ACTIVE` status), `files`, `reviews`, `ci_status`, `sonar_status`, `plan_comment_url`, and `plain_english_outcome`. The tool skips the traceability assertion and the merge gate, still enforces every input gate (CI green, Sonar pass/legit-skip, codex review present, sensitive/reserved/defer scrubs, body size), and posts the readiness record. It returns `{ok, phase:"pre_merge", readiness_report:{comment_url, comment_id}, assertions:[]}`. **Then STOP** - the run is paused for the user to review and merge. Do not run Steps 15/16/20 in this invocation.
+At the end of Phase D (after Step 11), call `gc_assert_completion` with `phase="pre_merge"`. Pass `requirements` with their **proposed** status (the transition from Step 15 is already in the diff, so a materially-implemented requirement is ACTIVE here), plus `files`, `reviews`, `ci_status`, `sonar_status`, `plan_comment_url`, and `plain_english_outcome`. The tool skips both the merge gate and the merge-revision verification (there is no merge yet), renders the requirements as *proposed* (authoritative only after merge), still enforces every input gate (CI green, Sonar pass/legit-skip, codex review present, sensitive/reserved/defer scrubs, body size), and posts the readiness record. It returns `{ok, phase:"pre_merge", readiness_report:{comment_url, comment_id}, assertions:[]}`. **Then STOP** - the run is paused for the user to review and merge. Do not run Step 20 in this invocation.
 
 ## Label removal (optional best-effort)
 
@@ -88,4 +87,4 @@ If this fails, skip it - do not block on it. The label lifecycle is operational-
 }
 ```
 
-The `phase="pre_merge"` call is the **last step of Phase D**: do NOT proceed to merge; the user reviews and merges the PR. After the merge, the workflow re-enters at **Phase E** (re-invoke `/implement <issue>`): Step 15 (transition) → Step 16 (reconcile) → this step with `phase="post_merge"` (the merge-gated reconciled report above) → **Step 20** (`gc_close_issue_after_merge`, which also verifies `merged_at` non-null before closing the issue). The `phase="post_merge"` call is the last step before the close.
+The `phase="pre_merge"` call is the **last step of Phase D**: do NOT proceed to merge; the user reviews and merges the PR. After the merge, the workflow re-enters at **Phase E** (re-invoke `/implement <issue>`) as a validation-only sequence — the transition and reconciliation already merged with the PR (issue #1541): this step with `phase="post_merge"` (the merge-gated, merge-revision-verified final report above) → **Step 20** (`gc_close_issue_after_merge`, which requires the merged PR AND the validated `gc:final-report` marker before closing). The `phase="post_merge"` call is the last step before the close.

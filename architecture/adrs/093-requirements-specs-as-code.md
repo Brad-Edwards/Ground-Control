@@ -66,3 +66,17 @@ is a separate coherent change and a separate PR.
   the database the sole writer until the retention decision; the files are the forward record.
 - The exporter's frontmatter output and the policy lint must evolve together; the versioned
   contract and a single documented schema keep them in step.
+
+## Amendments
+
+**2026-09-03 (issue #1541, delivery and completion authority).** A requirement
+status or traceability change becomes authoritative only by being reviewed and merged in
+the delivery pull request. The workflow must not edit and commit requirement files after
+that merge. Pre-merge readiness may describe the pull-request head as proposed state;
+post-merge completion must re-read every in-scope requirement from the linked pull
+request's immutable target-branch merge revision and verify the exact UID path,
+frontmatter id, expected lifecycle status, and required traceability before publishing a
+final report or closing the issue. Active checkout content and caller-supplied report
+status are not authority. The canonical reader remains
+`mcp/ground-control/lib/requirement-files.js`, parameterized by immutable revision rather
+than forked into a second parser. Requirement-free runs perform no requirement assertion.

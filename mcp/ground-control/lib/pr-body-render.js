@@ -249,7 +249,11 @@ export function renderPrBodyLines(input) {
   return [
     "## Summary", "", summary.trim(), "",
     "## Requirement UIDs", "", ...requirementUidsLines(requirementUids), "",
-    "## Related Issues", "", `Closes #${issueNumber}`, "",
+    // Requirement-backed runs use a NON-closing `Refs #n` so GitHub cannot auto-close
+    // the issue at merge ahead of the Phase E merged-requirement-state validation; the
+    // validated gc_close_issue_after_merge is the only closer. Requirement-free runs
+    // keep `Closes #n` and auto-close at merge (issue #1541).
+    "## Related Issues", "", `${requirementUids.length > 0 ? "Refs" : "Closes"} #${issueNumber}`, "",
     "## ADR Impact", "", ...(adrRefs.length === 0 ? ["- No ADR required"] : bullets(adrRefs)), "",
     "## Changes", "", ...changesLines(changes, changeClass, devStartGate), "",
     "## Test Plan", "", ...testPlanLines(changeClass, testNotes), "",

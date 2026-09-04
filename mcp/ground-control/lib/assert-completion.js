@@ -4,11 +4,17 @@
 // (docs/CODING_STANDARDS.md, Sonar S104). It contained no mutual recursion, so it was
 // split along its own dependency layering. lib.js remains the barrel every caller imports.
 
-import { resolvePrForClose } from "./close-issue.js";
+import { readTrustedMergeStateOverride, resolvePrForClose } from "./close-issue.js";
+import { extractInScopeRequirementUids } from "./codex-workflow-2.js";
 import { runPostFinalReport } from "./doc-coverage-2.js";
 import { getOwnerRepo } from "./grc-legacy-compat-3.js";
 import { ensureGitRepo, readTrustedExecutionObligationState } from "./grc-legacy-compat-4.js";
+import { runGetIssueThread } from "./issue-thread.js";
+import { verifyMergedRequirementState } from "./merged-requirement-state.js";
 import { validateFinalReportInput } from "./plan-posting.js";
+import { execFile } from "./runtime-primitives.js";
+
+const FULL_GIT_OID_RE = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
 // Read and gate on the trusted execution-obligation state. Returns `{ ok: true }`
 // when no obligation is open, or `{ earlyReturn }` carrying the exact envelope the
@@ -150,7 +156,125 @@ async function _assertLinkedPrMerged({ repoPath, issueNumber, prNumber, assertio
       },
     };
   }
-  return { ok: true };
+  // Carry the resolved PR (incl. mergeCommit.oid + baseRefName) so the post-merge
+  // requirement-state verification can read the immutable merged tree (issue #1541).
+  return { ok: true, mergedPr };
+}
+
+// Ensure the merge revision's commit object is present locally so `git show <oid>:…`
+// can read the immutable tree. Right after the user merges on GitHub, the invocation
+// checkout does not yet have the merge commit; fetch the base ref (the merge commit is
+// reachable from its tip) — and, as a fallback, the commit id directly. Best-effort:
+// an unreachable/offline origin leaves the object absent and the caller fails closed.
+async function _ensureRevisionPresent(repoRoot, oid, baseRef) {
+  const present = async () => {
+    try {
+      await execFile("git", ["cat-file", "-e", `${oid}^{commit}`], { cwd: repoRoot });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (await present()) return true;
+  if (typeof baseRef === "string" && baseRef.trim() !== "") {
+    try {
+      await execFile("git", ["fetch", "origin", baseRef], { cwd: repoRoot });
+    } catch { /* origin unreachable/offline — fail closed below */ }
+    if (await present()) return true;
+  }
+  try {
+    await execFile("git", ["fetch", "origin", oid], { cwd: repoRoot });
+  } catch { /* server may disallow fetching an arbitrary sha */ }
+  return present();
+}
+
+// Resolve the trusted merge-state override for this PR. Authority is a repo-write
+// human's issue-thread comment, never a caller DTO field (issue #1541 security review);
+// the comment is itself the durable record of the bypass.
+async function _resolveMergeStateOverride(repoRoot, issueNumber, mergedPr) {
+  const prNumber = mergedPr?.number ?? null;
+  if (!Number.isInteger(prNumber) || prNumber <= 0) return { authorized: false, reason: null };
+  try {
+    const { owner, name } = await getOwnerRepo(repoRoot);
+    return await readTrustedMergeStateOverride(repoRoot, owner, name, issueNumber, prNumber);
+  } catch {
+    return { authorized: false, reason: null };
+  }
+}
+
+// Phase E requirement-state verification (issue #1541). Re-derives the in-scope UID
+// set from the issue thread (caller `requirements[]` is an expectation, not authority),
+// requires an exact match, then validates each requirement at the immutable merge
+// revision. Returns `{ ok, skip?, observed?, revision?, overridden?, reason? }` on
+// success or `{ earlyReturn }` with the caller's exact refusal envelope. The only
+// bypass is a trusted issue-thread override authorization (see _resolveMergeStateOverride).
+async function _verifyMergedRequirements({ repoPath, issueNumber, mergedPr, requirements, assertions }) {
+  const thread = await runGetIssueThread({ repoPath, issueNumber });
+  if (!thread.ok) {
+    return { earlyReturn: {
+      ok: false, error: "completion_issue_thread_unavailable",
+      message: thread.message ?? "could not read the issue thread to derive in-scope requirements",
+      issue_number: issueNumber, assertions, final_report: null,
+      next_action: "repair_issue_access_and_retry",
+    } };
+  }
+  const inScope = extractInScopeRequirementUids(thread.body ?? "");
+  const callerUids = (requirements ?? []).map((r) => r.uid);
+  // Genuine requirement-free run only when BOTH the issue's Requirements section AND
+  // the caller carry no UIDs. An empty DERIVED scope must never bypass a non-empty
+  // caller scope: otherwise editing the issue body to drop its Requirements section
+  // would downgrade a requirement-backed delivery to verification-free (issue #1541
+  // security review). Any disagreement falls through to the exact-match refusal.
+  if (inScope.length === 0 && callerUids.length === 0) {
+    return { ok: true, skip: true };
+  }
+  const derived = new Set(inScope);
+  const caller = new Set(callerUids);
+  const missingFromCaller = inScope.filter((u) => !caller.has(u));
+  const notInScope = callerUids.filter((u) => !derived.has(u));
+  if (missingFromCaller.length > 0 || notInScope.length > 0 || callerUids.length !== caller.size) {
+    return { earlyReturn: {
+      ok: false, error: "completion_scope_mismatch",
+      message:
+        "caller requirements[] must exactly match the issue's in-scope UID set; " +
+        `missing_from_caller=${JSON.stringify(missingFromCaller)} not_in_scope=${JSON.stringify(notInScope)}`,
+      issue_number: issueNumber, missing_from_caller: missingFromCaller, not_in_scope: notInScope,
+      assertions, final_report: null, next_action: "align_requirements_with_issue_scope_and_retry",
+    } };
+  }
+  const oid = mergedPr?.mergeCommit?.oid ?? null;
+  const repoRoot = await ensureGitRepo(repoPath);
+  const revisionUsable =
+    typeof oid === "string" && FULL_GIT_OID_RE.test(oid) &&
+    (await _ensureRevisionPresent(repoRoot, oid, mergedPr?.baseRefName));
+  if (!revisionUsable) {
+    const override = await _resolveMergeStateOverride(repoRoot, issueNumber, mergedPr);
+    if (override.authorized) return { ok: true, overridden: true, reason: override.reason };
+    return { earlyReturn: {
+      ok: false, error: "completion_merge_revision_unavailable",
+      message:
+        `could not resolve or fetch the linked PR's immutable merge revision for issue #${issueNumber}; ` +
+        "requirement state cannot be validated against the merged tree",
+      issue_number: issueNumber, assertions, final_report: null,
+      next_action: "ensure_the_pr_merge_commit_is_fetchable_or_post_a_trusted_override",
+    } };
+  }
+  const expectations = requirements.map((r) => ({ uid: r.uid, statusIntent: r.status ?? r.statusIntent ?? "ACTIVE" }));
+  const verification = await verifyMergedRequirementState({ repoRoot, revision: oid, expectations });
+  if (!verification.ok) {
+    const override = await _resolveMergeStateOverride(repoRoot, issueNumber, mergedPr);
+    if (override.authorized) return { ok: true, overridden: true, revision: oid, reason: override.reason };
+    return { earlyReturn: {
+      ok: false, error: "completion_requirement_state_unverified",
+      message:
+        `merged requirement state at ${oid} does not match the reported state for issue #${issueNumber}; ` +
+        "fix the requirement files in the delivery PR and re-merge, or post a trusted override authorization",
+      issue_number: issueNumber, revision: oid, requirement_failures: verification.failures,
+      assertions, final_report: null,
+      next_action: "align_requirement_files_in_the_pr_and_remerge_or_post_a_trusted_override",
+    } };
+  }
+  return { ok: true, revision: oid, observed: verification.results };
 }
 
 // Phase E post-merge completion: post the final report and return its envelope.
@@ -270,12 +394,32 @@ export async function runAssertCompletion(input) {
   const mergeCheck = await _assertLinkedPrMerged({ repoPath, issueNumber, prNumber, assertions });
   if (mergeCheck.earlyReturn) return mergeCheck.earlyReturn;
 
-  // Traceability reconciliation is retired as an MCP operation (issue #1500): the
-  // requirement files ARE the record now, and the agent edits each in-scope
-  // requirement's frontmatter status (DRAFT→ACTIVE) and `## Traceability` section as
-  // part of its diff, reviewed in the PR like any code. The post-merge final report
-  // therefore depends only on the real gates runPostFinalReport still enforces — CI
-  // green, Sonar pass-or-legit-skipped, the mandatory Codex review, and the
+  // Requirement transitions and traceability edits are now reviewed and merged in the
+  // delivery PR (issue #1541, superseding the #963 post-merge mutation ordering). Phase
+  // E is validation-only: re-derive scope from the issue, then verify each in-scope
+  // requirement AT THE IMMUTABLE MERGE REVISION — never the active checkout or
+  // caller-supplied status. A mismatch fails closed before the final report, so the
+  // report can never claim a lifecycle state absent from the merged target branch.
+  // Requirement-free runs skip this and keep prior behavior. runPostFinalReport still
+  // enforces CI green, Sonar pass-or-legit-skipped, the mandatory Codex review, and the
   // sensitive/defer/reserved-marker scrubs.
+  const verify = await _verifyMergedRequirements({
+    repoPath, issueNumber, mergedPr: mergeCheck.mergedPr, requirements, assertions,
+  });
+  if (verify.earlyReturn) return verify.earlyReturn;
+  // Render OBSERVED merged values, not caller-supplied status/title (issue #1541).
+  if (verify.ok && !verify.skip && Array.isArray(verify.observed)) {
+    const observedByUid = new Map(verify.observed.map((o) => [o.uid, o]));
+    subInput.requirements = subInput.requirements.map((r) => {
+      const observed = observedByUid.get(r.uid);
+      return observed
+        ? { ...r, title: observed.observed_title ?? r.title, status: observed.observed_status ?? r.status }
+        : r;
+    });
+  }
+  subInput.mergeRevision = verify.revision ?? null;
+  // The override reason is the trusted authorization comment itself, so recording it in
+  // the final report keeps the durable record self-consistent.
+  if (verify.overridden) subInput.requirementStateOverrideReason = verify.reason;
   return _runPostMergeCompletion({ subInput, repoPath, issueNumber, prNumber, assertions });
 }
