@@ -4,6 +4,33 @@ MCP server wrapping the Ground Control REST API plus a small set of
 Ground-Control-specific workflow tools, including Codex-backed architecture
 preflight and review helpers.
 
+## Server version and client compatibility
+
+The server advertises `name: ground-control` and a version in the MCP
+`initialize` handshake. The version comes from
+`mcp/ground-control/package.json`, so a client always reads the version of the
+package it is talking to. `server-version.test.js` spawns the server and
+asserts the handshake matches the package, which keeps the two from drifting.
+
+This version covers the published tool surface: tool names, input schemas, and
+result envelopes. It is independent of the repo product version that Release
+Please owns (GC-P027), and it is not a mirror of any other version in the repo.
+
+Bump `mcp/ground-control/package.json` in the same pull request as the change
+it describes, and commit the matching `package-lock.json` update:
+
+| Change to the tool surface | Bump |
+| --- | --- |
+| Remove or rename a tool, remove or narrow an input field, make an optional input required, or remove a result field or change its type | MAJOR |
+| Add a tool, add an optional input field, or add a result field | MINOR |
+| Fix a defect, or reword a description, without changing the contract | PATCH |
+
+Clients read `serverInfo.version` after `initialize` and gate on the major
+component: a client written against major version *N* keeps working across
+every later minor and patch release of *N*, and needs review before it runs
+against *N+1*. The MCP protocol version is negotiated separately by the SDK and
+is unrelated to this version.
+
 ## Setup
 
 Add to your Claude Code MCP config (`.claude/settings.json` or project

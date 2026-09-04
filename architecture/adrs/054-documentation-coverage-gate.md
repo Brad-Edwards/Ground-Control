@@ -8,6 +8,17 @@ accepted
 
 2026-05-23
 
+> **Sync note for issue #633 (2026-09-04, MCP server version sourced from `package.json`):**
+> `mcp/ground-control/index.js` now reads the version it advertises in the MCP `initialize`
+> handshake from `mcp/ground-control/package.json` instead of a hard-coded `1.0.0` literal, so a
+> tool-surface change can no longer ship without a semantic version bump. The package version moved
+> to 1.1.0, `mcp/ground-control/server-version.test.js` asserts the handshake matches the package,
+> and `mcp/ground-control/README.md` records the bump rules and the client compatibility contract.
+> This is a server-identity change, not a documentation-coverage extension: the classifier in
+> `mcp/ground-control/lib/doc-coverage.js`, its surface classes, the `outcome_required` mapping, the
+> Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no `docs/DOC_STYLE.md`
+> style rule is established.
+
 > **Sync note for issue #871 (2026-08-14, strict Sonar enforcement):** The SonarCloud workflow
 > now runs the repository's zero-open-issues assertion after the hosted quality gate, including
 > when that gate has already failed, and `run_sonar_strictness_contract` prevents either boundary

@@ -1,5 +1,12 @@
 # Documentation style
 
+> **Sync note for issue #633 (2026-09-04, MCP server version sourced from `package.json`):** The
+> MCP server advertises the version from `mcp/ground-control/package.json` in the `initialize`
+> handshake rather than a hard-coded literal, and `mcp/ground-control/README.md` gained a server
+> version and client compatibility section. ADR-054 records the change. The documentation-coverage
+> classifier, `outcome_required` mapping, Vale rules, installer, `.vale.ini`, and this file's style
+> rules are unchanged.
+
 > **Sync note for issue #871 (2026-08-14, strict Sonar enforcement):** The SonarCloud workflow
 > now enforces zero open issues after the hosted quality gate, and repository policy protects that
 > ordering and failure behavior. The policy compatibility barrel resolves focused module exports
