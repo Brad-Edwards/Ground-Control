@@ -3,8 +3,9 @@
 
 import { isAbsolute, join, resolve } from "node:path";
 import { readFileSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
-import { detectSensitiveBodyContent, resolveMcpLaunchWorkspaceAuthorization } from "../lib.js";
+import { detectSensitiveBodyContent } from "../lib.js";
 import { buildIntegrationQueue, defaultAcquireIntegrationLock, defaultWriteHaltLedger, errorEnvelope, makeRunId, safeSummary, scrub } from "./exec-file-async.js";
+import { authorizedWorkspaceRoot } from "./workspace-binding.js";
 import { preparePullRequestBranch } from "./run-plan-action.js";
 
 // One PR's preparation, with an unexpected throw normalized into a blocked
@@ -265,46 +266,6 @@ async function runPrepareAction(args, deps) {
 // Every path below is therefore built from the launch workspace plus constant
 // segments and directory-entry names, and each entry name is required to be a
 // single plain path segment before it is joined.
-
-// The MCP launch workspace root. Injectable so tests can bind a fixture root.
-async function defaultResolveWorkspaceRoot() {
-  const authorization = await resolveMcpLaunchWorkspaceAuthorization();
-  return realpathSync(authorization.workspaceRoot);
-}
-
-// Resolve the workspace this run may touch, refusing a `repo_path` that names
-// anything else. Returns {ok:true, workspaceRoot} or an error envelope.
-async function authorizedWorkspaceRoot(args, deps) {
-  const resolveRoot = deps.resolveWorkspaceRoot ?? defaultResolveWorkspaceRoot;
-  let workspaceRoot;
-  try {
-    workspaceRoot = await resolveRoot();
-  } catch (e) {
-    return errorEnvelope(
-      "workspace_unavailable",
-      `The MCP launch workspace could not be resolved: ${e.message ?? String(e)}`,
-      "restart_mcp_server",
-    );
-  }
-
-  const requested = (args.repo_path ?? "").trim();
-  let requestedReal = requested;
-  if (isAbsolute(requested)) {
-    try {
-      requestedReal = realpathSync(requested);
-    } catch {
-      requestedReal = resolve(requested);
-    }
-  }
-  if (requestedReal !== workspaceRoot) {
-    return errorEnvelope(
-      "repo_not_authorized",
-      "repo_path is outside the MCP launch workspace authorized for this run",
-      "run_against_the_launch_workspace",
-    );
-  }
-  return { ok: true, workspaceRoot };
-}
 
 // A readdir entry must be one plain segment. Rejecting separators and traversal
 // keeps a crafted directory name from steering the join below.

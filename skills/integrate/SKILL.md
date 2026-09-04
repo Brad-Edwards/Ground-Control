@@ -32,7 +32,7 @@ Do NOT use it on unapproved PRs. The discovery step filters by the configured ap
 /integrate --mode merge <repo-path>  # prepare + execute merge per-PR
 ```
 
-`<repo-path>` is an absolute path to the target repository root, or an `owner/repo` slug (the MCP tool resolves the slug to a local path via the git remote). The mode flag is optional; `prepare` is the default.
+`<repo-path>` is an absolute path to the repository root, or an `owner/repo` slug (the MCP tool resolves the slug to a local path via the git remote). It must name the checkout the MCP server was launched against: the lane rebases, force-with-lease pushes, and in merge mode merges, so `gc_integration_manager` refuses a path naming any other checkout the server process can reach (GC-O011 clause (a)). The mode flag is optional; `prepare` is the default.
 
 `--mode merge` enables the merge carve-out from the ADR-029 (2026-05-26) amendment. For each PR that the prepare step marks outcome=ready, the MCP tool executes `gh pr merge <n> --<strategy> --delete-branch --repo <owner>/<repo>`. The strategy comes from `workflow.integration_manager.merge_strategy` in the target repo's `.ground-control.yaml` (closed enum: `merge`, `squash`, `rebase`; default `merge` when the key is absent). A single merge failure marks that PR blocked:merge_failed and continues to the next PR; it does not halt the queue.
 

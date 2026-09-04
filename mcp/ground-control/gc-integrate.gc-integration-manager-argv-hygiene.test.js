@@ -51,6 +51,7 @@ function happyDeps({ prs = [], yaml = validYaml(), owner = "acme", repo = "myrep
   return {
     execFile: execFileFake.execFile,
     execFileCalls: execFileFake.calls,
+    resolveWorkspaceRoot: () => "/some/repo",
     ensureGitRepo: async (p) => p,
     getOwnerRepo: async () => ({ owner, name: repo }),
     readYaml: () => yaml,
@@ -159,6 +160,7 @@ function prepareDeps(overrides = {}) {
   return {
     execFile: execFileFake.execFile,
     execFileCalls: execFileFake.calls,
+    resolveWorkspaceRoot: overrides.resolveWorkspaceRoot ?? (() => "/some/repo"),
     ensureGitRepo: overrides.ensureGitRepo ?? (async (p) => p),
     getOwnerRepo: overrides.getOwnerRepo ?? (async () => ({ owner: "acme", name: "myrepo" })),
     readYaml: overrides.readYaml ?? (() => yaml),
@@ -228,6 +230,7 @@ function mergeDeps(overrides = {}) {
   return {
     execFile: execFileFake.execFile,
     execFileCalls: execFileFake.calls,
+    resolveWorkspaceRoot: overrides.resolveWorkspaceRoot ?? (() => "/some/repo"),
     ensureGitRepo: overrides.ensureGitRepo ?? (async (p) => p),
     getOwnerRepo: overrides.getOwnerRepo ?? (async () => ({ owner: "acme", name: "myrepo" })),
     readYaml: overrides.readYaml ?? (() => yaml),
@@ -297,7 +300,8 @@ describe("gc_integration_manager — sensitive-content scrub", () => {
     const deps = {
       execFile: execFileFake.execFile,
       execFileCalls: execFileFake.calls,
-      ensureGitRepo: async (p) => p,
+      resolveWorkspaceRoot: () => "/some/repo",
+    ensureGitRepo: async (p) => p,
       getOwnerRepo: async () => ({ owner: "acme", name: "myrepo" }),
       readYaml: () => validYaml(),
     };

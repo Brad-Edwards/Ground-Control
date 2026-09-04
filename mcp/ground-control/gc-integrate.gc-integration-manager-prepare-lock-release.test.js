@@ -116,6 +116,7 @@ function prepareDeps(overrides = {}) {
   return {
     execFile: execFileFake.execFile,
     execFileCalls: execFileFake.calls,
+    resolveWorkspaceRoot: overrides.resolveWorkspaceRoot ?? (() => "/some/repo"),
     ensureGitRepo: overrides.ensureGitRepo ?? (async (p) => p),
     getOwnerRepo: overrides.getOwnerRepo ?? (async () => ({ owner: "acme", name: "myrepo" })),
     readYaml: overrides.readYaml ?? (() => yaml),
@@ -170,7 +171,8 @@ describe("gc_integration_manager — prepare lock release invariant", () => {
     const deps = {
       execFile: explodingExecFile,
       execFileCalls: [],
-      ensureGitRepo: async (p) => p,
+      resolveWorkspaceRoot: () => "/some/repo",
+    ensureGitRepo: async (p) => p,
       getOwnerRepo: async () => ({ owner: "acme", name: "myrepo" }),
       readYaml: () => validYaml(),
       acquireIntegrationLock: lockFake.acquireIntegrationLock,
@@ -211,7 +213,8 @@ describe("gc_integration_manager — prepare lock release invariant", () => {
     const deps = {
       execFile: execFileFake.execFile,
       execFileCalls: execFileFake.calls,
-      ensureGitRepo: async (p) => p,
+      resolveWorkspaceRoot: () => "/some/repo",
+    ensureGitRepo: async (p) => p,
       getOwnerRepo: async () => ({ owner: "acme", name: "myrepo" }),
       readYaml: () => validYaml(),
       acquireIntegrationLock: lockFake.acquireIntegrationLock,
@@ -256,7 +259,8 @@ describe("gc_integration_manager — prepare single PR happy path", () => {
     const deps = {
       execFile: execFileFake,
       execFileCalls: calls,
-      ensureGitRepo: async (p) => p,
+      resolveWorkspaceRoot: () => "/some/repo",
+    ensureGitRepo: async (p) => p,
       getOwnerRepo: async () => ({ owner: "acme", name: "myrepo" }),
       readYaml: () => validYaml(), // no sonarcloud config
       acquireIntegrationLock: lockFake.acquireIntegrationLock,
@@ -339,7 +343,8 @@ describe("gc_integration_manager — prepare worktree failure", () => {
     const deps = {
       execFile: execFileFake,
       execFileCalls: calls,
-      ensureGitRepo: async (p) => p,
+      resolveWorkspaceRoot: () => "/some/repo",
+    ensureGitRepo: async (p) => p,
       getOwnerRepo: async () => ({ owner: "acme", name: "myrepo" }),
       readYaml: () => validYaml(),
       acquireIntegrationLock: lockFake.acquireIntegrationLock,
@@ -405,7 +410,8 @@ describe("gc_integration_manager — prepare base fetch failure", () => {
     const deps = {
       execFile: execFileFake,
       execFileCalls: calls,
-      ensureGitRepo: async (p) => p,
+      resolveWorkspaceRoot: () => "/some/repo",
+    ensureGitRepo: async (p) => p,
       getOwnerRepo: async () => ({ owner: "acme", name: "myrepo" }),
       readYaml: () => validYaml(),
       acquireIntegrationLock: lockFake.acquireIntegrationLock,

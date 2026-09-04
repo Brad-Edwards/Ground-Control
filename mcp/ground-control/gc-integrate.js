@@ -7,6 +7,7 @@
 // exported here, so callers and tests keep importing one place.
 
 export * from "./gc-integrate/exec-file-async.js";
+export * from "./gc-integrate/workspace-binding.js";
 export * from "./gc-integrate/run-plan-action.js";
 export * from "./gc-integrate/run-prepare-action.js";
 export * from "./gc-integrate/run-integration-manager.js";

@@ -6,7 +6,7 @@ type: FUNCTIONAL
 priority: MUST
 wave: 2
 created_at: 2026-05-25T21:07:30.409377Z
-updated_at: 2026-05-26T00:57:44.569706Z
+updated_at: 2026-09-04T22:59:47.286170Z
 ---
 
 # GC-O011 — Approved Pull Request Integration Manager Workflow
@@ -15,7 +15,7 @@ updated_at: 2026-05-26T00:57:44.569706Z
 
 The system shall expose an integration-manager workflow that prepares maintainer-approved pull requests in a target repository for merge by deterministically discovering, ordering, rebasing, and verifying them against the configured base branch, while preserving the GC-O007 / ADR-029 contract that PR merge remains the single human touchpoint.
 
-(a) Discovery and ordering. Accept a target repository and discover only those open pull requests carrying an explicit maintainer approval signal (configurable label name, default `approved-for-integration`). Produce an ordered integration plan before modifying any branch, including ordering, base branch, and a per-PR readiness assessment.
+(a) Discovery and ordering. Operate on the repository the MCP server was launched against, refusing a `repo_path` that names any other checkout the server process can reach, and discover only those open pull requests carrying an explicit maintainer approval signal (configurable label name, default `approved-for-integration`). Produce an ordered integration plan before modifying any branch, including ordering, base branch, and a per-PR readiness assessment.
 
 (b) Concurrency control. Acquire a repo-level integration lock for the duration of the run so two concurrent integration managers cannot race on the same repository. Release on normal completion, on explicit abort, and via a bounded expiry that prevents stale locks from permanently blocking the lane.
 
@@ -35,11 +35,12 @@ The system shall expose an integration-manager workflow that prepares maintainer
 
 ## Rationale
 
-Maintainers serializing multiple agent-authored PRs after the base branch moves spend disproportionate time on mechanical rebase / verify cycles that an agent can perform deterministically. GC-O007 already constrains the agentic development lifecycle for individual PRs; this requirement extends that contract to a fleet-of-PRs lane while preserving the workflow's single human touchpoint at merge. ADR-029 makes the issue thread the durable record; the integration-manager workflow inherits that record convention. The prepare-only default and the explicit policy/ADR gate for enqueue/merge modes ensure that automation cannot quietly remove the human merge touchpoint without an explicit governance change. The label-based discovery model is mechanical and auditable. The repo-level lock prevents two integration managers from racing on the same repository — a real failure mode once the lane is parallelizable. Clauses (h) and (i) reflect the project standing rule "Fix root causes. Do not jury-rig." applied to the integration lane: the workflow handles routine mechanical work autonomously but stops the run and asks the maintainer the moment it encounters a genuine ambiguity, an authoritative-input conflict, or a fix that would require silencing tests, removing documentation, or bypassing the repo's quality gates. Stopping the whole run rather than continuing the queue on a (h)-class problem keeps the maintainer's review surface scoped to one decision at a time and prevents downstream queue entries from inheriting an unresolved scope question.
+Maintainers serializing multiple agent-authored PRs after the base branch moves spend disproportionate time on mechanical rebase / verify cycles that an agent can perform deterministically. GC-O007 already constrains the agentic development lifecycle for individual PRs; this requirement extends that contract to a fleet-of-PRs lane while preserving the workflow's single human touchpoint at merge. ADR-029 makes the issue thread the durable record; the integration-manager workflow inherits that record convention. The prepare-only default and the explicit policy/ADR gate for enqueue/merge modes ensure that automation cannot quietly remove the human merge touchpoint without an explicit governance change. The label-based discovery model is mechanical and auditable. The repo-level lock prevents two integration managers from racing on the same repository — a real failure mode once the lane is parallelizable. Clauses (h) and (i) reflect the project standing rule "Fix root causes. Do not jury-rig." applied to the integration lane: the workflow handles routine mechanical work autonomously but stops the run and asks the maintainer the moment it encounters a genuine ambiguity, an authoritative-input conflict, or a fix that would require silencing tests, removing documentation, or bypassing the repo's quality gates. Stopping the whole run rather than continuing the queue on a (h)-class problem keeps the maintainer's review surface scoped to one decision at a time and prevents downstream queue entries from inheriting an unresolved scope question. Clause (a)'s repository binding follows the same rule applied to the read-only review lane (issue #1535): this lane rebases, force-with-lease pushes, and in merge mode merges, so an unbound `repo_path` would let a caller aim those writes at any checkout the server can reach using the server's credentials. Binding the lane to the launch workspace is the ADR-027 boundary contract applied where it matters most.
 
 ## Traceability
 
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/gc-integrate.js` (Integration manager MCP tool (gc_integration_manager) — implements all GC-O011 clauses)
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/gc-integrate.js` (Integration manager implementation barrel (gc-integrate/*) — implements all GC-O011 clauses)
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/tools/integrate.js` (gc_integration_manager tool registration — the entry point whose absence left the lane unreachable, restored in PR #1554)
 - IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (MCP lib: workflow.integration_manager parser + acquireIntegrationLock)
 - IMPLEMENTS → DOCUMENTATION `skills/integrate/SKILL.md` (Integration manager skill — prose contract for the lane)
 - IMPLEMENTS → GITHUB_ISSUE `989` (Issue #989: Approved Pull Request Integration Manager Workflow)
@@ -48,3 +49,6 @@ Maintainers serializing multiple agent-authored PRs after the base branch moves 
 - CONSTRAINS → ADR `architecture/adrs/029-issue-thread-gate-model.md` (ADR-029: Issue-Thread Gate Model — constrains integration-manager prepare-only default and merge gate)
 - TESTS → TEST `mcp/ground-control/lib.parsegroundcontrolyaml-workflow-integration-mana.test.js` (MCP lib tests: integration_manager config parser)
 - TESTS → TEST `mcp/ground-control/gc-integrate.gc-integration-manager-mode-merge.test.js` (Integration manager MCP tool tests)
+- TESTS → TEST `mcp/ground-control/gc-integrate.gc-integration-manager-workspace-binding.test.js` (Clause (a) repository binding: plan, prepare, status, and release refuse a repo_path outside the MCP launch workspace before any git or gh call)
+- TESTS → TEST `mcp/ground-control/skill-tool-registration-contract.test.js` (Every gc_* tool named in skill prose is registered — guards the entry point this requirement depends on)
+- IMPLEMENTS → PULL_REQUEST `1554` (PR #1554: restore the integrate lane tool removed as dead code, and bind the lane to the launch workspace)

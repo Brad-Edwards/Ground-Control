@@ -56,6 +56,7 @@ function happyDeps({ prs = [], yaml = validYaml(), owner = "acme", repo = "myrep
   return {
     execFile: execFileFake.execFile,
     execFileCalls: execFileFake.calls,
+    resolveWorkspaceRoot: () => "/some/repo",
     ensureGitRepo: async (p) => p,
     getOwnerRepo: async () => ({ owner, name: repo }),
     readYaml: () => yaml,
@@ -461,7 +462,8 @@ describe("gc_integration_manager — discovery limit", () => {
     const deps = {
       execFile: execFileFake.execFile,
       execFileCalls: execFileFake.calls,
-      ensureGitRepo: async (p) => p,
+      resolveWorkspaceRoot: () => "/some/repo",
+    ensureGitRepo: async (p) => p,
       getOwnerRepo: async () => ({ owner: "acme", name: "myrepo" }),
       readYaml: () => validYaml(),
     };

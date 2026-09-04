@@ -169,7 +169,7 @@ enforcement layer every driver shares.
 
 | Tool | Purpose |
 |---|---|
-| `gc_integration_manager` | `plan` (discover the approval-labeled queue and order it), `prepare` (isolated worktree, rebase onto base, completion gate, CI and SonarCloud watches, `--force-with-lease` push), `status` (read-only lock and last-run state), `release` (idempotent lock release). `mode` defaults to `prepare` and never merges; `enqueue` is reserved and refuses at runtime |
+| `gc_integration_manager` | `plan` (discover the approval-labeled queue and order it), `prepare` (isolated worktree, rebase onto base, completion gate, CI and SonarCloud watches, `--force-with-lease` push), `status` (read-only lock and last-run state), `release` (idempotent lock release). Every action is bound to the MCP launch checkout and refuses a `repo_path` naming another repository the process can reach. `mode` defaults to `prepare` and never merges; `enqueue` is reserved and refuses at runtime |
 
 
 ## Repo-local configuration

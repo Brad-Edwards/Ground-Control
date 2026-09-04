@@ -22,6 +22,48 @@ function statusDeps(overrides = {}) {
   };
 }
 
+describe("gc_integration_manager — write-path workspace binding", () => {
+  // plan and prepare fetch, rebase, force-with-lease push, and in merge mode
+  // merge. An unbound repo_path would point those writes at any other checkout
+  // the server process can reach, so the refusal must land before any git or gh
+  // call — not after the queue has been discovered.
+  for (const action of ["plan", "prepare"]) {
+    it(`${action}: refuses a repo_path outside the MCP launch workspace`, async () => {
+      const calls = [];
+      const result = await runIntegrationManager(
+        { action, repo_path: "/some/other/checkout" },
+        {
+          resolveWorkspaceRoot: () => "/authorized/workspace",
+          ensureGitRepo: async (p) => p,
+          getOwnerRepo: async () => ({ owner: "acme", name: "myrepo" }),
+          readYaml: () => "schema_version: 1\nproject: p\n",
+          execFile: async (...args) => { calls.push(args); return { stdout: "[]" }; },
+        },
+      );
+      assert.equal(result.ok, false);
+      assert.equal(result.error, "repo_not_authorized");
+      assert.deepEqual(calls, [], "must refuse before any git or gh call");
+    });
+  }
+
+  it("plan: a non-repository path still reports invalid_repo_path", async () => {
+    // The git-repo check runs first, so a bad path keeps its specific error
+    // rather than being masked by the authorization refusal.
+    const result = await runIntegrationManager(
+      { action: "plan", repo_path: "/not/a/git/repo" },
+      {
+        resolveWorkspaceRoot: () => "/authorized/workspace",
+        ensureGitRepo: async () => { throw new Error("not a git repository"); },
+        getOwnerRepo: async () => ({ owner: "acme", name: "myrepo" }),
+        readYaml: () => "schema_version: 1\nproject: p\n",
+        execFile: async () => ({ stdout: "[]" }),
+      },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "invalid_repo_path");
+  });
+});
+
 describe("gc_integration_manager — workspace binding", () => {
   // The lane pushes and can merge, so a repo_path naming another checkout the
   // server process can reach must be refused before any filesystem access —
