@@ -110,7 +110,8 @@ describe("gc_integration_manager — mode=merge", () => {
     const deps = {
       execFile: execFileFake,
       execFileCalls: calls,
-      ensureGitRepo: async (p) => p,
+      resolveWorkspaceRoot: () => "/some/repo",
+    ensureGitRepo: async (p) => p,
       getOwnerRepo: async () => ({ owner: "acme", name: "myrepo" }),
       readYaml: () => validYaml(),
       acquireIntegrationLock: lockFake.acquireIntegrationLock,
@@ -166,7 +167,8 @@ describe("gc_integration_manager — mode=merge", () => {
     const deps = {
       execFile: execFileFake,
       execFileCalls: calls,
-      ensureGitRepo: async (p) => p,
+      resolveWorkspaceRoot: () => "/some/repo",
+    ensureGitRepo: async (p) => p,
       getOwnerRepo: async () => ({ owner: "acme", name: "myrepo" }),
       readYaml: () => validYaml(),
       acquireIntegrationLock: lockFake.acquireIntegrationLock,

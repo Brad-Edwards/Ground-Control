@@ -97,7 +97,8 @@ describe("gc_integration_manager — prepare fork PR blocked without side-effect
     const deps = {
       execFile: execFileFake,
       execFileCalls: calls,
-      ensureGitRepo: async (p) => p,
+      resolveWorkspaceRoot: () => "/some/repo",
+    ensureGitRepo: async (p) => p,
       getOwnerRepo: async () => ({ owner: "acme", name: "myrepo" }),
       readYaml: () => validYaml(),
       acquireIntegrationLock: lockFake.acquireIntegrationLock,
@@ -167,7 +168,8 @@ describe("gc_integration_manager — prepare mixed queue fork and same-repo", ()
     const deps = {
       execFile: execFileFake,
       execFileCalls: calls,
-      ensureGitRepo: async (p) => p,
+      resolveWorkspaceRoot: () => "/some/repo",
+    ensureGitRepo: async (p) => p,
       getOwnerRepo: async () => ({ owner: "acme", name: "myrepo" }),
       readYaml: () => validYaml(),
       acquireIntegrationLock: lockFake.acquireIntegrationLock,
@@ -225,7 +227,8 @@ describe("gc_integration_manager — prepare watcher ordering: push before watch
     const lockFake = makeLockFake();
     const deps = {
       execFile: execFileFake,
-      ensureGitRepo: async (p) => p,
+      resolveWorkspaceRoot: () => "/some/repo",
+    ensureGitRepo: async (p) => p,
       getOwnerRepo: async () => ({ owner: "acme", name: "myrepo" }),
       readYaml: () => validYaml(),
       acquireIntegrationLock: lockFake.acquireIntegrationLock,

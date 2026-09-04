@@ -103,7 +103,8 @@ describe("gc_integration_manager — prepare rebase conflict", () => {
     const deps = {
       execFile: execFileFake,
       execFileCalls: calls,
-      ensureGitRepo: async (p) => p,
+      resolveWorkspaceRoot: () => "/some/repo",
+    ensureGitRepo: async (p) => p,
       getOwnerRepo: async () => ({ owner: "acme", name: "myrepo" }),
       readYaml: () => validYaml(),
       acquireIntegrationLock: lockFake.acquireIntegrationLock,
@@ -171,7 +172,8 @@ describe("gc_integration_manager — prepare completion gate failure", () => {
     const deps = {
       execFile: execFileFake,
       execFileCalls: calls,
-      ensureGitRepo: async (p) => p,
+      resolveWorkspaceRoot: () => "/some/repo",
+    ensureGitRepo: async (p) => p,
       getOwnerRepo: async () => ({ owner: "acme", name: "myrepo" }),
       readYaml: () => yaml,
       acquireIntegrationLock: lockFake.acquireIntegrationLock,
@@ -228,7 +230,8 @@ describe("gc_integration_manager — prepare CI failure", () => {
     const deps = {
       execFile: execFileFake,
       execFileCalls: calls,
-      ensureGitRepo: async (p) => p,
+      resolveWorkspaceRoot: () => "/some/repo",
+    ensureGitRepo: async (p) => p,
       getOwnerRepo: async () => ({ owner: "acme", name: "myrepo" }),
       readYaml: () => validYaml(),
       acquireIntegrationLock: lockFake.acquireIntegrationLock,
@@ -279,7 +282,8 @@ describe("gc_integration_manager — prepare sonar configured but skipped", () =
     const deps = {
       execFile: execFileFake,
       execFileCalls: calls,
-      ensureGitRepo: async (p) => p,
+      resolveWorkspaceRoot: () => "/some/repo",
+    ensureGitRepo: async (p) => p,
       getOwnerRepo: async () => ({ owner: "acme", name: "myrepo" }),
       readYaml: () => yaml,
       acquireIntegrationLock: lockFake.acquireIntegrationLock,
@@ -334,7 +338,8 @@ describe("gc_integration_manager — prepare force-with-lease mismatch", () => {
     const deps = {
       execFile: execFileFake,
       execFileCalls: calls,
-      ensureGitRepo: async (p) => p,
+      resolveWorkspaceRoot: () => "/some/repo",
+    ensureGitRepo: async (p) => p,
       getOwnerRepo: async () => ({ owner: "acme", name: "myrepo" }),
       readYaml: () => validYaml(),
       acquireIntegrationLock: lockFake.acquireIntegrationLock,
@@ -401,7 +406,8 @@ describe("gc_integration_manager — prepare force-with-lease mismatch", () => {
     const deps = {
       execFile: execFileFake,
       execFileCalls: calls,
-      ensureGitRepo: async (p) => p,
+      resolveWorkspaceRoot: () => "/some/repo",
+    ensureGitRepo: async (p) => p,
       getOwnerRepo: async () => ({ owner: "acme", name: "myrepo" }),
       readYaml: () => validYaml(),
       acquireIntegrationLock: lockFake.acquireIntegrationLock,
@@ -461,7 +467,8 @@ describe("gc_integration_manager — prepare multiple PRs mixed outcomes", () =>
     const deps = {
       execFile: execFileFake,
       execFileCalls: calls,
-      ensureGitRepo: async (p) => p,
+      resolveWorkspaceRoot: () => "/some/repo",
+    ensureGitRepo: async (p) => p,
       getOwnerRepo: async () => ({ owner: "acme", name: "myrepo" }),
       readYaml: () => validYaml(),
       acquireIntegrationLock: lockFake.acquireIntegrationLock,

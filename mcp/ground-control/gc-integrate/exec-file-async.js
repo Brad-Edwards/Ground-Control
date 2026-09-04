@@ -5,6 +5,7 @@ import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
+import { authorizedWorkspaceRoot } from "./workspace-binding.js";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import {
   acquireIntegrationLock,
@@ -382,7 +383,12 @@ export // ----------------------------------------------------------------------
 async function buildIntegrationQueue(args, deps) {
   const { execFile, ensureGitRepo: ensureRepo, getOwnerRepo: getOwner, readYaml } = deps;
 
-  // ── Resolve and canonicalize repo path ───────────────────────────────────
+  // Resolve and canonicalize the repo path, then bind it to the MCP launch
+  // workspace. The plan and prepare actions fetch, rebase, force-with-lease
+  // push, and in merge mode merge — so an unbound `repo_path` would let a caller
+  // point those writes at any other checkout the server process can reach,
+  // using the server's credentials. The git-repo check runs first so a
+  // non-repository path still reports invalid_repo_path.
   let repoRoot;
   try {
     repoRoot = await ensureRepo(args.repo_path);
@@ -393,6 +399,10 @@ async function buildIntegrationQueue(args, deps) {
       "verify_repo_path",
     );
   }
+
+  const authorized = await authorizedWorkspaceRoot({ repo_path: repoRoot }, deps);
+  if (!authorized.ok) return authorized;
+  repoRoot = authorized.workspaceRoot;
 
   const configResult = resolveIntegrationConfig(repoRoot, readYaml);
   if (!configResult.ok) return configResult;
