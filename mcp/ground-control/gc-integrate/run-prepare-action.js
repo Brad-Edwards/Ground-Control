@@ -148,6 +148,42 @@ async function acquireRunLock(repoRoot, deps) {
   }
 }
 
+// Prepare every queued PR in order, appending a record per PR. Returns a halt
+// envelope when a PR halts the run, or null when the whole queue was processed.
+async function prepareQueue(queue, results, run, deps) {
+  const { ctx, args, mergeStrategy, repoRoot, runId, owner, repo, policy, writeHaltLedger } = run;
+  for (const pr of queue) {
+    const prOutcome = await prepareOnePullRequest(pr, ctx, deps);
+
+    if (prOutcome.outcome === "queue_wide_halt") {
+      return queueWideHaltEnvelope(prOutcome, results, { runId, owner, repo, policy });
+    }
+    if (prOutcome.outcome === "consultation_halt") {
+      return consultationHaltEnvelope(
+        prOutcome, results, { repoRoot, runId, owner, repo, policy }, writeHaltLedger,
+      );
+    }
+
+    // outcome is "ready" or "blocked" — record first, then optionally merge.
+    const prRecord = {
+      pr_number: prOutcome.pr_number,
+      outcome: prOutcome.outcome,
+      summary: prOutcome.summary,
+      ...(prOutcome.failure_class ? { failure_class: prOutcome.failure_class } : {}),
+      ...(prOutcome.next_action ? { next_action: prOutcome.next_action } : {}),
+    };
+
+    // A single merge failure does NOT halt the queue; the PR is marked
+    // blocked:merge_failed and the loop continues.
+    if (args.mode === "merge" && prOutcome.outcome === "ready") {
+      await mergePreparedPullRequest(prRecord, { mergeStrategy, owner, repo }, deps);
+    }
+
+    results.push(prRecord);
+  }
+  return null;
+}
+
 export // ---------------------------------------------------------------------------
 // runPrepareAction
 // ---------------------------------------------------------------------------
@@ -190,38 +226,10 @@ async function runPrepareAction(args, deps) {
   const writeHaltLedger = deps.writeHaltLedger ?? defaultWriteHaltLedger;
 
   try {
-    // ── Clause e: per-PR preparation loop ────────────────────────────────
-    for (const pr of queue) {
-      const prOutcome = await prepareOnePullRequest(pr, ctx, deps);
-
-      if (prOutcome.outcome === "queue_wide_halt") {
-        return queueWideHaltEnvelope(prOutcome, results, { runId, owner, repo, policy });
-      }
-
-      if (prOutcome.outcome === "consultation_halt") {
-        return consultationHaltEnvelope(
-          prOutcome, results, { repoRoot, runId, owner, repo, policy }, writeHaltLedger,
-        );
-      }
-
-      // outcome === "ready" or "blocked" — record first, then optionally merge.
-      const prRecord = {
-        pr_number: prOutcome.pr_number,
-        outcome: prOutcome.outcome,
-        summary: prOutcome.summary,
-        ...(prOutcome.failure_class ? { failure_class: prOutcome.failure_class } : {}),
-        ...(prOutcome.next_action ? { next_action: prOutcome.next_action } : {}),
-      };
-
-      // Runs per-PR, in queue order. A single merge failure does NOT halt the
-      // queue; the PR is marked blocked:merge_failed and the loop continues.
-      // Never reached unless the outcome is "ready" and no halt fired above.
-      if (args.mode === "merge" && prOutcome.outcome === "ready") {
-        await mergePreparedPullRequest(prRecord, { mergeStrategy, owner, repo }, deps);
-      }
-
-      results.push(prRecord);
-    }
+    const halt = await prepareQueue(queue, results, {
+      ctx, args, mergeStrategy, repoRoot, runId, owner, repo, policy, writeHaltLedger,
+    }, deps);
+    if (halt) return halt;
 
     // ── Clause f: return readiness ledger ────────────────────────────────
     return {

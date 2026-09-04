@@ -349,9 +349,9 @@ function orderApprovedPullRequests(approved, ordering) {
 function queueEntry(pr, idx, owner, repo) {
   const headFullName = pr.head?.repo?.full_name ?? null;
   const baseFullName = pr.base?.repo?.full_name ?? null;
-  const [headRepoOwner, headRepoName] = headFullName != null
-    ? headFullName.split("/")
-    : [owner, repo];
+  const [headRepoOwner, headRepoName] = headFullName == null
+    ? [owner, repo]
+    : headFullName.split("/");
   return {
     ordinal: idx + 1,
     pr_number: pr.number,

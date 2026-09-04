@@ -227,6 +227,101 @@ async function runReadinessWatchers(pr, ctx, deps, cfg) {
   return null;
 }
 
+// Fetch the PR head into a temporary ref and check it out in an isolated
+// worktree. `git fetch pull/<n>/head` rather than `gh pr checkout`, which would
+// pollute the current worktree. Returns a blocked record, or null on success —
+// the caller marks the worktree created so cleanup runs.
+async function fetchHeadIntoWorktree(pr, tmpRef, repoRoot, worktreePath, execFile) {
+  try {
+    await execFile("git", [
+      "-C", repoRoot,
+      "fetch", "origin",
+      `pull/${pr.pr_number}/head:${tmpRef}`,
+    ]);
+  } catch (e) {
+    return {
+      pr_number: pr.pr_number,
+      outcome: "blocked",
+      failure_class: "worktree_create_failed",
+      summary: safeSummary(`Failed to fetch PR head: ${e.message ?? String(e)}`),
+      next_action: "check_remote_access",
+    };
+  }
+
+  try {
+    await execFile("git", ["-C", repoRoot, "worktree", "add", worktreePath, tmpRef]);
+    return null;
+  } catch (e) {
+    return {
+      pr_number: pr.pr_number,
+      outcome: "blocked",
+      failure_class: "worktree_create_failed",
+      summary: safeSummary(`git worktree add failed: ${e.message ?? String(e)}`),
+      next_action: "check_remote_access",
+    };
+  }
+}
+
+// The rebase conflict record, with the conflicted-file count pulled out of the
+// git output for the summary.
+function rebaseConflictRecord(pr, errText) {
+  const conflictLines = errText.split("\n").filter((l) => l.startsWith("CONFLICT")).length;
+  const count = conflictLines > 0 ? conflictLines : "unknown";
+  return {
+    pr_number: pr.pr_number,
+    outcome: "blocked",
+    failure_class: "rebase_conflict",
+    summary: safeSummary(`Rebase produced conflicts on ${count} file(s): ${errText.slice(0, 100)}`),
+    next_action: "resolve_conflicts",
+  };
+}
+
+// Fetch the base branch and rebase the PR head onto its tip. A base-fetch
+// failure halts the whole queue (every later PR would rebase onto the same
+// missing base); a conflict blocks only this PR. Returns a record, or null.
+async function rebaseOntoBase(pr, tmpRef, worktreePath, execFile) {
+  try {
+    await execFile("git", ["-C", worktreePath, "fetch", "origin", pr.base_ref]);
+  } catch (e) {
+    return {
+      pr_number: pr.pr_number,
+      outcome: "queue_wide_halt",
+      failure_class: "base_fetch_failed",
+      summary: safeSummary(`Base branch fetch failed (${pr.base_ref}): ${e.message ?? String(e)}`),
+      next_action: "check_base_branch",
+    };
+  }
+
+  let mergeBase;
+  try {
+    const mbResult = await execFile("git", [
+      "-C", worktreePath,
+      "merge-base", tmpRef, `origin/${pr.base_ref}`,
+    ]);
+    mergeBase = mbResult.stdout.trim();
+  } catch {
+    // No shared merge-base is reachable (a shallow clone, or a head with no
+    // common ancestor). Rebasing from the base tip is the correct fallback, so
+    // the failure carries no information the caller can act on.
+    mergeBase = `origin/${pr.base_ref}`;
+  }
+
+  try {
+    await execFile("git", [
+      "-C", worktreePath,
+      "rebase", "--onto", `origin/${pr.base_ref}`, mergeBase, tmpRef,
+    ]);
+    return null;
+  } catch (e) {
+    try {
+      await execFile("git", ["-C", worktreePath, "rebase", "--abort"]);
+    } catch {
+      // Best-effort abort to leave the worktree clean; ignore secondary failures.
+    }
+    return rebaseConflictRecord(pr, (e.stderr ?? e.stdout ?? e.message ?? "").toString());
+  }
+}
+
 export // ---------------------------------------------------------------------------
 // preparePullRequestBranch — per-PR worktree isolation, rebase, gates, push
 // ---------------------------------------------------------------------------
@@ -253,102 +348,12 @@ async function preparePullRequestBranch(pr, ctx, deps) {
   let worktreeCreated = false;
 
   try {
-    // ── Step 1: Fetch PR head into a temporary local ref ─────────────────
-    // Use git fetch origin pull/<n>/head:<tmp-ref> (not gh pr checkout, which
-    // pollutes the current worktree state).
-    try {
-      await execFile("git", [
-        "-C", repoRoot,
-        "fetch", "origin",
-        `pull/${pr.pr_number}/head:${tmpRef}`,
-      ]);
-    } catch (e) {
-      return {
-        pr_number: pr.pr_number,
-        outcome: "blocked",
-        failure_class: "worktree_create_failed",
-        summary: safeSummary(`Failed to fetch PR head: ${e.message ?? String(e)}`),
-        next_action: "check_remote_access",
-      };
-    }
+    const fetchFailure = await fetchHeadIntoWorktree(pr, tmpRef, repoRoot, worktreePath, execFile);
+    if (fetchFailure) return fetchFailure;
+    worktreeCreated = true;
 
-    // ── Step 2: Create isolated worktree ──────────────────────────────────
-    try {
-      await execFile("git", [
-        "-C", repoRoot,
-        "worktree", "add",
-        worktreePath,
-        tmpRef,
-      ]);
-      worktreeCreated = true;
-    } catch (e) {
-      return {
-        pr_number: pr.pr_number,
-        outcome: "blocked",
-        failure_class: "worktree_create_failed",
-        summary: safeSummary(`git worktree add failed: ${e.message ?? String(e)}`),
-        next_action: "check_remote_access",
-      };
-    }
-
-    // ── Step 3: Fetch base branch in the worktree ─────────────────────────
-    try {
-      await execFile("git", [
-        "-C", worktreePath,
-        "fetch", "origin", pr.base_ref,
-      ]);
-    } catch (e) {
-      return {
-        pr_number: pr.pr_number,
-        outcome: "queue_wide_halt",
-        failure_class: "base_fetch_failed",
-        summary: safeSummary(`Base branch fetch failed (${pr.base_ref}): ${e.message ?? String(e)}`),
-        next_action: "check_base_branch",
-      };
-    }
-
-    // ── Step 4: Compute merge-base for the rebase ─────────────────────────
-    let mergeBase;
-    try {
-      const mbResult = await execFile("git", [
-        "-C", worktreePath,
-        "merge-base", tmpRef, `origin/${pr.base_ref}`,
-      ]);
-      mergeBase = mbResult.stdout.trim();
-    } catch {
-      // No shared merge-base is reachable (a shallow clone, or a head with no
-      // common ancestor). Rebasing from the base tip is the correct fallback,
-      // so the failure carries no information the caller can act on.
-      mergeBase = `origin/${pr.base_ref}`;
-    }
-
-    // ── Step 5: Rebase PR head onto latest base ───────────────────────────
-    try {
-      await execFile("git", [
-        "-C", worktreePath,
-        "rebase", "--onto", `origin/${pr.base_ref}`, mergeBase, tmpRef,
-      ]);
-    } catch (e) {
-      // Abort the rebase to leave the worktree clean.
-      try {
-        await execFile("git", ["-C", worktreePath, "rebase", "--abort"]);
-      } catch {
-        // Best-effort abort; ignore secondary failures.
-      }
-
-      // Count conflicted files from the error output for the summary.
-      const errText = (e.stderr ?? e.stdout ?? e.message ?? "").toString();
-      const conflictLines = errText.split("\n").filter((l) => l.startsWith("CONFLICT")).length;
-      const count = conflictLines > 0 ? conflictLines : "unknown";
-
-      return {
-        pr_number: pr.pr_number,
-        outcome: "blocked",
-        failure_class: "rebase_conflict",
-        summary: safeSummary(`Rebase produced conflicts on ${count} file(s): ${errText.slice(0, 100)}`),
-        next_action: "resolve_conflicts",
-      };
-    }
+    const rebaseFailure = await rebaseOntoBase(pr, tmpRef, worktreePath, execFile);
+    if (rebaseFailure) return rebaseFailure;
 
     const gateFailure = await runCompletionGate(pr, cfg, worktreePath, execFile);
     if (gateFailure) return gateFailure;
