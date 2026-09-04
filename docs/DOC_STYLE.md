@@ -1,5 +1,11 @@
 # Documentation style
 
+> **Sync note for issue #633 follow-up (2026-09-04, /integrate lane restored):** The
+> `gc_integration_manager` implementation removed by #1506 is restored and registered, and a new
+> contract test asserts every `gc_*` tool named in skill prose is registered. ADR-054 records the
+> change. The documentation-coverage classifier, `outcome_required` mapping, Vale rules, installer,
+> `.vale.ini`, and this file's style rules are unchanged.
+
 > **Sync note for issue #633 (2026-09-04, MCP server identity and documentation):** The MCP server
 > now advertises the version from `mcp/ground-control/package.json` in the `initialize` handshake,
 > `gc_render_pr_body` renders a lane-accurate pre-push review attestation (`lane` /

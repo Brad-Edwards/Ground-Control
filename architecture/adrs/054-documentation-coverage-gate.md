@@ -8,6 +8,17 @@ accepted
 
 2026-05-23
 
+> **Sync note for issue #633 follow-up (2026-09-04, /integrate lane restored):** #1506 removed
+> `mcp/ground-control/gc-integrate.js` and its `gc-integrate/*` modules as dead code after checking
+> for callers in JS and finding none; the caller is `skills/integrate/SKILL.md`, which names tools in
+> prose, so the sweep left GC-O011 (ACTIVE, MUST) with no entry point. The implementation and its
+> nine test suites are restored unchanged, registered through a new `mcp/ground-control/tools/integrate.js`,
+> and `mcp/ground-control/skill-tool-registration-contract.test.js` now asserts every `gc_*` name in
+> any skill is a registered tool, so the prose-to-registration boundary is checked. The documentation
+> coverage classifier, its surface classes, the `outcome_required` mapping, the Vale rule set,
+> `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no `docs/DOC_STYLE.md` style rule is
+> established.
+
 > **Sync note for issue #633 (2026-09-04, MCP server identity and documentation):**
 > Three corrections to how the MCP server describes itself. (1) `mcp/ground-control/index.js` reads
 > the version it advertises in the `initialize` handshake from `mcp/ground-control/package.json`
