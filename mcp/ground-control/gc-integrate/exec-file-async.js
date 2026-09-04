@@ -3,21 +3,18 @@
 
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import {
   acquireIntegrationLock,
   detectSensitiveBodyContent,
-  ensureGitRepo,
-  getOwnerRepo,
   isSafeLabelName,
   normalizeIntegrationManagerConfig,
   parseGroundControlYaml,
   runWatchCiRun,
   runWatchSonarAnalysis,
 } from "../lib.js";
-import { runPlanAction } from "./run-plan-action.js";
-import { runPrepareAction } from "./run-prepare-action.js";
 
 const execFileAsync = promisify(execFileCb);export // ---------------------------------------------------------------------------
 // Constants
@@ -202,7 +199,9 @@ function safeSummary(s) {
  */
 function makeRunId(deps) {
   const ts = deps.now ? deps.now() : Date.now();
-  const rand = deps.randomId ? deps.randomId() : Math.random().toString(36).slice(2, 8).padEnd(6, "0");
+  // Correlation label for a run directory, not a secret or a capability;
+  // randomUUID is used so the generator is not a question a reader has to ask.
+  const rand = deps.randomId ? deps.randomId() : randomUUID().replace(/-/g, "").slice(0, 6);
   return `${ts}-${rand}`;
 }
 
@@ -220,7 +219,154 @@ function makeRunId(deps) {
  */
 function classifyAsConsultation(failureClass) {
   return failureClass === "pr_head_moved" || failureClass === "approval_label_race";
-}export // ---------------------------------------------------------------------------
+}// Read .ground-control.yaml and resolve the integration-manager policy from it.
+// Returns an error envelope on any config fault so the caller stays flat.
+function resolveIntegrationConfig(repoRoot, readYaml) {
+  let yamlText;
+  try {
+    yamlText = readYaml(repoRoot);
+  } catch (e) {
+    return errorEnvelope(
+      "invalid_config",
+      e.code === "ENOENT"
+        ? ".ground-control.yaml not found at the repository root"
+        : `.ground-control.yaml could not be read: ${e.message}`,
+      "fix_ground_control_yaml",
+    );
+  }
+
+  const parseResult = parseGroundControlYaml(yamlText);
+  if (!parseResult.ok) {
+    return errorEnvelope(
+      "invalid_config",
+      `Invalid .ground-control.yaml: ${parseResult.errors.join("; ")}`,
+      "fix_ground_control_yaml",
+    );
+  }
+
+  const imResult = normalizeIntegrationManagerConfig(
+    parseResult.value.workflow?.integration_manager ?? null,
+  );
+  if (!imResult.ok) {
+    return errorEnvelope(
+      "invalid_config",
+      `workflow.integration_manager config errors: ${imResult.errors.join("; ")}`,
+      "fix_ground_control_yaml",
+    );
+  }
+
+  const approvalLabel = imResult.value.approval_label ?? DEFAULT_APPROVAL_LABEL;
+  if (!isSafeLabelName(approvalLabel)) {
+    return errorEnvelope(
+      "invalid_approval_label",
+      `The resolved approval_label '${approvalLabel}' is not a safe label name`,
+      "fix_ground_control_yaml",
+    );
+  }
+
+  return {
+    ok: true,
+    cfg: parseResult.value,
+    approvalLabel,
+    ordering: imResult.value.ordering ?? DEFAULT_ORDERING,
+    maxQueueSize: imResult.value.max_queue_size ?? DEFAULT_MAX_QUEUE_SIZE,
+  };
+}
+
+// One page of open pull requests, or an error envelope. Separated so the
+// pagination loop below stays a loop and nothing else.
+async function fetchPullRequestPage(owner, repo, page, execFile) {
+  let stdout;
+  try {
+    ({ stdout } = await execFile("gh", [
+      "api", "-X", "GET",
+      `/repos/${owner}/${repo}/pulls`,
+      "--field", "state=open",
+      "--field", "per_page=100",
+      "--field", `page=${page}`,
+    ]));
+  } catch (e) {
+    return errorEnvelope(
+      "discovery_failed",
+      `gh api call failed on page ${page}: ${e.message}`,
+      "verify_remote",
+    );
+  }
+
+  try {
+    return { ok: true, pageData: JSON.parse(stdout) };
+  } catch (e) {
+    return errorEnvelope(
+      "discovery_failed",
+      `Could not parse GitHub API response on page ${page}: ${e.message}`,
+      "contact_support",
+    );
+  }
+}
+
+// Every open pull request, bounded by MAX_DISCOVERY_PAGES. Exceeding the cap is
+// an error rather than a silent truncation: a partial queue would be prepared
+// as though it were the whole queue.
+async function discoverOpenPullRequests(owner, repo, execFile) {
+  const pullRequests = [];
+  for (let page = 1; page <= MAX_DISCOVERY_PAGES; page++) {
+    const result = await fetchPullRequestPage(owner, repo, page, execFile);
+    if (!result.ok) return result;
+
+    const { pageData } = result;
+    if (!Array.isArray(pageData) || pageData.length === 0) {
+      return { ok: true, pullRequests };
+    }
+    pullRequests.push(...pageData);
+    if (pageData.length < 100) return { ok: true, pullRequests };
+  }
+
+  return errorEnvelope(
+    "discovery_too_large",
+    `More than ${MAX_DISCOVERY_PAGES * 100} open PRs were found; narrow the search using a more specific approval_label`,
+    "narrow_approval_label",
+  );
+}
+
+const QUEUE_COMPARATORS = {
+  pr_number_asc: (a, b) => a.number - b.number,
+  pr_number_desc: (a, b) => b.number - a.number,
+  approved_at_asc: (a, b) => a.created_at.localeCompare(b.created_at),
+};
+
+// Deterministic queue order. An unrecognized ordering keeps discovery order,
+// which normalizeIntegrationManagerConfig has already constrained.
+function orderApprovedPullRequests(approved, ordering) {
+  const sorted = [...approved];
+  const comparator = QUEUE_COMPARATORS[ordering];
+  if (comparator) sorted.sort(comparator);
+  return sorted;
+}
+
+// One scrubbed queue entry. A cross-repository head is flagged so the prepare
+// action can refuse a fork PR rather than push to another repository.
+function queueEntry(pr, idx, owner, repo) {
+  const headFullName = pr.head?.repo?.full_name ?? null;
+  const baseFullName = pr.base?.repo?.full_name ?? null;
+  const [headRepoOwner, headRepoName] = headFullName != null
+    ? headFullName.split("/")
+    : [owner, repo];
+  return {
+    ordinal: idx + 1,
+    pr_number: pr.number,
+    head_ref: scrub(pr.head.ref),
+    head_oid: scrub(pr.head.sha),
+    base_ref: scrub(pr.base.ref),
+    head_repo_owner: scrub(headRepoOwner),
+    head_repo_name: scrub(headRepoName),
+    head_is_fork: headFullName !== null && baseFullName !== null
+      && headFullName !== baseFullName,
+    created_at: scrub(pr.created_at),
+    updated_at: scrub(pr.updated_at),
+  };
+}
+
+export // ---------------------------------------------------------------------------
 // buildIntegrationQueue (extracted from runPlanAction for reuse by prepare)
 // ---------------------------------------------------------------------------
 
@@ -247,53 +393,9 @@ async function buildIntegrationQueue(args, deps) {
     );
   }
 
-  // ── Read and parse .ground-control.yaml ──────────────────────────────────
-  let yamlText;
-  try {
-    yamlText = readYaml(repoRoot);
-  } catch (e) {
-    return errorEnvelope(
-      "invalid_config",
-      e.code === "ENOENT"
-        ? ".ground-control.yaml not found at the repository root"
-        : `.ground-control.yaml could not be read: ${e.message}`,
-      "fix_ground_control_yaml",
-    );
-  }
-
-  const parseResult = parseGroundControlYaml(yamlText);
-  if (!parseResult.ok) {
-    return errorEnvelope(
-      "invalid_config",
-      `Invalid .ground-control.yaml: ${parseResult.errors.join("; ")}`,
-      "fix_ground_control_yaml",
-    );
-  }
-
-  // ── Extract integration_manager config with defaults ──────────────────────
-  const rawIM = parseResult.value.workflow?.integration_manager;
-  const imResult = normalizeIntegrationManagerConfig(rawIM ?? null);
-  if (!imResult.ok) {
-    return errorEnvelope(
-      "invalid_config",
-      `workflow.integration_manager config errors: ${imResult.errors.join("; ")}`,
-      "fix_ground_control_yaml",
-    );
-  }
-
-  const imConfig = imResult.value;
-  const approvalLabel = imConfig.approval_label ?? DEFAULT_APPROVAL_LABEL;
-  const ordering = imConfig.ordering ?? DEFAULT_ORDERING;
-  const maxQueueSize = imConfig.max_queue_size ?? DEFAULT_MAX_QUEUE_SIZE;
-
-  // ── Defensive label validation ────────────────────────────────────────────
-  if (!isSafeLabelName(approvalLabel)) {
-    return errorEnvelope(
-      "invalid_approval_label",
-      `The resolved approval_label '${approvalLabel}' is not a safe label name`,
-      "fix_ground_control_yaml",
-    );
-  }
+  const configResult = resolveIntegrationConfig(repoRoot, readYaml);
+  if (!configResult.ok) return configResult;
+  const { cfg, approvalLabel, ordering, maxQueueSize } = configResult;
 
   // ── Resolve owner/repo ────────────────────────────────────────────────────
   let owner, repo;
@@ -312,7 +414,7 @@ async function buildIntegrationQueue(args, deps) {
   // destination: if it disagrees with the checkout's origin remote, refuse
   // before any discovery or mutation rather than act on a stale or mistyped
   // identity. Compared case-insensitively (GitHub owner/repo are case-folding).
-  const configuredRepo = parseResult.value.github_repo;
+  const configuredRepo = cfg.github_repo;
   if (configuredRepo && configuredRepo.toLowerCase() !== `${owner}/${repo}`.toLowerCase()) {
     return errorEnvelope(
       "github_identity_mismatch",
@@ -321,71 +423,9 @@ async function buildIntegrationQueue(args, deps) {
     );
   }
 
-  // ── Paginated PR discovery (cap at MAX_DISCOVERY_PAGES pages) ─────────────
-  const allPrs = [];
-  let hitPageCap = false;
-
-  for (let page = 1; page <= MAX_DISCOVERY_PAGES + 1; page++) {
-    if (page > MAX_DISCOVERY_PAGES) {
-      hitPageCap = true;
-      break;
-    }
-    let stdout;
-    try {
-      const result = await execFile("gh", [
-        "api",
-        "-X",
-        "GET",
-        `/repos/${owner}/${repo}/pulls`,
-        "--field",
-        "state=open",
-        "--field",
-        "per_page=100",
-        "--field",
-        `page=${page}`,
-      ]);
-      stdout = result.stdout;
-    } catch (e) {
-      return errorEnvelope(
-        "discovery_failed",
-        `gh api call failed on page ${page}: ${e.message}`,
-        "verify_remote",
-      );
-    }
-
-    let pageData;
-    try {
-      pageData = JSON.parse(stdout);
-    } catch (e) {
-      return errorEnvelope(
-        "discovery_failed",
-        `Could not parse GitHub API response on page ${page}: ${e.message}`,
-        "contact_support",
-      );
-    }
-
-    if (!Array.isArray(pageData) || pageData.length === 0) {
-      break;
-    }
-
-    allPrs.push(...pageData);
-
-    if (pageData.length < 100) {
-      break;
-    }
-
-    if (page === MAX_DISCOVERY_PAGES) {
-      // Will set hitPageCap on next iteration.
-    }
-  }
-
-  if (hitPageCap) {
-    return errorEnvelope(
-      "discovery_too_large",
-      `More than ${MAX_DISCOVERY_PAGES * 100} open PRs were found; narrow the search using a more specific approval_label`,
-      "narrow_approval_label",
-    );
-  }
+  const discovery = await discoverOpenPullRequests(owner, repo, execFile);
+  if (!discovery.ok) return discovery;
+  const allPrs = discovery.pullRequests;
 
   // ── Client-side label filter ──────────────────────────────────────────────
   const approved = allPrs.filter((pr) =>
@@ -402,46 +442,17 @@ async function buildIntegrationQueue(args, deps) {
     );
   }
 
-  // ── Ordering ──────────────────────────────────────────────────────────────
-  const sorted = [...approved];
-  if (ordering === "pr_number_asc") {
-    sorted.sort((a, b) => a.number - b.number);
-  } else if (ordering === "pr_number_desc") {
-    sorted.sort((a, b) => b.number - a.number);
-  } else if (ordering === "approved_at_asc") {
-    sorted.sort((a, b) => a.created_at.localeCompare(b.created_at));
-  }
+  const sorted = orderApprovedPullRequests(approved, ordering);
 
   // ── Build queue entries ───────────────────────────────────────────────────
-  const queue = sorted.map((pr, idx) => {
-    const headFullName = pr.head?.repo?.full_name ?? null;
-    const baseFullName = pr.base?.repo?.full_name ?? null;
-    const headIsFork = headFullName !== null && baseFullName !== null
-      ? headFullName !== baseFullName
-      : false;
-    const [headRepoOwner, headRepoName] = headFullName != null
-      ? headFullName.split("/")
-      : [owner, repo];
-    return {
-      ordinal: idx + 1,
-      pr_number: pr.number,
-      head_ref: scrub(pr.head.ref),
-      head_oid: scrub(pr.head.sha),
-      base_ref: scrub(pr.base.ref),
-      head_repo_owner: scrub(headRepoOwner),
-      head_repo_name: scrub(headRepoName),
-      head_is_fork: headIsFork,
-      created_at: scrub(pr.created_at),
-      updated_at: scrub(pr.updated_at),
-    };
-  });
+  const queue = sorted.map((pr, idx) => queueEntry(pr, idx, owner, repo));
 
   return {
     ok: true,
     repoRoot,
     owner,
     repo,
-    cfg: parseResult.value,
+    cfg,
     policy: {
       approval_label: approvalLabel,
       ordering,

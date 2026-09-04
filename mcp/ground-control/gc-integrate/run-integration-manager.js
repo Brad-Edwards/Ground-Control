@@ -1,7 +1,7 @@
 // Split from gc-integrate.js under issue #1467 for the 500-LOC limit
 // (docs/CODING_STANDARDS.md). Declaration bodies are unchanged.
 
-import { acquireIntegrationLock, detectSensitiveBodyContent, ensureGitRepo, getOwnerRepo } from "../lib.js";
+import { detectSensitiveBodyContent, ensureGitRepo, getOwnerRepo } from "../lib.js";
 import { DEFAULT_MODE, VALID_ACTIONS, VALID_MODES, defaultAcquireIntegrationLock, defaultExecFile, defaultReadYaml, defaultRunCiWatcher, defaultRunSonarWatcher, defaultWriteHaltLedger, errorEnvelope } from "./exec-file-async.js";
 import { runPlanAction } from "./run-plan-action.js";
 import { defaultReadFile, defaultReaddir, defaultRmFile, defaultStatFile, runPrepareAction, runReleaseAction, runStatusAction } from "./run-prepare-action.js";

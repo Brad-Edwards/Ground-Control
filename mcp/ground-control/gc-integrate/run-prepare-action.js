@@ -1,11 +1,116 @@
 // Split from gc-integrate.js under issue #1467 for the 500-LOC limit
 // (docs/CODING_STANDARDS.md). Declaration bodies are unchanged.
 
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, resolve, sep } from "node:path";
 import { readFileSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
-import { detectSensitiveBodyContent, ensureGitRepo } from "../lib.js";
+import { detectSensitiveBodyContent } from "../lib.js";
 import { buildIntegrationQueue, defaultAcquireIntegrationLock, defaultWriteHaltLedger, errorEnvelope, makeRunId, safeSummary, scrub } from "./exec-file-async.js";
 import { preparePullRequestBranch } from "./run-plan-action.js";
+
+// One PR's preparation, with an unexpected throw normalized into a blocked
+// record so a single bad PR cannot abort the whole queue.
+async function prepareOnePullRequest(pr, ctx, deps) {
+  try {
+    return await preparePullRequestBranch(pr, ctx, deps);
+  } catch (e) {
+    return {
+      pr_number: pr.pr_number,
+      outcome: "blocked",
+      failure_class: "unexpected_error",
+      summary: safeSummary(`Unexpected error during PR preparation: ${e.message ?? String(e)}`),
+      next_action: "contact_support",
+    };
+  }
+}
+
+// A queue-wide halt records the offending PR and stops; later PRs are not added.
+function queueWideHaltEnvelope(prOutcome, results, { runId, owner, repo, policy }) {
+  results.push({
+    pr_number: prOutcome.pr_number,
+    outcome: prOutcome.outcome,
+    summary: prOutcome.summary,
+    failure_class: prOutcome.failure_class,
+    next_action: prOutcome.next_action,
+  });
+  return {
+    ok: false,
+    error: "queue_wide_halt",
+    message: scrub(prOutcome.summary),
+    next_action: prOutcome.next_action ?? "check_base_branch",
+    run_id: runId,
+    owner,
+    repo,
+    policy,
+    results,
+  };
+}
+
+// A consultation halt records the PR, writes the halt ledger best-effort, and
+// stops the run for a maintainer decision.
+function consultationHaltEnvelope(prOutcome, results, ctx, writeHaltLedger) {
+  const { repoRoot, runId, owner, repo, policy } = ctx;
+  const haltReason = prOutcome.halt_reason;
+  results.push({
+    pr_number: prOutcome.pr_number,
+    outcome: prOutcome.outcome,
+    summary: prOutcome.summary,
+    failure_class: prOutcome.failure_class,
+    halt_reason: haltReason,
+    candidate_resolutions: prOutcome.candidate_resolutions ?? [],
+    next_action: prOutcome.next_action,
+  });
+
+  try {
+    writeHaltLedger(join(repoRoot, ".gc", "integration-runs", runId), {
+      run_id: runId,
+      halt_reason: scrub(haltReason),
+      pr_number_at_halt: prOutcome.pr_number,
+      queue_state: results.map((r) => ({ pr_number: r.pr_number, outcome: r.outcome })),
+      timestamp: new Date().toISOString(),
+    });
+  } catch {
+    // Best-effort ledger write; fs being unavailable does not fail the action.
+  }
+
+  return {
+    ok: false,
+    error: "consultation_halt",
+    run_id: runId,
+    halt_reason: scrub(haltReason),
+    candidate_resolutions: prOutcome.candidate_resolutions ?? [],
+    next_action: "consult_maintainer",
+    owner,
+    repo,
+    policy,
+    results,
+  };
+}
+
+// Merge one prepared PR, mutating its record in place. A failure marks the PR
+// blocked rather than throwing, so the queue continues.
+async function mergePreparedPullRequest(prRecord, { mergeStrategy, owner, repo }, deps) {
+  const { execFile } = deps;
+  try {
+    await execFile("gh", [
+      "pr", "merge",
+      String(prRecord.pr_number),
+      `--${mergeStrategy}`,
+      "--delete-branch",
+      "--repo", `${owner}/${repo}`,
+    ]);
+    prRecord.outcome = "merged";
+    prRecord.merged_at = new Date().toISOString();
+    prRecord.summary = safeSummary(`PR #${prRecord.pr_number} merged (${mergeStrategy})`);
+    delete prRecord.failure_class;
+    delete prRecord.next_action;
+  } catch (e) {
+    const errText = safeSummary((e.stderr ?? e.stdout ?? e.message ?? "").toString());
+    prRecord.outcome = "blocked";
+    prRecord.failure_class = "merge_failed";
+    prRecord.summary = safeSummary(`gh pr merge failed: ${errText}`);
+    prRecord.next_action = "check_merge_permissions";
+  }
+}
 
 export // ---------------------------------------------------------------------------
 // runPrepareAction
@@ -72,92 +177,22 @@ async function runPrepareAction(args, deps) {
   const ctx = { repoRoot, runId, cfg, owner, repo };
 
   const results = [];
-  let haltReason = null;
-  let haltPrNumber = null;
 
   const writeHaltLedger = deps.writeHaltLedger ?? defaultWriteHaltLedger;
 
   try {
     // ── Clause e: per-PR preparation loop ────────────────────────────────
     for (const pr of queue) {
-      let prOutcome;
-      try {
-        prOutcome = await preparePullRequestBranch(pr, ctx, deps);
-      } catch (e) {
-        // Unexpected throw inside per-PR preparation: treat as blocked.
-        prOutcome = {
-          pr_number: pr.pr_number,
-          outcome: "blocked",
-          failure_class: "unexpected_error",
-          summary: safeSummary(`Unexpected error during PR preparation: ${e.message ?? String(e)}`),
-          next_action: "contact_support",
-        };
-      }
+      const prOutcome = await prepareOnePullRequest(pr, ctx, deps);
 
       if (prOutcome.outcome === "queue_wide_halt") {
-        // Record this entry and stop; subsequent PRs NOT added.
-        results.push({
-          pr_number: prOutcome.pr_number,
-          outcome: prOutcome.outcome,
-          summary: prOutcome.summary,
-          failure_class: prOutcome.failure_class,
-          next_action: prOutcome.next_action,
-        });
-        return {
-          ok: false,
-          error: "queue_wide_halt",
-          message: scrub(prOutcome.summary),
-          next_action: prOutcome.next_action ?? "check_base_branch",
-          run_id: runId,
-          owner,
-          repo,
-          policy,
-          results,
-        };
+        return queueWideHaltEnvelope(prOutcome, results, { runId, owner, repo, policy });
       }
 
       if (prOutcome.outcome === "consultation_halt") {
-        // Record this entry, write the halt ledger, and stop.
-        const haltRecord = {
-          pr_number: prOutcome.pr_number,
-          outcome: prOutcome.outcome,
-          summary: prOutcome.summary,
-          failure_class: prOutcome.failure_class,
-          halt_reason: prOutcome.halt_reason,
-          candidate_resolutions: prOutcome.candidate_resolutions ?? [],
-          next_action: prOutcome.next_action,
-        };
-        results.push(haltRecord);
-
-        haltReason = prOutcome.halt_reason;
-        haltPrNumber = prOutcome.pr_number;
-
-        const runDir = join(repoRoot, ".gc", "integration-runs", runId);
-        const ledger = {
-          run_id: runId,
-          halt_reason: scrub(haltReason),
-          pr_number_at_halt: haltPrNumber,
-          queue_state: results.map((r) => ({ pr_number: r.pr_number, outcome: r.outcome })),
-          timestamp: new Date().toISOString(),
-        };
-        try {
-          writeHaltLedger(runDir, ledger);
-        } catch {
-          // Best-effort ledger write; don't fail the action if fs is unavailable.
-        }
-
-        return {
-          ok: false,
-          error: "consultation_halt",
-          run_id: runId,
-          halt_reason: scrub(haltReason),
-          candidate_resolutions: prOutcome.candidate_resolutions ?? [],
-          next_action: "consult_maintainer",
-          owner,
-          repo,
-          policy,
-          results,
-        };
+        return consultationHaltEnvelope(
+          prOutcome, results, { repoRoot, runId, owner, repo, policy }, writeHaltLedger,
+        );
       }
 
       // outcome === "ready" or "blocked" — record first, then optionally merge.
@@ -169,34 +204,11 @@ async function runPrepareAction(args, deps) {
         ...(prOutcome.next_action ? { next_action: prOutcome.next_action } : {}),
       };
 
-      // ── Merge step (mode=merge + outcome=ready only) ──────────────────────
       // Runs per-PR, in queue order. A single merge failure does NOT halt the
       // queue; the PR is marked blocked:merge_failed and the loop continues.
-      // The merge step never runs when: outcome is not "ready", a halt has
-      // already fired, or the lock was lost (those paths returned early above).
+      // Never reached unless the outcome is "ready" and no halt fired above.
       if (args.mode === "merge" && prOutcome.outcome === "ready") {
-        const { execFile } = deps;
-        const strategyFlag = `--${mergeStrategy}`;
-        try {
-          await execFile("gh", [
-            "pr", "merge",
-            String(prOutcome.pr_number),
-            strategyFlag,
-            "--delete-branch",
-            "--repo", `${owner}/${repo}`,
-          ]);
-          prRecord.outcome = "merged";
-          prRecord.merged_at = new Date().toISOString();
-          prRecord.summary = safeSummary(`PR #${prOutcome.pr_number} merged (${mergeStrategy})`);
-          delete prRecord.failure_class;
-          delete prRecord.next_action;
-        } catch (e) {
-          const errText = safeSummary((e.stderr ?? e.stdout ?? e.message ?? "").toString());
-          prRecord.outcome = "blocked";
-          prRecord.failure_class = "merge_failed";
-          prRecord.summary = safeSummary(`gh pr merge failed: ${errText}`);
-          prRecord.next_action = "check_merge_permissions";
-        }
+        await mergePreparedPullRequest(prRecord, { mergeStrategy, owner, repo }, deps);
       }
 
       results.push(prRecord);
@@ -223,25 +235,94 @@ async function runPrepareAction(args, deps) {
       }
     }
   }
-}export function defaultReadFile(filePath) {
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- caller-validated path
-  return readFileSync(filePath, "utf-8");
-}export function defaultReaddir(dirPath) {
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- caller-validated path
-  return readdirSync(dirPath);
+}// Every filesystem primitive below is a sink for a path built from the
+// caller-supplied `repo_path` and from directory-entry names read back off
+// disk. Resolve the candidate against the root it is scoped to and refuse
+// anything that lands outside, so neither a crafted `repo_path` nor a crafted
+// entry name can walk the server out of the repository it was pointed at
+// (jssecurity:S2083; the same repository binding ADR-027 puts on the review
+// lane). The root is passed by every production call site; an injected test
+// double takes the path alone and ignores it.
+function boundedPath(candidate, root) {
+  const resolvedRoot = resolve(root);
+  const resolved = resolve(candidate);
+  if (resolved !== resolvedRoot && !resolved.startsWith(resolvedRoot + sep)) {
+    throw new Error("refusing a filesystem path outside the target repository root");
+  }
+  return resolved;
+}
+
+export function defaultReadFile(filePath, root) {
+  const safe = boundedPath(filePath, root);
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- bounded to the repository root above
+  return readFileSync(safe, "utf-8");
+}export function defaultReaddir(dirPath, root) {
+  const safe = boundedPath(dirPath, root);
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- bounded to the repository root above
+  return readdirSync(safe);
 }export // ---------------------------------------------------------------------------
 // Production-default implementations for status/release injectable deps.
 // ---------------------------------------------------------------------------
 
-function defaultStatFile(filePath) {
+function defaultStatFile(filePath, root) {
   try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- caller-validated path
-    const s = statSync(filePath);
+    const safe = boundedPath(filePath, root);
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- bounded to the repository root above
+    const s = statSync(safe);
     return { ok: true, mtimeMs: s.mtimeMs };
   } catch {
     return { ok: false };
   }
-}export // ---------------------------------------------------------------------------
+}
+
+// Newest run directory by mtime, or null when the runs directory is empty.
+function newestRunEntry(entries, runsDir, statFile, root) {
+  let newestEntry = null;
+  let newestMtime = -Infinity;
+  for (const entry of entries) {
+    const s = statFile(join(runsDir, entry), root);
+    if (s.ok && s.mtimeMs > newestMtime) {
+      newestMtime = s.mtimeMs;
+      newestEntry = entry;
+    }
+  }
+  return newestEntry;
+}
+
+// A run's halt.json reduced to the scrubbed fields the status envelope reports.
+// An absent or unparseable ledger degrades to minimal run info rather than
+// failing the read-only status action.
+function haltRecordFor(runsDir, entry, readFile, root) {
+  try {
+    const parsed = JSON.parse(readFile(join(runsDir, entry, "halt.json"), root));
+    const record = {
+      run_id: scrub(parsed.run_id ?? entry),
+      started_at: scrub(parsed.timestamp ?? null),
+    };
+    if (parsed.halt_reason != null) record.halt_reason = scrub(parsed.halt_reason);
+    return record;
+  } catch {
+    return { run_id: scrub(entry), started_at: null };
+  }
+}
+
+// Most-recent run under <repoRoot>/.gc/integration-runs, or null when the
+// directory is absent, unreadable, or empty.
+function readLastRunRecord(repoRoot, statFile, deps) {
+  const runsDir = join(repoRoot, ".gc", "integration-runs");
+  try {
+    const readdir = deps.readdir ?? defaultReaddir;
+    const readFile = deps.readFile ?? defaultReadFile;
+    const entries = readdir(runsDir, repoRoot);
+    if (entries.length === 0) return null;
+    const newestEntry = newestRunEntry(entries, runsDir, statFile, repoRoot);
+    return newestEntry === null ? null : haltRecordFor(runsDir, newestEntry, readFile, repoRoot);
+  } catch {
+    return null;
+  }
+}
+
+export // ---------------------------------------------------------------------------
 // runStatusAction
 // ---------------------------------------------------------------------------
 
@@ -279,55 +360,9 @@ async function runStatusAction(args, deps) {
 
   // Determine lock state.
   const statFile = deps.statFile ?? defaultStatFile;
-  const lockStat = statFile(lockPath);
-  const lockHeld = lockStat.ok;
+  const lockHeld = statFile(lockPath, repoRoot).ok;
 
-  // Find the most-recent run in .gc/integration-runs/.
-  const runsDir = join(repoRoot, ".gc", "integration-runs");
-  let lastRun = null;
-  try {
-    const readdir = deps.readdir ?? defaultReaddir;
-    const readFile = deps.readFile ?? defaultReadFile;
-
-    const entries = readdir(runsDir);
-    if (entries.length > 0) {
-      // Find the entry with the most-recent mtime.
-      let newestEntry = null;
-      let newestMtime = -Infinity;
-      for (const entry of entries) {
-        const entryPath = join(runsDir, entry);
-        const s = statFile(entryPath);
-        if (s.ok && s.mtimeMs > newestMtime) {
-          newestMtime = s.mtimeMs;
-          newestEntry = entry;
-        }
-      }
-
-      if (newestEntry !== null) {
-        const haltJsonPath = join(runsDir, newestEntry, "halt.json");
-        let haltData = null;
-        try {
-          const raw = readFile(haltJsonPath);
-          const parsed = JSON.parse(raw);
-          haltData = {
-            run_id: scrub(parsed.run_id ?? newestEntry),
-            started_at: scrub(parsed.timestamp ?? null),
-            halt_reason: parsed.halt_reason != null ? scrub(parsed.halt_reason) : undefined,
-          };
-          // Remove undefined keys.
-          if (haltData.halt_reason === undefined) {
-            delete haltData.halt_reason;
-          }
-        } catch {
-          // halt.json absent or unparseable — return minimal run info.
-          haltData = { run_id: scrub(newestEntry), started_at: null };
-        }
-        lastRun = haltData;
-      }
-    }
-  } catch {
-    // runsDir absent or unreadable — lastRun stays null.
-  }
+  const lastRun = readLastRunRecord(repoRoot, statFile, deps);
 
   return {
     ok: true,
@@ -337,9 +372,11 @@ async function runStatusAction(args, deps) {
     lock_path: scrub(lockPath),
     last_run: lastRun,
   };
-}export function defaultRmFile(filePath) {
+}export function defaultRmFile(filePath, root) {
   // The lock is a directory created by proper-lockfile's mkdir strategy.
-  rmSync(filePath, { recursive: true, force: true });
+  const safe = boundedPath(filePath, root);
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- bounded to the repository root above
+  rmSync(safe, { recursive: true, force: true });
 }export // ---------------------------------------------------------------------------
 // runReleaseAction
 // ---------------------------------------------------------------------------
@@ -376,8 +413,8 @@ async function runReleaseAction(args, deps) {
   const rmFile = deps.rmFile ?? defaultRmFile;
 
   // Check whether the lock exists.
-  const lockStat = statFile(lockPath);
-  if (!lockStat.ok) {
+  const lockStat = statFile(lockPath, repoRoot);
+  if (lockStat.ok === false) {
     return {
       ok: true,
       action: "release",
@@ -388,7 +425,7 @@ async function runReleaseAction(args, deps) {
 
   // Attempt removal.
   try {
-    rmFile(lockPath);
+    rmFile(lockPath, repoRoot);
   } catch (e) {
     const raw = e?.message ?? String(e);
     const msg = detectSensitiveBodyContent(raw) ? "<redacted>" : raw;

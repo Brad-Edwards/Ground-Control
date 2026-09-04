@@ -3,8 +3,14 @@
 
 import { join } from "node:path";
 import { realpathSync } from "node:fs";
-import { assertRealpathInRepo, ensureGitRepo } from "../lib.js";
+import { assertRealpathInRepo } from "../lib.js";
 import { DEFAULT_MODE, buildIntegrationQueue, safeSummary } from "./exec-file-async.js";
+
+// A trailing ": <url>" suffix when a watcher supplied one. Keeps the failure
+// summaries free of nested template literals (S4624).
+function detailsSuffix(detailsUrl) {
+  return detailsUrl ? `: ${detailsUrl}` : "";
+}
 
 export // ---------------------------------------------------------------------------
 // runPlanAction
@@ -48,7 +54,116 @@ async function runPlanAction(args, deps) {
     policy,
     plan: queue,
   };
-}export // ---------------------------------------------------------------------------
+}// Refusals that need no git or gh side effect: a worktree path that would
+// escape the repository, and a fork PR (the prepare-only lane is same-repo
+// only, GC-O011 first slice). Returns a blocked record, or null to proceed.
+function preparePreflight(pr, repoRoot, worktreePath) {
+  let repoRootReal;
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- repoRoot validated by ensureGitRepo
+    repoRootReal = realpathSync(repoRoot);
+  } catch {
+    repoRootReal = repoRoot; // best-effort fallback
+  }
+
+  // assertRealpathInRepo walks up existing ancestors, so a worktree path that
+  // does not exist yet is still checked for containment.
+  const containCheck = assertRealpathInRepo(repoRootReal, worktreePath, "integration-worktree path");
+  if (!containCheck.ok) {
+    return {
+      pr_number: pr.pr_number,
+      outcome: "blocked",
+      failure_class: "worktree_path_invalid",
+      summary: safeSummary(`Worktree path rejected: ${containCheck.error}`),
+      next_action: "contact_support",
+    };
+  }
+
+  if (pr.head_is_fork) {
+    return {
+      pr_number: pr.pr_number,
+      outcome: "blocked",
+      failure_class: "fork_pr_unsupported",
+      summary: safeSummary(
+        `PR from fork ${pr.head_repo_owner}/${pr.head_repo_name} is not supported in the prepare-only lane (GC-O011 first slice)`,
+      ),
+      next_action: "merge_manually_or_open_followup",
+    };
+  }
+
+  return null;
+}
+
+// The repository's configured completion gate, run inside the worktree.
+// Returns a blocked record on a non-zero exit, or null when it passes or when
+// the repository configures no gate.
+async function runCompletionGate(pr, cfg, worktreePath, execFile) {
+  const completionCommand = cfg?.workflow?.completion_command;
+  if (!completionCommand) return null;
+  try {
+    // The command string is repo-authored config, not user input.
+    // execFile("bash", ["-c", ...]) is the deliberately-excepted form
+    // documented in the dispatch spec: argv is exactly [bash, -c, <cmd>].
+    await execFile("bash", ["-c", completionCommand], { cwd: worktreePath });
+    return null;
+  } catch (e) {
+    return {
+      pr_number: pr.pr_number,
+      outcome: "blocked",
+      failure_class: "completion_gate_failed",
+      summary: safeSummary(`Completion gate exited non-zero: ${e.message ?? String(e)}`),
+      next_action: "fix_completion_gate",
+    };
+  }
+}
+
+// git reports a lease rejection in several wordings; match them in one place.
+function isLeaseMismatch(errText, message) {
+  return /stale info|force with lease|rejected.*lease|lease.*rejected|rejected.*\[remote rejected\]/i.test(errText)
+    || (message ?? "").includes("lease");
+}
+
+// Push the rebased head under a lease bound to the head OID seen at discovery.
+// A lease rejection means the PR head moved under us, which is a maintainer
+// decision rather than a retry. Returns a failure record, or null on success.
+async function pushRebasedHead(pr, tmpRef, worktreePath, execFile) {
+  try {
+    await execFile("git", [
+      "-C", worktreePath,
+      "push",
+      `--force-with-lease=${pr.head_ref}:${pr.head_oid}`,
+      "origin",
+      `${tmpRef}:${pr.head_ref}`,
+    ]);
+    return null;
+  } catch (e) {
+    const errText = (e.stderr ?? e.stdout ?? e.message ?? "").toString();
+    if (isLeaseMismatch(errText, e.message)) {
+      return {
+        pr_number: pr.pr_number,
+        outcome: "consultation_halt",
+        failure_class: "pr_head_moved",
+        halt_reason: "pr_head_moved",
+        summary: safeSummary(`PR #${pr.pr_number} head moved since discovery; force-with-lease rejected`),
+        candidate_resolutions: [
+          "Re-run plan to discover the new head OID",
+          "Verify the PR was not force-pushed concurrently",
+          "Check for automated commits (e.g., bot activity) on this branch",
+        ],
+        next_action: "consult_maintainer",
+      };
+    }
+    return {
+      pr_number: pr.pr_number,
+      outcome: "blocked",
+      failure_class: "push_failed",
+      summary: safeSummary(`git push --force-with-lease failed: ${errText.slice(0, 150)}`),
+      next_action: "check_remote_access",
+    };
+  }
+}
+
+export // ---------------------------------------------------------------------------
 // preparePullRequestBranch — per-PR worktree isolation, rebase, gates, push
 // ---------------------------------------------------------------------------
 
@@ -68,45 +183,8 @@ async function preparePullRequestBranch(pr, ctx, deps) {
   const tmpRef = `integ-tmp-${pr.pr_number}`;
   const worktreePath = join(repoRoot, ".gc", "integration-worktrees", runId, String(pr.pr_number));
 
-  // ── Worktree path containment check ──────────────────────────────────────
-  // We use realpathSync on repoRoot (already canonical from ensureGitRepo).
-  // assertRealpathInRepo walks up existing ancestors and checks containment.
-  // For a path that doesn't exist yet (new worktree), we pass the lexical
-  // absolute path; the function handles ENOENT by walking up to an ancestor.
-  let repoRootReal;
-  try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- repoRoot validated by ensureGitRepo
-    repoRootReal = realpathSync(repoRoot);
-  } catch {
-    repoRootReal = repoRoot; // best-effort fallback
-  }
-
-  const containCheck = assertRealpathInRepo(repoRootReal, worktreePath, "integration-worktree path");
-  if (!containCheck.ok) {
-    return {
-      pr_number: pr.pr_number,
-      outcome: "blocked",
-      failure_class: "worktree_path_invalid",
-      summary: safeSummary(`Worktree path rejected: ${containCheck.error}`),
-      next_action: "contact_support",
-    };
-  }
-
-  // ── Fork refusal ──────────────────────────────────────────────────────────
-  // The prepare-only lane (GC-O011 first slice) supports same-repo PRs only.
-  // Fork PRs are listed in the plan so maintainers can see them, but prepare
-  // refuses them immediately without any git or gh side-effects.
-  if (pr.head_is_fork) {
-    return {
-      pr_number: pr.pr_number,
-      outcome: "blocked",
-      failure_class: "fork_pr_unsupported",
-      summary: safeSummary(
-        `PR from fork ${pr.head_repo_owner}/${pr.head_repo_name} is not supported in the prepare-only lane (GC-O011 first slice)`,
-      ),
-      next_action: "merge_manually_or_open_followup",
-    };
-  }
+  const refusal = preparePreflight(pr, repoRoot, worktreePath);
+  if (refusal) return refusal;
 
   let worktreeCreated = false;
 
@@ -173,8 +251,10 @@ async function preparePullRequestBranch(pr, ctx, deps) {
         "merge-base", tmpRef, `origin/${pr.base_ref}`,
       ]);
       mergeBase = mbResult.stdout.trim();
-    } catch (e) {
-      // If merge-base fails, fall back to rebasing from the beginning.
+    } catch {
+      // No shared merge-base is reachable (a shallow clone, or a head with no
+      // common ancestor). Rebasing from the base tip is the correct fallback,
+      // so the failure carries no information the caller can act on.
       mergeBase = `origin/${pr.base_ref}`;
     }
 
@@ -206,70 +286,12 @@ async function preparePullRequestBranch(pr, ctx, deps) {
       };
     }
 
-    // ── Step 6: Run the completion gate ───────────────────────────────────
-    const completionCommand = cfg?.workflow?.completion_command;
-    if (completionCommand) {
-      try {
-        // The command string is repo-authored config, not user input.
-        // execFile("bash", ["-c", ...]) is the deliberately-excepted form
-        // documented in the dispatch spec: argv is exactly [bash, -c, <cmd>].
-        await execFile("bash", ["-c", completionCommand], { cwd: worktreePath });
-      } catch (e) {
-        return {
-          pr_number: pr.pr_number,
-          outcome: "blocked",
-          failure_class: "completion_gate_failed",
-          summary: safeSummary(`Completion gate exited non-zero: ${e.message ?? String(e)}`),
-          next_action: "fix_completion_gate",
-        };
-      }
-    }
+    const gateFailure = await runCompletionGate(pr, cfg, worktreePath, execFile);
+    if (gateFailure) return gateFailure;
 
-    // ── Step 7: Force-with-lease push ─────────────────────────────────────
-    // Push BEFORE running CI/Sonar watchers so the watchers observe the
-    // rebased commit, not the pre-rebase head.
-    // Lease expectation: the PR head OID at discovery time (pr.head_oid).
-    // If the remote head has moved since discovery, the lease mismatch
-    // triggers consultation_halt.
-    try {
-      await execFile("git", [
-        "-C", worktreePath,
-        "push",
-        `--force-with-lease=${pr.head_ref}:${pr.head_oid}`,
-        "origin",
-        `${tmpRef}:${pr.head_ref}`,
-      ]);
-    } catch (e) {
-      const errText = (e.stderr ?? e.stdout ?? e.message ?? "").toString();
-      // Lease mismatch: git outputs "stale info" or "rejected" for lease failures.
-      const isLeaseMismatch =
-        /stale info|force with lease|rejected.*lease|lease.*rejected|rejected.*\[remote rejected\]/i.test(errText) ||
-        (e.message ?? "").includes("lease");
-
-      if (isLeaseMismatch) {
-        return {
-          pr_number: pr.pr_number,
-          outcome: "consultation_halt",
-          failure_class: "pr_head_moved",
-          halt_reason: "pr_head_moved",
-          summary: safeSummary(`PR #${pr.pr_number} head moved since discovery; force-with-lease rejected`),
-          candidate_resolutions: [
-            "Re-run plan to discover the new head OID",
-            "Verify the PR was not force-pushed concurrently",
-            "Check for automated commits (e.g., bot activity) on this branch",
-          ],
-          next_action: "consult_maintainer",
-        };
-      }
-
-      return {
-        pr_number: pr.pr_number,
-        outcome: "blocked",
-        failure_class: "push_failed",
-        summary: safeSummary(`git push --force-with-lease failed: ${errText.slice(0, 150)}`),
-        next_action: "check_remote_access",
-      };
-    }
+    // Push BEFORE the CI/Sonar watchers so they observe the rebased commit.
+    const pushFailure = await pushRebasedHead(pr, tmpRef, worktreePath, execFile);
+    if (pushFailure) return pushFailure;
 
     // ── Step 8: CI watcher hook ───────────────────────────────────────────
     // Hook contract: (pr, ctx, deps) => Promise<{conclusion, details_url?}>
@@ -282,7 +304,7 @@ async function preparePullRequestBranch(pr, ctx, deps) {
         pr_number: pr.pr_number,
         outcome: "blocked",
         failure_class: "ci_failed",
-        summary: safeSummary(`CI check failed${ciResult.details_url ? `: ${ciResult.details_url}` : ""}`),
+        summary: safeSummary(`CI check failed${detailsSuffix(ciResult.details_url)}`),
         next_action: "fix_ci",
       };
     }
@@ -326,7 +348,7 @@ async function preparePullRequestBranch(pr, ctx, deps) {
         pr_number: pr.pr_number,
         outcome: "blocked",
         failure_class: "sonar_gate_red",
-        summary: safeSummary(`Sonar quality gate is red${sonarResult.details_url ? `: ${sonarResult.details_url}` : ""}`),
+        summary: safeSummary(`Sonar quality gate is red${detailsSuffix(sonarResult.details_url)}`),
         next_action: "fix_sonar_issues",
       };
     }
