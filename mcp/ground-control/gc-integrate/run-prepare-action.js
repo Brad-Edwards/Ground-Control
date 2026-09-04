@@ -1,8 +1,8 @@
 // Split from gc-integrate.js under issue #1467 for the 500-LOC limit
 // (docs/CODING_STANDARDS.md). Declaration bodies are unchanged.
 
-import { isAbsolute, join, resolve } from "node:path";
-import { readFileSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { detectSensitiveBodyContent } from "../lib.js";
 import { buildIntegrationQueue, defaultAcquireIntegrationLock, defaultWriteHaltLedger, errorEnvelope, makeRunId, safeSummary, scrub } from "./exec-file-async.js";
 import { authorizedWorkspaceRoot } from "./workspace-binding.js";
