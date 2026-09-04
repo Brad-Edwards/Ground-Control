@@ -25,13 +25,11 @@
 // TOOL SURFACE (issue #1500 re-platform)
 // ============================================================================
 //
-// The MCP server over repo-local files (issue #1500) exposes 30 tools that
-// back the /implement, /quickfix, and /review workflow mechanics plus the
-// coding-agent<->reviewer separation. There is no backend, database, or
+// The MCP server over repo-local files (issue #1500) exposes 31 tools that
+// back the /implement, /quickfix, /integrate, and /review workflow mechanics
+// plus the coding-agent<->reviewer separation. There is no backend, database, or
 // generic entity CRUD surface — requirements and ADRs are read/edited as
-// repo files directly. The /integrate lane's gc_integration_manager was removed
-// as dead code in #1506 and is not registered here (issue #1553).
-// Registration lives in ./tools/*.js:
+// repo files directly. Registration lives in ./tools/*.js:
 //   tools/query.js               — gc_get_repo_ground_control_context,
 //                                   gc_create_github_issue, gc_remember,
 //                                   gc_codex_architecture_preflight,
@@ -50,6 +48,7 @@
 //                                   gc_mark_implement_issue_picked_up,
 //                                   gc_authorize_execution_obligation_wontfix,
 //                                   gc_resolve_workflow_route, gc_codex_verify_finding
+//   tools/integrate.js           — gc_integration_manager (GC-O011)
 //   tools/pr-review.js           — gc_get_pr_review_context,
 //                                   gc_remediate_pull_request (maintainer /review lane, #1535)
 
@@ -62,6 +61,7 @@ import { registerQuery } from "./tools/query.js";
 import { registerPostDecisionRecord } from "./tools/post-decision-record.js";
 import { registerReviewCapDisposition } from "./tools/review-cap-disposition.js";
 import { registerPrReview } from "./tools/pr-review.js";
+import { registerIntegrate } from "./tools/integrate.js";
 import pkg from "./package.json" with { type: "json" };
 
 
@@ -108,6 +108,7 @@ registerQuery(server);
 registerPostDecisionRecord(server);
 registerReviewCapDisposition(server);
 registerPrReview(server);
+registerIntegrate(server);
 
 // ============================================================================
 // Startup

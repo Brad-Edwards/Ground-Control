@@ -1,7 +1,7 @@
 # Ground Control MCP Server
 
-The MCP server that backs Ground Control's `/implement`, `/quickfix`, and
-`/review` workflow lanes over repo-local files. It is the only
+The MCP server that backs Ground Control's `/implement`, `/quickfix`,
+`/integrate`, and `/review` workflow lanes over repo-local files. It is the only
 running Ground Control service: there is no backend, no database, and no
 frontend (issue #1500). Requirements and ADRs are files in the consuming repo
 (`docs/requirements/<UID>/requirement.md`, `architecture/adrs/*.md`) that the
@@ -87,17 +87,19 @@ the model.
 
 ## Tool surface
 
-The server registers **30 tools**. They are the `/implement`, `/quickfix`, and
-`/review` workflow mechanics plus the coding-agent/reviewer separation - there is
+The server registers **31 tools**. They are the `/implement`, `/quickfix`,
+`/integrate`, and `/review` workflow mechanics plus the coding-agent/reviewer separation - there is
 no entity CRUD surface and no ad-hoc REST escape hatch, because there is no
 backend behind them to read. Requirements and ADRs are read and written as repo
 files.
 
-`skills/integrate/SKILL.md` drives the `/integrate` lane through
-`gc_integration_manager`, which this server does not register - the handler was
-removed as dead code in #1506, whose sweep checked for callers in JS and found
-none, because the only caller is skill prose. That lane cannot run against this
-server until it is either reimplemented or retired.
+The `/integrate` lane's `gc_integration_manager` is registered again. #1506
+removed it as dead code after checking for callers in JS and finding none - its
+only caller is `skills/integrate/SKILL.md`, which names tools in prose - which
+left GC-O011 (ACTIVE, MUST) with no entry point.
+`skill-tool-registration-contract.test.js` now asserts that every `gc_*` name in
+any skill is a tool this server advertises, so the prose-to-registration boundary
+is checked rather than assumed.
 
 Registration lives in `mcp/ground-control/tools/*.js`; each tool is a zod input
 schema plus a thin handler delegating to `lib.js`.
@@ -162,6 +164,13 @@ enforcement layer every driver shares.
 |---|---|
 | `gc_get_pr_review_context` | Read-only bounded evidence snapshot of a PR |
 | `gc_remediate_pull_request` | Authorization-gated `sync_base` / `publish` / `comment` |
+
+**Approved-PR integration (`tools/integrate.js`)**
+
+| Tool | Purpose |
+|---|---|
+| `gc_integration_manager` | `plan` (discover the approval-labeled queue and order it), `prepare` (isolated worktree, rebase onto base, completion gate, CI and SonarCloud watches, `--force-with-lease` push), `status` (read-only lock and last-run state), `release` (idempotent lock release). `mode` defaults to `prepare` and never merges; `enqueue` is reserved and refuses at runtime |
+
 
 ## Repo-local configuration
 
