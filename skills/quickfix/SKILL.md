@@ -159,6 +159,16 @@ same synchronized-record validation through
 `gc_create_synchronized_implement_pr`, and the same `Closes #<issue-number>`
 wiring through the renderer.
 
+Pass `lane: "quickfix"` plus the `pre_push_reviews` state this run actually
+reached (issue #1551): `"completed"` when the run was invoked with `--review`
+and Steps Q6.5/Q6.6 ran, `"not_run"` otherwise. The renderer's Ground Control
+Checks section carries a pre-push review attestation on every PR body, and
+these inputs decide which of the two accurate statements it carries. Omitting
+them renders the `/implement` attestation that both reviewers completed, which
+on a default `/quickfix` run claims a verification the run never performed.
+`"not_run"` is accepted only with `lane: "quickfix"` - the lane whose contract
+makes the reviewers optional. The attestation itself is never omitted.
+
 The renderer's `change_class` is typically `source` for `/quickfix` runs; `doc-only` for pure documentation fixes; `source+migration` is unusual for `/quickfix` and is a signal that the run probably wanted `/implement` instead.
 
 ### Step Q10: CI Monitor

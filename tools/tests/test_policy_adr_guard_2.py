@@ -71,6 +71,47 @@ class AdrGuard2ChecksTest(PolicyChecksFixture):
             [],
             f"buildPrBody (doc-only) output rejected by check_pr_body: {codes}",
         )
+    def test_quickfix_lane_review_attestation_passes_check_pr_body(self):
+        # Issue #1551: a /quickfix run with the pre-push reviewers off renders the
+        # "not run" attestation instead of claiming both reviews completed. The
+        # renderer and `_check_ground_control_checks` carry that line as two
+        # byte-identical copies, so this drives the real renderer and feeds its
+        # output straight to the policy gate — a one-sided edit fails here.
+        body = self._render_pr_body_via_js({
+            "issueNumber": 1551,
+            "changeClass": "doc-only",
+            "requirementUids": [],
+            "adrRefs": ["ADR-021"],
+            "summary": "Quickfix run with pre-push reviews off.",
+            "changes": ["Corrected the token boundary"],
+            "traceability": {"implements": [], "tests": []},
+            "lane": "quickfix",
+            "prePushReviews": "not_run",
+        })
+        self.assertIn(
+            "- [x] Pre-push code review and test-quality review not run for this lane; "
+            "CI and repository policy gates enforced",
+            body,
+            "renderer did not emit the quickfix review attestation",
+        )
+        violations = check_pr_body(body)
+        self.assertEqual(
+            violations,
+            [],
+            f"quickfix-lane body rejected by check_pr_body: {[v.code for v in violations]}",
+        )
+
+    def test_pr_body_missing_every_review_attestation_is_rejected(self):
+        # The attestation is never optional. A body carrying the policy-command
+        # line but neither review attestation must still fail the gate.
+        body = self._body_with_uid_section("- `GC-O007`").replace(
+            "- [x] Pre-push code review and test-quality review completed; "
+            "all findings fixed or dispositioned\n",
+            "",
+        )
+        codes = [v.code for v in check_pr_body(body)]
+        self.assertIn("pr-ground-control-checks", codes)
+
     def test_workflow_guardrail_sync_keeps_adr_036_reachable(self):
         # ADR-036 amends ADR-021, so it must stay one of the gate-model records
         # the rule accepts. Pinned here so a future policy edit that drops

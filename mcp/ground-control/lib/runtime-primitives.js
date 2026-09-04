@@ -327,25 +327,6 @@ export function findRequirementUidTokens(text) {
 export const REQUIREMENT_UID_CONTRACT_DESCRIPTION =
   `a single requirement UID: 1-${REQUIREMENT_UID_MAX_LENGTH} characters, starting with a letter or digit, `
   + "containing only letters, digits, '.', '_', or '-'";
-export const PR_BODY_POLICY_CHECK_LINE = "- [x] Configured repository policy command passes";
-// Repo-neutral Ground Control Checks (issue #1199): the section attests only
-// gates the /implement workflow actually enforces for every repository, named
-// semantically. The previous lines named `gc_evaluate_quality_gates` /
-// `gc_run_sweep`, tools removed with the #1500 backend teardown. The pre-push
-// review gates (code review + test-quality review, Steps 6.5/6.6) run before
-// gc_render_pr_body, so this attestation is accurate at render time. Keep this
-// byte-identical to tools/policy/authz_matrix.py::check_pr_body's required set —
-// the renderer-vs-policy compose fixture is the parity contract.
-export const PR_BODY_GC_CHECK_LINES = Object.freeze([
-  PR_BODY_POLICY_CHECK_LINE,
-  "- [x] Pre-push code review and test-quality review completed; all findings fixed or dispositioned",
-]);
-const PR_BODY_REQUIRED_HEADERS = Object.freeze([
-  "## Requirement UIDs",
-  "## ADR Impact",
-  "## Ground Control Checks",
-  "## Traceability",
-]);
 // Sonar S5843 caps a single regex literal's complexity at 20. The three richest
 // deferral patterns exceed that, so each is composed at module load from simple
 // sub-pattern literals via `new RegExp`. Every composed `source` is byte-identical
@@ -406,84 +387,20 @@ export function detectDeferralDisposition(text) {
   }
   return null;
 }
-// Strip a leading run and a trailing run of backticks (a markdown inline-code
-// wrapper like `GC-X001`). A linear scan rather than /^`+|`+$/g, which the regex
-// engine matches with super-linear backtracking (Sonar S8786); interior
-// backticks are left untouched, exactly as the anchored global replace did.
-function stripEdgeBackticks(s) {
-  let start = 0;
-  let end = s.length;
-  while (start < end && s[start] === "`") start += 1;
-  while (end > start && s[end - 1] === "`") end -= 1;
-  return s.slice(start, end);
-}
-function extractRequirementUidsSection(body) {
-  const start = body.indexOf("## Requirement UIDs");
-  if (start === -1) return "";
-  const after = body.slice(start + "## Requirement UIDs".length);
-  const nextHeader = after.search(/\n## /);
-  return nextHeader === -1 ? after : after.slice(0, nextHeader);
-}
-export function extractRequirementUidTokensFromSection(body) {
-  if (typeof body !== "string") return [];
-  const tokens = [];
-  for (const line of extractRequirementUidsSection(body).split(/\r?\n/)) {
-    const bullet = line.match(/^\s*[-*+]\s+(.+?)\s*$/);
-    if (!bullet) continue;
-    if (/^\(none\b/i.test(bullet[1])) continue;
-    // The WHOLE bullet must be a single token in the corpus. Scanning a bullet
-    // for any corpus-shaped word would count ordinary prose — `- (no real UID
-    // here)` contains `no`, a syntactically valid identifier — because the
-    // corpus cannot distinguish a UID from a word without a lookup. Requiring
-    // the bullet to be exactly one token keeps the gate decidable while still
-    // accepting every UID the structured path accepts.
-    const candidate = stripEdgeBackticks(bullet[1]).trim();
-    if (!EXACT_REQUIREMENT_UID_RE.test(candidate)) continue;
-    if (!tokens.includes(candidate)) tokens.push(candidate);
-  }
-  return tokens;
-}
-export function checkPrBodyShape(body) {
-  const errors = [];
-  if (typeof body !== "string" || body === "") {
-    return { ok: false, errors: ["body must be a non-empty string"] };
-  }
-  for (const h of PR_BODY_REQUIRED_HEADERS) {
-    if (!body.includes(h)) errors.push(`missing required header: ${h}`);
-  }
-  // Section-scoped UID check — see extractRequirementUidsSection for rationale.
-  // The section is machine-rendered one UID per bullet, so it is parsed
-  // structurally and each token is held to the identity corpus. That keeps the
-  // gate's accepted set exactly equal to what gc_render_pr_body accepts, so a
-  // UID that reconciles and reports can always be rendered (issue #1425).
-  const uidSection = extractRequirementUidsSection(body);
-  const sectionHasUid = extractRequirementUidTokensFromSection(body).length > 0;
-  const sectionHasNoneMarker = /-\s*\(none\b/i.test(uidSection);
-  if (!sectionHasUid && !sectionHasNoneMarker) {
-    errors.push(
-      "## Requirement UIDs section must contain at least one Ground Control UID " +
-      "(" + REQUIREMENT_UID_CONTRACT_DESCRIPTION + ") OR the explicit '- (none — ...)' " +
-      "marker for requirement-free runs. ADR references in other sections do NOT " +
-      "satisfy the requirement-UID gate — that is concept confusion between ADR " +
-      "impact and requirement traceability.",
-    );
-  }
-  if (!body.includes("ADR-") && !body.includes("No ADR required")) {
-    errors.push("ADR Impact must reference an ADR ('ADR-...') or contain 'No ADR required'");
-  }
-  for (const line of PR_BODY_GC_CHECK_LINES) {
-    if (!body.includes(line)) errors.push(`missing Ground Control Checks line: ${line}`);
-  }
-  if (!body.includes("- IMPLEMENTS:")) errors.push("missing '- IMPLEMENTS:' marker under Traceability");
-  if (!body.includes("- TESTS:")) errors.push("missing '- TESTS:' marker under Traceability");
-  // NB: deferral-language enforcement is intentionally NOT done here (codex
-  // cycle-4 F1). Authoritative enforcement: `block-defer-language.py`
-  // PreToolUse hook on `gh pr create` AND `bin/policy` /
-  // `check_pr_body::run_no_deferral_disposition_check` at CI time. The JS
-  // classifier was a partial subset of the Python `deferral_cases.json`
-  // matcher and gave false confidence ("ok:true" from a body that would
-  // later fail policy). The structural check (headers / markers / GC checks
-  // / UID section) is what this function owns; deferral is owned downstream.
-  if (errors.length) return { ok: false, errors };
-  return { ok: true };
-}
+
+// The PR-body policy surface (Ground Control Checks lines, required headers,
+// checkPrBodyShape) lives in pr-body-policy.js (issue #1551, split out to stay
+// under the 500-LOC file gate). Re-exported here so this remains the single
+// import path every existing caller already uses.
+export {
+  PR_BODY_LANES,
+  PR_BODY_POLICY_CHECK_LINE,
+  PR_BODY_PRE_PUSH_REVIEW_STATES,
+  PR_BODY_REVIEWS_OPTIONAL_LANE,
+  PR_BODY_REVIEW_CHECK_LINES,
+  PR_BODY_REVIEW_CHECK_LINE_COMPLETED,
+  PR_BODY_REVIEW_CHECK_LINE_NOT_RUN,
+  checkPrBodyShape,
+  extractRequirementUidTokensFromSection,
+  prBodyGcCheckLines,
+} from "./pr-body-policy.js";
