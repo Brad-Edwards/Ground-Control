@@ -6,8 +6,9 @@
 
 import { realpathSync } from "node:fs";
 import { TEST_QUALITY_REVIEW_DEFAULT_MODEL, TEST_QUALITY_REVIEW_TIMEOUT_MS } from "./ci-watcher.js";
-import { assertImplementSyncCheckout, fetchImplementBase, isImplementAncestor, readImplementGitOid, readImplementTreeOid, readRemoteImplementBranchSha } from "./codex-workflow-2.js";
+import { assertImplementSyncCheckout, extractInScopeRequirementUids, fetchImplementBase, isImplementAncestor, readImplementGitOid, readImplementTreeOid, readRemoteImplementBranchSha } from "./codex-workflow-2.js";
 import { validateExistingSynchronizedImplementPr, validateImplementBranchName, validateImplementPrTitle } from "./codex-workflow.js";
+import { runGetIssueThread } from "./issue-thread.js";
 import { detectSensitiveBodyContent, extractGhErrorMessage } from "./grc-legacy-compat-2.js";
 import { assertSafeImplementCheckoutConfiguration, authorizeImplementRepoRoot, ensureGitRepo, resolveMcpLaunchWorkspaceAuthorization } from "./grc-legacy-compat-4.js";
 import { readTrustedImplementSyncRecord } from "./knowledge-capture.js";
@@ -215,11 +216,51 @@ async function createSynchronizedImplementPr({
   };
 }
 
+// GitHub auto-close keywords, per its "closing issues via keywords" docs. Case-
+// insensitive, immediately preceding the issue reference. A requirement-backed issue
+// must not carry any of these for its own number in the PR body (issue #1541).
+function bodyAutoClosesIssue(body, issueNumber) {
+  if (typeof body !== "string") return false;
+  return new RegExp(String.raw`\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b[:\s]+#${issueNumber}\b`, "i").test(body);
+}
+
+// The PR body's issue reference is bound to the AUTHORITATIVE issue scope — the issue's
+// Requirements section — not to a caller hint. A requirement-backed issue must use a
+// non-closing reference (`Refs #n`) so GitHub cannot auto-close it at merge ahead of
+// Phase E's merged-requirement-state validation (issue #1541 review).
+async function assertPrBodyClosingKeywordBoundToIssueScope(input, issueThreadReader) {
+  let scope = [];
+  try {
+    const thread = await issueThreadReader({ repoPath: input.repoPath, issueNumber: input.issueNumber });
+    if (thread?.ok) scope = extractInScopeRequirementUids(thread.body ?? "");
+  } catch {
+    // Authoritative scope must be readable to bind the keyword; fail closed below.
+    return {
+      ok: false,
+      error: "implement_pr_issue_scope_unresolved",
+      message: `could not read issue #${input.issueNumber}'s Requirements section to bind the PR-body issue reference`,
+      next_action: "repair_issue_access_and_retry",
+    };
+  }
+  if (scope.length > 0 && bodyAutoClosesIssue(input.body, input.issueNumber)) {
+    return {
+      ok: false,
+      error: "implement_pr_auto_close_forbidden",
+      message:
+        `issue #${input.issueNumber} is requirement-backed (${scope.length} in-scope UID(s)), so the PR body must use a ` +
+        `non-closing reference (Refs #${input.issueNumber}); a closing keyword would let GitHub auto-close the issue at ` +
+        "merge ahead of Phase E merged-requirement-state validation (issue #1541)",
+      next_action: "render_the_pr_body_with_a_non_closing_reference_and_retry",
+    };
+  }
+  return { ok: true };
+}
 export async function runCreateSynchronizedImplementPr(input, {
   workspaceAuthorizationResolver = resolveMcpLaunchWorkspaceAuthorization,
   commandRunner = execFile,
   contextResolver = getRepoGroundControlContext,
   syncRecordReader = readTrustedImplementSyncRecord,
+  issueThreadReader = runGetIssueThread,
 } = {}) {
   const inputValidation = validateSynchronizedImplementPrInput(input);
   if (!inputValidation.ok) return inputValidation;
@@ -254,6 +295,8 @@ export async function runCreateSynchronizedImplementPr(input, {
       next_action: "reshape_the_title_and_retry",
     };
   }
+  const closingBinding = await assertPrBodyClosingKeywordBoundToIssueScope(input, issueThreadReader);
+  if (!closingBinding.ok) return closingBinding;
   try {
     const synchronization = await validateImplementSynchronization({
       repoRoot,

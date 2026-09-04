@@ -618,3 +618,22 @@ directly delivered issue at a time; a cross-reference alone does not make a
 parent epic or partially delivered issue eligible. The user still owns PR
 merge. These rules create no new durable marker family and do not weaken the
 issue-thread record required for `/implement` or `/quickfix`.
+
+**2026-09-03 (issue #1541, merge-verified specs-as-code completion).** Requirement
+status and traceability changes move back before publish so they are reviewed and
+merged in the delivery pull request. Phase D readiness names those values as proposed,
+not authoritative. Phase E performs no requirement-file mutation: it resolves the
+linked pull request's immutable target-branch merge revision, validates every UID from
+the issue's canonical Requirements section at the exact
+`docs/requirements/<UID>/requirement.md` path, and only then posts the final report and
+closes the issue. The post-merge report renders observed merged status rather than
+trusting caller-supplied status summaries.
+
+The PR body uses a non-closing issue reference instead of `Closes #<n>`, because GitHub
+auto-close would otherwise race ahead of the immutable requirement-state assertion.
+`gc_close_issue_after_merge` remains the only canonical close path and runs only after
+successful completion validation. Existing issue comments and markers remain immutable;
+corrections are appended. Requirement-free runs, the single human merge touchpoint, and
+the issue-thread durable-record model are unchanged. This amendment supersedes the
+requirement-file mutation ordering in the 2026-06-22 issue #963 amendment; its separation
+between pre-merge readiness and post-merge authoritative completion remains in force.

@@ -21,7 +21,7 @@ export function buildFinalReport(input) {
   if (!validation.ok) {
     throw new Error(`buildFinalReport input invalid: ${validation.errors.join("; ")}`);
   }
-  const { issueNumber, prNumber, requirements, files = {}, reviews, traceability = {}, ciStatus, sonarStatus, planCommentUrl, summary, lane, plainEnglishOutcome, phase = "post_merge" } = input;
+  const { issueNumber, prNumber, requirements, files = {}, reviews, traceability = {}, ciStatus, sonarStatus, planCommentUrl, summary, lane, plainEnglishOutcome, phase = "post_merge", mergeRevision = null, requirementStateOverrideReason = null } = input;
   // Slim quickfix renderer (issue #906 codex cycle-3 F2). When lane='quickfix'
   // the close comment is structurally smaller: no "In-scope requirements",
   // no "Traceability reconciliation", no "Reviews" section when empty.
@@ -65,9 +65,24 @@ export function buildFinalReport(input) {
     lines.push("");
     lines.push(`### In-scope requirements`);
     lines.push("");
+    // Pre-merge readiness names PR-head state as PROPOSED; only the merge revision is
+    // authoritative. Post-merge renders the OBSERVED merged values and cites the
+    // revision they were verified at (issue #1541).
+    if (isPreMerge) {
+      lines.push(`_Proposed state in this PR — authoritative only after merge._`);
+      lines.push("");
+    } else if (typeof mergeRevision === "string" && mergeRevision !== "") {
+      lines.push(`_Verified at merge revision \`${mergeRevision.slice(0, 12)}\`._`);
+      lines.push("");
+    }
     for (const r of requirements) {
       const note = r.note ? ` — ${r.note}` : "";
-      lines.push(`- \`${r.uid}\` (${r.title}) — ${r.status}${note}`);
+      const proposed = isPreMerge ? " (proposed)" : "";
+      lines.push(`- \`${r.uid}\` (${r.title}) — ${r.status}${proposed}${note}`);
+    }
+    if (!isPreMerge && typeof requirementStateOverrideReason === "string" && requirementStateOverrideReason.trim() !== "") {
+      lines.push("");
+      lines.push(`- ⚠️ Merged requirement-state validation OVERRIDDEN: ${requirementStateOverrideReason.trim()}`);
     }
   }
   lines.push("");
@@ -267,6 +282,7 @@ export async function runPostFinalReport(input) {
     ["plainEnglishOutcome", rest.plainEnglishOutcome],
     ["summary", rest.summary],
     ["planCommentUrl", rest.planCommentUrl],
+    ["requirementStateOverrideReason", rest.requirementStateOverrideReason],
   ];
   if (rest.traceability && typeof rest.traceability === "object") {
     callerStringFields.push(["traceability.notes", rest.traceability.notes]);

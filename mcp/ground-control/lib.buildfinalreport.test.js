@@ -287,8 +287,16 @@ describe("buildPrBody", () => {
     }
   });
 
-  it("emits 'Closes #N' under Related Issues", () => {
+  it("emits a non-closing 'Refs #N' for a requirement-backed run (issue #1541)", () => {
+    // baseInput() is requirement-backed (requirementUids: ["GC-O007"]); the issue must
+    // NOT auto-close at merge ahead of Phase E merged-requirement-state validation.
     const body = buildPrBody(baseInput());
+    assert.match(body, /Refs #868/);
+    assert.ok(!/Closes #868/.test(body), "requirement-backed runs must not use the auto-closing keyword");
+  });
+
+  it("emits 'Closes #N' for a requirement-free run", () => {
+    const body = buildPrBody(baseInput({ requirementUids: [], changeClass: "doc-only", changelogFragment: null, traceability: { implements: [], tests: [] } }));
     assert.match(body, /Closes #868/);
   });
 

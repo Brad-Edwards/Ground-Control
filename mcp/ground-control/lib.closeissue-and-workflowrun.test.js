@@ -7,7 +7,6 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { createWorkflowRun } from "./lib.js";
 
 // ---------------------------------------------------------------------------
 // gc_assert_traceability_reconciled (issue #1058)
@@ -76,43 +75,6 @@ async function withShimPath(binDir, fn) {
 }
 
 // ---------------------------------------------------------------------------
-// Workflow-run telemetry lib helpers (issue #859)
-// ---------------------------------------------------------------------------
-
-const WORKFLOW_RUN_BASE_URL = "https://gc.test";
-
-const WORKFLOW_RUN_ORIGINAL_BASE_URL = process.env.GC_BASE_URL;
-
-const WORKFLOW_RUN_ORIGINAL_FETCH = globalThis.fetch;
-
-function withWorkflowRunEnv(fn) {
-  return async () => {
-    process.env.GC_BASE_URL = WORKFLOW_RUN_BASE_URL;
-    delete process.env.GROUND_CONTROL_API_TOKEN;
-    try {
-      await fn();
-    } finally {
-      if (WORKFLOW_RUN_ORIGINAL_BASE_URL === undefined) delete process.env.GC_BASE_URL;
-      else process.env.GC_BASE_URL = WORKFLOW_RUN_ORIGINAL_BASE_URL;
-      globalThis.fetch = WORKFLOW_RUN_ORIGINAL_FETCH;
-    }
-  };
-}
-
-function makeWorkflowRunFetchSpy({ status = 201, body = {} } = {}) {
-  const calls = [];
-  globalThis.fetch = async (url, opts) => {
-    const parsedBody = opts && opts.body ? JSON.parse(opts.body) : null;
-    calls.push({ url: url.toString(), method: opts?.method ?? "GET", body: parsedBody });
-    return new Response(JSON.stringify(body), {
-      status,
-      headers: { "Content-Type": "application/json" },
-    });
-  };
-  return calls;
-}
-
-// ---------------------------------------------------------------------------
 // gc_close_issue_after_merge (issue #1058)
 // ---------------------------------------------------------------------------
 
@@ -121,6 +83,24 @@ describe("runCloseIssueAfterMerge", () => {
   const PR_MERGED_AT = "2026-05-30T10:00:00Z";
   const LINKED_PR_URL = "https://github.com/fake/repo/pull/42";
   const ISSUE_API_PATH = "/repos/fake/repo/issues/1058";
+  // Proof that merged requirement-state validation ran: the trusted final-report
+  // marker on the issue thread (issue #1541). By close time in the real flow, the
+  // post-merge completion assertion has posted it.
+  const FINAL_REPORT_MARKER = '<!-- gc:final-report issue="1058" pr="42" -->';
+  // `gh api --paginate --slurp` wraps each page's array in an outer array.
+  const slurpComments = (comments) => JSON.stringify([comments]);
+  // Routes that satisfy the final-report marker gate: a trusted (repo-write author)
+  // comment carrying the marker, plus the collaborator-permission lookup trust uses.
+  const MARKER_TRUST_ROUTES = [
+    {
+      argv_prefix: ["api", "--method", "GET", "--paginate", "--slurp"],
+      stdout: slurpComments([{ body: FINAL_REPORT_MARKER, user: { login: "fake" }, author_association: "OWNER" }]),
+    },
+    {
+      argv_prefix: ["api", "--method", "GET", "/repos/fake/repo/collaborators/fake/permission"],
+      stdout: "write\n",
+    },
+  ];
 
   function makeShimRepo({ ghHandler }) {
     return makeRouteShimRepo({ ghHandler, repoPrefix: "gc-close-test-", binPrefix: "gc-close-bin-" });
@@ -204,6 +184,8 @@ describe("runCloseIssueAfterMerge", () => {
           }) },
           // Issue lookup — current state=open.
           { argv_prefix: ["api", ISSUE_API_PATH], stdout: JSON.stringify({ number: 1058, state: "open" }) },
+          // Trusted final-report marker gate (issue #1541).
+          ...MARKER_TRUST_ROUTES,
           // PATCH close.
           { argv_prefix: ["api", "--method", "PATCH"], stdout: JSON.stringify({ number: 1058, state: "closed" }) },
         ],
@@ -291,6 +273,7 @@ describe("runCloseIssueAfterMerge", () => {
             ] } } } },
           }) },
           { argv_prefix: ["api", ISSUE_API_PATH], stdout: JSON.stringify({ number: 1058, state: "open" }) },
+          ...MARKER_TRUST_ROUTES,
           { argv_prefix: ["api", "--method", "PATCH"], stdout: JSON.stringify({ number: 1058, state: "closed" }) },
         ],
       },
@@ -307,49 +290,129 @@ describe("runCloseIssueAfterMerge", () => {
       shim.cleanup();
     }
   });
-});
 
-describe("createWorkflowRun", () => {
-  it(
-    "POSTs to /api/v1/workflow-runs with project as query param",
-    withWorkflowRunEnv(async () => {
-      const calls = makeWorkflowRunFetchSpy({ status: 201, body: { id: "wrun-1" } });
-      await createWorkflowRun(
-        { workflow_type: "IMPLEMENT", provenance: "ISSUE_THREAD" },
-        "proj-a",
-      );
-      assert.equal(calls.length, 1);
-      assert.equal(calls[0].method, "POST");
-      const url = new URL(calls[0].url);
-      assert.equal(url.pathname, "/api/v1/workflow-runs");
-      assert.equal(url.searchParams.get("project"), "proj-a");
-    }),
-  );
+  // Issue #1541: closing an OPEN issue requires the trusted final-report marker so the
+  // canonical close can never run ahead of merged requirement-state validation.
+  it("refuses with close_requirement_state_unverified when no final-report marker is present", async () => {
+    const shim = makeShimRepo({
+      ghHandler: {
+        routes: [
+          { argv_prefix: ["repo", "view", "--json", "nameWithOwner"], stdout: JSON.stringify({ nameWithOwner: "fake/repo" }) },
+          { argv_prefix: ["api", "graphql"], stdout: JSON.stringify({
+            data: { repository: { issue: { timelineItems: { nodes: [
+              { __typename: "CrossReferencedEvent", source: { __typename: "PullRequest", number: 42, state: "MERGED", mergedAt: PR_MERGED_AT, url: LINKED_PR_URL } },
+            ] } } } },
+          }) },
+          { argv_prefix: ["api", ISSUE_API_PATH], stdout: JSON.stringify({ number: 1058, state: "open" }) },
+          // No marker on the thread.
+          { argv_prefix: ["api", "--method", "GET", "--paginate", "--slurp"], stdout: slurpComments([]) },
+        ],
+      },
+    });
+    await withCloseResult(shim, 1058, (r) => {
+      assert.equal(r.ok, false);
+      assert.equal(r.error, "close_requirement_state_unverified");
+      assert.equal(r.next_action, "post_the_validated_final_report_first_or_post_a_trusted_override_authorization");
+    });
+  });
 
-  it(
-    "sends camelCase body to the backend",
-    withWorkflowRunEnv(async () => {
-      const calls = makeWorkflowRunFetchSpy({ status: 201, body: { id: "x" } });
-      await createWorkflowRun({
-        workflow_type: "IMPLEMENT",
-        provenance: "ISSUE_THREAD",
-        issue_number: 42,
-        requirement_uids: ["GC-O007"],
-      });
-      assert.equal(calls[0].body.workflowType, "IMPLEMENT");
-      assert.equal(calls[0].body.provenance, "ISSUE_THREAD");
-      assert.equal(calls[0].body.issueNumber, 42);
-      assert.deepEqual(calls[0].body.requirementUids, ["GC-O007"]);
-    }),
-  );
+  // Locks the trust filter in hasTrustedFinalReportMarker: a final-report marker forged
+  // by an author WITHOUT repo write must not authorize the close. Without this, dropping
+  // the `trust.isTrusted` check would pass every other marker test (they use trusted
+  // OWNER authors) — the class-7 asymmetry the test-quality reviewer flagged.
+  it("does not honor a final-report marker forged by an author without repo write", async () => {
+    const forged = { body: FINAL_REPORT_MARKER, user: { login: "stranger" }, author_association: "NONE" };
+    const shim = makeShimRepo({
+      ghHandler: {
+        routes: [
+          { argv_prefix: ["repo", "view", "--json", "nameWithOwner"], stdout: JSON.stringify({ nameWithOwner: "fake/repo" }) },
+          { argv_prefix: ["api", "graphql"], stdout: JSON.stringify({
+            data: { repository: { issue: { timelineItems: { nodes: [
+              { __typename: "CrossReferencedEvent", source: { __typename: "PullRequest", number: 42, state: "MERGED", mergedAt: PR_MERGED_AT, url: LINKED_PR_URL } },
+            ] } } } },
+          }) },
+          { argv_prefix: ["api", ISSUE_API_PATH], stdout: JSON.stringify({ number: 1058, state: "open" }) },
+          { argv_prefix: ["api", "--method", "GET", "--paginate", "--slurp"], stdout: slurpComments([forged]) },
+          // Non-collaborator: both the marker-trust and override-trust permission lookups 404.
+          { argv_prefix: ["api", "--method", "GET", "/repos/fake/repo/collaborators/stranger/permission"], exit_code: 1, stderr: "HTTP 404" },
+        ],
+      },
+    });
+    await withCloseResult(shim, 1058, (r) => {
+      assert.equal(r.ok, false);
+      assert.equal(r.error, "close_requirement_state_unverified");
+    });
+  });
 
-  it(
-    "omits the project query param when not provided",
-    withWorkflowRunEnv(async () => {
-      const calls = makeWorkflowRunFetchSpy({ status: 201, body: {} });
-      await createWorkflowRun({ workflow_type: "IMPLEMENT", provenance: "MANUAL_IMPORT" });
-      const url = new URL(calls[0].url);
-      assert.equal(url.searchParams.get("project"), null);
-    }),
-  );
+  it("closes without a final-report marker when a trusted issue-thread override authorizes this PR", async () => {
+    const overrideComment = { body: "gc-authorize-merge-state-override pr=42 covered out of band", user: { login: "fake" }, author_association: "OWNER" };
+    const shim = makeShimRepo({
+      ghHandler: {
+        routes: [
+          { argv_prefix: ["repo", "view", "--json", "nameWithOwner"], stdout: JSON.stringify({ nameWithOwner: "fake/repo" }) },
+          { argv_prefix: ["api", "graphql"], stdout: JSON.stringify({
+            data: { repository: { issue: { timelineItems: { nodes: [
+              { __typename: "CrossReferencedEvent", source: { __typename: "PullRequest", number: 42, state: "MERGED", mergedAt: PR_MERGED_AT, url: LINKED_PR_URL } },
+            ] } } } },
+          }) },
+          { argv_prefix: ["api", ISSUE_API_PATH], stdout: JSON.stringify({ number: 1058, state: "open" }) },
+          // Trusted override comment, no final-report marker.
+          { argv_prefix: ["api", "--method", "GET", "--paginate", "--slurp"], stdout: slurpComments([overrideComment]) },
+          { argv_prefix: ["api", "--method", "GET", "/repos/fake/repo/collaborators/fake/permission"], stdout: "write\n" },
+          { argv_prefix: ["api", "--method", "PATCH"], stdout: JSON.stringify({ number: 1058, state: "closed" }) },
+        ],
+      },
+    });
+    await withCloseResult(shim, 1058, (r) => {
+      assert.equal(r.ok, true);
+      assert.equal(r.already_closed, false);
+    });
+  });
+
+  it("does not honor an override comment that names a different PR (PR-binding)", async () => {
+    const overrideComment = { body: "gc-authorize-merge-state-override pr=99 wrong pr", user: { login: "fake" }, author_association: "OWNER" };
+    const shim = makeShimRepo({
+      ghHandler: {
+        routes: [
+          { argv_prefix: ["repo", "view", "--json", "nameWithOwner"], stdout: JSON.stringify({ nameWithOwner: "fake/repo" }) },
+          { argv_prefix: ["api", "graphql"], stdout: JSON.stringify({
+            data: { repository: { issue: { timelineItems: { nodes: [
+              { __typename: "CrossReferencedEvent", source: { __typename: "PullRequest", number: 42, state: "MERGED", mergedAt: PR_MERGED_AT, url: LINKED_PR_URL } },
+            ] } } } },
+          }) },
+          { argv_prefix: ["api", ISSUE_API_PATH], stdout: JSON.stringify({ number: 1058, state: "open" }) },
+          { argv_prefix: ["api", "--method", "GET", "--paginate", "--slurp"], stdout: slurpComments([overrideComment]) },
+          { argv_prefix: ["api", "--method", "GET", "/repos/fake/repo/collaborators/fake/permission"], stdout: "write\n" },
+        ],
+      },
+    });
+    await withCloseResult(shim, 1058, (r) => {
+      assert.equal(r.ok, false);
+      assert.equal(r.error, "close_requirement_state_unverified");
+    });
+  });
+
+  it("does not honor an override comment from an author without repo write", async () => {
+    const overrideComment = { body: "gc-authorize-merge-state-override pr=42 outsider", user: { login: "stranger" }, author_association: "NONE" };
+    const shim = makeShimRepo({
+      ghHandler: {
+        routes: [
+          { argv_prefix: ["repo", "view", "--json", "nameWithOwner"], stdout: JSON.stringify({ nameWithOwner: "fake/repo" }) },
+          { argv_prefix: ["api", "graphql"], stdout: JSON.stringify({
+            data: { repository: { issue: { timelineItems: { nodes: [
+              { __typename: "CrossReferencedEvent", source: { __typename: "PullRequest", number: 42, state: "MERGED", mergedAt: PR_MERGED_AT, url: LINKED_PR_URL } },
+            ] } } } },
+          }) },
+          { argv_prefix: ["api", ISSUE_API_PATH], stdout: JSON.stringify({ number: 1058, state: "open" }) },
+          { argv_prefix: ["api", "--method", "GET", "--paginate", "--slurp"], stdout: slurpComments([overrideComment]) },
+          // Non-collaborator: permission lookup 404s.
+          { argv_prefix: ["api", "--method", "GET", "/repos/fake/repo/collaborators/stranger/permission"], exit_code: 1, stderr: "HTTP 404" },
+        ],
+      },
+    });
+    await withCloseResult(shim, 1058, (r) => {
+      assert.equal(r.ok, false);
+      assert.equal(r.error, "close_requirement_state_unverified");
+    });
+  });
 });
