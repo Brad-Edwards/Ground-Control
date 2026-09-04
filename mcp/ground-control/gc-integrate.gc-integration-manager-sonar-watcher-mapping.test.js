@@ -166,6 +166,10 @@ function prepareDeps(overrides = {}) {
 // Helper: build status deps with injectable fs primitives.
 function statusDeps(overrides = {}) {
   return {
+    // The status/release actions bind to the MCP launch workspace; tests supply
+    // a fixture root so they exercise the authorized path rather than the
+    // real checkout.
+    resolveWorkspaceRoot: overrides.resolveWorkspaceRoot ?? (() => "/some/repo"),
     statFile: overrides.statFile ?? (() => ({ ok: false })),
     readdir: overrides.readdir ?? (() => { throw Object.assign(new Error("ENOENT"), { code: "ENOENT" }); }),
     readFile: overrides.readFile ?? (() => { throw Object.assign(new Error("ENOENT"), { code: "ENOENT" }); }),

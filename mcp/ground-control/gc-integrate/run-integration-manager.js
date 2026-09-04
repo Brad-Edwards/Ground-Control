@@ -30,6 +30,9 @@ export async function runIntegrationManager(args = {}, deps = {}) {
     runCiWatcher: deps.runCiWatcher ?? defaultRunCiWatcher,
     runSonarWatcher: deps.runSonarWatcher ?? defaultRunSonarWatcher,
     // Status/release injectable deps.
+    // The workspace-root resolver stays undefined unless injected; the status
+    // and release actions fall back to the real MCP launch workspace.
+    resolveWorkspaceRoot: deps.resolveWorkspaceRoot,
     statFile: deps.statFile ?? defaultStatFile,
     readdir: deps.readdir ?? defaultReaddir,
     readFile: deps.readFile ?? defaultReadFile,

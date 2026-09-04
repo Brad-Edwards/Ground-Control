@@ -1,9 +1,9 @@
 // Split from gc-integrate.js under issue #1467 for the 500-LOC limit
 // (docs/CODING_STANDARDS.md). Declaration bodies are unchanged.
 
-import { isAbsolute, join, resolve, sep } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { readFileSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
-import { detectSensitiveBodyContent } from "../lib.js";
+import { detectSensitiveBodyContent, resolveMcpLaunchWorkspaceAuthorization } from "../lib.js";
 import { buildIntegrationQueue, defaultAcquireIntegrationLock, defaultWriteHaltLedger, errorEnvelope, makeRunId, safeSummary, scrub } from "./exec-file-async.js";
 import { preparePullRequestBranch } from "./run-plan-action.js";
 
@@ -244,47 +244,86 @@ async function runPrepareAction(args, deps) {
       }
     }
   }
-}// Each filesystem primitive below is a sink for a path built from the
-// caller-supplied `repo_path` and from directory-entry names read back off
-// disk. Each resolves the candidate and refuses anything outside the root it is
-// scoped to, so neither a crafted `repo_path` nor a crafted entry name can walk
-// the server out of the repository it was pointed at (the same repository
-// binding ADR-027 puts on the review lane).
+}// The status and release actions read and remove files under the repository
+// root. That root is NOT taken from `repo_path`: a caller-supplied root is
+// itself attacker-controlled, so validating a path against it constrains
+// nothing. The root comes from the MCP launch workspace instead, and
+// `repo_path` is checked against it and then discarded — the same binding
+// #1535 put on the review lane, where an unbound `repo_path` would let a caller
+// point the server at any other checkout it can reach and act on that
+// repository with the server's credentials. Here the lane also pushes and can
+// merge, so the binding matters more, not less.
 //
-// The guard is written out at each sink rather than extracted: jssecurity:S2083
-// tracks taint within a function and does not follow a validation across a call
-// boundary, so a shared helper leaves every one of these reported as an
-// unvalidated sink. Keep it inline.
+// Every path below is therefore built from the launch workspace plus constant
+// segments and directory-entry names, and each entry name is required to be a
+// single plain path segment before it is joined.
 
-export function defaultReadFile(filePath, root) {
-  const safeRoot = resolve(root);
-  const safe = resolve(filePath);
-  if (safe !== safeRoot && !safe.startsWith(safeRoot + sep)) {
-    throw new Error("refusing a filesystem path outside the target repository root");
+// The MCP launch workspace root. Injectable so tests can bind a fixture root.
+async function defaultResolveWorkspaceRoot() {
+  const authorization = await resolveMcpLaunchWorkspaceAuthorization();
+  return realpathSync(authorization.workspaceRoot);
+}
+
+// Resolve the workspace this run may touch, refusing a `repo_path` that names
+// anything else. Returns {ok:true, workspaceRoot} or an error envelope.
+async function authorizedWorkspaceRoot(args, deps) {
+  const resolveRoot = deps.resolveWorkspaceRoot ?? defaultResolveWorkspaceRoot;
+  let workspaceRoot;
+  try {
+    workspaceRoot = await resolveRoot();
+  } catch (e) {
+    return errorEnvelope(
+      "workspace_unavailable",
+      `The MCP launch workspace could not be resolved: ${e.message ?? String(e)}`,
+      "restart_mcp_server",
+    );
   }
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- validated against the repository root above
-  return readFileSync(safe, "utf-8");
-}export function defaultReaddir(dirPath, root) {
-  const safeRoot = resolve(root);
-  const safe = resolve(dirPath);
-  if (safe !== safeRoot && !safe.startsWith(safeRoot + sep)) {
-    throw new Error("refusing a filesystem path outside the target repository root");
+
+  const requested = (args.repo_path ?? "").trim();
+  let requestedReal = requested;
+  if (isAbsolute(requested)) {
+    try {
+      requestedReal = realpathSync(requested);
+    } catch {
+      requestedReal = resolve(requested);
+    }
   }
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- validated against the repository root above
-  return readdirSync(safe);
+  if (requestedReal !== workspaceRoot) {
+    return errorEnvelope(
+      "repo_not_authorized",
+      "repo_path is outside the MCP launch workspace authorized for this run",
+      "run_against_the_launch_workspace",
+    );
+  }
+  return { ok: true, workspaceRoot };
+}
+
+// A readdir entry must be one plain segment. Rejecting separators and traversal
+// keeps a crafted directory name from steering the join below.
+function isPlainSegment(entry) {
+  return typeof entry === "string"
+    && entry !== ""
+    && entry !== "."
+    && entry !== ".."
+    && !entry.includes("/")
+    && !entry.includes("\\")
+    && !entry.includes("\0");
+}
+
+export function defaultReadFile(filePath) {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- built from the launch workspace root, never from caller input
+  return readFileSync(filePath, "utf-8");
+}export function defaultReaddir(dirPath) {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- built from the launch workspace root, never from caller input
+  return readdirSync(dirPath);
 }export // ---------------------------------------------------------------------------
 // Production-default implementations for status/release injectable deps.
 // ---------------------------------------------------------------------------
 
-function defaultStatFile(filePath, root) {
+function defaultStatFile(filePath) {
   try {
-    const safeRoot = resolve(root);
-    const safe = resolve(filePath);
-    if (safe !== safeRoot && !safe.startsWith(safeRoot + sep)) {
-      throw new Error("refusing a filesystem path outside the target repository root");
-    }
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- validated against the repository root above
-    const s = statSync(safe);
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- built from the launch workspace root, never from caller input
+    const s = statSync(filePath);
     return { ok: true, mtimeMs: s.mtimeMs };
   } catch {
     return { ok: false };
@@ -292,11 +331,12 @@ function defaultStatFile(filePath, root) {
 }
 
 // Newest run directory by mtime, or null when the runs directory is empty.
-function newestRunEntry(entries, runsDir, statFile, root) {
+function newestRunEntry(entries, runsDir, statFile) {
   let newestEntry = null;
   let newestMtime = -Infinity;
   for (const entry of entries) {
-    const s = statFile(join(runsDir, entry), root);
+    if (!isPlainSegment(entry)) continue;
+    const s = statFile(join(runsDir, entry));
     if (s.ok && s.mtimeMs > newestMtime) {
       newestMtime = s.mtimeMs;
       newestEntry = entry;
@@ -308,9 +348,9 @@ function newestRunEntry(entries, runsDir, statFile, root) {
 // A run's halt.json reduced to the scrubbed fields the status envelope reports.
 // An absent or unparseable ledger degrades to minimal run info rather than
 // failing the read-only status action.
-function haltRecordFor(runsDir, entry, readFile, root) {
+function haltRecordFor(runsDir, entry, readFile) {
   try {
-    const parsed = JSON.parse(readFile(join(runsDir, entry, "halt.json"), root));
+    const parsed = JSON.parse(readFile(join(runsDir, entry, "halt.json")));
     const record = {
       run_id: scrub(parsed.run_id ?? entry),
       started_at: scrub(parsed.timestamp ?? null),
@@ -329,10 +369,10 @@ function readLastRunRecord(repoRoot, statFile, deps) {
   try {
     const readdir = deps.readdir ?? defaultReaddir;
     const readFile = deps.readFile ?? defaultReadFile;
-    const entries = readdir(runsDir, repoRoot);
+    const entries = readdir(runsDir);
     if (entries.length === 0) return null;
-    const newestEntry = newestRunEntry(entries, runsDir, statFile, repoRoot);
-    return newestEntry === null ? null : haltRecordFor(runsDir, newestEntry, readFile, repoRoot);
+    const newestEntry = newestRunEntry(entries, runsDir, statFile);
+    return newestEntry === null ? null : haltRecordFor(runsDir, newestEntry, readFile);
   } catch {
     return null;
   }
@@ -358,25 +398,15 @@ export // ----------------------------------------------------------------------
  * @returns {Promise<object>} Status envelope.
  */
 async function runStatusAction(args, deps) {
-  // Resolve the repo path.  For status we do a best-effort realpath without
-  // calling ensureGitRepo (which shells out to git).  If the path is not
-  // absolute we fall through to the raw arg.
-  const rawPath = (args.repo_path ?? "").trim();
-  let repoRoot = rawPath;
-  try {
-    if (isAbsolute(rawPath)) {
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- rawPath is user-supplied but we only read metadata
-      repoRoot = realpathSync(rawPath);
-    }
-  } catch {
-    // best-effort; proceed with rawPath
-  }
+  const authorized = await authorizedWorkspaceRoot(args, deps);
+  if (!authorized.ok) return authorized;
+  const repoRoot = authorized.workspaceRoot;
 
   const lockPath = join(repoRoot, ".gc-integration-lock");
 
   // Determine lock state.
   const statFile = deps.statFile ?? defaultStatFile;
-  const lockHeld = statFile(lockPath, repoRoot).ok;
+  const lockHeld = statFile(lockPath).ok;
 
   const lastRun = readLastRunRecord(repoRoot, statFile, deps);
 
@@ -388,15 +418,10 @@ async function runStatusAction(args, deps) {
     lock_path: scrub(lockPath),
     last_run: lastRun,
   };
-}export function defaultRmFile(filePath, root) {
+}export function defaultRmFile(filePath) {
   // The lock is a directory created by proper-lockfile's mkdir strategy.
-  const safeRoot = resolve(root);
-  const safe = resolve(filePath);
-  if (safe !== safeRoot && !safe.startsWith(safeRoot + sep)) {
-    throw new Error("refusing a filesystem path outside the target repository root");
-  }
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- validated against the repository root above
-  rmSync(safe, { recursive: true, force: true });
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- built from the launch workspace root, never from caller input
+  rmSync(filePath, { recursive: true, force: true });
 }export // ---------------------------------------------------------------------------
 // runReleaseAction
 // ---------------------------------------------------------------------------
@@ -417,23 +442,16 @@ async function runStatusAction(args, deps) {
  * @returns {Promise<object>} Release envelope.
  */
 async function runReleaseAction(args, deps) {
-  const rawPath = (args.repo_path ?? "").trim();
-  let repoRoot = rawPath;
-  try {
-    if (isAbsolute(rawPath)) {
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- validated absolute path
-      repoRoot = realpathSync(rawPath);
-    }
-  } catch {
-    // best-effort; proceed with rawPath
-  }
+  const authorized = await authorizedWorkspaceRoot(args, deps);
+  if (!authorized.ok) return authorized;
+  const repoRoot = authorized.workspaceRoot;
 
   const lockPath = join(repoRoot, ".gc-integration-lock");
   const statFile = deps.statFile ?? defaultStatFile;
   const rmFile = deps.rmFile ?? defaultRmFile;
 
   // Check whether the lock exists.
-  const lockStat = statFile(lockPath, repoRoot);
+  const lockStat = statFile(lockPath);
   if (lockStat.ok === false) {
     return {
       ok: true,
@@ -445,7 +463,7 @@ async function runReleaseAction(args, deps) {
 
   // Attempt removal.
   try {
-    rmFile(lockPath, repoRoot);
+    rmFile(lockPath);
   } catch (e) {
     const raw = e?.message ?? String(e);
     const msg = detectSensitiveBodyContent(raw) ? "<redacted>" : raw;
