@@ -112,6 +112,42 @@ async function mergePreparedPullRequest(prRecord, { mergeStrategy, owner, repo }
   }
 }
 
+// enqueue stays reserved (no ADR carve-out); merge is permitted by the ADR-029
+// amendment (2026-05-26, issue #989). Returns a refusal envelope, or null.
+function refuseReservedMode(mode) {
+  if (mode !== "enqueue") return null;
+  return {
+    ok: false,
+    error: "mode_disabled",
+    message:
+      "enqueue mode is reserved; the integration manager only executes prepare or merge mode under the current ADR set",
+    next_action: "file_adr_amendment",
+    mode,
+  };
+}
+
+// The repo-level integration lock, so two runs cannot race on one repository.
+// Returns {ok:true, releaseLock} or an error envelope.
+async function acquireRunLock(repoRoot, deps) {
+  const acquireLock = deps.acquireIntegrationLock ?? defaultAcquireIntegrationLock;
+  try {
+    return { ok: true, releaseLock: await acquireLock(repoRoot) };
+  } catch (e) {
+    if (e.code === "ELOCKED") {
+      return errorEnvelope(
+        "lock_contended",
+        `another integration run is in progress at ${repoRoot}`,
+        "wait_or_release",
+      );
+    }
+    return errorEnvelope(
+      "lock_failed",
+      `Failed to acquire integration lock: ${e.message}`,
+      "contact_support",
+    );
+  }
+}
+
 export // ---------------------------------------------------------------------------
 // runPrepareAction
 // ---------------------------------------------------------------------------
@@ -124,19 +160,8 @@ export // ----------------------------------------------------------------------
  * @returns {Promise<object>} Readiness ledger envelope or error envelope.
  */
 async function runPrepareAction(args, deps) {
-  // ── Clause a: mode refusal short-circuit ─────────────────────────────────
-  // enqueue remains reserved (no ADR carve-out).
-  // merge is permitted via the ADR-029 amendment (2026-05-26, issue #989).
-  if (args.mode === "enqueue") {
-    return {
-      ok: false,
-      error: "mode_disabled",
-      message:
-        "enqueue mode is reserved; the integration manager only executes prepare or merge mode under the current ADR set",
-      next_action: "file_adr_amendment",
-      mode: args.mode,
-    };
-  }
+  const modeRefusal = refuseReservedMode(args.mode);
+  if (modeRefusal) return modeRefusal;
 
   // ── Clause b: resolve config + owner/repo via buildIntegrationQueue ───────
   const queueResult = await buildIntegrationQueue(args, deps);
@@ -153,25 +178,9 @@ async function runPrepareAction(args, deps) {
   // ── Generate run ID ───────────────────────────────────────────────────────
   const runId = makeRunId(deps);
 
-  // ── Clause d: acquire the integration lock ────────────────────────────────
-  const acquireLock = deps.acquireIntegrationLock ?? defaultAcquireIntegrationLock;
-  let releaseLock;
-  try {
-    releaseLock = await acquireLock(repoRoot);
-  } catch (e) {
-    if (e.code === "ELOCKED") {
-      return errorEnvelope(
-        "lock_contended",
-        `another integration run is in progress at ${repoRoot}`,
-        "wait_or_release",
-      );
-    }
-    return errorEnvelope(
-      "lock_failed",
-      `Failed to acquire integration lock: ${e.message}`,
-      "contact_support",
-    );
-  }
+  const lock = await acquireRunLock(repoRoot, deps);
+  if (!lock.ok) return lock;
+  const releaseLock = lock.releaseLock;
 
   // Run context passed to per-PR preparation.
   const ctx = { repoRoot, runId, cfg, owner, repo };
@@ -235,30 +244,33 @@ async function runPrepareAction(args, deps) {
       }
     }
   }
-}// Every filesystem primitive below is a sink for a path built from the
+}// Each filesystem primitive below is a sink for a path built from the
 // caller-supplied `repo_path` and from directory-entry names read back off
-// disk. Resolve the candidate against the root it is scoped to and refuse
-// anything that lands outside, so neither a crafted `repo_path` nor a crafted
-// entry name can walk the server out of the repository it was pointed at
-// (jssecurity:S2083; the same repository binding ADR-027 puts on the review
-// lane). The root is passed by every production call site; an injected test
-// double takes the path alone and ignores it.
-function boundedPath(candidate, root) {
-  const resolvedRoot = resolve(root);
-  const resolved = resolve(candidate);
-  if (resolved !== resolvedRoot && !resolved.startsWith(resolvedRoot + sep)) {
-    throw new Error("refusing a filesystem path outside the target repository root");
-  }
-  return resolved;
-}
+// disk. Each resolves the candidate and refuses anything outside the root it is
+// scoped to, so neither a crafted `repo_path` nor a crafted entry name can walk
+// the server out of the repository it was pointed at (the same repository
+// binding ADR-027 puts on the review lane).
+//
+// The guard is written out at each sink rather than extracted: jssecurity:S2083
+// tracks taint within a function and does not follow a validation across a call
+// boundary, so a shared helper leaves every one of these reported as an
+// unvalidated sink. Keep it inline.
 
 export function defaultReadFile(filePath, root) {
-  const safe = boundedPath(filePath, root);
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- bounded to the repository root above
+  const safeRoot = resolve(root);
+  const safe = resolve(filePath);
+  if (safe !== safeRoot && !safe.startsWith(safeRoot + sep)) {
+    throw new Error("refusing a filesystem path outside the target repository root");
+  }
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- validated against the repository root above
   return readFileSync(safe, "utf-8");
 }export function defaultReaddir(dirPath, root) {
-  const safe = boundedPath(dirPath, root);
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- bounded to the repository root above
+  const safeRoot = resolve(root);
+  const safe = resolve(dirPath);
+  if (safe !== safeRoot && !safe.startsWith(safeRoot + sep)) {
+    throw new Error("refusing a filesystem path outside the target repository root");
+  }
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- validated against the repository root above
   return readdirSync(safe);
 }export // ---------------------------------------------------------------------------
 // Production-default implementations for status/release injectable deps.
@@ -266,8 +278,12 @@ export function defaultReadFile(filePath, root) {
 
 function defaultStatFile(filePath, root) {
   try {
-    const safe = boundedPath(filePath, root);
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- bounded to the repository root above
+    const safeRoot = resolve(root);
+    const safe = resolve(filePath);
+    if (safe !== safeRoot && !safe.startsWith(safeRoot + sep)) {
+      throw new Error("refusing a filesystem path outside the target repository root");
+    }
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- validated against the repository root above
     const s = statSync(safe);
     return { ok: true, mtimeMs: s.mtimeMs };
   } catch {
@@ -374,8 +390,12 @@ async function runStatusAction(args, deps) {
   };
 }export function defaultRmFile(filePath, root) {
   // The lock is a directory created by proper-lockfile's mkdir strategy.
-  const safe = boundedPath(filePath, root);
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- bounded to the repository root above
+  const safeRoot = resolve(root);
+  const safe = resolve(filePath);
+  if (safe !== safeRoot && !safe.startsWith(safeRoot + sep)) {
+    throw new Error("refusing a filesystem path outside the target repository root");
+  }
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- validated against the repository root above
   rmSync(safe, { recursive: true, force: true });
 }export // ---------------------------------------------------------------------------
 // runReleaseAction

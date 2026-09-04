@@ -163,6 +163,70 @@ async function pushRebasedHead(pr, tmpRef, worktreePath, execFile) {
   }
 }
 
+// CI conclusions that block a PR, with the record each one produces.
+const CI_BLOCKERS = {
+  queued_too_long: {
+    failure_class: "ci_queued_too_long",
+    summary: "CI run has been queued longer than the configured timeout",
+    next_action: "check_ci_queue",
+  },
+  timed_out: {
+    failure_class: "ci_timed_out",
+    summary: "CI run did not complete within the configured total timeout",
+    next_action: "check_ci_run",
+  },
+};
+
+// The CI and Sonar readiness gates. Hook contract for both:
+// (pr, ctx, deps) => Promise<{conclusion, details_url?}>. Returns a blocked
+// record for the first gate that refuses, or null when the PR is ready.
+async function runReadinessWatchers(pr, ctx, deps, cfg) {
+  const ciResult = await deps.runCiWatcher(pr, ctx, deps);
+  if (ciResult.conclusion === "failure") {
+    return {
+      pr_number: pr.pr_number,
+      outcome: "blocked",
+      failure_class: "ci_failed",
+      summary: safeSummary(`CI check failed${detailsSuffix(ciResult.details_url)}`),
+      next_action: "fix_ci",
+    };
+  }
+  const ciBlocker = CI_BLOCKERS[ciResult.conclusion];
+  if (ciBlocker) {
+    return {
+      pr_number: pr.pr_number,
+      outcome: "blocked",
+      failure_class: ciBlocker.failure_class,
+      summary: safeSummary(ciBlocker.summary),
+      next_action: ciBlocker.next_action,
+    };
+  }
+
+  const sonarResult = await deps.runSonarWatcher(pr, ctx, deps);
+  // A skipped analysis is only a problem when the repo configures SonarCloud;
+  // otherwise there is nothing for the watcher to have observed.
+  if (sonarResult.conclusion === "skipped" && cfg?.sonarcloud != null) {
+    return {
+      pr_number: pr.pr_number,
+      outcome: "blocked",
+      failure_class: "sonar_skipped_but_configured",
+      summary: safeSummary("Sonar analysis was skipped but sonarcloud is configured in .ground-control.yaml"),
+      next_action: "check_sonar_configuration",
+    };
+  }
+  if (sonarResult.conclusion === "failure") {
+    return {
+      pr_number: pr.pr_number,
+      outcome: "blocked",
+      failure_class: "sonar_gate_red",
+      summary: safeSummary(`Sonar quality gate is red${detailsSuffix(sonarResult.details_url)}`),
+      next_action: "fix_sonar_issues",
+    };
+  }
+
+  return null;
+}
+
 export // ---------------------------------------------------------------------------
 // preparePullRequestBranch — per-PR worktree isolation, rebase, gates, push
 // ---------------------------------------------------------------------------
@@ -293,65 +357,10 @@ async function preparePullRequestBranch(pr, ctx, deps) {
     const pushFailure = await pushRebasedHead(pr, tmpRef, worktreePath, execFile);
     if (pushFailure) return pushFailure;
 
-    // ── Step 8: CI watcher hook ───────────────────────────────────────────
-    // Hook contract: (pr, ctx, deps) => Promise<{conclusion, details_url?}>
-    // Conclusions: "success"|"skipped" → continue; "failure" → blocked ci_failed;
-    // "queued_too_long" → blocked ci_queued_too_long; "timed_out" → blocked ci_timed_out.
-    // Watchers run after push so they verify the rebased commit, not stale state.
-    const ciResult = await deps.runCiWatcher(pr, ctx, deps);
-    if (ciResult.conclusion === "failure") {
-      return {
-        pr_number: pr.pr_number,
-        outcome: "blocked",
-        failure_class: "ci_failed",
-        summary: safeSummary(`CI check failed${detailsSuffix(ciResult.details_url)}`),
-        next_action: "fix_ci",
-      };
-    }
-    if (ciResult.conclusion === "queued_too_long") {
-      return {
-        pr_number: pr.pr_number,
-        outcome: "blocked",
-        failure_class: "ci_queued_too_long",
-        summary: safeSummary("CI run has been queued longer than the configured timeout"),
-        next_action: "check_ci_queue",
-      };
-    }
-    if (ciResult.conclusion === "timed_out") {
-      return {
-        pr_number: pr.pr_number,
-        outcome: "blocked",
-        failure_class: "ci_timed_out",
-        summary: safeSummary("CI run did not complete within the configured total timeout"),
-        next_action: "check_ci_run",
-      };
-    }
+    // Watchers run after the push so they observe the rebased commit.
+    const watcherFailure = await runReadinessWatchers(pr, ctx, deps, cfg);
+    if (watcherFailure) return watcherFailure;
 
-    // ── Step 9: Sonar watcher hook ────────────────────────────────────────
-    // Hook contract: (pr, ctx, deps) => Promise<{conclusion, details_url?}>
-    // Conclusions: "success"|"skipped" (no sonar config) → continue;
-    // "skipped" (sonar configured) → blocked sonar_skipped_but_configured;
-    // "failure" → blocked sonar_gate_red.
-    const sonarResult = await deps.runSonarWatcher(pr, ctx, deps);
-    const hasSonarConfig = cfg?.sonarcloud != null;
-    if (sonarResult.conclusion === "skipped" && hasSonarConfig) {
-      return {
-        pr_number: pr.pr_number,
-        outcome: "blocked",
-        failure_class: "sonar_skipped_but_configured",
-        summary: safeSummary("Sonar analysis was skipped but sonarcloud is configured in .ground-control.yaml"),
-        next_action: "check_sonar_configuration",
-      };
-    }
-    if (sonarResult.conclusion === "failure") {
-      return {
-        pr_number: pr.pr_number,
-        outcome: "blocked",
-        failure_class: "sonar_gate_red",
-        summary: safeSummary(`Sonar quality gate is red${detailsSuffix(sonarResult.details_url)}`),
-        next_action: "fix_sonar_issues",
-      };
-    }
 
     return {
       pr_number: pr.pr_number,

@@ -201,7 +201,7 @@ function makeRunId(deps) {
   const ts = deps.now ? deps.now() : Date.now();
   // Correlation label for a run directory, not a secret or a capability;
   // randomUUID is used so the generator is not a question a reader has to ask.
-  const rand = deps.randomId ? deps.randomId() : randomUUID().replace(/-/g, "").slice(0, 6);
+  const rand = deps.randomId ? deps.randomId() : randomUUID().replaceAll("-", "").slice(0, 6);
   return `${ts}-${rand}`;
 }
 
@@ -314,10 +314,11 @@ async function discoverOpenPullRequests(owner, repo, execFile) {
     if (!result.ok) return result;
 
     const { pageData } = result;
-    if (!Array.isArray(pageData) || pageData.length === 0) {
+    if (Array.isArray(pageData) && pageData.length > 0) {
+      pullRequests.push(...pageData);
+    } else {
       return { ok: true, pullRequests };
     }
-    pullRequests.push(...pageData);
     if (pageData.length < 100) return { ok: true, pullRequests };
   }
 
