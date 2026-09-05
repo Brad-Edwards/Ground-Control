@@ -112,6 +112,11 @@ def run_sonar_strictness_contract(root: Path = REPO_ROOT) -> list[Violation]:
     return violations
 
 
+def _matches_any(branch: str, patterns: list) -> bool:
+    """Whether `branch` matches any entry, which may be a glob."""
+    return any(fnmatch.fnmatch(branch, str(pattern)) for pattern in patterns)
+
+
 def _trigger_covers(branch: str, pull_request: object) -> bool:
     """Whether a `pull_request` trigger runs for pull requests into `branch`.
 
@@ -122,118 +127,126 @@ def _trigger_covers(branch: str, pull_request: object) -> bool:
         # `pull_request:` with no body, or a list-form `on:`; no filter, so it runs.
         return True
     ignore = pull_request.get("branches-ignore")
-    if isinstance(ignore, list) and any(
-        fnmatch.fnmatch(branch, str(pattern)) for pattern in ignore
-    ):
+    if isinstance(ignore, list) and _matches_any(branch, ignore):
         return False
     allowed = pull_request.get("branches")
-    if not isinstance(allowed, list):
-        return True
-    return any(fnmatch.fnmatch(branch, str(pattern)) for pattern in allowed)
+    return not isinstance(allowed, list) or _matches_any(branch, allowed)
+
+
+def _load_workflow(path: Path) -> dict | None:
+    """Parse one workflow, or None when it is unreadable or not a mapping.
+
+    Returning None rather than raising keeps one malformed file from masking the
+    rest of the scan; the scan-floor guard is what turns "resolved nothing" into
+    a failure.
+    """
+    try:
+        document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (yaml.YAMLError, OSError):
+        return None
+    return document if isinstance(document, dict) else None
+
+
+def _pull_request_trigger(document: dict) -> tuple[bool, object]:
+    """Whether the workflow runs on `pull_request`, and that trigger's config."""
+    # PyYAML resolves an unquoted `on:` key to the boolean True (the YAML 1.1
+    # "y/yes/on" rule), so both spellings have to be accepted here.
+    triggers = document.get("on", document.get(True))
+    if isinstance(triggers, dict):
+        return "pull_request" in triggers, triggers.get("pull_request")
+    if isinstance(triggers, list):
+        return "pull_request" in triggers, None
+    return triggers == "pull_request", None
+
+
+def _reported_check_name(job_id: object, definition: object) -> str | None:
+    """The status context this job reports, or None when it resolves to no single name.
+
+    GitHub reports a job's `name:` when it sets one and its `jobs.<id>` key
+    otherwise, and branch protection waits on the reported name. A name carrying
+    a `${{ }}` expression expands per matrix leg, so it is neither the id nor the
+    raw template; such a job contributes no resolvable context, and whatever it
+    was meant to satisfy fails as unproduced rather than passing on a guess.
+    """
+    name = definition.get("name") if isinstance(definition, dict) else None
+    if not (isinstance(name, str) and name.strip()):
+        return str(job_id)
+    return None if "${{" in name else name.strip()
 
 
 def _check_names_by_branch(root: Path) -> tuple[dict[str, set[str]], int]:
     """Reported check names per protected branch, and the workflow scan count.
 
-    Two things make this per-branch rather than a single pooled set. GitHub
-    reports a job's `name:` when it sets one and its `jobs.<id>` key otherwise,
-    and branch protection waits on the reported name, so comparing ids alone
-    would let a workflow keep the id `policy`, rename the emitted check, and
-    still satisfy this gate. And a `pull_request` trigger filtered to one branch
-    never runs for the other, so pooling producers across workflows would accept
-    a repository where `main` requires a check only `dev` can produce. In both
-    cases the pull request waits forever on a context that never arrives.
-
-    Only pull-request-triggered workflows count: a job that runs solely on push
-    never reports a context on the pull request it is meant to gate. An
-    unparseable or non-mapping workflow contributes nothing rather than raising,
-    so one malformed file cannot mask the rest of the scan; the scan-floor guard
-    is what turns "resolved nothing" into a failure.
+    This is per-branch rather than one pooled set because a `pull_request`
+    trigger filtered to one branch never runs for the other, so pooling would
+    accept a repository where `main` requires a check only `dev` can produce and
+    every `main` pull request waits forever. Only pull-request-triggered
+    workflows count: a job that runs solely on push never reports a context on
+    the pull request it is meant to gate.
     """
     by_branch: dict[str, set[str]] = {branch: set() for branch in CI_STRICTNESS_BRANCHES}
     scanned = 0
     workflows_dir = root / WORKFLOWS_DIR
     if not workflows_dir.is_dir():
         return by_branch, scanned
-    for path in sorted(workflows_dir.glob("*.yml")) + sorted(workflows_dir.glob("*.yaml")):
-        try:
-            document = yaml.safe_load(path.read_text(encoding="utf-8"))
-        except (yaml.YAMLError, OSError):
-            continue
-        if not isinstance(document, dict):
+    paths = sorted(workflows_dir.glob("*.yml")) + sorted(workflows_dir.glob("*.yaml"))
+    for path in paths:
+        document = _load_workflow(path)
+        if document is None:
             continue
         scanned += 1
-        # PyYAML resolves an unquoted `on:` key to the boolean True (the YAML 1.1
-        # "y/yes/on" rule), so both spellings have to be accepted here.
-        triggers = document.get("on", document.get(True))
-        if isinstance(triggers, dict):
-            if "pull_request" not in triggers:
-                continue
-            pull_request = triggers["pull_request"]
-        elif isinstance(triggers, list):
-            if "pull_request" not in triggers:
-                continue
-            pull_request = None
-        else:
-            if triggers != "pull_request":
-                continue
-            pull_request = None
-
+        runs_on_pull_request, pull_request = _pull_request_trigger(document)
         jobs = document.get("jobs")
-        if not isinstance(jobs, dict):
+        if not runs_on_pull_request or not isinstance(jobs, dict):
             continue
-        names: set[str] = set()
-        for job_id, definition in jobs.items():
-            name = definition.get("name") if isinstance(definition, dict) else None
-            # A name carrying `${{ ... }}` expands per matrix leg, so the id is
-            # not the reported context and neither is the raw template. Such a
-            # job contributes no resolvable name, and the context it is meant to
-            # satisfy fails as unproduced rather than passing on a guess.
-            if isinstance(name, str) and name.strip():
-                if "${{" not in name:
-                    names.add(name.strip())
-            else:
-                names.add(str(job_id))
+        names = {
+            name
+            for job_id, definition in jobs.items()
+            if (name := _reported_check_name(job_id, definition)) is not None
+        }
         for branch in CI_STRICTNESS_BRANCHES:
             if _trigger_covers(branch, pull_request):
                 by_branch[branch].update(names)
     return by_branch, scanned
 
 
-def run_ci_required_context_contract(root: Path = REPO_ROOT) -> list[Violation]:
-    """Assert every required status check is real, and that the baseline matches.
-
-    A required context with no job behind it never reports, so the pull request
-    waits on a check that can never arrive and merges become impossible. The
-    inverse — a job that quietly stops being required — is the gate-weakening
-    direction. Both are drift between two files nothing else compares, so the
-    check is two-sided over `CI_STRICTNESS_REQUIRED_CONTEXTS` (GC-P030, ADR-091).
-    """
-    baseline_path = root / BRANCH_PROTECTION_BASELINE_PATH
-    if not baseline_path.exists():
-        return [
-            Violation(
-                code="ci-required-context-baseline-missing",
-                message="The branch-protection baseline is required to verify the merge gate.",
-                details=[f"expected at {BRANCH_PROTECTION_BASELINE_PATH.as_posix()}"],
-            )
-        ]
+def _load_baseline(path: Path) -> tuple[dict, Violation | None]:
+    """The parsed branch-protection baseline, or the violation that blocks reading it."""
+    if not path.exists():
+        return {}, Violation(
+            code="ci-required-context-baseline-missing",
+            message="The branch-protection baseline is required to verify the merge gate.",
+            details=[f"expected at {BRANCH_PROTECTION_BASELINE_PATH.as_posix()}"],
+        )
     try:
-        baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8")), None
     except json.JSONDecodeError as error:
-        return [
-            Violation(
-                code="ci-required-context-baseline-unreadable",
-                message="The branch-protection baseline is not valid JSON.",
-                details=[f"{BRANCH_PROTECTION_BASELINE_PATH.as_posix()}: {error}"],
-            )
-        ]
+        return {}, Violation(
+            code="ci-required-context-baseline-unreadable",
+            message="The branch-protection baseline is not valid JSON.",
+            details=[f"{BRANCH_PROTECTION_BASELINE_PATH.as_posix()}: {error}"],
+        )
 
+
+def _context_drift(branch: str, declared: set[str], expected: set[str]) -> Violation | None:
+    """The drift between one branch's declared contexts and the contract, if any."""
+    missing = sorted(expected - declared)
+    extra = sorted(declared - expected)
+    if not missing and not extra:
+        return None
+    return Violation(
+        code="ci-required-context-baseline-drift",
+        message="The branch-protection baseline must match the declared required-context set.",
+        details=(
+            [f"{branch}: missing '{name}'" for name in missing]
+            + [f"{branch}: unexpected '{name}'" for name in extra]
+        ),
+    )
+
+
+def _baseline_violations(branches: dict, expected: set[str]) -> list[Violation]:
+    """Per-branch baseline shape: the branch is declared, strict, and matches the contract."""
     violations: list[Violation] = []
-    branches = baseline.get("branches")
-    branches = branches if isinstance(branches, dict) else {}
-    expected = set(CI_STRICTNESS_REQUIRED_CONTEXTS)
-
     for branch in CI_STRICTNESS_BRANCHES:
         config = branches.get(branch)
         if not isinstance(config, dict):
@@ -241,7 +254,9 @@ def run_ci_required_context_contract(root: Path = REPO_ROOT) -> list[Violation]:
                 Violation(
                     code="ci-required-context-branch-missing",
                     message="Every protected branch must declare its required status checks.",
-                    details=[f"{BRANCH_PROTECTION_BASELINE_PATH.as_posix()}: no entry for '{branch}'"],
+                    details=[
+                        f"{BRANCH_PROTECTION_BASELINE_PATH.as_posix()}: no entry for '{branch}'"
+                    ],
                 )
             )
             continue
@@ -255,26 +270,16 @@ def run_ci_required_context_contract(root: Path = REPO_ROOT) -> list[Violation]:
                     details=[f"{branch}: expected strict=true"],
                 )
             )
-        declared = set(checks.get("contexts") or [])
-        missing = sorted(expected - declared)
-        extra = sorted(declared - expected)
-        if missing or extra:
-            violations.append(
-                Violation(
-                    code="ci-required-context-baseline-drift",
-                    message="The branch-protection baseline must match the declared required-context set.",
-                    details=(
-                        [f"{branch}: missing '{name}'" for name in missing]
-                        + [f"{branch}: unexpected '{name}'" for name in extra]
-                    ),
-                )
-            )
+        drift = _context_drift(branch, set(checks.get("contexts") or []), expected)
+        if drift:
+            violations.append(drift)
+    return violations
 
-    by_branch, scanned = _check_names_by_branch(root)
-    guard = require_scanned("pull-request workflow inventory", scanned)
-    if guard:
-        return violations + guard
 
+def _unproduced_violation(
+    by_branch: dict[str, set[str]], expected: set[str]
+) -> Violation | None:
+    """The contexts no pull-request job produces, named per protected branch."""
     details: list[str] = []
     for branch in CI_STRICTNESS_BRANCHES:
         produced = by_branch.get(branch, set())
@@ -283,12 +288,39 @@ def run_ci_required_context_contract(root: Path = REPO_ROOT) -> list[Violation]:
             f"{WORKFLOWS_DIR.as_posix()}/ that runs for this branch"
             for name in sorted(expected - EXTERNALLY_POSTED_CONTEXTS - produced)
         ]
-    if details:
-        violations.append(
-            Violation(
-                code="ci-required-context-unproduced",
-                message="Every required status check must be produced by a pull-request job on every protected branch.",
-                details=details,
-            )
-        )
-    return violations
+    if not details:
+        return None
+    return Violation(
+        code="ci-required-context-unproduced",
+        message=(
+            "Every required status check must be produced by a pull-request job "
+            "on every protected branch."
+        ),
+        details=details,
+    )
+
+
+def run_ci_required_context_contract(root: Path = REPO_ROOT) -> list[Violation]:
+    """Assert every required status check is real, and that the baseline matches.
+
+    A required context with no job behind it never reports, so the pull request
+    waits on a check that can never arrive and merges become impossible. The
+    inverse, a job that quietly stops being required, is the gate-weakening
+    direction. Both are drift between two files nothing else compares, so the
+    check is two-sided over `CI_STRICTNESS_REQUIRED_CONTEXTS` (GC-P030, ADR-091).
+    """
+    baseline, blocked = _load_baseline(root / BRANCH_PROTECTION_BASELINE_PATH)
+    if blocked:
+        return [blocked]
+
+    branches = baseline.get("branches")
+    expected = set(CI_STRICTNESS_REQUIRED_CONTEXTS)
+    violations = _baseline_violations(branches if isinstance(branches, dict) else {}, expected)
+
+    by_branch, scanned = _check_names_by_branch(root)
+    guard = require_scanned("pull-request workflow inventory", scanned)
+    if guard:
+        return violations + guard
+
+    unproduced = _unproduced_violation(by_branch, expected)
+    return violations + ([unproduced] if unproduced else [])

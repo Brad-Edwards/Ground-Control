@@ -114,8 +114,9 @@ class CiRequiredContextContractTest(unittest.TestCase):
         # The allowlist is shrink-only: it exempts a context from needing a local
         # job, so an entry that no longer appears in the required set would
         # silently widen the exemption.
-        self.assertTrue(
-            EXTERNALLY_POSTED_CONTEXTS <= CI_STRICTNESS_REQUIRED_CONTEXTS,
+        self.assertLessEqual(
+            EXTERNALLY_POSTED_CONTEXTS,
+            CI_STRICTNESS_REQUIRED_CONTEXTS,
             "every externally-posted context must still be a required context",
         )
 
