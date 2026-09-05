@@ -32,6 +32,14 @@ Threat enumeration, coverage gating, and drift detection all operate over a pers
 ## Traceability
 
 - DOCUMENTS → GITHUB_ISSUE `1118` (Issue #1118: GC-GRC-005 architecture model aggregate (graph-native, server-side))
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/architecturemodel/service/ArchitectureModelService.java` (ArchitectureModelService — aggregate CRUD, versioned snapshots, diffing (criteria a, d))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/architecturemodel/ArchitectureModelController.java` (ArchitectureModelController — project-scoped, auth-gated REST surface (criterion c))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/architecturemodel/service/ArchitectureModelGraphProjectionContributor.java` (ArchitectureModelGraphProjectionContributor — graph-native elements reachable via gc_graph (criterion b))

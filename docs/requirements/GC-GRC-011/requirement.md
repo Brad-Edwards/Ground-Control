@@ -30,9 +30,17 @@ A control row in a database protects nothing. Secure-by-design means the mitigat
 ## Traceability
 
 - DOCUMENTS → GITHUB_ISSUE `1124` (Issue #1124: GC-GRC-011 in-loop control implementation with efficacy tests)
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (gc_test_quality_review rubric: control-efficacy-test recognition (clause 5))
+- TESTS → TEST `mcp/ground-control/lib.runresolveworkflowroute.test.js` (buildTestQualityReviewPrompt contract test: control-efficacy rubric item present)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/controls/service/ControlService.java` (ControlService.transitionStatus in-loop evidence gate (clauses a/b/c/d))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/controls/repository/ControlLinkRepository.java` (ControlLinkRepository.existsByControlIdAndTargetTypeAndLinkType (CODE/IMPLEMENTS evidence primitive))
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (gc_test_quality_review rubric: control-efficacy-test recognition (clause 5))
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/ControlServiceTest.java` (ControlServiceTest.ImplementationEvidenceGate: efficacy tests (red if the guard is removed))
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/integration/ControlImplementationEvidenceGateIntegrationTest.java` (End-to-end efficacy test on a real control (REST+service+DB): 409 until CODE+efficacy evidence exist)
-- TESTS → TEST `mcp/ground-control/lib.runresolveworkflowroute.test.js` (buildTestQualityReviewPrompt contract test: control-efficacy rubric item present)

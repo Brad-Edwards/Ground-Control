@@ -21,9 +21,17 @@ GC-N001 stores version history but provides no structured diff output. Agents ne
 
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP tool gc_get_requirement_diff)
+- IMPLEMENTS → GITHUB_ISSUE `#230` (GC-N003: Structured Requirement Version Diff)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/service/AuditService.java` (AuditService - getRequirementDiff())
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/requirements/RequirementController.java` (RequirementController - GET /{id}/diff REST endpoint)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP tool gc_get_requirement_diff)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/domain/requirements/service/AuditServiceDiffTest.java` (Unit tests for version diff)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/RequirementControllerTest.java` (Controller tests for diff endpoint (VersionDiff nested class))
-- IMPLEMENTS → GITHUB_ISSUE `#230` (GC-N003: Structured Requirement Version Diff)

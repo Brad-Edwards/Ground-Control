@@ -21,6 +21,15 @@ Explicit FAIR support is incomplete if the platform can estimate frequency but c
 
 ## Traceability
 
+- DOCUMENTS → GITHUB_ISSUE `#745` (GC-T016: FAIR Materiality and Loss Taxonomy Support)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/grcanalysis/service/FairQuantitativeAnalysisService.java` (FAIR materiality/loss-form decomposition + stakeholder secondary effects)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/grcanalysis/service/FairQuantitativeAnalysisResult.java` (Materiality / LossFormBreakdown / StakeholderSecondaryLoss output records)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/grcanalysis/FairQuantitativeAnalysisResponse.java` (Materiality view on the FAIR analysis API response)
@@ -29,4 +38,3 @@ Explicit FAIR support is incomplete if the platform can estimate frequency but c
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/GrcAnalysisControllerTest.java` (@WebMvcTest slice asserting materiality fields serialize through the API)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/grcanalysis/service/FairFormOfLoss.java` (FairFormOfLoss enum (O-RT six forms of loss, The Open Group))
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/grcanalysis/FairFormOfLossTest.java` (FairFormOfLoss 6-form + fromJsonKey tests)
-- DOCUMENTS → GITHUB_ISSUE `#745` (GC-T016: FAIR Materiality and Loss Taxonomy Support)

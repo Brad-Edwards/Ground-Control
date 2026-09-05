@@ -8,6 +8,16 @@ Accepted
 
 2026-04-05
 
+> **Documentation sync for issue #650 (2026-09-05):** The SKILL's telemetry paragraph claimed
+> step telemetry was retired and then described writing durable rows into the ADR-061 backend
+> projection. The projection went with the backend (#1500), so the paragraph now states the
+> single true position: `telemetry.enabled` is `false`, the orchestrator makes no telemetry
+> call, and nothing is recorded. Telemetry never gated a phase, so no gate changes. The workflow
+> documents are reconciled in the same change: `docs/DEVELOPMENT_WORKFLOW.md` drops the contract
+> surface, rollback, and Java-era sections whose subjects were deleted, and `docs/WORKFLOW.md`
+> becomes a navigation page rather than a second, contradictory workflow definition. This ADR's
+> gate contract stays the same.
+
 > **Style sync for issue #751 (2026-06-14):** Repository-wide Vale cleanup normalized punctuation in workflow prose. This ADR's gate contract stays the same.
 
 ## Context

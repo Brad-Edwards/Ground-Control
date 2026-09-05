@@ -31,13 +31,21 @@ GRC content authored out-of-band decays; enforcement that lives only in workflow
 
 - IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (GRC screening renderer implementation in lib.js)
 - IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (GRC screening tool registration in index.js)
-- IMPLEMENTS → DOCUMENTATION `skills/implement/steps/step-03.5-grc-screening.md` (GRC screening step prose (step 3.5))
-- TESTS → TEST `mcp/ground-control/gc-grc-screening.test.js` (GRC screening unit tests (53 tests))
 - DOCUMENTS → DOCUMENTATION `docs/DEVELOPMENT_WORKFLOW.md` (Development workflow reference documenting GRC screening step)
 - DOCUMENTS → ADR `architecture/adrs/057-per-run-grc-screening-gate.md` (ADR-057: Per-run GRC screening gate design decision)
 - IMPLEMENTS → GITHUB_ISSUE `1099` (Issue #1099: /implement Step 3.5 GRC screening gate)
 - IMPLEMENTS → PULL_REQUEST `https://github.com/Brad-Edwards/Ground-Control/pull/1109` (PR #1109: /implement Step 3.5 GRC screening gate)
-- TESTS → TEST `mcp/ground-control/gc-grc-reconciled.test.js` (gc_assert_grc_reconciled unit tests (verify/missing/no_baseline/cross-type/no-override paths))
 - IMPLEMENTS → GITHUB_ISSUE `1100` (Issue #1100: gc_assert_grc_reconciled server-side GRC completion gate)
 - IMPLEMENTS → PULL_REQUEST `https://github.com/Brad-Edwards/Ground-Control/pull/1111` (PR #1111: gc_assert_grc_reconciled GRC completion gate)
 - IMPLEMENTS → DOCUMENTATION `skills/implement/steps/step-17-completion.md` (Step 17 workflow wiring of gc_assert_grc_reconciled via gc_assert_completion (#1103))
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
+- IMPLEMENTS → DOCUMENTATION `skills/implement/steps/step-03.5-grc-screening.md` (GRC screening step prose (step 3.5))
+- TESTS → TEST `mcp/ground-control/gc-grc-screening.test.js` (GRC screening unit tests (53 tests))
+- TESTS → TEST `mcp/ground-control/gc-grc-reconciled.test.js` (gc_assert_grc_reconciled unit tests (verify/missing/no_baseline/cross-type/no-override paths))

@@ -31,18 +31,25 @@ Per-boundary modeling is the decided unit: fine enough to localize threats, coar
 
 - DOCUMENTS → GITHUB_ISSUE `1117` (Issue #1117: GC-GRC-004 canonical boundary model (derived + declared))
 - DOCUMENTS → DOCUMENTATION `docs/architecture/ARCHITECTURE.md` (Canonical boundary model architecture note)
+- DOCUMENTS → CONFIG `.ground-control.yaml` (Declared GRC boundary inputs for this repository)
+- DOCUMENTS → DOCUMENTATION `docs/DEVELOPMENT_WORKFLOW.md` (Ground Control grc.boundaries config contract)
+- DOCUMENTS → DOCUMENTATION `architecture/notes/canonical-boundary-model-preflight.md` (Canonical boundary model architecture preflight notes)
+
+## Historical traceability
+
+Links below named artifacts the #1500 re-platform deleted. They are kept for
+provenance and are outside the parsed `## Traceability` section, so no tool reads
+them as live evidence. Do not infer current implementation from them.
+
+- DOCUMENTS → DOCUMENTATION `docs/API.md` (Derivations API boundary-model reference)
 - DOCUMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/derivation/service/BoundaryModelService.java` (BoundaryModelService canonical boundary snapshot builder)
 - DOCUMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/infrastructure/derivation/BoundaryDerivationAdapter.java` (BoundaryDerivationAdapter derived trust-boundary inputs)
 - DOCUMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/derivation/DerivationController.java` (Derivation boundary-model REST readback endpoint)
 - DOCUMENTS → CODE_FILE `mcp/ground-control/gc-derivation.js` (gc_derivation declared-boundary forwarding and boundary-model action)
-- DOCUMENTS → CONFIG `.ground-control.yaml` (Declared GRC boundary inputs for this repository)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/derivation/BoundaryModelServiceTest.java` (BoundaryModelService unit coverage)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/infrastructure/derivation/BoundaryDerivationAdapterTest.java` (BoundaryDerivationAdapter unit coverage)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/DerivationControllerTest.java` (DerivationController boundary-model WebMvc coverage)
 - TESTS → TEST `mcp/ground-control/gc-derivation.test.js` (gc_derivation boundary forwarding tests)
-- DOCUMENTS → DOCUMENTATION `docs/API.md` (Derivations API boundary-model reference)
-- DOCUMENTS → DOCUMENTATION `docs/DEVELOPMENT_WORKFLOW.md` (Ground Control grc.boundaries config contract)
-- DOCUMENTS → DOCUMENTATION `architecture/notes/canonical-boundary-model-preflight.md` (Canonical boundary model architecture preflight notes)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/derivation/service/BoundaryModelService.java` (BoundaryModelService canonical boundary snapshot builder)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/infrastructure/derivation/BoundaryDerivationAdapter.java` (BoundaryDerivationAdapter derived trust-boundary inputs)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/derivation/DerivationController.java` (Derivation boundary-model REST readback endpoint)

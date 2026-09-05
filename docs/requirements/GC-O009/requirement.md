@@ -49,6 +49,20 @@ Amended 2026-07-03 (issue #1271, ADR-081): clause (b) rewritten to match the ADR
 - DOCUMENTS → ADR `architecture/adrs/081-temporal-dev-workflow-and-console-program.md` (ADR-081: Temporal Dev Workflow and Console Program)
 - IMPLEMENTS → GITHUB_ISSUE `1276` (Temporal infrastructure: server, visibility, worker topology, and deploy fit)
 - IMPLEMENTS → PULL_REQUEST `1323` (added: temporal infrastructure topology)
+- IMPLEMENTS → POLICY `tools/policy/checks.py` (Temporal topology policy gate)
+- IMPLEMENTS → DOCUMENTATION `architecture/notes/temporal-infrastructure-topology-preflight.md` (Temporal infrastructure topology architecture preflight)
+- IMPLEMENTS → GITHUB_ISSUE `1277` (Deterministic core workflow: typed activities and replay tests)
+- IMPLEMENTS → PULL_REQUEST `1337` (added: deterministic core /implement Temporal workflow (GC-O009 phase 2))
+- IMPLEMENTS → GITHUB_ISSUE `1278` (Workflow control surface: REST and MCP start/status/signal)
+- IMPLEMENTS → ADR `architecture/adrs/088-temporal-human-gates.md`
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CONFIG `docker-compose.yml` (Local Temporal server, persistence, and worker topology)
 - IMPLEMENTS → CONFIG `deploy/docker/docker-compose.prod.yml` (Production Temporal server, persistence, worker, and tailnet bind topology)
 - IMPLEMENTS → CONFIG `deploy/docker/env.schema` (Required production Temporal environment schema)
@@ -59,9 +73,7 @@ Amended 2026-07-03 (issue #1271, ADR-081): clause (b) rewritten to match the ADR
 - IMPLEMENTS → CODE_FILE `deploy/docker/deploy.sh` (Deploy-time Temporal frontend and worker health checks)
 - IMPLEMENTS → CODE_FILE `deploy/scripts/backup.sh` (Temporal database backup capture)
 - IMPLEMENTS → CODE_FILE `deploy/scripts/test-restore.sh` (Temporal database restore verification)
-- IMPLEMENTS → POLICY `tools/policy/checks.py` (Temporal topology policy gate)
 - IMPLEMENTS → POLICY `scripts/assert-backup-policy.sh` (Temporal backup/restore policy assertion)
-- IMPLEMENTS → DOCUMENTATION `architecture/notes/temporal-infrastructure-topology-preflight.md` (Temporal infrastructure topology architecture preflight)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/infrastructure/temporal/TemporalWorkerConfigurationTest.java` (Temporal worker configuration tests)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/infrastructure/temporal/TemporalSmokeWorkflowTest.java` (Temporal smoke workflow restart/durability test)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/architecture/ArchitectureTest.java` (Temporal dependency boundary architecture test)
@@ -73,13 +85,10 @@ Amended 2026-07-03 (issue #1271, ADR-081): clause (b) rewritten to match the ADR
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/infrastructure/temporal/implement/ImplementWorkflowReplayTest.java` (Temporal test-env: full phase graph, gate order, replay, signals, retry, crash/resume)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/infrastructure/temporal/implement/ImplementActivitiesImplTest.java` (Per-activity unit tests (typed I/O, non-retryable domain failures, observe-before-create))
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/infrastructure/temporal/implement/WorkflowContractConformanceTest.java` (Activity payload record↔schema conformance + enum vocabulary parity)
-- IMPLEMENTS → GITHUB_ISSUE `1277` (Deterministic core workflow: typed activities and replay tests)
-- IMPLEMENTS → PULL_REQUEST `1337` (added: deterministic core /implement Temporal workflow (GC-O009 phase 2))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/workflowexecution/WorkflowExecutionController.java` (WorkflowExecutionController (REST start/status/signal))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/workflowexecution/service/WorkflowExecutionService.java` (WorkflowExecutionService (auth/scope/audit boundary))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/infrastructure/temporal/control/TemporalWorkflowControlAdapter.java` (TemporalWorkflowControlAdapter (Visibility + signals))
 - IMPLEMENTS → CODE_FILE `mcp/ground-control/gc-workflow-execution.js` (gc_workflow_execution MCP tool)
-- IMPLEMENTS → GITHUB_ISSUE `1278` (Workflow control surface: REST and MCP start/status/signal)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/WorkflowExecutionControllerTest.java` (WorkflowExecutionControllerTest (@WebMvcTest slice))
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/workflowexecution/WorkflowExecutionServiceTest.java` (WorkflowExecutionServiceTest (scope/auth/signal validation))
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/infrastructure/temporal/control/TemporalWorkflowControlAdapterTest.java` (TemporalWorkflowControlAdapterTest (start/signal/describe mapping))
@@ -87,5 +96,4 @@ Amended 2026-07-03 (issue #1271, ADR-081): clause (b) rewritten to match the ADR
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/infrastructure/temporal/implement/port/MergeObservationPort.java`
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/infrastructure/github/GitHubMergeObservationAdapter.java`
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/workflowexecution/audit/OperatorSignalAudit.java`
-- IMPLEMENTS → ADR `architecture/adrs/088-temporal-human-gates.md`
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/infrastructure/github/GitHubMergeObservationAdapterTest.java`

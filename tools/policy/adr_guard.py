@@ -158,15 +158,6 @@ def load_json(path: Path, *, reject_duplicate_keys: bool = False) -> dict[str, A
     return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=object_pairs_hook)
 
 
-def get_repo_relative_files(root: Path, glob_pattern: str) -> list[str]:
-    """Return sorted repo-relative file paths under ``root`` matching ``glob_pattern``."""
-    return sorted(
-        normalize_path(str(path.relative_to(root)))
-        for path in root.glob(glob_pattern)
-        if path.is_file()
-    )
-
-
 def changed_lines_for(path: str, base: str | None, root: Path = REPO_ROOT) -> str | None:
     """Added and removed lines for one path, or None when the diff cannot be read.
 

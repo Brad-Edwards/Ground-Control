@@ -26,4 +26,12 @@ CLD treats tests and batteries as gauges that must themselves be calibrated. Mut
 - DOCUMENTS → ADR `ADR-087` (ADR-087: Contract-Locked Development Methodology)
 - IMPLEMENTS → GITHUB_ISSUE `1293` (Mutation-testing gate: PIT/Stryker with per-boundary thresholds)
 - IMPLEMENTS → PULL_REQUEST `1322` (feat: add scoped cld mutation gate)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CONFIG `backend/build.gradle.kts` (Backend PIT mutation configuration hooks)

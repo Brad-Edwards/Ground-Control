@@ -32,6 +32,14 @@ Derivation replaces LLM generation as the source of the security model (derive �
 ## Traceability
 
 - DOCUMENTS → GITHUB_ISSUE `1114` (Issue #1114: GC-GRC-001 derivation adapter port and normalized system-model facts)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/derivation/service/DerivationAdapter.java` (Derivation adapter port)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/derivation/service/DerivationService.java` (Server-side derivation orchestration and persistence)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/derivation/DerivationController.java` (Derivation REST invocation and readback surface)

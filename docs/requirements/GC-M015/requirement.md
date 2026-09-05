@@ -21,6 +21,17 @@ Cloud inventory and control-monitoring systems consistently separate the object 
 
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP tool registrations for observations)
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (MCP API functions for observations)
+- IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/Ground-Control#473` (GC-M015: Observation and State Fact Entity)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/assets/model/Observation.java` (Observation JPA Entity)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/assets/state/ObservationCategory.java` (ObservationCategory Enum)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/assets/repository/ObservationRepository.java` (ObservationRepository)
@@ -28,8 +39,5 @@ Cloud inventory and control-monitoring systems consistently separate the object 
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/assets/ObservationController.java` (ObservationController REST API)
 - IMPLEMENTS → CODE_FILE `backend/src/main/resources/db/migration/V035__create_observation.sql` (Flyway migration: observation table)
 - IMPLEMENTS → CODE_FILE `backend/src/main/resources/db/migration/V036__create_observation_audit.sql` (Flyway migration: observation audit table)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP tool registrations for observations)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (MCP API functions for observations)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/ObservationControllerTest.java` (ObservationController WebMvc unit tests)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/ObservationServiceTest.java` (ObservationService unit tests)
-- IMPLEMENTS → GITHUB_ISSUE `Brad-Edwards/Ground-Control#473` (GC-M015: Observation and State Fact Entity)

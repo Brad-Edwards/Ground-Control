@@ -21,5 +21,13 @@ Traceability links decay as code evolves. A link to a deleted file or significan
 
 ## Traceability
 
-- IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/model/TraceabilityLink.java` (TraceabilityLink - syncStatus and lastSyncedAt fields)
 - DOCUMENTS → GITHUB_ISSUE `#684` (GC-E004: Link Health Tracking)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
+- IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/model/TraceabilityLink.java` (TraceabilityLink - syncStatus and lastSyncedAt fields)

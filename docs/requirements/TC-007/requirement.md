@@ -24,6 +24,14 @@ Azure Test Plans provides all three modes. Static suites give manual control, re
 - IMPLEMENTS → GITHUB_ISSUE `#674` (TC-007: Test Suite Entity)
 - IMPLEMENTS → PULL_REQUEST `#924` (feat(testcases): add TestSuite entity with three population modes (TC-007))
 - IMPLEMENTS → ADR `ADR-047` (ADR-047: Test Suite Entity)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/testcases/model/TestSuite.java` (TestSuite entity (aggregate root with population_mode + criteria columns))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/testcases/service/TestSuiteService.java` (TestSuiteService (CRUD + per-mode population ops + mode-dispatch resolve))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/testcases/TestSuiteController.java` (TestSuiteController (REST surface under /api/v1/test-suites))

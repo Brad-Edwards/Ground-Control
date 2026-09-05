@@ -8,6 +8,24 @@ accepted
 
 2026-05-23
 
+> **Sync note for issue #650 (2026-09-05, post-re-platform documentation reconciliation):**
+> The `config_parser` surface's `doc_targets` named
+> `architecture/adrs/027-ground-control-yaml-context-contract.md`, an ADR filename that has
+> never existed. A doc target that cannot resolve can never be satisfied, so that surface's
+> documentation requirement had silently stopped being enforceable. The path is corrected to
+> `architecture/adrs/027-agent-neutral-implement-workflow-packaging.md`, and a new case in
+> `mcp/ground-control/lib.acquireknowledgelock.test.js` asserts every file-shaped `doc_targets`
+> entry resolves against the real tree, so the class of defect cannot recur silently. The same
+> change retires the documents whose subject the #1500 re-platform removed (`docs/API.md`, the
+> `docs/deployment/`, `docs/frontend/`, and `docs/operations/` trees, the console design
+> specification, the `/deploy` skill, the dead `tools/ground_control/` backend clients, and the
+> `pack-registry-sync` workflow), and corrects
+> `.github/branch-protection-baseline.json` plus `CI_STRICTNESS_REQUIRED_CONTEXTS`, which still
+> required five contexts no workflow produces. The surface classes themselves, the
+> `outcome_required` mapping, the Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are
+> unchanged, and no new `docs/DOC_STYLE.md` style rule is established; `docs/DOC_STYLE.md`
+> changes only to drop dead references and to mark its per-issue precedent log historical.
+
 > **Sync note for issue #633 follow-up (2026-09-04, /integrate lane restored):** #1506 removed
 > `mcp/ground-control/gc-integrate.js` and its `gc-integrate/*` modules as dead code after checking
 > for callers in JS and finding none; the caller is `skills/integrate/SKILL.md`, which names tools in

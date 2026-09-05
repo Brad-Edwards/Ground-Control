@@ -21,6 +21,16 @@ Supporting multiple risk methodologies requires explicit preservation of their s
 
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP tools for methodology profile CRUD)
+- IMPLEMENTS → GITHUB_ISSUE `#257` (GC-T002: Risk Scoring Engine)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/model/MethodologyProfile.java` (MethodologyProfile entity)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/state/MethodologyFamily.java` (MethodologyFamily enum (FAIR, NIST, ISO, CUSTOM))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/state/MethodologyProfileStatus.java` (MethodologyProfileStatus enum (ACTIVE, DEPRECATED))
@@ -30,7 +40,5 @@ Supporting multiple risk methodologies requires explicit preservation of their s
 - IMPLEMENTS → CODE_FILE `backend/src/main/resources/db/migration/V043__create_risk_assessment.sql` (V043 migration: methodology_profile table and seed data)
 - IMPLEMENTS → CODE_FILE `backend/src/main/resources/db/migration/V045__populate_methodology_profile_schemas.sql` (V045 migration: methodology profile schemas (FAIR/NIST/ISO/Legacy))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/model/RiskAssessmentResult.java` (RiskAssessmentResult entity with required methodologyProfile FK)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP tools for methodology profile CRUD)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/MethodologyProfileServiceTest.java` (MethodologyProfileService unit tests)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/MethodologyProfileControllerTest.java` (MethodologyProfileController WebMvcTest)
-- IMPLEMENTS → GITHUB_ISSUE `#257` (GC-T002: Risk Scoring Engine)

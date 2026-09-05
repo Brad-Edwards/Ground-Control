@@ -3,9 +3,10 @@
 
 import { after, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   acquireIntegrationLock,
   acquireKnowledgeLock,
@@ -447,5 +448,29 @@ describe("classifyChangedSurface", () => {
 
   it("rejects path-traversal attempts (.. escape)", () => {
     assert.throws(() => classifyChangedSurface(["../../etc/passwd"], REPO), /absolute|containment|escape|traversal|inside|root/i);
+  });
+
+  // A doc_target naming a file that does not exist can never be satisfied, so the
+  // surface's documentation requirement silently stops being enforceable. Issue #650
+  // found the config_parser class pointing at an ADR filename that was never in the
+  // tree. Directory targets (trailing "/") are prefixes, not files, and are excluded.
+  it("resolves every file-shaped doc_target against the real repository tree", () => {
+    const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+    const representativePaths = [
+      "skills/implement/SKILL.md",
+      "mcp/ground-control/index.js",
+      "mcp/ground-control/lib.js",
+      "mcp/ground-control/lib/ground-control-config.js",
+      "tools/policy/checks.py",
+      "architecture/adrs/054-documentation-coverage-gate.md",
+      "docs/DOC_STYLE.md",
+    ];
+    const result = classifyChangedSurface(representativePaths, repoRoot);
+    const targets = new Set(result.classifications.flatMap((c) => c.doc_targets));
+    assert.ok(targets.size > 0, "expected the representative paths to carry doc targets");
+    const missing = [...targets]
+      .filter((target) => !target.endsWith("/"))
+      .filter((target) => !existsSync(join(repoRoot, target)));
+    assert.deepEqual(missing, [], `doc_targets naming files absent from the tree: ${missing.join(", ")}`);
   });
 });

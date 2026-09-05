@@ -23,6 +23,14 @@ ADR-014 mandates pluggable verification. Extending this to a general plugin arch
 
 - DOCUMENTS → ADR `ADR-022` (Content Pack Distribution Architecture)
 - DOCUMENTS → ADR `ADR-023` (Plugin Architecture)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `domain/plugins/service/Plugin.java` (Plugin interface)
 - IMPLEMENTS → CODE_FILE `domain/plugins/service/PluginDescriptor.java` (Plugin metadata record)
 - IMPLEMENTS → CODE_FILE `domain/plugins/service/PluginRegistry.java` (Plugin registry service)

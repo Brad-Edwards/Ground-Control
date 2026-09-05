@@ -1,23 +1,26 @@
-# Design Specifications
+# Design records
 
-Pre-pivot design artifacts are archived in `archive/docs/`. See:
+Two directories sit beside the ADRs, and neither is a current contract.
 
-- `archive/docs/requirements/project.sdoc` - product requirements (replaces PRD)
-- `archive/docs/api/API_SPEC.md` - target API design
-- `archive/docs/architecture/DATA_MODEL.md` - target data model
-- `archive/docs/user-stories/USER_STORIES.md` - user stories
-- `archive/docs/user-stories/USE_CASES.md` - use case descriptions
+`architecture/design/` holds long-form design specifications. It is empty: the
+console information-architecture specification that lived here described the
+React console removed by the #1500 re-platform, and was deleted with its subject.
 
-For architecture decisions, see [ADRs](../adrs/).
+`architecture/notes/` holds point-in-time notes, most of them written by the
+`/implement` architecture preflight before a change was implemented
+([ADR-021](../adrs/021-gated-agentic-development-loop.md)). Each note records the
+guardrails that applied to one issue on one day. It is evidence of what was
+decided then, not a description of the system now, and many notes discuss
+subsystems the re-platform removed.
 
-## Design Notes Index
+For the current picture, read these instead:
 
-| Document | Phase | Description |
-|----------|-------|-------------|
-| [Phase 1: Requirements Management](../notes/phase1-requirements-design.md) | 1 | Data model, app structure, key patterns for the requirements management system |
-| [Phase 2: Cloud Database](../notes/phase2-cloud-database-design.md) | 2 | RDS deployment, Terraform structure, security model, developer workflow |
-| [Architecture Model Artifacts](../notes/architecture-model-artifacts.md) | 5 | Guardrails for modeling C4 diagrams, architecture tests, and fitness functions as traceable artifacts without introducing a parallel artifact domain |
-| [Security Scanner CI Preflight](../notes/security-scanner-ci-preflight.md) | CI | Guardrails for adding advisory Trivy and OSV-scanner jobs without duplicating policy, security, or runtime abstractions |
-| [Mixed Entity Graph Traversal Preflight](../notes/mixed-entity-graph-traversal-preflight.md) | 4 | Guardrails for mixed-entity graph traversal, path finding, subgraph extraction, and visualization |
-| [Console IA and Design-System Foundations](console-ia-design-system.md) | Console | Construction reference for GC-Q015/GC-Q016 console shell, navigation, design-system, session UX, and workflow operations |
-| [Console IA and Design-System Foundations Preflight](../notes/console-ia-design-system-preflight.md) | Console | Guardrails for the GC-Q015/GC-Q016 information architecture, design-system, session UX, and workflow-operations reference |
+| Question | Reference |
+|----------|-----------|
+| What runs, and where is the trust boundary? | [`docs/architecture/ARCHITECTURE.md`](../../docs/architecture/ARCHITECTURE.md) |
+| Why is a decision the way it is? | [`architecture/adrs/`](../adrs/) |
+| How does the gated workflow operate? | [`docs/DEVELOPMENT_WORKFLOW.md`](../../docs/DEVELOPMENT_WORKFLOW.md) |
+| What does a requirement look like? | [`docs/requirements/`](../../docs/requirements/) |
+
+The ADR index at [`architecture/adrs/README.md`](../adrs/README.md) marks which
+decisions the re-platform superseded.

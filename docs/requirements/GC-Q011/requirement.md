@@ -21,6 +21,21 @@ Controls are the operational hinge between policy, engineering, audit, and risk.
 
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (Control assurance workspace MCP API helper)
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (gc_control_assurance_workspace MCP tool registration)
+- DOCUMENTS → DOCUMENTATION `docs/architecture/ARCHITECTURE.md` (GC-Q011 architecture documentation)
+- DOCUMENTS → DOCUMENTATION `mcp/ground-control/README.md` (GC-Q011 MCP tool catalog documentation)
+- DOCUMENTS → ADR `architecture/adrs/054-documentation-coverage-gate.md` (ADR-054 GC-Q011 documentation coverage amendment)
+- DOCUMENTS → DOCUMENTATION `docs/DOC_STYLE.md` (GC-Q011 documentation style sync note)
+- IMPLEMENTS → GITHUB_ISSUE `#749` (GC-Q011: Control and Assurance Workspace)
+
+## Historical traceability
+
+Links below named artifacts the #1500 re-platform deleted. They are kept for
+provenance and are outside the parsed `## Traceability` section, so no tool reads
+them as live evidence. Do not infer current implementation from them.
+
+- DOCUMENTS → DOCUMENTATION `docs/API.md` (GC-Q011 API documentation)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/controls/service/ControlWorkspaceService.java` (Control workspace composition service)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/controls/service/ControlWorkspaceResult.java` (Control workspace domain read model)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/controls/ControlWorkspaceController.java` (Control workspace REST controller)
@@ -30,16 +45,8 @@ Controls are the operational hinge between policy, engineering, audit, and risk.
 - IMPLEMENTS → CODE_FILE `frontend/src/types/api.ts` (Control assurance workspace frontend API types)
 - IMPLEMENTS → CODE_FILE `frontend/src/routes.tsx` (Control assurance workspace route)
 - IMPLEMENTS → CODE_FILE `frontend/src/components/layout/app-layout.tsx` (Control workspace navigation entry)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (Control assurance workspace MCP API helper)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (gc_control_assurance_workspace MCP tool registration)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/ControlWorkspaceServiceTest.java` (Control workspace service tests)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/ControlWorkspaceControllerTest.java` (Control workspace controller tests)
 - TESTS → TEST `frontend/src/pages/__tests__/control-assurance-workspace.test.tsx` (Control assurance workspace frontend tests)
 - TESTS → TEST `mcp/ground-control/gc-control.test.js` (Control assurance workspace MCP adapter tests)
-- DOCUMENTS → DOCUMENTATION `docs/API.md` (GC-Q011 API documentation)
-- DOCUMENTS → DOCUMENTATION `docs/architecture/ARCHITECTURE.md` (GC-Q011 architecture documentation)
-- DOCUMENTS → DOCUMENTATION `mcp/ground-control/README.md` (GC-Q011 MCP tool catalog documentation)
-- DOCUMENTS → ADR `architecture/adrs/054-documentation-coverage-gate.md` (ADR-054 GC-Q011 documentation coverage amendment)
-- DOCUMENTS → DOCUMENTATION `docs/DOC_STYLE.md` (GC-Q011 documentation style sync note)
 - DOCUMENTS → DOCUMENTATION `changelog.d/749.added.md` (GC-Q011 changelog fragment)
-- IMPLEMENTS → GITHUB_ISSUE `#749` (GC-Q011: Control and Assurance Workspace)

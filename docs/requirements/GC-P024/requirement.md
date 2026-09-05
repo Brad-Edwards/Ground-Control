@@ -34,11 +34,19 @@ V059 explicitly marks the stock users and authorities tables as the seam for a d
 ## Traceability
 
 - DOCUMENTS → GITHUB_ISSUE `1282` (GC-P024: users, groups, and roles as data)
+- IMPLEMENTS → ADR `architecture/adrs/085-identity-model-users-groups-roles.md` (ADR-085 identity model)
+- IMPLEMENTS → GITHUB_ISSUE `1282` (GC-P024: users, groups, and roles as data)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/identity/service/IdentityAdminService.java` (Identity administration service)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/identity/model/IdentityUser.java` (Identity user domain entity)
-- IMPLEMENTS → ADR `architecture/adrs/085-identity-model-users-groups-roles.md` (ADR-085 identity model)
 - IMPLEMENTS → CODE_FILE `backend/src/main/resources/db/migration/V205__create_identity_foundation.sql` (Identity foundation migration)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/identity/IdentityAdminServiceTest.java` (Identity administration service tests)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/integration/IdentityAdminApiIntegrationTest.java` (Identity administration API integration tests)
 - IMPLEMENTS → CODE_FILE `mcp/ground-control/gc-identity-admin.js` (Identity administration MCP tool)
-- IMPLEMENTS → GITHUB_ISSUE `1282` (GC-P024: users, groups, and roles as data)

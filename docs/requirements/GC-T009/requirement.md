@@ -21,6 +21,16 @@ FAIR, NIST SP 800-30, and ISO-style risk methods all require risk to be scoped t
 
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP tool registrations for risk scenarios)
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (MCP API functions for risk scenarios)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/model/RiskScenario.java` (RiskScenario entity)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/model/RiskScenarioLink.java` (RiskScenarioLink entity)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/state/RiskScenarioStatus.java` (RiskScenarioStatus enum)
@@ -36,8 +46,6 @@ FAIR, NIST SP 800-30, and ISO-style risk methods all require risk to be scoped t
 - IMPLEMENTS → CODE_FILE `backend/src/main/resources/db/migration/V040__create_risk_scenario_audit.sql` (Risk scenario audit table migration)
 - IMPLEMENTS → CODE_FILE `backend/src/main/resources/db/migration/V041__create_risk_scenario_link.sql` (Risk scenario link table migration)
 - IMPLEMENTS → CODE_FILE `backend/src/main/resources/db/migration/V042__create_risk_scenario_link_audit.sql` (Risk scenario link audit table migration)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP tool registrations for risk scenarios)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (MCP API functions for risk scenarios)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/RiskScenarioControllerTest.java` (RiskScenarioController unit test)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/RiskScenarioLinkControllerTest.java` (RiskScenarioLinkController unit test)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/RiskScenarioServiceTest.java` (RiskScenarioService unit test)

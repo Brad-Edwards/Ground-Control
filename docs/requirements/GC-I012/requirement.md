@@ -21,6 +21,16 @@ Control tests should not merely say whether a control passed or failed; they sho
 
 ## Traceability
 
+- IMPLEMENTS → ADR `architecture/adrs/039-control-verification-subsystem.md` (ADR-039 Control Verification Subsystem)
+- IMPLEMENTS → GITHUB_ISSUE `#270` (GC-I012: Control Testing Entity)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/controls/model/ControlTest.java` (ControlTest entity (audited evidence row))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/controls/service/ControlTestService.java` (ControlTestService (project-scoped CRUD + delete guard))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/controls/ControlTestController.java` (ControlTestController (/api/v1/control-tests REST))
@@ -28,9 +38,7 @@ Control tests should not merely say whether a control passed or failed; they sho
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/controls/state/ControlTestConclusion.java` (ControlTestConclusion enum)
 - IMPLEMENTS → CODE_FILE `backend/src/main/resources/db/migration/V065__create_control_test.sql` (V065 control_test schema (Flyway migration))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/graph/service/ControlTestGraphProjectionContributor.java` (ControlTest graph projection contributor (OF_CONTROL edges))
-- IMPLEMENTS → ADR `architecture/adrs/039-control-verification-subsystem.md` (ADR-039 Control Verification Subsystem)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/ControlTestServiceTest.java` (ControlTestService unit tests)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/ControlTestControllerTest.java` (ControlTestController @WebMvcTest)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/integration/ControlTestControllerIntegrationTest.java` (ControlTestController integration test)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/ControlTestGraphProjectionContributorTest.java` (ControlTest graph projection contributor unit test)
-- IMPLEMENTS → GITHUB_ISSUE `#270` (GC-I012: Control Testing Entity)

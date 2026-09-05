@@ -22,6 +22,14 @@ A requirements management system that cannot manage its own requirements lacks c
 ## Traceability
 
 - IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (MCP server — enables self-management of GC requirements)
+- IMPLEMENTS → GITHUB_ISSUE `#303` (GC-O001: Self-Managed Requirements)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `.claude/skills/implement` (/implement skill — orchestrates requirement workflow using GC tools)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/integration/RequirementsE2EIntegrationTest.java` (E2E integration tests — verify requirement CRUD that enables self-management)
-- IMPLEMENTS → GITHUB_ISSUE `#303` (GC-O001: Self-Managed Requirements)

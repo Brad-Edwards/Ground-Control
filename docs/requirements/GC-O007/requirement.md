@@ -40,7 +40,7 @@ Ground Control's value proposition depends on agents maintaining traceability an
 ## Traceability
 
 - DOCUMENTS → DOCUMENTATION `docs/DEVELOPMENT_WORKFLOW.md` (Development Workflow documentation)
-- DOCUMENTS → DOCUMENTATION `docs/WORKFLOW.md` (Workflow philosophy documentation)
+- DOCUMENTS → DOCUMENTATION `docs/WORKFLOW.md` (Workflow navigation page pointing at the owning references)
 - DOCUMENTS → ADR `architecture/adrs/021-gated-agentic-development-loop.md` (ADR-021: Gated Agentic Development Loop)
 - IMPLEMENTS → CODE_FILE `.claude/agents/completion-verifier.md` (Completion verifier agent)
 - IMPLEMENTS → CODE_FILE `.claude/rules/implementation-quality.md` (Implementation quality rules)
@@ -77,20 +77,13 @@ Ground Control's value proposition depends on agents maintaining traceability an
 - IMPLEMENTS → PULL_REQUEST `1060` (PR #1060 — Traceability + post-merge close gates at MCP tool layer (#1058))
 - IMPLEMENTS → GITHUB_ISSUE `1194` (Add repo-configured dev-start plan gate)
 - IMPLEMENTS → GITHUB_ISSUE `1156` (Issue #1156 — Explain Phase D outcome and recommend next issue in Phase E)
-- TESTS → TEST `mcp/ground-control/gc-grc-reconciled.test.js` (GRC final-report prerequisite tests updated for plainEnglishOutcome (#1156))
 - IMPLEMENTS → PULL_REQUEST `1157` (PR #1157 — Phase D outcome and Phase E next-issue recommendation (#1156))
 - IMPLEMENTS → GITHUB_ISSUE `1102` (Issue #1102 — Enforce documents traceability coverage for draft in-scope requirements)
 - IMPLEMENTS → PULL_REQUEST `1158` (PR #1158 — Documentation coverage gate for draft in-scope requirements (#1102))
-- IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/service/RequirementService.java` (RequirementService DRAFT-to-ACTIVE DOCUMENTS coverage enforcement)
-- IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/qualitygates/repository/QualityGateRepository.java` (QualityGateRepository active DOCUMENTS coverage gate lookup)
 - IMPLEMENTS → DOCUMENTATION `skills/implement/steps/step-06-completion-gate.md` (/implement Step 6 explicit in-scope requirements completion gate)
-- TESTS → TEST `mcp/ground-control/gc-assert-quality-gates.test.js` (MCP quality-gate tests for in-scope DOCUMENTS coverage)
-- TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/RequirementServiceTest.java` (RequirementService tests for DRAFT activation DOCUMENTS coverage)
-- DOCUMENTS → DOCUMENTATION `docs/API.md` (API documentation for documentation_link_missing activation errors)
 - DOCUMENTS → DOCUMENTATION `docs/DOC_STYLE.md` (Documentation style note for #1102 gate-doc extension)
 - DOCUMENTS → ADR `architecture/adrs/054-documentation-coverage-gate.md` (ADR-054 amendment: in-scope documentation coverage gate)
 - IMPLEMENTS → CODE_FILE `skills/implement/steps/step-17-completion.md` (/implement Step 17 consolidated completion step (gc_assert_completion) (#1103))
-- TESTS → TEST `mcp/ground-control/gc-assert-completion.test.js` (gc_assert_completion composition tests (#1103))
 - DOCUMENTS → DOCUMENTATION `architecture/notes/implement-completion-record-consolidation-preflight.md` (Issue #1103 codex architecture preflight binding-guardrails note)
 - IMPLEMENTS → GITHUB_ISSUE `1103` (Issue #1103 — Consolidate /implement Phase D tail into gc_assert_completion)
 - DOCUMENTS → DOCUMENTATION `skills/implement/steps/step-09-pr-body.md` (PR body dev-start gate instructions)
@@ -144,3 +137,17 @@ Ground Control's value proposition depends on agents maintaining traceability an
 - DOCUMENTS → DOCUMENTATION `architecture/notes/merge-verified-requirement-state-preflight.md` (Issue #1541 codex architecture preflight binding-guardrails note)
 - DOCUMENTS → ADR `architecture/adrs/093-requirements-specs-as-code.md` (ADR-093 amendment: delivery + completion authority (#1541))
 - IMPLEMENTS → GITHUB_ISSUE `1541` (Issue #1541 — align specs-as-code requirement transitions with merged Phase E state)
+
+## Historical traceability
+
+Links below named artifacts the #1500 re-platform deleted. They are kept for
+provenance and are outside the parsed `## Traceability` section, so no tool reads
+them as live evidence. Do not infer current implementation from them.
+
+- DOCUMENTS → DOCUMENTATION `docs/API.md` (API documentation for documentation_link_missing activation errors)
+- TESTS → TEST `mcp/ground-control/gc-grc-reconciled.test.js` (GRC final-report prerequisite tests updated for plainEnglishOutcome (#1156))
+- IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/service/RequirementService.java` (RequirementService DRAFT-to-ACTIVE DOCUMENTS coverage enforcement)
+- IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/qualitygates/repository/QualityGateRepository.java` (QualityGateRepository active DOCUMENTS coverage gate lookup)
+- TESTS → TEST `mcp/ground-control/gc-assert-quality-gates.test.js` (MCP quality-gate tests for in-scope DOCUMENTS coverage)
+- TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/RequirementServiceTest.java` (RequirementService tests for DRAFT activation DOCUMENTS coverage)
+- TESTS → TEST `mcp/ground-control/gc-assert-completion.test.js` (gc_assert_completion composition tests (#1103))
