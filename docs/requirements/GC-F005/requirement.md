@@ -22,6 +22,14 @@ ADR-014 mandates a prover-agnostic architecture. No single verifier covers all a
 ## Traceability
 
 - DOCUMENTS → ADR `ADR-014` (Pluggable Verification Architecture)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/verification/service/VerifierAdapter.java` (VerifierAdapter interface)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/verification/service/VerificationRequest.java` (VerificationRequest record)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/verification/service/VerificationOutcome.java` (VerificationOutcome record)

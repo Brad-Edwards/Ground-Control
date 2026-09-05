@@ -21,6 +21,18 @@ Core capability of a requirements management system. All other features depend o
 
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP gc_create_requirement tool)
+- DOCUMENTS → ADR `architecture/adrs/011-requirements-data-model.md` (Data model design)
+- CONSTRAINS → GITHUB_ISSUE `autarchy-ai/Ground-Control#322` (Tech debt: Entity constructors accept null required fields)
+- CONSTRAINS → GITHUB_ISSUE `autarchy-ai/Ground-Control#323` (Tech debt: JPA entities missing equals/hashCode)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/model/Requirement.java` (Requirement entity)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/service/RequirementService.java` (create() + UID uniqueness)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/service/CreateRequirementCommand.java` (Command record)
@@ -31,12 +43,8 @@ Core capability of a requirements management system. All other features depend o
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/state/Priority.java` (Priority enum)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/state/Status.java` (Status enum + DRAFT default)
 - IMPLEMENTS → CODE_FILE `backend/src/main/resources/db/migration/V001__create_requirement.sql` (DB schema)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP gc_create_requirement tool)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/RequirementServiceTest.java` (Unit: create + UID conflict)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/RequirementControllerTest.java` (Unit: POST 201, validation 422, conflict 409)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/integration/RequirementControllerIntegrationTest.java` (Integration: create + validation + conflict)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/integration/RequirementServiceIntegrationTest.java` (Integration: persistence + audit)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/RequirementTest.java` (Entity defaults (DRAFT, FUNCTIONAL, MUST))
-- DOCUMENTS → ADR `architecture/adrs/011-requirements-data-model.md` (Data model design)
-- CONSTRAINS → GITHUB_ISSUE `autarchy-ai/Ground-Control#322` (Tech debt: Entity constructors accept null required fields)
-- CONSTRAINS → GITHUB_ISSUE `autarchy-ai/Ground-Control#323` (Tech debt: JPA entities missing equals/hashCode)

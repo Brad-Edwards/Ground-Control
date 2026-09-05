@@ -30,6 +30,14 @@ CodeQL is the anchor derivation engine: GitHub-native, polyglot, and mature for 
 ## Traceability
 
 - DOCUMENTS → GITHUB_ISSUE `1115` (Issue #1115: GC-GRC-002 CodeQL derivation adapter)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/infrastructure/derivation/CodeQlDerivationAdapter.java` (CodeQL derivation adapter)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/infrastructure/derivation/CodeQlDerivationProperties.java` (CodeQL derivation properties)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/infrastructure/derivation/CodeQlSarifNormalizer.java` (CodeQL SARIF normalizer)

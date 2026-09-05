@@ -69,7 +69,7 @@ class RepoIdentityDriftChecksTest(PolicyChecksFixture):
         # The URL form (badges, clone URLs, raw-content URLs) is caught too.
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
-            wf = root / ".github/workflows/pack-registry-sync.yml"
+            wf = root / ".github/workflows/ci.yml"
             wf.parent.mkdir(parents=True, exist_ok=True)
             wf.write_text(
                 'RAW_BASE_URL="https://raw.githubusercontent.com/Brad-Edwards/Ground-Control/x"\n',

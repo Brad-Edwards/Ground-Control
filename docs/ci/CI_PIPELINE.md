@@ -1,81 +1,70 @@
 # CI pipeline
 
-Reference for `.github/workflows/ci.yml`. The contract behind it is ADR-091.
+Reference for the GitHub Actions workflows in `.github/workflows/`. The contract
+behind the verification topology is
+[ADR-091](../../architecture/adrs/091-ci-verification-topology.md).
 
-## Job graph
+Ground Control is the MCP server for the `/implement` workflow over repo-local
+files (issue #1500). There is no backend, database, or frontend, so there is no
+compile lane, no Testcontainers lane, no coverage-producing Gradle build, and no
+image publish. The verification surface is the MCP `node --test` suite, the
+repo-native policy checks, Vale prose linting, SonarCloud, and two dependency and
+secret scanners.
 
-Every verification job starts at t=0. None of them consumes another job's
-artifact, so whole-run wall clock is the duration of the slowest job.
+## Verification jobs
 
-```
-t=0  fast-feedback  frontend  policy  build  test  integration  verify  sonar  trivy  osv-scanner  mcp-contract
-                                |                                                                       |
-                                +-- policy-live (main only)                                             |
-                                                                                                        |
-     docker (push to main/dev only) <-- every verification job above except fast-feedback and policy-live
-       |
-     smoke
-```
+Every verification job starts at t=0 and none consumes another job's artifact, so
+whole-run wall clock is the duration of the slowest job. Each job id below is the
+required-status-check context name.
 
-`fast-feedback` is excluded from the `docker` gate because its checks are a
-strict subset of `build` and `test`. `policy-live` is excluded because GitHub
-skips a job whose `needs` entry was skipped, and it is skipped on every ref but
-`main`; gating the publish on it would stop the image publishing at all.
+| Job | Workflow | Required | What it verifies | Reproduce locally |
+|---|---|---|---|---|
+| `policy` | `ci.yml` | yes | Pre-commit file hygiene and the gitleaks secret scan, the Python policy tool tests, the MCP `node --test` suite, MCP ESLint, `bin/policy`, and Vale on changed docs | `make policy` and `make mcp-test` |
+| `sonar` | `sonarcloud.yml` | yes | JavaScript coverage through `c8`, Python coverage through `coverage.py`, SonarCloud analysis, the hosted quality gate, and the zero-open-issues gate | `npx c8 --reporter=lcovonly npm test` in `mcp/ground-control`, then `python3 tools/sonar/assert_no_new_issues.py --project-key autarchy-ai_Ground-Control` with `SONAR_TOKEN` set |
+| `trivy` | `security.yml` | yes | Filesystem scan for CRITICAL and HIGH vulnerabilities and for secrets, failing the job on any fixable finding | `trivy fs --scanners vuln,secret --severity CRITICAL,HIGH --ignore-unfixed .` |
+| `osv-scanner` | `security.yml` | yes | Known vulnerabilities in the Node and Python dependency manifests, configured by `osv-scanner.toml` | `osv-scanner scan source --recursive --config=osv-scanner.toml .` |
 
-`tools/tests/test_ci_topology.py` enforces this shape. It fails if a
-verification job gains a dependency, if `docker` stops naming a gate, if a
-required context loses its job, or if the fast lane becomes required.
+Two further required contexts are produced outside this repository's workflow
+files: `SonarCloud Code Analysis`, posted by the SonarQube scan action with the
+quality-gate result, and `GitGuardian Security Checks`, posted by the GitGuardian
+app. `.github/branch-protection-baseline.json` records the required set for
+`main` and `dev` with strict status checks and admin bypass retained.
 
-## Jobs
+That baseline is enforced, not just documented. `run_ci_required_context_contract`
+in `tools/policy/ci_strictness.py` (GC-P030, ADR-091) checks it two ways on every
+`make policy` and CI `policy` run: every context in
+`CI_STRICTNESS_REQUIRED_CONTEXTS` must be produced by a job in a
+pull-request-triggered workflow **that runs for that protected branch**, and the
+baseline's context set must match that declaration exactly in both directions.
+The branch half matters because a `pull_request` trigger filtered to one branch
+never runs for the other, so a check can exist and still never report on `main`. The two hosted-app contexts above are the
+only exemptions from needing a local producer, and that allowlist is shrink-only.
+Adding or removing a required check therefore means editing the declaration, the
+baseline, and the workflow together; the gate fails until they agree.
 
-| Job | Required | What it verifies | Reproduce locally |
-|---|---|---|---|
-| `fast-feedback` | no | Spotless formatting, main and test compilation | `cd backend && ./gradlew spotlessCheck compileJava compileTestJava -Pquick` |
-| `frontend` | yes | Biome lint, Vitest unit tests, production build | `make frontend-lint`, `make frontend-test`, `make frontend-build` |
-| `policy` | yes | Pre-commit hygiene and secret scan, policy tool tests, MCP server tests, repo policy checks, Vale prose lint | `make policy` |
-| `build` | yes | Assembly, Checkstyle, SpotBugs, Spotless | `cd backend && ./gradlew build -x test && ./gradlew spotlessCheck` |
-| `test` | yes | Unit tests, static analysis, 80 percent JaCoCo line coverage | `make check` |
-| `integration` | yes | Testcontainers integration tests | `make integration` |
-| `verify` | yes | OpenJML extended static checking | `cd backend && ./gradlew openjmlEsc` |
-| `sonar` | yes | Coverage generation, SonarCloud analysis, quality gate, new-issue gate | `cd backend && ./gradlew test jacocoTestReport` then `./gradlew sonar` with `SONAR_TOKEN` set |
-| `trivy` | yes | Image vulnerabilities, secrets, IaC misconfiguration | `docker build -f backend/Dockerfile -t gc-trivy:ci .` then `trivy image gc-trivy:ci` |
-| `osv-scanner` | yes | Gradle lockfile CVEs, lockfile drift | `cd backend && ./gradlew dependencies` then `osv-scanner --lockfile=backend/gradle.lockfile` |
-| `mcp-contract` | no | Contract artifact regeneration, OpenAPI breaking changes, MCP write-contract drift | `make mcp-openapi-contract` and `make contract-breaking` |
-| `policy-live` | no | Live Ground Control ADR and policy drift | `make policy-live` with `GC_BASE_URL` set |
-| `docker` | no | Image publish to GHCR | `make docker-build` |
-| `smoke` | no | Image starts, Flyway migrates, health reports UP | `make smoke` |
+The `policy` job fetches PR comments in a token-bearing step and then runs
+PR-head policy code without `GH_TOKEN`, passing `--pr-comments-json` and
+`--pr-number` so the gate can read the PR-thread marker without exposing a token
+to code from the pull request head. On push events it runs `bin/policy
+--skip-pr-body` instead, because there is no PR body to check.
 
-Two more required contexts come from external apps rather than this workflow:
-`SonarCloud Code Analysis` and `GitGuardian Security Checks`.
-
-The required set lives in three places that must agree: the job in `ci.yml`,
-`CI_STRICTNESS_REQUIRED_CONTEXTS` in `tools/policy/checks.py`, and
-`.github/branch-protection-baseline.json`. Adding or removing a required check
-means editing all three; the topology tests fail until they match.
-
-## Fast lane and full gate
-
-`fast-feedback` reports formatting and compilation errors before any full lane
-finishes. It is advisory: it is not in the required-context set, and it never
-substitutes for a required check. The complete suite is the only merge
-authority.
+Vale runs only on pull requests. A push event has no base ref to diff against,
+and a document reaches `main` only through a pull request, so the on-PR pass is
+the authoritative prose gate.
 
 Required checks are not path-filtered. A workflow-level `paths` filter stops the
 workflow from running, so a required context never reports and the pull request
-stays blocked. See ADR-091 for the full reasoning.
+stays blocked forever. ADR-091 carries the full reasoning.
 
-## Test lane ownership and sharding
+## Release and repository workflows
 
-`test` owns unit tests, which are every test not tagged `integration` or `age`.
-`integration` owns Testcontainers tests, which are the classes extending
-`BaseIntegrationTest` or otherwise tagged `integration`. `sonar` runs the unit
-lane again to produce the coverage XML it analyzes. `ageTest` covers Apache AGE
-tests and does not run in CI.
+These are not verification gates and are not in the required-context set.
 
-Neither test lane is sharded. Both are shorter than `sonar`, so splitting them
-cannot reduce wall clock, and shard coverage would have to be merged back into
-the single JaCoCo XML that Sonar reads. Shard when a single test lane becomes
-the longest job in the graph.
+| Workflow | Trigger | What it does |
+|---|---|---|
+| `pr-title.yml` | pull request to `main` or `dev` | Enforces a Conventional Commit title with a single type, an optional scope, and a lowercase-leading subject. Release Please parses merged history, so the title is load-bearing. The `/implement` skill validates the same allow-list locally at Step 9. |
+| `release-please.yml` | push to `main` | Maintains the `chore(main): release X.Y.Z` pull request, regenerates `CHANGELOG.md` from Conventional Commit history, and cuts the tag and GitHub Release when that pull request merges. There is no image to publish. |
+| `sync-main-to-dev.yml` | after a release lands on `main` | Opens the `main` to `dev` back-merge pull request from a dedicated automation branch. A human merges it. |
 
 ## Measuring
 
@@ -93,44 +82,3 @@ python3 tools/ci/measure_ci_timings.py --branch <branch> --limit 10
 Pass `--branch` when measuring a topology change before it reaches `dev`.
 Without it the sample mixes the branch under test with historical runs of the
 topology it replaces, which understates the difference.
-
-## Recorded timings
-
-The before sample covers the 40 most recent `pull_request` runs of `ci.yml` on
-the serial graph. The after sample covers the pull request that introduced the
-flat graph (issue #1461, `--branch 1461-ci-fast-feedback`), so it is 3 runs
-rather than 40. Re-measure with `make ci-timings` once the flat graph has
-accumulated history on `dev`.
-
-| Metric | Before (serial graph, n=40) | After (flat graph, n=3) |
-|---|---|---|
-| Whole-run wall clock, median | 15.0m | 6.2m |
-| Whole-run wall clock, p95 | 23.9m | 6.3m |
-| Time to first failing check, median | 4.9m | 1.9m |
-
-Under the serial graph `sonar` alone did not start until +12.3m. `sonar` is
-still the last job to finish, so it now bounds the run on its own.
-
-Two secondary effects show up in the same sample. `sonar` dropped from 7.6m to
-about 6m once it stopped assembling the boot jar and re-running static analysis
-it does not consume. `policy` dropped from 1m42s to 1m9s once the pre-commit
-hook-environment cache was warm; the first run on a new branch misses that cache
-and pays the full cost.
-
-Per-job medians in the before sample, with start offset from run start:
-
-| Job | Median | p95 | Starts at |
-|---|---|---|---|
-| `policy` | 1.8m | 2.0m | +0.0m |
-| `trivy` | 4.2m | 6.5m | +1.9m |
-| `osv-scanner` | 0.9m | 1.3m | +1.9m |
-| `mcp-contract` | 3.0m | 3.8m | +1.9m |
-| `build` | 4.4m | 5.4m | +1.9m |
-| `test` | 6.0m | 6.9m | +6.5m |
-| `integration` | 5.5m | 6.3m | +12.3m |
-| `verify` | 2.0m | 2.6m | +12.3m |
-| `sonar` | 7.6m | 9.0m | +12.3m |
-
-The critical path was `policy`, `build`, `test`, `sonar`. Under the flat graph
-every job starts within 6 seconds of run start, so the longest job bounds the
-run.

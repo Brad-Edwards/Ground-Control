@@ -21,6 +21,14 @@ Creating GitHub issues from requirements is a repeated workflow during wave acti
 
 ## Traceability
 
+- DOCUMENTS → GITHUB_ISSUE `#191` (GC-D007: Issue Creation from Requirement — Implement MCP tool)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/service/GitHubIssueSyncService.java` (GitHubIssueSyncService - Issue creation from requirement)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/admin/GitHubIssueController.java` (GitHubIssueController - Issue creation API endpoint)
-- DOCUMENTS → GITHUB_ISSUE `#191` (GC-D007: Issue Creation from Requirement — Implement MCP tool)

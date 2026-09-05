@@ -21,6 +21,17 @@ Explicit FAIR support requires more than a 5x5 matrix with renamed labels. FAIR 
 
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP index.js — gc_analyze fair_quantitative kind)
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (MCP lib.js — analyzeFairQuantitative helper)
+- DOCUMENTS → GITHUB_ISSUE `#723` (GC-T011: FAIR Quantitative Risk Analysis)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/grcanalysis/service/FairQuantitativeAnalysisService.java` (FairQuantitativeAnalysisService — FAIR engine)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/grcanalysis/service/FairQuantitativeAnalysisResult.java` (FairQuantitativeAnalysisResult — FAIR result model)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/grcanalysis/FairQuantitativeAnalysisResponse.java` (FairQuantitativeAnalysisResponse — REST response DTO)
@@ -28,9 +39,6 @@ Explicit FAIR support requires more than a 5x5 matrix with renamed labels. FAIR 
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/grcanalysis/service/GrcAnalysisService.java` (GrcAnalysisService — FAIR analysis delegation)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/service/MethodologyProfileService.java` (MethodologyProfileService — FAIR sub-factor schema support)
 - IMPLEMENTS → CODE_FILE `backend/src/main/resources/db/migration/V136__extend_fair_input_schema_subfactors.sql` (V136 migration — extend FAIR input schema with sub-factors)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP index.js — gc_analyze fair_quantitative kind)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (MCP lib.js — analyzeFairQuantitative helper)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/grcanalysis/FairQuantitativeAnalysisServiceTest.java` (FairQuantitativeAnalysisServiceTest — unit tests for FAIR engine)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/GrcAnalysisControllerTest.java` (GrcAnalysisControllerTest — unit tests for REST endpoint)
 - TESTS → TEST `mcp/ground-control/gc-analyze.test.js` (gc-analyze.test.js — MCP gc_analyze integration tests)
-- DOCUMENTS → GITHUB_ISSUE `#723` (GC-T011: FAIR Quantitative Risk Analysis)

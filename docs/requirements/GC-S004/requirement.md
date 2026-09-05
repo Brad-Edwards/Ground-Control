@@ -23,6 +23,14 @@ Asset management evidence supports SOC 2 CC6.6, ISO 27001 A.8, and SOX ITGC. Age
 
 - IMPLEMENTS → GITHUB_ISSUE `#213` (GC-S004: CMDB/Asset Evidence Adapter Specification)
 - DOCUMENTS → DOCUMENTATION `docs/architecture/ARCHITECTURE.md` (Architecture overview — CMDB/asset evidence adapter specification (GC-S004))
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/evidence/collection/cmdb/CmdbEvidenceProvider.java` (CmdbEvidenceProvider (GC-S004 provider keys))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/evidence/collection/cmdb/CmdbEvidenceFamily.java` (CmdbEvidenceFamily (GC-S004 evidence families))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/evidence/collection/cmdb/CmdbEvidenceSpecification.java` (CmdbEvidenceSpecification (GC-S004 normative spec))

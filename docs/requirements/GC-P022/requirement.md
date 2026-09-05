@@ -22,8 +22,16 @@ red-dragon silently served a stale build for ~10 days (#953): the CI publish nam
 ## Traceability
 
 - DOCUMENTS → ADR `architecture/adrs/030-on-prem-hetzner-deployment.md` (ADR-030 On-prem Hetzner deployment — canonical GHCR namespace and deploy path GC-P022 governs)
-- IMPLEMENTS → CODE_FILE `deploy/docker/deploy.sh` (Deploy-time staleness guard: revision-advance check before docker compose up)
 - IMPLEMENTS → CODE_FILE `tools/policy/checks.py` (run_ghcr_namespace_drift — make policy canonical-namespace gate)
 - IMPLEMENTS → GITHUB_ISSUE `953` (#953 Deploy image-namespace mismatch + silent stale deploys)
 - DOCUMENTS → ADR `architecture/adrs/063-release-deployment-model.md` (ADR-063 Release & Deployment Model — immutable digest-pinned release artifact; floating :main is not a release (GC-P022 provenance domain))
 - TESTS → TEST `tools/tests/test_policy_repo_identity_drift.py` (run_ghcr_namespace_drift tests: passes-on-repo, fires-on-drift, accepts-canonical)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
+- IMPLEMENTS → CODE_FILE `deploy/docker/deploy.sh` (Deploy-time staleness guard: revision-advance check before docker compose up)

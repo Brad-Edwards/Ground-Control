@@ -21,6 +21,14 @@ Deleting a stale or broken link destroys audit-significant information. Knowing 
 
 ## Traceability
 
+- DOCUMENTS → GITHUB_ISSUE `#688` (GC-E007: Link Lifecycle History)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/model/TraceabilityLink.java` (TraceabilityLink - @Audited lifecycle history)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/audit/AuditService.java` (AuditService - Link lifecycle history queries)
-- DOCUMENTS → GITHUB_ISSUE `#688` (GC-E007: Link Lifecycle History)

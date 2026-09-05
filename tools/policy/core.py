@@ -187,19 +187,21 @@ def extract_requirement_uid_tokens(body: str) -> list[str]:
 CI_STRICTNESS_BRANCHES = ("main", "dev")
 
 
+# The required status checks recorded in .github/branch-protection-baseline.json.
+# Every entry must be produced by a job in .github/workflows/ or by a hosted app:
+# `policy` (ci.yml), `sonar` (sonarcloud.yml), `trivy` and `osv-scanner`
+# (security.yml), plus the two app-posted contexts. A context with no producer
+# behind it blocks every pull request forever, which is why the pre-#1500
+# `build` / `frontend` / `integration` / `test` / `verify` entries were dropped
+# with the jobs that produced them (issue #650).
 CI_STRICTNESS_REQUIRED_CONTEXTS = frozenset(
     {
         "GitGuardian Security Checks",
         "SonarCloud Code Analysis",
-        "build",
-        "frontend",
-        "integration",
         "osv-scanner",
         "policy",
         "sonar",
-        "test",
         "trivy",
-        "verify",
     }
 )
 
@@ -214,37 +216,6 @@ CI_PRE_COMMIT_HOOKS = (
     "detect-private-key",
     "gitleaks",
 )
-
-
-CONTRACT_REQUIRED_PATHS = (
-    "contracts/openapi/openapi.json",
-    "contracts/gen/typescript/api.ts",
-    "contracts/ontology/gc-concept-families-v1.json",
-    "contracts/ontology/gc-controlled-vocabularies-v1.json",
-    "contracts/ontology/gc-artifact-bindings-v1.json",
-    "contracts/schemas/records/implement-final-report.v1.schema.json",
-    "contracts/schemas/workflow/workflow-run-record.v1.schema.json",
-    "contracts/schemas/measurement/measurement-record.v1.schema.json",
-    "contracts/schemas/measurement/station-catalogue.v1.schema.json",
-    "contracts/measurement/gc-station-catalogue-v1.json",
-    "contracts/authz/path-matrix.yaml",
-    "contracts/CHANGES.md",
-)
-
-
-FRONTEND_CONTRACT_SHIM_PATH = Path("frontend/src/types/api.ts")
-
-
-GENERATED_CONTRACT_EXPORT = 'export * from "../../../contracts/gen/typescript/api";'
-
-
-class RefUnreadableError(RuntimeError):
-    """Raised when a caller supplied a base ref that cannot be resolved."""
-
-    def __init__(self, base: str, detail: str):
-        super().__init__(detail)
-        self.base = base
-        self.detail = detail
 
 
 GROUND_CONTROL_YAML_PATH = Path(".ground-control.yaml")

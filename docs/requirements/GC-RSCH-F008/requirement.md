@@ -26,5 +26,13 @@ Captured from Reactor auto-research requirements analysis (/home/atomik/src/reac
 - DOCUMENTS → GITHUB_ISSUE `1032` (Migrate Reactor discipline and artifacts into Ground Control research workflows)
 - IMPLEMENTS → CODE_FILE `skills/lit-review-plan/SKILL.md` (lit-review-plan skill — executable protocol with requirement→answer/gate/deferral traceability)
 - IMPLEMENTS → PULL_REQUEST `1039` (PR #1039 — research workflow skills + citation MCP (merged to dev))
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/research/service/ResearchRunService.java` (recordProtocolPlan/getProtocolPlan + coverage validation (protocol plan, #1007))
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/research/ResearchRunProtocolPlanServiceTest.java` (Protocol plan coverage/completeness/disposition tests (#1007))

@@ -21,9 +21,17 @@ The traceability matrix is the canonical audit artifact in requirements engineer
 
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (gc_traceability_matrix MCP tool)
+- DOCUMENTS → GITHUB_ISSUE `#689` (GC-Q003: Traceability Matrix)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/requirements/RequirementController.java` (GET /api/v1/requirements/matrix endpoint)
 - IMPLEMENTS → CODE_FILE `frontend/src/pages/traceability-matrix.tsx` (Traceability Matrix page)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (gc_traceability_matrix MCP tool)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/RequirementControllerTest.java` (@WebMvcTest matrix endpoint cases)
 - TESTS → TEST `frontend/src/pages/__tests__/traceability-matrix.test.tsx` (Matrix page vitest cases)
-- DOCUMENTS → GITHUB_ISSUE `#689` (GC-Q003: Traceability Matrix)

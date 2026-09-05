@@ -21,13 +21,21 @@ GitHub issues are the primary work-tracking mechanism for developers. Bidirectio
 
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP tools gc_sync_github and gc_create_github_issue with Zod regex validation)
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (createGitHubIssue with repo format validation)
+- CONSTRAINS → GITHUB_ISSUE `autarchy-ai/Ground-Control#317` (Bug: GitHubCliClient silently truncates issue list at 500)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/service/GitHubIssueSyncService.java` (GitHubIssueSyncService - Bidirectional issue sync)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/admin/SyncController.java` (SyncController - Sync API endpoint)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/infrastructure/github/GitHubCliClient.java` (GitHubCliClient with owner/repo/title/body/label input validation)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/GlobalExceptionHandler.java` (ConstraintViolationException handler for @Validated parameter validation)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP tools gc_sync_github and gc_create_github_issue with Zod regex validation)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (createGitHubIssue with repo format validation)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/infrastructure/GitHubCliClientTest.java` (Input validation tests for command injection prevention)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/SyncControllerTest.java` (SyncController validation rejection tests)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/GitHubIssueSyncServiceTest.java` (Traceability link state reflection and safe state parsing tests)
-- CONSTRAINS → GITHUB_ISSUE `autarchy-ai/Ground-Control#317` (Bug: GitHubCliClient silently truncates issue list at 500)

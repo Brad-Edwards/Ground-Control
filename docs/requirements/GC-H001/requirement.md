@@ -21,6 +21,18 @@ NIST distinguishes threat source from threat event, and FAIR treats threats as i
 
 ## Traceability
 
+- DOCUMENTS → ADR `ADR-024` (ADR-024: Threat Model Entry Boundary)
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (MCP lib.js (threat model constants, functions, field mappings))
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP index.js (gc_*_threat_model* tool registrations))
+- IMPLEMENTS → GITHUB_ISSUE `519` (GC-H001: Threat Source and Threat Event Modeling)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/threatmodels/model/ThreatModel.java` (ThreatModel entity)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/threatmodels/model/ThreatModelLink.java` (ThreatModelLink entity)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/threatmodels/state/ThreatModelStatus.java` (ThreatModelStatus enum)
@@ -34,7 +46,6 @@ NIST distinguishes threat source from threat event, and FAIR treats threats as i
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/graph/service/ThreatModelGraphProjectionContributor.java` (ThreatModelGraphProjectionContributor)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/graph/service/GraphTargetResolverService.java` (GraphTargetResolverService (validateThreatModelTarget + upgraded asset/risk resolvers))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/graph/model/GraphEntityType.java` (GraphEntityType (added THREAT_MODEL))
-- DOCUMENTS → ADR `ADR-024` (ADR-024: Threat Model Entry Boundary)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/threatmodels/ThreatModelController.java` (ThreatModelController)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/ThreatModelServiceTest.java` (ThreatModelServiceTest)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/threatmodels/ThreatModelLinkController.java` (ThreatModelLinkController)
@@ -46,7 +57,4 @@ NIST distinguishes threat source from threat event, and FAIR treats threats as i
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/GraphTargetResolverServiceTest.java` (GraphTargetResolverServiceTest (threat model resolver coverage))
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/ThreatModelLinkControllerTest.java` (ThreatModelLinkControllerTest (@WebMvcTest))
 - IMPLEMENTS → CODE_FILE `backend/src/main/resources/db/migration/V057__create_threat_model_link.sql` (V057: create threat_model_link table)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (MCP lib.js (threat model constants, functions, field mappings))
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/ThreatModelControllerTest.java` (ThreatModelControllerTest (@WebMvcTest))
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP index.js (gc_*_threat_model* tool registrations))
-- IMPLEMENTS → GITHUB_ISSUE `519` (GC-H001: Threat Source and Threat Event Modeling)

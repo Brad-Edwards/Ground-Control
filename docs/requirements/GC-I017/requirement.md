@@ -21,8 +21,16 @@ Explicit FAIR support requires explicit control physiology, not just a generic e
 
 ## Traceability
 
+- IMPLEMENTS → GITHUB_ISSUE `#746` (GC-I017: FAIR-CAM Control Analytics Support)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/grcanalysis/service/FairCamControlAnalyticsService.java` (FairCamControlAnalyticsService (FAIR-CAM control analytics))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/grcanalysis/GrcAnalysisController.java` (GrcAnalysisController fair-cam-control-analytics endpoint)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/grcanalysis/FairCamControlAnalyticsServiceTest.java` (FairCamControlAnalyticsServiceTest)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/grcanalysis/FairCamControlAnalyticsResponseTest.java` (FairCamControlAnalyticsResponseTest)
-- IMPLEMENTS → GITHUB_ISSUE `#746` (GC-I017: FAIR-CAM Control Analytics Support)

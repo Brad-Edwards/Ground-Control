@@ -23,6 +23,14 @@ Compliance requires evidence collected at regular intervals, not just ad-hoc. Sc
 
 - IMPLEMENTS → GITHUB_ISSUE `#214` (GC-S005: Scheduled Evidence Collection)
 - DOCUMENTS → DOCUMENTATION `architecture/adrs/074-scheduled-evidence-collection.md` (ADR-074: Scheduled Evidence Collection Campaigns)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/evidencecampaign/EvidenceCampaignController.java` (EvidenceCampaignController — REST surface for scheduled evidence-collection campaigns)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/evidence/campaign/service/EvidenceCampaignService.java` (EvidenceCampaignService — scheduling, sweep claim/execute, retention pruning, control-linked evidence)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/evidence/campaign/model/EvidenceCampaign.java` (EvidenceCampaign aggregate — frequency, scope, target controls, retention policy)

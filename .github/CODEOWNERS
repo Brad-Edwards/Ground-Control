@@ -11,7 +11,6 @@ AGENTS.md @Brad-Edwards
 skills/** @Brad-Edwards
 architecture/adrs/** @Brad-Edwards
 architecture/policies/** @Brad-Edwards
-contracts/** @Brad-Edwards
 docs/DEVELOPMENT_WORKFLOW.md @Brad-Edwards
 docs/WORKFLOW.md @Brad-Edwards
 bin/policy @Brad-Edwards

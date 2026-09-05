@@ -179,9 +179,54 @@ The lane exists because the generic topology assertions cannot catch its
 removal: deleting the job, the policy constant, and the baseline entry together
 leaves them internally consistent. The frontend-specific invariant closes that.
 
+## 2026-09-05 amendment: required-status-context gate restored (issue #650, GC-P030)
+
+The topology assertions this ADR relied on lived in
+`tools/tests/test_ci_topology.py`. The #1500 re-platform deleted the `build`,
+`frontend`, `integration`, `test`, and `verify` jobs and deleted those tests
+along with the CI surface they covered. All five contexts stayed declared in
+`.github/branch-protection-baseline.json` and in
+`CI_STRICTNESS_REQUIRED_CONTEXTS`, with nothing left to produce them and nothing
+left to notice. Applying that baseline would have blocked every pull request on
+`main` and `dev`, precisely the failure the 2026-07-28 note above records for
+the `mutation` context, recurring because the gate had been deleted with its
+subject.
+
+The replacement, `run_ci_required_context_contract` in
+`tools/policy/ci_strictness.py`, is deliberately **not** anchored on a CI
+topology. It is anchored on two artifacts that survive any topology: the declared
+required-context set and the workflow files themselves. It asserts, two-sided,
+that the branch-protection baseline matches the declaration in both directions,
+that every protected branch keeps `strict: true`, and that every declared context
+is produced, for each protected branch, by a job in a pull-request-triggered
+workflow that actually runs for that branch. Two details are load-bearing and both
+came out of review. GitHub reports a job's `name:` when it sets one, so the gate
+resolves the reported check name rather than the `jobs.<id>` key; a name carrying
+a `${{ }}` expression expands per matrix leg and so resolves to no single context.
+And a `pull_request` trigger filtered to one branch never runs for the other, so
+pooling producers across workflows would accept a repository where `main` requires
+a check only `dev` can produce. Contexts posted by a
+hosted app (`GitGuardian Security Checks`, `SonarCloud Code Analysis`) are exempt
+from needing a local producer through an explicit allowlist that is itself
+shrink-only: a test asserts every entry is still a required context, so an
+exemption cannot outlive the check it exempts.
+
+This narrows the earlier design in one respect and widens it in another. It drops
+the job-dependency, `docker`-gate, and fast-lane assertions, which described a
+topology that no longer exists. It gains independence from that topology, so
+deleting a job can no longer delete the check that notices. The gate runs in
+`bin/policy`, so `make policy` and the CI `policy` job both enforce it. PyYAML is
+now installed explicitly in the `policy` and `sonar` jobs rather than arriving
+transitively through `pre-commit`, because a gate must not depend on another
+tool's dependency graph.
+
+The surviving verification topology after #1500 is four required jobs, none
+consuming another's artifact: `policy` (`ci.yml`), `sonar` (`sonarcloud.yml`),
+and `trivy` plus `osv-scanner` (`security.yml`).
+
 ## Related Issues
 
-Issue #1461, issue #1468.
+Issue #1461, issue #1468, issue #650.
 
 ## Related ADRs
 

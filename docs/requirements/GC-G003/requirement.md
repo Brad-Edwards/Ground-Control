@@ -21,10 +21,18 @@ Subgraph extraction enables focused analysis on a specific area of the requireme
 
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP tool gc_extract_subgraph)
+- IMPLEMENTS → GITHUB_ISSUE `371` (GC-G003: Subgraph Extraction)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/service/GraphAlgorithms.java` (GraphAlgorithms.findReachableFromMultiple())
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/service/AnalysisService.java` (AnalysisService.extractSubgraph())
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/admin/GraphController.java` (GET /api/v1/graph/subgraph endpoint)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP tool gc_extract_subgraph)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/GraphControllerTest.java` (GraphControllerTest.Subgraph)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/AnalysisServiceTest.java` (AnalysisServiceTest.ExtractSubgraph)
-- IMPLEMENTS → GITHUB_ISSUE `371` (GC-G003: Subgraph Extraction)

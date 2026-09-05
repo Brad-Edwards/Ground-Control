@@ -21,11 +21,19 @@ Understanding how and why requirements evolved is essential for architecture rev
 
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP gc_get_timeline tool)
+- DOCUMENTS → GITHUB_ISSUE `362` (GC-Q006: Audit History Timeline)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `frontend/src/pages/requirement-detail.tsx` (Requirement detail - Audit history timeline tab)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/service/AuditService.java` (AuditService - unified timeline method with diff computation)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/requirements/RequirementController.java` (Timeline REST endpoint)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP gc_get_timeline tool)
 - IMPLEMENTS → CODE_FILE `frontend/src/hooks/use-history.ts` (Timeline React Query hook)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/AuditServiceTest.java` (AuditService unit tests - diff computation and snapshot conversion)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/RequirementControllerTest.java` (Timeline controller endpoint tests)
-- DOCUMENTS → GITHUB_ISSUE `362` (GC-Q006: Audit History Timeline)

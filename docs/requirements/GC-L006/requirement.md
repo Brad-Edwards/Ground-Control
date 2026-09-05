@@ -22,13 +22,23 @@ For agentic GRC, every graph-native domain entity that has a backend REST aggreg
 ## Traceability
 
 - DOCUMENTS → DOCUMENTATION `architecture/notes/mcp-grc-entity-crud-preflight.md` (MCP GRC Entity CRUD preflight note)
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP server entrypoint (gc_asset, gc_observation registrations + 44-tool catalog))
+- IMPLEMENTS → GITHUB_ISSUE `#218` (GC-L006: MCP GRC Entity CRUD)
+- TESTS → TEST `mcp/ground-control/lib.tosnakecase.test.js` (MCP transport/lib tests (error envelope, snake↔camel conversion))
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `mcp/ground-control/gc-risk-scenario.js` (gc_risk_scenario MCP tool)
 - IMPLEMENTS → CODE_FILE `mcp/ground-control/gc-risk-governance.js` (gc_risk_governance MCP tool (treatment plans, risk register, assessments))
 - IMPLEMENTS → CODE_FILE `mcp/ground-control/gc-control.js` (gc_control MCP tool)
 - IMPLEMENTS → CODE_FILE `mcp/ground-control/gc-finding.js` (gc_finding MCP tool)
 - IMPLEMENTS → CODE_FILE `mcp/ground-control/gc-evidence.js` (gc_evidence MCP tool (append-only per ADR-045))
 - IMPLEMENTS → CODE_FILE `mcp/ground-control/gc-query.js` (gc_query read-only escape hatch (ADR-035))
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP server entrypoint (gc_asset, gc_observation registrations + 44-tool catalog))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/graph/service/GraphTargetResolverService.java` (GraphTargetResolverService — EVIDENCE projection alignment)
 - IMPLEMENTS → CODE_FILE `backend/src/main/resources/db/migration/V104__migrate_legacy_evidence_links.sql` (V104 legacy EVIDENCE link migration)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/GraphTargetResolverServiceTest.java` (GraphTargetResolverServiceTest — EVIDENCE projection rejects-missing pins)
@@ -45,5 +55,3 @@ For agentic GRC, every graph-native domain entity that has a backend REST aggreg
 - TESTS → TEST `mcp/ground-control/gc-evidence.test.js` (gc_evidence MCP adapter tests)
 - TESTS → TEST `mcp/ground-control/gc-risk-governance.test.js` (gc_risk_governance MCP adapter tests)
 - TESTS → TEST `mcp/ground-control/gc-query.test.js` (gc_query MCP adapter tests)
-- IMPLEMENTS → GITHUB_ISSUE `#218` (GC-L006: MCP GRC Entity CRUD)
-- TESTS → TEST `mcp/ground-control/lib.tosnakecase.test.js` (MCP transport/lib tests (error envelope, snake↔camel conversion))

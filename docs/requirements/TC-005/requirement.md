@@ -21,6 +21,16 @@ All best-of-breed tools provide hierarchical organization. Tree-based browsing i
 
 ## Traceability
 
+- IMPLEMENTS → ADR `ADR-043` (Test Case Hierarchical Organization)
+- IMPLEMENTS → GITHUB_ISSUE `#672` (TC-005: Hierarchical Test Case Organization)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/testcases/model/TestCaseFolder.java`
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/testcases/service/TestCaseFolderService.java`
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/testcases/TestCaseFolderController.java`
@@ -28,7 +38,6 @@ All best-of-breed tools provide hierarchical organization. Tree-based browsing i
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/testcases/TestCaseController.java`
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/testcases/service/TestCaseService.java`
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/testcases/model/TestCase.java`
-- IMPLEMENTS → ADR `ADR-043` (Test Case Hierarchical Organization)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/TestCaseFolderTest.java`
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/TestCaseFolderServiceTest.java`
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/TestCaseFolderControllerTest.java`
@@ -37,4 +46,3 @@ All best-of-breed tools provide hierarchical organization. Tree-based browsing i
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/integration/TestCaseControllerIntegrationTest.java`
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/TestCaseControllerTest.java`
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/TestCaseServiceTest.java`
-- IMPLEMENTS → GITHUB_ISSUE `#672` (TC-005: Hierarchical Test Case Organization)

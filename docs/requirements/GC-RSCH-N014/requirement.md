@@ -21,7 +21,15 @@ Captured from Reactor auto-research requirements analysis (/home/atomik/src/reac
 
 ## Traceability
 
-- IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/research/OperationAuthorizationRequest.java` (Closed-enum typed policy fields (untrusted content cannot set policy))
 - IMPLEMENTS → ADR `architecture/adrs/086-research-high-risk-operation-authorization.md` (ADR-086 §5 untrusted-input data-flow rule)
-- TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/research/ResearchOperationAuthorizationServiceTest.java` (Concrete-effect / typed-field invariant tests)
 - IMPLEMENTS → GITHUB_ISSUE `1008` (Research privacy, security, and prompt-injection controls)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
+- IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/research/OperationAuthorizationRequest.java` (Closed-enum typed policy fields (untrusted content cannot set policy))
+- TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/research/ResearchOperationAuthorizationServiceTest.java` (Concrete-effect / typed-field invariant tests)

@@ -62,7 +62,7 @@ const SURFACE_CLASS_MAP = [
       "mcp/ground-control/lib.js",
       "mcp/ground-control/lib/ground-control-config.js",
     ],
-    doc_targets: ["docs/DEVELOPMENT_WORKFLOW.md", "architecture/adrs/027-ground-control-yaml-context-contract.md"],
+    doc_targets: ["docs/DEVELOPMENT_WORKFLOW.md", "architecture/adrs/027-agent-neutral-implement-workflow-packaging.md"],
     outcome_required: true,
   },
   {

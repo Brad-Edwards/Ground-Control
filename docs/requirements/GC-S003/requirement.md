@@ -23,6 +23,14 @@ Cloud infrastructure is the dominant attack surface for modern organizations. Ag
 
 - IMPLEMENTS → GITHUB_ISSUE `#212` (GC-S003: Cloud Infrastructure Evidence Adapter Specification)
 - DOCUMENTS → DOCUMENTATION `docs/architecture/ARCHITECTURE.md` (ARCHITECTURE.md — GC-S003 cloud infrastructure evidence adapter specification)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/evidence/collection/cloud/CloudEvidenceSpecification.java` (CloudEvidenceSpecification — GC-S003 normative cloud adapter spec entry point)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/evidence/collection/cloud/CloudEvidenceProvider.java` (CloudEvidenceProvider — GC-S003 cloud provider keys (AWS/Azure/GCP))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/evidence/collection/cloud/CloudEvidenceFamily.java` (CloudEvidenceFamily — GC-S003 five evidence families as scope types/schemas)

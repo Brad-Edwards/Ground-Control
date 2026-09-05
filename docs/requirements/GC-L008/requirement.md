@@ -21,10 +21,18 @@ If agents are expected to manage risk, controls, and assurance in a graph-native
 
 ## Traceability
 
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/gc-asset.js`
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/gc-observation.js`
 - IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js`
-- TESTS → TEST `mcp/ground-control/gc-asset.test.js`
-- TESTS → TEST `mcp/ground-control/gc-observation.test.js`
 - IMPLEMENTS → PULL_REQUEST `#939` (fixed: bring gc_asset and gc_observation MCP tools to REST parity (GC-L008))
 - IMPLEMENTS → GITHUB_ISSUE `#730` (GC-L008: Asset and Observation MCP Operations)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/gc-asset.js`
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/gc-observation.js`
+- TESTS → TEST `mcp/ground-control/gc-asset.test.js`
+- TESTS → TEST `mcp/ground-control/gc-observation.test.js`

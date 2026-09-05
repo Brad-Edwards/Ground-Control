@@ -1,6 +1,8 @@
 # Research workflow
 
-Ground Control's research project type ships a five-phase literature-review pipeline implemented as Claude skills, a methodology catalog, and a deterministic citation MCP. The pipeline answers one question for a given research paper:
+Ground Control ships a five-phase literature-review pipeline implemented as
+agent skills, a methodology catalog, and a deterministic citation MCP. The
+pipeline answers one question for a given research paper:
 
 > What are the formal requirements a literature-review plan must meet to satisfy the appropriate methodology, and how do we execute that plan, build the paper's argument, and draft it without fabricating citations or asserting findings the evidence base does not carry?
 
@@ -19,6 +21,17 @@ structured phase-2 protocol-plan artifact and method-specific output shapes are
 governed by ADR-083. High-risk generated code execution, browser activity,
 lab/hardware actions, external writes, sandbox policy, egress policy, and
 prompt-injection handling are governed by ADR-086.
+
+> **Scope after the #1500 re-platform.** What ships today is the skill pipeline
+> under `skills/lit-review*/` and the citation MCP under `mcp/citation/`, both
+> operating on files. The `ResearchRun` service, the `gc_research_run` MCP tool,
+> the `/api/v1/research-runs/**` REST surface, and the backend-owned methodology
+> catalog were part of the Spring backend the re-platform deleted, so the
+> contracts they enforced are no longer enforced anywhere. The sections marked
+> historical below record those decisions; they do not describe running code.
+> ADR-064 through ADR-068, ADR-075 through ADR-077, ADR-080, ADR-083, and
+> ADR-086 keep their rationale, and a future executor that re-introduces run
+> state should start from them rather than reinvent the contract.
 
 ## Phases
 
@@ -82,17 +95,17 @@ workspace/
 
 ## Methodology catalog
 
-The catalog at `skills/lit-review/methodology/catalog.yaml` is a lookup, not a paraphrase: method key → primary methodology source Zotero keys + titles + PDF availability. The phase-1 skill reads the actual source PDFs to ground its method choice; the catalog only tells it *which* sources to read. ADR-077 makes the product gate explicit: every required source for the selected method profile must have accepted obtained-and-read coverage before the methodology-requirements artifact can complete.
+The catalog at `skills/lit-review/methodology/catalog.yaml` is a lookup, not a paraphrase: method key → primary methodology source Zotero keys + titles + PDF availability. The phase-1 skill reads the actual source PDFs to ground its method choice; the catalog only tells it *which* sources to read. It is now the only catalog: the backend-owned copy it once mirrored, and the drift check that compared them, went with the re-platform. ADR-077 states the coverage rule the phase-1 skill applies: every required source for the selected method profile must be obtained and read before the methodology-requirements output is complete.
 
 Methods shipped: `scoping`, `systematic`, `mapping`, `critical`, `narrative_conceptual`, `targeted_related_work`, `taxonomy_development`.
 
 Adding a method: append a new entry with the primary methodology source Zotero keys. Do not add prose summaries - the phase-1 skill reads the sources directly.
 
-## F006 backend contract: methodology source coverage gate
+## F006 backend contract: methodology source coverage gate (historical)
 
 The backend enforces the source-coverage invariant via `ResearchRunService`. Selecting a methodology (`POST /api/v1/research-runs/{id}/methodology/selection`) takes only a `methodKey`: the required-source set is **derived from the backend-owned methodology catalog** (`backend/src/main/resources/research/methodology-catalog.yaml`, the source of truth that the skill catalog mirrors under a `make policy` drift check - ADR-078), not supplied by the caller. The resolved method profile's required primary sources are snapshotted as immutable `required: true` rows at selection; an unknown `methodKey` is rejected with `research_run_methodology_unknown_method`. Before a `METHODOLOGY_REQUIREMENTS` artifact can be recorded, the run must have an active methodology selection and every source marked `required: true` must be in `READ` state (tracked via `POST /api/v1/research-runs/{id}/methodology/sources` and `PATCH /api/v1/research-runs/{id}/methodology/sources/{sourceId}`). A required source in `BLOCKED` state raises a `409 Conflict` with error code `research_run_methodology_source_blocked`; any required source not yet `READ` raises `422 Unprocessable Entity` with code `research_run_methodology_sources_incomplete`. Optional sources never block the gate. Once a `METHODOLOGY_REQUIREMENTS` artifact has been recorded, the methodology is locked: reselecting a different method (which would re-snapshot a fresh, unread required set and silently invalidate the accepted artifact's coverage) is rejected with `409 Conflict` code `research_run_methodology_locked_after_requirements`. The full catalog is readable at `GET /api/v1/research-runs/methodology/catalog`. The MCP surface exposes these operations through the `gc_research_run` tool actions `list_methodology_catalog`, `select_methodology`, `get_methodology_selection`, `record_methodology_source`, `update_methodology_source_state`, and `list_methodology_sources`.
 
-## F007 artifact boundary: methodology requirements contract
+## F007 artifact boundary: methodology requirements contract (historical)
 
 ADR-080 defines the phase-1 artifact as a structured, run-scoped methodology requirements contract tied to the active methodology selection and the `METHODOLOGY_REQUIREMENTS` artifact manifest attempt. The contract records source-linked methodology obligations, method limits, non-claims, and open protocol-planning questions. It is not a Ground Control `Requirement`, not a raw markdown body stored on `ResearchRunArtifact`, and not a duplicate rationale/provenance schema.
 
@@ -100,7 +113,7 @@ The chosen method remains the active methodology selection from ADR-078. Rejecte
 
 The contract is recorded once per `METHODOLOGY_REQUIREMENTS` artifact attempt (a rework records a new artifact attempt, then a new contract) via `POST /api/v1/research-runs/{id}/methodology/requirements-contract` and read via `GET /api/v1/research-runs/{id}/methodology/requirements-contract`. Each entry carries a closed `kind` (`REQUIREMENT`, `METHOD_LIMIT`, `NON_CLAIM`, `OPEN_PROTOCOL_QUESTION`) and a stable `entryKey`. `REQUIREMENT`, `METHOD_LIMIT`, and `NON_CLAIM` entries must link at least one methodology source of the active selection that is in `READ` state (a claim with no `READ` source link is rejected - no model memory as scientific evidence, GC-RSCH-R002); an `OPEN_PROTOCOL_QUESTION` may instead reference another entry by key. Recording requires an active `METHODOLOGY_REQUIREMENTS` artifact and complete required-source coverage; a second contract for the same artifact attempt is rejected with `409 Conflict` code `research_run_methodology_contract_exists`. The MCP surface exposes these through the `gc_research_run` tool actions `record_methodology_requirements_contract` and `get_methodology_requirements_contract`.
 
-## F008/F009 artifact boundary: protocol plan and method-specific outputs
+## F008/F009 artifact boundary: protocol plan and method-specific outputs (historical)
 
 ADR-083 defines the phase-2 protocol plan as structured, run-scoped content behind the `PROTOCOL_PLAN` artifact manifest. It consumes the active ADR-080 methodology requirements contract by contract id and artifact attempt, then gives every `REQUIREMENT` and `OPEN_PROTOCOL_QUESTION` exactly one bounded coverage disposition: filled, resolved by durable user decision, explicitly deferred as non-blocking, not applicable with rationale, or blocking decision required. A protocol plan with missing coverage or any unresolved blocking decision cannot become the active `PROTOCOL_PLAN`; source search must recheck that active complete plan before executing.
 
@@ -113,7 +126,7 @@ Method-specific output shape is selected by method key/profile version plus a pr
 
 The plan is recorded once per `PROTOCOL_PLAN` artifact attempt via `POST /api/v1/research-runs/{id}/protocol-plan` and read via `GET /api/v1/research-runs/{id}/protocol-plan`; a second plan for the same artifact attempt is rejected with `409 Conflict` code `research_run_protocol_plan_exists`. Recording requires an ACTIVE `PROTOCOL_PLAN` artifact and an ACTIVE `METHODOLOGY_REQUIREMENTS` contract to answer (`research_run_protocol_plan_artifact_missing` / `research_run_protocol_plan_contract_missing` otherwise). Every `REQUIREMENT`/`OPEN_PROTOCOL_QUESTION` contract entry must receive exactly one coverage - missing entries reject with `research_run_protocol_plan_coverage_incomplete`, and unknown keys, `METHOD_LIMIT`/`NON_CLAIM` keys, or duplicate coverage are also rejected - and each disposition's own required fields must be present (`FILLED` needs `answerProvenance` + `answerSummary`; `DEFERRED_NON_BLOCKING` needs `deferredToStage` + `rationale`; `NOT_APPLICABLE_WITH_RATIONALE` and `BLOCKING_DECISION_REQUIRED` need `rationale`; `RESOLVED_BY_USER_DECISION` needs `decisionReference` or `rationale`). Sections must cover every kind the selected method profile requires, section keys must be unique, and `sourceRole` may only appear on a `SOURCE_ROLES` section of the `taxonomy_development` method. The `SOURCE_SEARCH` durable gate independently rechecks the active plan at stage-advance time (`research_run_protocol_plan_blocking` if no plan has been recorded or any coverage is still `BLOCKING_DECISION_REQUIRED`), so a caller cannot bypass the check by invoking a lower-level action directly. The MCP surface exposes these through the `gc_research_run` tool actions `record_protocol_plan` and `get_protocol_plan`.
 
-## High-risk operation authorization, egress policy, and prompt injection
+## High-risk operation authorization, egress policy, and prompt injection (historical)
 
 ADR-086 governs the security/privacy control plane for research runs. It is an
 authorization + policy layer; executors and the sandbox runtime are out of scope

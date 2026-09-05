@@ -26,5 +26,13 @@ Captured from Reactor auto-research requirements analysis (/home/atomik/src/reac
 - DOCUMENTS → GITHUB_ISSUE `1032` (Migrate Reactor discipline and artifacts into Ground Control research workflows)
 - IMPLEMENTS → CODE_FILE `skills/lit-review-search/SKILL.md` (lit-review-search skill — evidence matrices (Output evidence-matrix.md))
 - IMPLEMENTS → PULL_REQUEST `1039` (PR #1039 — research workflow skills + citation MCP (merged to dev))
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/research/model/ResearchProvenanceEdge.java` (EVIDENCE_MATRIX_CELL edges — link source IDs to charted fields/claims via SUPPORTS/DERIVED_FROM (ADR-069))
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/research/ResearchProvenanceServiceTest.java` (Provenance service tests — evidence-matrix edge linking)

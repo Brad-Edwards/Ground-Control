@@ -21,9 +21,20 @@ Explicit NIST support requires more than storing a generic likelihood and impact
 
 ## Traceability
 
-- IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/state/ThreatSourceRelevance.java`
 - IMPLEMENTS → GITHUB_ISSUE `721` (GC-T014: NIST SP 800-30 Risk Assessment Support)
 - IMPLEMENTS → PULL_REQUEST `1054` (added: gc-t014 NIST SP 800-30 risk-assessment view)
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js`
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js`
+- IMPLEMENTS → CODE_FILE `tools/policy/checks.py`
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
+- IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/state/ThreatSourceRelevance.java`
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/grcanalysis/service/NistAssessmentService.java`
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/grcanalysis/service/NistAssessmentResult.java`
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/grcanalysis/GrcAnalysisController.java`
@@ -34,10 +45,7 @@ Explicit NIST support requires more than storing a generic likelihood and impact
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/state/NistLikelihoodBand.java`
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/state/NistImpactBand.java`
 - IMPLEMENTS → CODE_FILE `backend/src/main/resources/db/migration/V128__update_nist_methodology_profile_schema.sql`
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js`
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js`
 - IMPLEMENTS → CODE_FILE `frontend/src/types/api.ts`
-- IMPLEMENTS → CODE_FILE `tools/policy/checks.py`
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/grcanalysis/NistAssessmentServiceTest.java`
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/GrcAnalysisControllerTest.java`
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/integration/grcanalysis/GrcAnalysisIntegrationTest.java`

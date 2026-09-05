@@ -29,6 +29,16 @@ Denning-style information-flow lattices turn 'does this leak?' from a generative
 
 ## Traceability
 
+- IMPLEMENTS → ADR `architecture/adrs/072-data-classification-lattice.md` (ADR-072: Data Classification Lattice design of record (GC-GRC-006))
+- IMPLEMENTS → GITHUB_ISSUE `1119` (Issue #1119: GC-GRC-006 data classification lattice)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/dataclassification/service/DataClassificationEvaluationService.java` (Deterministic data-classification lattice evaluator (GC-GRC-006 clause c))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/dataclassification/service/DataClassificationLatticeService.java` (Project-scoped lattice aggregate: resolve/replace/reset server-side policy (GC-GRC-006 clause d))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/dataclassification/DataClassificationController.java` (REST surface for lattice get/put/delete and evaluation (GC-GRC-006))
@@ -42,5 +52,3 @@ Denning-style information-flow lattices turn 'does this leak?' from a generative
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/dataclassification/DataClassificationLatticeFactoryTest.java` (Validation, closure, and antisymmetry of the lattice factory (GC-GRC-006 clause c))
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/DataClassificationControllerTest.java` (REST contract slice for lattice and evaluation endpoints (GC-GRC-006))
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/integration/DataClassificationLatticeServiceIntegrationTest.java` (Persistence round-trip and Envers audit integration (GC-GRC-006 clause d))
-- IMPLEMENTS → ADR `architecture/adrs/072-data-classification-lattice.md` (ADR-072: Data Classification Lattice design of record (GC-GRC-006))
-- IMPLEMENTS → GITHUB_ISSUE `1119` (Issue #1119: GC-GRC-006 data classification lattice)

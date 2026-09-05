@@ -28,8 +28,16 @@ Captured from Reactor auto-research requirements analysis (/home/atomik/src/reac
 - DOCUMENTS → GITHUB_ISSUE `1031` (Research workspace UI and dashboard)
 - DOCUMENTS → ADR `architecture/adrs/056-research-project-type-and-intake.md` (ADR-056 — Research project type and intake metadata (forward-looking: N011 observability needs phases/gates which are delivered by subsequent issues))
 - DOCUMENTS → GITHUB_ISSUE `999` (Research project type and intake metadata)
+- DOCUMENTS → ADR `architecture/adrs/072-research-rest-and-mcp-tool-surface.md` (ADR-072 — Research REST and MCP Tool Surface (binds N011 observability to the ADR-065 snapshot served via REST/MCP))
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/research/service/ResearchRunSnapshot.java` (ResearchRunSnapshot — bounded observability read model)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/research/ResearchRunServiceTest.java` (ResearchRunServiceTest — snapshot composition (stage, pending gates, readiness, counts))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/graph/service/ResearchGraphProjectionContributor.java` (Run/stage/artifact-readiness observability facet visible in the graph (ADR-070))
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/graph/ResearchGraphProjectionContributorTest.java` (Research graph projection tests — run/artifact node properties)
-- DOCUMENTS → ADR `architecture/adrs/072-research-rest-and-mcp-tool-surface.md` (ADR-072 — Research REST and MCP Tool Surface (binds N011 observability to the ADR-065 snapshot served via REST/MCP))

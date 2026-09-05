@@ -21,8 +21,17 @@ PRs are the unit of code delivery. Linking PRs to requirements closes the loop b
 
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP tool: gc_sync_github_prs)
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (MCP lib: syncGithubPrs + PULL_REQUEST artifact type)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/state/PullRequestState.java` (PullRequestState enum (OPEN, CLOSED, MERGED))
-- IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/state/ArtifactType.java` (ArtifactType enum (added PULL_REQUEST))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/model/GitHubPullRequestSync.java` (GitHubPullRequestSync entity)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/repository/GitHubPullRequestSyncRepository.java` (GitHubPullRequestSyncRepository)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/service/GitHubPullRequestData.java` (GitHubPullRequestData record)
@@ -33,9 +42,8 @@ PRs are the unit of code delivery. Linking PRs to requirements closes the loop b
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/admin/SyncController.java` (SyncController (PR sync endpoint))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/admin/PrSyncResultResponse.java` (PrSyncResultResponse DTO)
 - IMPLEMENTS → CODE_FILE `backend/src/main/resources/db/migration/V048__create_github_pr_sync.sql` (V048 migration: github_pr_sync table)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP tool: gc_sync_github_prs)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (MCP lib: syncGithubPrs + PULL_REQUEST artifact type)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/GitHubPullRequestSyncTest.java` (GitHubPullRequestSync entity unit tests)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/GitHubIssueSyncServiceTest.java` (GitHubIssueSyncService PR sync tests)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/infrastructure/GitHubCliClientPrTest.java` (GitHubCliClient PR parsing tests)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/SyncControllerTest.java` (SyncController PR endpoint WebMvcTest)
+- IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/state/ArtifactType.java` (ArtifactType enum (added PULL_REQUEST))

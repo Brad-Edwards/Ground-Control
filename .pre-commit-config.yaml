@@ -16,36 +16,17 @@ repos:
       - id: check-json
       - id: check-added-large-files
         args: [--maxkb=500]
-        exclude: ^contracts/openapi/openapi\.json$
       - id: check-merge-conflict
       - id: detect-private-key
-        exclude: ^backend/src/test/
 
-  # Bash syntax check for deploy/operator scripts
+  # Bash syntax check for the repo's shell entry points.
   - repo: local
     hooks:
       - id: bash-syntax
-        name: bash -n (deploy + ops scripts)
+        name: bash -n (shell scripts)
         entry: bash -c 'for f in "$@"; do bash -n "$f" || exit 1; done' --
         language: system
-        files: ^(deploy/scripts/.*\.sh|scripts/(assert-backup-policy|deploy|install-hooks)\.sh)$
-
-      - id: assert-backup-policy
-        name: assert GC-P021 backup policy defaults
-        entry: scripts/assert-backup-policy.sh
-        language: system
-        files: ^(deploy/scripts/(backup|install-gc-backup|aurora-setup-gc-backup)\.sh|deploy/systemd/gc-backup\.(service|timer)|scripts/assert-backup-policy\.sh)$
-        pass_filenames: false
-
-  # Java formatting (Spotless via Gradle — auto-fix mode)
-  - repo: local
-    hooks:
-      - id: spotless
-        name: spotless (Java auto-format)
-        entry: bash -c 'cd backend && ./gradlew spotlessApply -q'
-        language: system
-        files: ^backend/.*\.java$
-        pass_filenames: false
+        files: ^(scripts/.*\.sh|bin/install-skills\.sh|tools/.*\.sh)$
 
   # =============================================================================
   # STAGE 2: Security
@@ -61,20 +42,19 @@ repos:
   # STAGE 3: Push-time checks
   # =============================================================================
   #
-  # Broad verification (`./gradlew check`, `bin/policy`, Vale, OpenJML ESC) is
-  # deliberately absent here. Each of those already runs twice per change: once
-  # at the /implement completion + policy gates (Step 6, then again on the
-  # post-base-sync tree at Step 8.5) and once in the CI `policy` / `test` /
-  # `openjml` jobs. Re-running them at commit time made every commit pay for
-  # verification the workflow had just performed on the same tree, and the
-  # commit-time copy is the weakest of the three: it is skippable with
-  # `--no-verify`, it is path-filtered so it silently degrades on diffs outside
-  # `^backend/`, and it leaves no record any gate can attest to. Commit time
-  # keeps only what nothing else does: file hygiene, secret scanning, and
-  # auto-formatting.
+  # Broad verification (`make mcp-test`, `bin/policy`, Vale) is deliberately
+  # absent here. Each already runs twice per change: once at the /implement
+  # completion and policy gates (Step 6, then again on the post-base-sync tree
+  # at Step 8.5) and once in the CI `policy` job. Re-running them at commit time
+  # made every commit pay for verification the workflow had just performed on
+  # the same tree, and the commit-time copy is the weakest of the three: it is
+  # skippable with `--no-verify`, it is path-filtered so it degrades silently on
+  # diffs outside its patterns, and it leaves no record any gate can attest to.
+  # Commit time keeps only what nothing else does: file hygiene and secret
+  # scanning.
   #
-  # `make check` / `make policy` remain the local way to run the broad gates on
-  # demand; nothing about their coverage changed.
+  # `make mcp-test` and `make policy` remain the local way to run the broad
+  # gates on demand; nothing about their coverage changed.
 
   - repo: local
     hooks:

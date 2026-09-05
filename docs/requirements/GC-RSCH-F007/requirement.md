@@ -25,9 +25,17 @@ Captured from Reactor auto-research requirements analysis (/home/atomik/src/reac
 - DOCUMENTS → GITHUB_ISSUE `1032` (Migrate Reactor discipline and artifacts into Ground Control research workflows)
 - IMPLEMENTS → CODE_FILE `skills/lit-review/SKILL.md` (lit-review skill — requirements extraction without domain fill (Workflow §4 + Output structure))
 - IMPLEMENTS → PULL_REQUEST `1039` (PR #1039 — research workflow skills + citation MCP (merged to dev))
+- DOCUMENTS → GITHUB_ISSUE `1006` (Research methodology requirements artifact)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/research/model/ResearchRunMethodologySelection.java` (Method/source-only data shape (no domain-answer fields) — F007)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/research/model/ResearchRunMethodologySource.java` (Source rows carry only method/source fields (no domain answers) — F007)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/research/ResearchRunMethodologyServiceTest.java` (Service tests exercise the method/source data shape)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/research/model/MethodologyRequirementsContractEntry.java` (Contract entry holds extracted formal requirements (REQUIREMENT kind), no domain-answer fields (F-7))
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/research/ResearchRunMethodologyContractServiceTest.java` (Contract service tests: no-domain-answer field rejection (F-7))
-- DOCUMENTS → GITHUB_ISSUE `1006` (Research methodology requirements artifact)

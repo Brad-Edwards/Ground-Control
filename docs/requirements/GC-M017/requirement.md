@@ -21,13 +21,21 @@ A graph-native factory needs to answer questions from the perspective of the aff
 
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (MCP lib.js (added ISSUE/CODE/CONFIGURATION to ASSET_LINK_TARGET_TYPES))
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/assets/state/AssetLinkTargetType.java` (AssetLinkTargetType enum (added ISSUE, CODE, CONFIGURATION))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/graph/service/AssetGraphProjectionContributor.java` (AssetGraphProjectionContributor (fixed CONTROL graph projection))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/graph/service/ControlGraphProjectionContributor.java` (ControlGraphProjectionContributor (control nodes/edges in graph))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/graph/service/GraphTargetResolverService.java` (GraphTargetResolverService (added ISSUE/CODE/CONFIGURATION validation))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/graph/service/RiskGraphProjectionContributor.java` (RiskGraphProjectionContributor (fixed CONTROL graph projection))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/controls/repository/ControlLinkRepository.java` (ControlLinkRepository (added findByProjectId for graph projection))
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (MCP lib.js (added ISSUE/CODE/CONFIGURATION to ASSET_LINK_TARGET_TYPES))
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/GraphTargetResolverServiceTest.java` (GraphTargetResolverServiceTest (new target type validation))
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/AssetGraphProjectionContributorTest.java` (AssetGraphProjectionContributorTest (CONTROL edge projection test))
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/ControlGraphProjectionContributorTest.java` (ControlGraphProjectionContributorTest (control graph projection tests))

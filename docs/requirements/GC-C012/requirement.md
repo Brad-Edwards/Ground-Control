@@ -21,5 +21,13 @@ Developers and reviewers need to know which requirements are affected by a code 
 
 ## Traceability
 
-- IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/service/AnalysisService.java` (AnalysisService - Impact analysis (partial PR surfacing))
 - DOCUMENTS → GITHUB_ISSUE `#686` (GC-C012: PR Impact Surfacing)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
+- IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/service/AnalysisService.java` (AnalysisService - Impact analysis (partial PR surfacing))

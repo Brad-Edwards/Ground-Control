@@ -8,15 +8,10 @@
         "contexts": [
           "GitGuardian Security Checks",
           "SonarCloud Code Analysis",
-          "build",
-          "frontend",
-          "integration",
           "osv-scanner",
           "policy",
           "sonar",
-          "test",
-          "trivy",
-          "verify"
+          "trivy"
         ]
       }
     },
@@ -28,15 +23,10 @@
         "contexts": [
           "GitGuardian Security Checks",
           "SonarCloud Code Analysis",
-          "build",
-          "frontend",
-          "integration",
           "osv-scanner",
           "policy",
           "sonar",
-          "test",
-          "trivy",
-          "verify"
+          "trivy"
         ]
       }
     }

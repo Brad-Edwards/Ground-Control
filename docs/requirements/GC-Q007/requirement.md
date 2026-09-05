@@ -21,9 +21,17 @@ The requirements DAG already encodes wave assignments, DEPENDS_ON/REFINES edges,
 
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (gc_get_work_order MCP tool)
+- IMPLEMENTS → GITHUB_ISSUE `#232` (GC-Q007: DAG-Derived Work Order)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/service/AnalysisService.java` (AnalysisService.getWorkOrder() — work order algorithm)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/service/GraphAlgorithms.java` (GraphAlgorithms.topologicalSort() — Kahn's algorithm)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/admin/AnalysisController.java` (REST endpoint GET /api/v1/analysis/work-order)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (gc_get_work_order MCP tool)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/AnalysisServiceTest.java` (AnalysisServiceTest.GetWorkOrder — 6 unit tests)
-- IMPLEMENTS → GITHUB_ISSUE `#232` (GC-Q007: DAG-Derived Work Order)

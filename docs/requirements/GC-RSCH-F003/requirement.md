@@ -24,6 +24,14 @@ Captured from Reactor auto-research requirements analysis (/home/atomik/src/reac
 - DOCUMENTS → GITHUB_ISSUE `1000` (Research run lifecycle and phase gating)
 - DOCUMENTS → GITHUB_ISSUE `1004` (Research REST and MCP tool surface)
 - DOCUMENTS → GITHUB_ISSUE `1031` (Research workspace UI and dashboard)
+- DOCUMENTS → ADR `architecture/adrs/072-research-rest-and-mcp-tool-surface.md` (ADR-072 — Research REST and MCP Tool Surface (governs how the F003 phase state machine is exposed via REST/MCP))
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/research/service/ResearchRunService.java` (ResearchRunService — stage state machine + prerequisite/gate enforcement)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/research/ResearchRunServiceTest.java` (ResearchRunServiceTest — prerequisite-missing and pending-gate blocking tests)
-- DOCUMENTS → ADR `architecture/adrs/072-research-rest-and-mcp-tool-surface.md` (ADR-072 — Research REST and MCP Tool Surface (governs how the F003 phase state machine is exposed via REST/MCP))
