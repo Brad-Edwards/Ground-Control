@@ -112,7 +112,7 @@ def run_sonar_strictness_contract(root: Path = REPO_ROOT) -> list[Violation]:
     return violations
 
 
-def _matches_any(branch: str, patterns: list) -> bool:
+def _matches_any(branch: str, patterns: list[object]) -> bool:
     """Whether `branch` matches any entry, which may be a glob."""
     return any(fnmatch.fnmatch(branch, str(pattern)) for pattern in patterns)
 
@@ -133,7 +133,7 @@ def _trigger_covers(branch: str, pull_request: object) -> bool:
     return not isinstance(allowed, list) or _matches_any(branch, allowed)
 
 
-def _load_workflow(path: Path) -> dict | None:
+def _load_workflow(path: Path) -> dict[str, object] | None:
     """Parse one workflow, or None when it is unreadable or not a mapping.
 
     Returning None rather than raising keeps one malformed file from masking the
@@ -147,7 +147,7 @@ def _load_workflow(path: Path) -> dict | None:
     return document if isinstance(document, dict) else None
 
 
-def _pull_request_trigger(document: dict) -> tuple[bool, object]:
+def _pull_request_trigger(document: dict[str, object]) -> tuple[bool, object]:
     """Whether the workflow runs on `pull_request`, and that trigger's config."""
     # PyYAML resolves an unquoted `on:` key to the boolean True (the YAML 1.1
     # "y/yes/on" rule), so both spellings have to be accepted here.
@@ -210,7 +210,7 @@ def _check_names_by_branch(root: Path) -> tuple[dict[str, set[str]], int]:
     return by_branch, scanned
 
 
-def _load_baseline(path: Path) -> tuple[dict, Violation | None]:
+def _load_baseline(path: Path) -> tuple[dict[str, object], Violation | None]:
     """The parsed branch-protection baseline, or the violation that blocks reading it."""
     if not path.exists():
         return {}, Violation(
@@ -244,7 +244,7 @@ def _context_drift(branch: str, declared: set[str], expected: set[str]) -> Viola
     )
 
 
-def _baseline_violations(branches: dict, expected: set[str]) -> list[Violation]:
+def _baseline_violations(branches: dict[str, object], expected: set[str]) -> list[Violation]:
     """Per-branch baseline shape: the branch is declared, strict, and matches the contract."""
     violations: list[Violation] = []
     for branch in CI_STRICTNESS_BRANCHES:
