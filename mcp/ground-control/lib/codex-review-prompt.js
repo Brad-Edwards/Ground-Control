@@ -218,7 +218,14 @@ export function buildPrincipalEngineerRubric({ reviewerLabel, vocabulary = null,
 function buildFindingsEmissionInstructions({ reviewerLabel, vocabulary = null, findingFieldsDescription = "", findingExampleJson = "" }) {
   return buildPrincipalEngineerRubric({ reviewerLabel, vocabulary, findingFieldsDescription, findingExampleJson });
 }
-export function buildCodexReviewCorePrompt({
+// The two reviewers differ only in their subject-matter body, label, and finding
+// example; the surrounding preamble / rubric / diff scaffolding is identical, and
+// duplicating it tripped Sonar's new-code duplication gate when this module was
+// extracted (#1557). One assembler, two bodies.
+function buildReviewPrompt({
+  reviewerLabel,
+  findingExampleJson,
+  body,
   baseBranch,
   uncommitted,
   diffText,
@@ -229,9 +236,22 @@ export function buildCodexReviewCorePrompt({
   slice = null,
   trackedSymlinks = [],
 }) {
-  const lines = [
+  return [
     buildCommonReviewPreamble({ baseBranch, uncommitted, diffMode, slice, trackedSymlinks }),
     "",
+    ...body,
+    "",
+    ...buildPrincipalEngineerRubric({
+      reviewerLabel,
+      vocabulary,
+      findingFieldsDescription: CODEX_FINDING_FIELDS_DESCRIPTION,
+      findingExampleJson,
+    }),
+    "",
+    ...buildDiffBlock({ diffText, mode: diffMode, manifest: diffManifest, baseRefDescriptor, slice }),
+  ].join("\n");
+}
+const CORE_REVIEW_BODY = Object.freeze([
     "Review the code in this PR for production-readiness. The goal is principal-engineer JUDGMENT, not finding accumulation. Return `verdict: ship` when the change is shaped correctly — that is a valid outcome.",
     "",
     "A dedicated security reviewer runs against the same diff in parallel — do NOT spend effort on OWASP-style security findings here. If you notice something security-relevant, a one-line `note` is enough; the security reviewer will catch it.",
@@ -251,32 +271,8 @@ export function buildCodexReviewCorePrompt({
     "- This axis allows at most 1 non-blocking `note`. The total notes cap across both axes is 2.",
     "",
     "Each axis emits findings into the SAME `blocking` array (when material) and the SAME `notes` array (when non-blocking). The axis is a thinking aid for YOU; the envelope is unified.",
-    "",
-    ...buildPrincipalEngineerRubric({
-      reviewerLabel: "core",
-      vocabulary,
-      findingFieldsDescription: CODEX_FINDING_FIELDS_DESCRIPTION,
-      findingExampleJson: CODEX_CORE_FINDING_EXAMPLE,
-    }),
-    "",
-    ...buildDiffBlock({ diffText, mode: diffMode, manifest: diffManifest, baseRefDescriptor, slice }),
-  ];
-  return lines.join("\n");
-}
-export function buildCodexSecurityReviewPrompt({
-  baseBranch,
-  uncommitted,
-  diffText,
-  diffMode = "inline",
-  diffManifest = null,
-  baseRefDescriptor = null,
-  vocabulary = null,
-  slice = null,
-  trackedSymlinks = [],
-}) {
-  const lines = [
-    buildCommonReviewPreamble({ baseBranch, uncommitted, diffMode, slice, trackedSymlinks }),
-    "",
+]);
+const SECURITY_REVIEW_BODY = Object.freeze([
     "You are a senior application-security engineer reviewing this PR. Focus exclusively on concrete, exploitable security issues introduced by the diff. Do not comment on maintainability, style, performance, or architecture except where they directly enable a security flaw.",
     "",
     "Categories to examine:",
@@ -299,15 +295,20 @@ export function buildCodexSecurityReviewPrompt({
     "- Logging of non-secret, non-PII data.",
     "- Framework-level guarantees (e.g. JPA parameter binding already prevents SQL injection on bound parameters — only flag actual string concatenation).",
     "- Existing issues unchanged by this diff.",
-    "",
-    ...buildPrincipalEngineerRubric({
-      reviewerLabel: "security",
-      vocabulary,
-      findingFieldsDescription: CODEX_FINDING_FIELDS_DESCRIPTION,
-      findingExampleJson: CODEX_SECURITY_FINDING_EXAMPLE,
-    }),
-    "",
-    ...buildDiffBlock({ diffText, mode: diffMode, manifest: diffManifest, baseRefDescriptor, slice }),
-  ];
-  return lines.join("\n");
+]);
+export function buildCodexReviewCorePrompt(args) {
+  return buildReviewPrompt({
+    ...args,
+    reviewerLabel: "core",
+    findingExampleJson: CODEX_CORE_FINDING_EXAMPLE,
+    body: CORE_REVIEW_BODY,
+  });
+}
+export function buildCodexSecurityReviewPrompt(args) {
+  return buildReviewPrompt({
+    ...args,
+    reviewerLabel: "security",
+    findingExampleJson: CODEX_SECURITY_FINDING_EXAMPLE,
+    body: SECURITY_REVIEW_BODY,
+  });
 }
