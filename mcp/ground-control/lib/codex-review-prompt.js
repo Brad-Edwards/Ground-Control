@@ -83,7 +83,7 @@ const PRINCIPAL_ENGINEER_ANTI_RUBRIC = Object.freeze([
 // (#1557). Output is byte-identical.
 function vocabularyListBlock(heading, items, render) {
   if (!Array.isArray(items) || items.length === 0) return [];
-  return [heading, ...items.map(render)];
+  return [heading, ...items.map((item) => render(item))];
 }
 export function buildVocabularySection(vocabulary) {
   if (vocabulary == null) {
@@ -102,12 +102,18 @@ export function buildVocabularySection(vocabulary) {
     ...vocabularyListBlock(
       "Canonical patterns:",
       vocabulary.patterns,
-      (p) => `  - \`${p.name}\` (${p.applies_to})${p.example_path ? ` — example: \`${p.example_path}\`` : ""}`,
+      (p) => {
+        const example = p.example_path ? ` — example: \`${p.example_path}\`` : "";
+        return `  - \`${p.name}\` (${p.applies_to})${example}`;
+      },
     ),
     ...vocabularyListBlock(
       "Canonical helpers (reuse over re-implement):",
       vocabulary.canonical_helpers,
-      (h) => `  - \`${h.name}\` — ${h.purpose}${h.path ? ` — at \`${h.path}\`` : ""}`,
+      (h) => {
+        const at = h.path ? ` — at \`${h.path}\`` : "";
+        return `  - \`${h.name}\` — ${h.purpose}${at}`;
+      },
     ),
     ...(boundary && typeof boundary.description === "string"
       ? [`Boundary contract: ${boundary.description}`]
