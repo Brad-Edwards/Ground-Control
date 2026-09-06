@@ -16,6 +16,7 @@ import { readGeneratedCodexSummary } from "./codex-workflow.js";
 // parseNumstatManifest and the review-cap disposition scorer consume them, and
 // both manifest parsers skip these rows rather than treating them as a second
 // schema (a status column is never an integer).
+const NAME_STATUS_FLAG = "--name-status";
 const CHANGE_KIND_HEADER =
   "# change kinds — `git diff --name-status` (A added, C copied, D deleted, M modified, R renamed, T type changed)";
 
@@ -82,12 +83,12 @@ export async function computeReviewDiff(repoRoot, baseBranch, uncommitted) {
     );
     const stagedKinds = await execFile(
       "git",
-      ["-C", repoRoot, "diff", "--staged", "--name-status"],
+      ["-C", repoRoot, "diff", "--staged", NAME_STATUS_FLAG],
       { maxBuffer: 10 * 1024 * 1024 },
     );
     const unstagedKinds = await execFile(
       "git",
-      ["-C", repoRoot, "diff", "--name-status"],
+      ["-C", repoRoot, "diff", NAME_STATUS_FLAG],
       { maxBuffer: 10 * 1024 * 1024 },
     );
     const unreviewedUntrackedPaths = await collectUnreviewedUntrackedPaths(repoRoot);
@@ -137,7 +138,7 @@ export async function computeReviewDiff(repoRoot, baseBranch, uncommitted) {
       );
       const kinds = await execFile(
         "git",
-        ["-C", repoRoot, "diff", `${ref}...HEAD`, "--name-status"],
+        ["-C", repoRoot, "diff", `${ref}...HEAD`, NAME_STATUS_FLAG],
         { maxBuffer: 10 * 1024 * 1024 },
       );
       return {
