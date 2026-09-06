@@ -8,6 +8,17 @@ accepted
 
 2026-05-23
 
+> **Sync note for issue #946 (2026-09-06, MCP-host environment provisioning):** The MCP server
+> resolves its optional environment from declared sources it reads itself - an inherited non-empty
+> value, then `.env` in the launch directory, then the per-host `~/.config/ground-control/env` -
+> instead of depending on the launching agent process to pass its environment down. The private
+> dotenv parser in `mcp/ground-control/index.js` is replaced by `mcp/ground-control/lib/host-env.js`,
+> which reuses the existing `parseEnvFileLine` grammar, so the entry point stays thin and the loader
+> is unit-testable without the protocol layer. ADR-036 records the change. The documentation-coverage
+> classifier, its surface classes, the `outcome_required` mapping, the Vale rule set,
+> `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new `docs/DOC_STYLE.md` style rule
+> is established.
+
 > **Sync note for issue #650 (2026-09-05, post-re-platform documentation reconciliation):**
 > The `config_parser` surface's `doc_targets` named
 > `architecture/adrs/027-ground-control-yaml-context-contract.md`, an ADR filename that has

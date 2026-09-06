@@ -2,9 +2,12 @@
 // Ground Control MCP Server
 //
 // The server requires no environment configuration: it starts, and every
-// registered tool works, with none of the variables below set. They are read
-// from the consumer repo's `.env` file at startup (a shell-exported value wins),
-// and each one only switches on an optional behavior. See README.md.
+// registered tool works, with none of the variables below set. Each one only
+// switches on an optional behavior. At startup they are resolved from, highest
+// precedence first: an inherited non-empty value, the launch root's `.env`, then
+// the per-host `~/.config/ground-control/env`. The server reads those files
+// itself so a launcher that strips its environment on the way to the child
+// cannot decide which tools work (issue #946). See README.md.
 //
 //   GC_BASE_URL                              Sink for workflow-run lifecycle
 //                                             measurement emission. Unset disables
@@ -52,10 +55,9 @@
 //   tools/pr-review.js           — gc_get_pr_review_context,
 //                                   gc_remediate_pull_request (maintainer /review lane, #1535)
 
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { loadServerEnvFiles } from "./lib/host-env.js";
 import { installToolTelemetry } from "./telemetry.js";
 import { registerQuery } from "./tools/query.js";
 import { registerPostDecisionRecord } from "./tools/post-decision-record.js";
@@ -65,32 +67,11 @@ import { registerIntegrate } from "./tools/integrate.js";
 import pkg from "./package.json" with { type: "json" };
 
 
-// Load .env from cwd before any auth header is composed.
-function loadDotenvFromCwd() {
-  let body;
-  try {
-    body = readFileSync(join(process.cwd(), ".env"), "utf-8");
-  } catch (err) {
-    if (err.code === "ENOENT") return;
-    throw err;
-  }
-  for (const rawLine of body.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith("#")) continue;
-    const eq = line.indexOf("=");
-    if (eq <= 0) continue;
-    const key = line.slice(0, eq).trim();
-    let value = line.slice(eq + 1).trim();
-    if ((value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-    if (process.env[key] === undefined || process.env[key] === "") {
-      process.env[key] = value;
-    }
-  }
-}
-loadDotenvFromCwd();
+// Fill the environment from the server's own declared sources before any auth
+// header is composed, so a launcher that strips its environment on the way to
+// the child cannot decide which tools work (issue #946). The loader itself lives
+// in lib/ so it is unit-testable without starting the protocol layer.
+loadServerEnvFiles(process.env);
 
 // The version advertised to clients in the initialize handshake is sourced from
 // package.json so it cannot drift from the package it ships in (issue #633). See

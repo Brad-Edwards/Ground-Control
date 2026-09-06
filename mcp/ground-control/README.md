@@ -67,9 +67,21 @@ on `PATH`, and the GitHub-writing tools require an authenticated `gh`.
 
 ### Optional environment
 
-The server reads a `.env` file from the directory it was launched in (the
-consuming repo's root) at startup, and a shell-exported value always wins over
-the file. Nothing here is required.
+At startup the server resolves each variable below from the first source that
+supplies a non-empty value:
+
+1. the environment it inherited from the launcher;
+2. `.env` in the directory it was launched in (usually the consuming repo's root);
+3. `~/.config/ground-control/env`, the per-host file, in the same directory as
+   `review-env`.
+
+Nothing here is required. The server reads both files itself rather than relying
+on the launching process to pass its environment down, because a launcher may
+hand the child a core-only environment: a Codex-spawned server receives eight
+variables, and neither a token nor `GROUND_CONTROL_DIR` is among them, which used
+to make `gc_watch_sonar_analysis` fail on that runtime alone (issue #946). The
+per-host file also covers the case where the launch directory is not a repository
+root, and keeps one credential in one place instead of one copy per checkout.
 
 | Variable | Effect when set |
 |---|---|
@@ -79,11 +91,12 @@ the file. Nothing here is required.
 | `GC_CODEX_TIMEOUT_MS` | Per-invocation timeout for Codex-backed tools, within the bounds in `lib/model-subprocess.js`. |
 | `GC_CODEX_REVIEW_PARALLEL` | Runs the core and security reviewers concurrently. |
 | `GC_CODEX_REVIEW_MAX_DIFF_BYTES` | Diff-slice budget for a review cycle (see diff transport below). |
-| `SONAR_TOKEN` | Lets `gc_watch_sonar_analysis` read the SonarCloud quality gate. |
+| `SONAR_TOKEN` | Lets `gc_watch_sonar_analysis` read the SonarCloud quality gate. Without it the tool returns `sonar_watch_token_missing`, which `/implement` Step 11 treats as an infrastructure blocker for the operator rather than as SonarCloud findings for the agent. |
 
-Keep `.env` gitignored and `chmod 600` if you put a token in it. Tokens are read
-by the server process and are never returned through a tool result or exposed to
-the model.
+Keep `.env` gitignored and `chmod 600` either file if you put a token in it.
+Tokens are read by the server process and are never returned through a tool
+result or exposed to the model. Both files are read once at startup, so
+provisioning or rotating a value takes effect on the next server start.
 
 ## Tool surface
 

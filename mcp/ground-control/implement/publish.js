@@ -5,6 +5,7 @@
 
 import { ciGateFindings } from "../gate-finding-adapters.js";
 import { ciStationResult } from "../lib/ci-conclusion.js";
+import { classifySonarGateFailure, sonarGatePassed, sonarStationResult } from "../lib/sonar-gate.js";
 import { commandFailure, failure, requireField, resolveIssueBranch } from "./gate-helpers.js";
 import { isSensitivePublishPath, readPublishPaths, validateCommitMessage } from "./verify.js";
 
@@ -330,13 +331,6 @@ async function runFeatureBaseSync(args, deps, { repoRoot, branchName, authorized
   if (!completed.ok) return baseSyncFailure(completed);
   return publishComplete(completed);
 }
-// A repo with no sonarcloud block skips the gate: that is coverage, not a pass, and
-// counting it as one would inflate first-pass yield with runs Sonar never inspected.
-function sonarStationResult(sonar, sonarPassed) {
-  if (!sonar.ok) return "not_evaluable";
-  if (sonar.skipped === true) return "skipped_station";
-  return sonarPassed ? "pass" : "fail";
-}
 export async function runMonitor(args, deps) {
   const action = "monitor";
   const invalidPr = requireField(args, "prNumber", action);
@@ -399,32 +393,26 @@ export async function runMonitor(args, deps) {
       repoPath: args.repoPath,
       prNumber: args.prNumber,
     });
-    sonarPassed =
-      sonar.ok
-      && (
-        sonar.skipped === true
-        || (
-          sonar.quality_gate === "OK"
-          && sonar.issues_summary?.open_count === 0
-          && sonar.hotspots_summary?.open_count === 0
-        )
-      );
+    sonarPassed = sonarGatePassed(sonar);
     return {
       ok: sonarPassed,
-      error: sonarPassed ? undefined : sonar.error ?? "sonar_findings_open",
-      stationResult: sonarStationResult(sonar, sonarPassed),
+      error: sonarPassed ? undefined : classifySonarGateFailure(sonar).error,
+      stationResult: sonarStationResult(sonar),
       ...(Array.isArray(sonar.measurement_findings)
         ? { findings: sonar.measurement_findings, findingsDropped: sonar.measurement_findings_dropped }
         : {}),
     };
   });
   if (!sonarPassed) {
+    // An envelope Sonar never produced is an unevaluable gate, not a set of
+    // findings, and the two need different repairs (issue #946).
+    const classified = classifySonarGateFailure(sonar);
     return failure(
       action,
-      sonar.error ?? "sonar_findings_open",
-      sonar.message ?? "SonarCloud has an incomplete gate, open issue, or open hotspot",
-      "fix_sonar_findings_then_rerun_publish_and_monitor",
-      { failed_stage: "sonar", sonar },
+      classified.error,
+      classified.message,
+      classified.next_action,
+      { failed_stage: "sonar", sonar_gate: classified.sonar_gate, sonar },
     );
   }
   return {
