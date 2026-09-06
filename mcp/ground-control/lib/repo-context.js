@@ -328,7 +328,7 @@ export function normalizeSonarcloudConfig(raw) {
   if (typeof raw !== "object" || Array.isArray(raw)) {
     return { ok: false, errors: ["sonarcloud must be a mapping, not a list or scalar"] };
   }
-  const allowed = new Set(["project_key", "organization", "quality_gate"]);
+  const allowed = new Set(["project_key", "organization", "quality_gate", "analysis_check"]);
   const errors = [];
   for (const key of Object.keys(raw)) {
     if (!allowed.has(key)) {
@@ -338,6 +338,11 @@ export function normalizeSonarcloudConfig(raw) {
   const project_key = raw.project_key;
   const organization = raw.organization;
   const quality_gate = raw.quality_gate;
+  // Names the CI check or workflow that publishes this repo's Sonar analysis, so
+  // the watcher can tell "no analysis is coming" from "it has not landed yet"
+  // (issue #1559). Absent, any Sonar-named check matches. It selects an existing
+  // producer; it never asserts that a scan may be skipped.
+  const analysis_check = raw.analysis_check;
   if (typeof project_key !== "string" || project_key.trim() === "") {
     errors.push("sonarcloud.project_key must be a non-empty string when sonarcloud is set");
   }
@@ -349,10 +354,18 @@ export function normalizeSonarcloudConfig(raw) {
       errors.push("sonarcloud.quality_gate must be a non-empty string when set");
     }
   }
+  if (analysis_check != null) {
+    if (typeof analysis_check !== "string" || analysis_check.trim() === "") {
+      errors.push("sonarcloud.analysis_check must be a non-empty string when set");
+    }
+  }
   if (errors.length) return { ok: false, errors };
   const value = { project_key, organization };
   if (quality_gate != null && typeof quality_gate === "string" && quality_gate.trim() !== "") {
     value.quality_gate = quality_gate.trim();
+  }
+  if (analysis_check != null && typeof analysis_check === "string" && analysis_check.trim() !== "") {
+    value.analysis_check = analysis_check.trim();
   }
   return { ok: true, value };
 }

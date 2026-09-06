@@ -9,13 +9,35 @@ import { dirname } from "node:path";
 import { sonarGateFindings } from "../gate-finding-adapters.js";
 import { _sleepMs } from "./doc-coverage.js";
 import { ensureGitRepo } from "./grc-legacy-compat-4.js";
+import { authorizeWatcherRepoRead } from "./watcher-repo-authorization.js";
 import { assertRealpathInRepo } from "./repo-context-2.js";
 import { resolveRepoRelativePath } from "./repo-context.js";
-import { SONAR_BASE_URL, SONAR_EXPORT_RETENTION, SONAR_RETRY_DELAYS_MS, _pruneSonarExports, _readSonarCloudConfigFromRepo, _sonarAuthHeader, shouldRetrySonarStatus, summarizeSonarHotspots, summarizeSonarIssues } from "./repo-vocabulary.js";
+import { execFile as _execFile } from "./runtime-primitives.js";
+import { buildSonarScopeEvidence, classifySonarProducer, fetchSonarProducerEvidence, readSonarCloudConfigStrict, selectSonarProducerChecks } from "./sonar-scope.js";
+import { SONAR_BASE_URL, SONAR_EXPORT_RETENTION, SONAR_RETRY_DELAYS_MS, _pruneSonarExports, _sonarAuthHeader, shouldRetrySonarStatus, summarizeSonarHotspots, summarizeSonarIssues } from "./repo-vocabulary.js";
 
-export const VERIFICATION_STATUSES = ["PROVEN", "REFUTED", "TIMEOUT", "UNKNOWN", "ERROR"];
-export const ASSURANCE_LEVELS = ["L0", "L1", "L2", "L3"];
-async function _sonarFetchWithRetry(url, init) {
+/**
+ * The one deadline for a watch.
+ *
+ * `total_timeout_seconds` used to bound only the quality-gate polling loop, so
+ * the propagation wait, the retry backoffs, and the issue/hotspot pagination all
+ * ran outside it and the documented cap was never the real ceiling. Every sleep
+ * in this module now goes through `sleep`, which clips to what is left, and
+ * every loop consults `expired` before spending another request (issue #1559).
+ */
+function createWatchBudget({ totalTimeoutSeconds, now, sleepMs }) {
+  const startMs = now();
+  const limitMs = totalTimeoutSeconds * 1000;
+  const elapsedMs = () => now() - startMs;
+  return {
+    expired: () => elapsedMs() >= limitMs,
+    sleep: async (ms) => {
+      const capped = Math.min(ms, Math.max(0, limitMs - elapsedMs()));
+      if (capped > 0) await sleepMs(capped);
+    },
+  };
+}
+async function _sonarFetchWithRetry(url, init, budget) {
   let lastErr = null;
   for (let attempt = 0; attempt <= SONAR_RETRY_DELAYS_MS.length; attempt++) {
     let resp;
@@ -25,44 +47,69 @@ async function _sonarFetchWithRetry(url, init) {
       // Network failure (DNS, connection reset, timeout). Treated as
       // transient at the same retry tier as 5xx.
       lastErr = err;
-      if (attempt < SONAR_RETRY_DELAYS_MS.length) {
-        await _sleepMs(SONAR_RETRY_DELAYS_MS[attempt]);
+      if (attempt < SONAR_RETRY_DELAYS_MS.length && !budget.expired()) {
+        await budget.sleep(SONAR_RETRY_DELAYS_MS[attempt]);
         continue;
       }
       throw err;
     }
     if (!shouldRetrySonarStatus(resp.status)) return resp;
-    if (attempt >= SONAR_RETRY_DELAYS_MS.length) return resp;
-    await _sleepMs(SONAR_RETRY_DELAYS_MS[attempt]);
+    if (attempt >= SONAR_RETRY_DELAYS_MS.length || budget.expired()) return resp;
+    await budget.sleep(SONAR_RETRY_DELAYS_MS[attempt]);
   }
   // Unreachable — loop above always returns or throws. Keep the throw
   // as a sentinel so a future refactor that breaks the loop semantics
   // surfaces cleanly.
   throw lastErr ?? new Error("sonar fetch retry exhausted");
 }
-async function _fetchSonarQualityGate({ projectKey, prNumber, token }) {
+// A credential the API rejected is not a credential the host is missing, and the
+// two have different repairs. Raised as a tagged error so the watcher can name
+// the right one instead of folding both into a generic fetch failure.
+function _sonarError(code, message) {
+  const err = new Error(message);
+  err.sonarErrorCode = code;
+  return err;
+}
+async function _fetchSonarQualityGate({ projectKey, prNumber, token, budget }) {
   const url = `${SONAR_BASE_URL}/api/qualitygates/project_status?projectKey=${encodeURIComponent(projectKey)}&pullRequest=${encodeURIComponent(String(prNumber))}`;
   const resp = await _sonarFetchWithRetry(url, {
     headers: { Authorization: _sonarAuthHeader(token), Accept: "application/json" },
-  });
+  }, budget);
   if (resp.status === 404) return { available: false };
+  if (resp.status === 401 || resp.status === 403) {
+    throw _sonarError(
+      "sonar_watch_authentication_failed",
+      `SonarCloud rejected the host credential: HTTP ${resp.status}`,
+    );
+  }
   if (!resp.ok) {
     throw new Error(`sonar quality gate fetch failed: HTTP ${resp.status}`);
   }
   const data = await resp.json();
+  // HTTP status and response shape are separate signals. SonarCloud answers a
+  // pull request it has no component for with a 200 carrying an `errors`
+  // document; that is the propagation case and stays a poll. Anything else
+  // without a gate status is a body this code cannot read, and turning it into
+  // another "not available" poll spends the whole cap on a parse failure.
   const status = data?.projectStatus?.status;
-  return {
-    available: typeof status === "string" && status.length > 0,
-    status: typeof status === "string" ? status : "UNKNOWN",
-  };
+  if (typeof status === "string" && status.length > 0) {
+    return { available: true, status };
+  }
+  if (data != null && typeof data === "object" && Array.isArray(data.errors)) {
+    return { available: false };
+  }
+  throw _sonarError(
+    "sonar_watch_quality_gate_malformed",
+    "SonarCloud returned a quality-gate response carrying neither a status nor an error document",
+  );
 }
-async function _fetchSonarIssues({ projectKey, prNumber, token, maxPages = 20 }) {
+async function _fetchSonarIssues({ projectKey, prNumber, token, budget, maxPages = 20 }) {
   const out = [];
   for (let page = 1; page <= maxPages; page++) {
     const url = `${SONAR_BASE_URL}/api/issues/search?componentKeys=${encodeURIComponent(projectKey)}&pullRequest=${encodeURIComponent(String(prNumber))}&resolved=false&ps=500&p=${page}`;
     const resp = await _sonarFetchWithRetry(url, {
       headers: { Authorization: _sonarAuthHeader(token), Accept: "application/json" },
-    });
+    }, budget);
     if (!resp.ok) {
       throw new Error(`sonar issues fetch failed (page ${page}): HTTP ${resp.status}`);
     }
@@ -72,16 +119,19 @@ async function _fetchSonarIssues({ projectKey, prNumber, token, maxPages = 20 })
     const total = typeof data?.total === "number" ? data.total : out.length;
     if (out.length >= total) break;
     if (issues.length === 0) break;
+    // Pagination used to run past the last elapsed-time check, so a wide result
+    // set could spend well beyond the cap after the gate was already read.
+    if (budget.expired()) break;
   }
   return out;
 }
-async function _fetchSonarHotspots({ projectKey, prNumber, token, maxPages = 20 }) {
+async function _fetchSonarHotspots({ projectKey, prNumber, token, budget, maxPages = 20 }) {
   const out = [];
   for (let page = 1; page <= maxPages; page++) {
     const url = `${SONAR_BASE_URL}/api/hotspots/search?projectKey=${encodeURIComponent(projectKey)}&pullRequest=${encodeURIComponent(String(prNumber))}&status=TO_REVIEW&ps=500&p=${page}`;
     const resp = await _sonarFetchWithRetry(url, {
       headers: { Authorization: _sonarAuthHeader(token), Accept: "application/json" },
-    });
+    }, budget);
     if (!resp.ok) {
       throw new Error(`sonar hotspots fetch failed (page ${page}): HTTP ${resp.status}`);
     }
@@ -92,6 +142,7 @@ async function _fetchSonarHotspots({ projectKey, prNumber, token, maxPages = 20 
     const total = typeof paging?.total === "number" ? paging.total : out.length;
     if (out.length >= total) break;
     if (hotspots.length === 0) break;
+    if (budget.expired()) break;
   }
   return out;
 }
@@ -141,53 +192,66 @@ function validateWatchSonarAnalysisInput({ repoPath, prNumber, initialWaitSecond
   return null;
 }
 
+/** The zero-finding summaries every non-evaluated envelope carries. */
+function emptySonarSummaries() {
+  return {
+    issues_summary: { open_count: 0, by_severity: {}, by_type: {}, top_issues: [] },
+    hotspots_summary: { open_count: 0, top_hotspots: [] },
+    full_issue_export_path: null,
+  };
+}
+function sonarWatchTimedOut(prNumber) {
+  return {
+    ok: true,
+    skipped: false,
+    pr_number: prNumber,
+    quality_gate: "NONE",
+    ...emptySonarSummaries(),
+    timed_out: true,
+  };
+}
+
 // Poll for the quality gate; PRs not yet analyzed return 404. Returns
 // `{ qg }` once available, or `{ earlyReturn }` carrying the exact envelope
 // the caller should return immediately (fetch error or overall timeout).
-async function pollSonarQualityGateUntilReady({ projectKey, prNumber, token, totalTimeoutSeconds, pollIntervalSeconds }) {
-  const startMs = Date.now();
+//
+// The shared `budget` is the whole watch's deadline, not this loop's: the
+// propagation wait that precedes it spends from the same allowance, and its
+// sleeps are clipped to what remains rather than run in full.
+async function pollSonarQualityGateUntilReady({ projectKey, prNumber, token, pollIntervalSeconds, budget }) {
   while (true) {
+    if (budget.expired()) {
+      return { earlyReturn: sonarWatchTimedOut(prNumber) };
+    }
     let qg;
     try {
-      qg = await _fetchSonarQualityGate({ projectKey, prNumber, token });
+      qg = await _fetchSonarQualityGate({ projectKey, prNumber, token, budget });
     } catch (e) {
       return {
         earlyReturn: {
           ok: false,
-          error: "sonar_watch_quality_gate_failed",
+          error: e?.sonarErrorCode ?? "sonar_watch_quality_gate_failed",
           message: e?.message ?? "sonar quality gate fetch failed",
           pr_number: prNumber,
         },
       };
     }
     if (qg.available) return { qg };
-    const elapsedSeconds = Math.floor((Date.now() - startMs) / 1000);
-    if (elapsedSeconds > totalTimeoutSeconds) {
-      return {
-        earlyReturn: {
-          ok: true,
-          skipped: false,
-          pr_number: prNumber,
-          quality_gate: "NONE",
-          issues_summary: { open_count: 0, by_severity: {}, by_type: {}, top_issues: [] },
-          hotspots_summary: { open_count: 0, top_hotspots: [] },
-          full_issue_export_path: null,
-          timed_out: true,
-        },
-      };
+    if (budget.expired()) {
+      return { earlyReturn: sonarWatchTimedOut(prNumber) };
     }
     if (pollIntervalSeconds > 0) {
-      await _sleepMs(pollIntervalSeconds * 1000);
+      await budget.sleep(pollIntervalSeconds * 1000);
     }
   }
 }
 // Fetch the PR's open issues then hotspots. Returns `{ issues, hotspots }`, or
 // `{ earlyReturn }` carrying the exact failure envelope the caller returns.
-async function _fetchSonarIssuesAndHotspots({ projectKey, prNumber, token, qgStatus }) {
+async function _fetchSonarIssuesAndHotspots({ projectKey, prNumber, token, qgStatus, budget }) {
   let issues = [];
   let hotspots = [];
   try {
-    issues = await _fetchSonarIssues({ projectKey, prNumber, token });
+    issues = await _fetchSonarIssues({ projectKey, prNumber, token, budget });
   } catch (e) {
     return {
       earlyReturn: {
@@ -200,7 +264,7 @@ async function _fetchSonarIssuesAndHotspots({ projectKey, prNumber, token, qgSta
     };
   }
   try {
-    hotspots = await _fetchSonarHotspots({ projectKey, prNumber, token });
+    hotspots = await _fetchSonarHotspots({ projectKey, prNumber, token, budget });
   } catch (e) {
     return {
       earlyReturn: {
@@ -214,17 +278,68 @@ async function _fetchSonarIssuesAndHotspots({ projectKey, prNumber, token, qgSta
   }
   return { issues, hotspots };
 }
+const PRODUCER_SKIPPED_MESSAGE =
+  "The pull request's SonarCloud producer check concluded 'skipped', so no analysis will ever be "
+  + "published for it and waiting cannot change that. Check-run metadata records the skip, not its "
+  + "cause: confirm the repository's own scope contract for the changed paths before treating this "
+  + "as a legitimate exclusion.";
+
+/**
+ * Can a SonarCloud analysis still appear for this pull request?
+ *
+ * Runs before the propagation wait and before the credential gate: a watch that
+ * cannot succeed should spend neither the cap nor an operator's attention on a
+ * token it never needed. Returns the terminal envelope only when the producer
+ * was *skipped* — the one observation that proves nothing was published — and
+ * `null` for every other state, including a producer that failed. A red
+ * `SonarCloud Code Analysis` check reports a rejected quality gate, so an
+ * analysis exists; stopping there would suppress the issue and hotspot read and
+ * report an evaluated failure as an unevaluable gate.
+ */
+async function resolveSonarProducerScope({ repoRoot, repoSlug, prNumber, projectKey, selector, fetchProducerEvidence, execFile }) {
+  const observed = await fetchProducerEvidence({ repoRoot, repoSlug, prNumber, execFile });
+  if (observed === null) return null;
+
+  const matched = selectSonarProducerChecks(observed.entries, selector);
+  const { analysis, reason } = classifySonarProducer(matched);
+  if (analysis !== "skipped") return null;
+
+  return {
+    ok: false,
+    error: "sonar_watch_analysis_not_produced",
+    message: PRODUCER_SKIPPED_MESSAGE,
+    pr_number: prNumber,
+    // The skip is observed; the *reason* for it is not proved by check metadata,
+    // so this envelope terminates the watch without authorizing a scope waiver
+    // at the readiness gate. Issue #1533 owns that clearance and consumes this
+    // evidence rather than a caller's assertion.
+    scope: "unproved",
+    scope_evidence: buildSonarScopeEvidence({
+      repoSlug, prNumber, headSha: observed.headSha, projectKey, selector, checks: matched, reason,
+    }),
+  };
+}
+
 export async function runWatchSonarAnalysis({
   repoPath,
   prNumber,
   initialWaitSeconds = 60,
   totalTimeoutSeconds = 1800,
   pollIntervalSeconds = 30,
+  fetchProducerEvidence = fetchSonarProducerEvidence,
+  execFile = _execFile,
+  sleepMs = _sleepMs,
+  now = Date.now,
+  authorizeRepoRead = authorizeWatcherRepoRead,
 }) {
   const inputError = validateWatchSonarAnalysisInput({
     repoPath, prNumber, initialWaitSeconds, totalTimeoutSeconds, pollIntervalSeconds,
   });
   if (inputError) return inputError;
+
+  // Opened before the propagation wait so `total_timeout_seconds` bounds the
+  // whole watch rather than only its polling phase.
+  const budget = createWatchBudget({ totalTimeoutSeconds, now, sleepMs });
 
   let repoRoot;
   try {
@@ -237,25 +352,55 @@ export async function runWatchSonarAnalysis({
     };
   }
 
-  const sonarConfig = _readSonarCloudConfigFromRepo(repoRoot);
-  if (sonarConfig === null) {
+  const declared = readSonarCloudConfigStrict(repoRoot);
+  if (declared.state === "invalid" || declared.state === "unreadable") {
+    // A declaration this server cannot read is not a gate that passed. The
+    // permissive reader turned both an unparseable file and an unreadable one
+    // into `skipped: true`, which `sonarGatePassed` accepts unconditionally.
+    return {
+      ok: false,
+      error: "sonar_watch_config_invalid",
+      message: `.ground-control.yaml could not be read as a SonarCloud declaration, so the gate produced no verdict: ${declared.errors[0]}`,
+      pr_number: prNumber,
+    };
+  }
+  if (declared.state !== "configured") {
     // No sonarcloud block — skip entirely. Mirrors current /implement Step 11.
     return {
       ok: true,
       skipped: true,
       pr_number: prNumber,
       quality_gate: "NONE",
-      issues_summary: { open_count: 0, by_severity: {}, by_type: {}, top_issues: [] },
-      hotspots_summary: { open_count: 0, top_hotspots: [] },
-      full_issue_export_path: null,
+      ...emptySonarSummaries(),
     };
   }
+  const projectKey = declared.config.project_key;
+  const selector = declared.config.analysis_check ?? null;
+
+  // The producer read spends the MCP host's GitHub credentials, so the checkout
+  // has to be one this server is authorized to act on and the destination has to
+  // come from that authorized identity - not from the caller's path or its
+  // origin (issue #1559). Authorization gates that read alone: the Sonar watch
+  // itself needs only the project key and the token, so an unauthorized or
+  // unidentifiable checkout skips the pre-check and keeps the ordinary watch
+  // rather than losing a gate it can still evaluate. No other repository's head
+  // SHA or check metadata can leave in `scope_evidence`, because the request is
+  // never made.
+  const authorized = await authorizeRepoRead({ repoRoot, errorPrefix: "sonar_watch" });
+  const notProduced = authorized.ok
+    ? await resolveSonarProducerScope({
+      repoRoot, repoSlug: authorized.repoSlug, prNumber, projectKey, selector, fetchProducerEvidence, execFile,
+    })
+    : null;
+  if (notProduced) return notProduced;
 
   // Read at call time and passed only in the Authorization header - never argv,
   // telemetry, an export, or a returned envelope (ADR-036). The value reaches
   // process.env from the launch directory's .env and nowhere else
   // (lib/server-env.js), so the message names that one file: an operator, not
   // the agent, repairs this state, and it is read at startup (issue #1562).
+  // Reached only once a Sonar request is actually needed, so a pull request its
+  // own CI never scanned can no longer be reported as a credential fault.
   const token = process.env.SONAR_TOKEN;
   if (typeof token !== "string" || token.length === 0) {
     return {
@@ -267,26 +412,28 @@ export async function runWatchSonarAnalysis({
     };
   }
 
-  // Initial wait for analysis propagation (Step 11's existing 60s pause).
+  // Initial wait for analysis propagation (Step 11's existing 60s pause),
+  // clipped to the remaining budget rather than always slept in full.
   if (initialWaitSeconds > 0) {
-    await _sleepMs(initialWaitSeconds * 1000);
+    await budget.sleep(initialWaitSeconds * 1000);
   }
 
   const pollResult = await pollSonarQualityGateUntilReady({
-    projectKey: sonarConfig.projectKey,
+    projectKey,
     prNumber,
     token,
-    totalTimeoutSeconds,
     pollIntervalSeconds,
+    budget,
   });
   if (pollResult.earlyReturn) return pollResult.earlyReturn;
   const qg = pollResult.qg;
 
   const fetched = await _fetchSonarIssuesAndHotspots({
-    projectKey: sonarConfig.projectKey,
+    projectKey,
     prNumber,
     token,
     qgStatus: qg.status,
+    budget,
   });
   if (fetched.earlyReturn) return fetched.earlyReturn;
   const { issues, hotspots } = fetched;
@@ -316,39 +463,4 @@ export async function runWatchSonarAnalysis({
     measurement_findings: measurement.findings,
     measurement_findings_dropped: measurement.dropped,
   };
-}
-export const GOVERNANCE_STATUS_ENUMS = {
-  verification_result: VERIFICATION_STATUSES,
-};
-export const GOVERNANCE_FIELDS = {
-  verification_result: {
-    // Mirrors VerificationResultRequest: targetId (optional UUID), requirementId
-    // (optional UUID), prover (@NotBlank), property (optional), result (@NotNull
-    // VerificationStatus), assuranceLevel (@NotNull), evidence (Map, opaque),
-    // verifiedAt (@NotNull Instant), expiresAt (optional Instant).
-    // uid/title/description/outcome/status/metadata were not in the DTO (#1106).
-    create: [
-      "target_id", "requirement_id", "prover", "property",
-      "result", "assurance_level", "evidence", "verified_at", "expires_at",
-    ],
-    // Mirrors UpdateVerificationResultRequest: identical shape to create (all
-    // optional on update, same fields — no create-only keys to drop).
-    update: [
-      "target_id", "requirement_id", "prover", "property",
-      "result", "assurance_level", "evidence", "verified_at", "expires_at",
-    ],
-  },
-};
-export function validateGovernanceStatus(entity, status) {
-  if (status === undefined || status === null || status === "") return;
-  const allowed = GOVERNANCE_STATUS_ENUMS[entity];
-  if (!allowed) {
-    throw new Error(`'status' is not valid for entity='${entity}'`);
-  }
-  if (!allowed.includes(status)) {
-    throw new Error(
-      `'status'='${status}' is not valid for entity='${entity}'. ` +
-        `Valid values: ${allowed.join(", ")}`,
-    );
-  }
 }

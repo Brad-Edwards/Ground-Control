@@ -144,15 +144,29 @@ async function defaultRunCiWatcher(pr, ctx) {
  *   quality_gate "OK"             → {conclusion: "success"}
  *   quality_gate "ERROR"/"WARN"   → {conclusion: "failure"}
  *   any error / other             → {conclusion: "skipped"} (non-fatal)
+ *
+ * A non-ok envelope still halts the queue when sonarcloud is configured, but it
+ * used to arrive with its reason and evidence discarded, so the lane reported a
+ * configuration problem for a scan that was never produced and dropped the
+ * repository/PR/head/check facts the diagnosis needs (issue #1559). Both travel
+ * with the conclusion now; neither grants a new bypass.
  */
-async function defaultRunSonarWatcher(pr, ctx) {
-  const result = await runWatchSonarAnalysis({
+async function defaultRunSonarWatcher(pr, ctx, _deps, watchSonar = runWatchSonarAnalysis) {
+  // `watchSonar` is injected only by this adapter's own tests. Without a seam the
+  // mapping below could only be reached through a full integration run, so every
+  // test faked the adapter's *output* instead and the mapping itself — the actual
+  // /integrate half of issue #1559 — was never exercised.
+  const result = await watchSonar({
     repoPath: ctx.repoRoot,
     prNumber: pr.pr_number,
   });
 
   if (!result.ok) {
-    return { conclusion: "skipped" };
+    return {
+      conclusion: "skipped",
+      reason: result.error,
+      ...(result.scope_evidence ? { scope_evidence: result.scope_evidence } : {}),
+    };
   }
   if (result.skipped) {
     return { conclusion: "skipped" };

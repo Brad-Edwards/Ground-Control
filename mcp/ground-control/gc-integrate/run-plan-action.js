@@ -206,12 +206,22 @@ async function runReadinessWatchers(pr, ctx, deps, cfg) {
   // A skipped analysis is only a problem when the repo configures SonarCloud;
   // otherwise there is nothing for the watcher to have observed.
   if (sonarResult.conclusion === "skipped" && cfg?.sonarcloud != null) {
+    // A terminal producer is a scope question, not a configuration one. Routing
+    // it to `check_sonar_configuration` sent the operator at .ground-control.yaml
+    // for a scan the repository's own CI declined to run (issue #1559).
+    const notProduced = sonarResult.reason === "sonar_watch_analysis_not_produced";
     return {
       pr_number: pr.pr_number,
       outcome: "blocked",
-      failure_class: "sonar_skipped_but_configured",
-      summary: safeSummary("Sonar analysis was skipped but sonarcloud is configured in .ground-control.yaml"),
-      next_action: "check_sonar_configuration",
+      failure_class: notProduced ? "sonar_analysis_not_produced" : "sonar_skipped_but_configured",
+      summary: safeSummary(
+        notProduced
+          ? "SonarCloud published no analysis for this pull request: its producer check is already terminal"
+          : "Sonar analysis was skipped but sonarcloud is configured in .ground-control.yaml"
+            + (sonarResult.reason ? ` (watcher reported ${sonarResult.reason})` : ""),
+      ),
+      next_action: notProduced ? "diagnose_sonar_scan_scope" : "check_sonar_configuration",
+      ...(sonarResult.scope_evidence ? { sonar_scope_evidence: sonarResult.scope_evidence } : {}),
     };
   }
   if (sonarResult.conclusion === "failure") {

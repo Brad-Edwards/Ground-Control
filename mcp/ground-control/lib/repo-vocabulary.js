@@ -4,9 +4,8 @@
 // (docs/CODING_STANDARDS.md, Sonar S104). It contained no mutual recursion, so it was
 // split along its own dependency layering. lib.js remains the barrel every caller imports.
 
-import { readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { load as parseYaml } from "js-yaml";
 
 const ARCH_VOCABULARY_TOP_KEYS = new Set(["patterns", "canonical_helpers", "boundary_contract", "binding_adrs", "anti_recommendations"]);
 const ARCH_PATTERN_KEYS = new Set(["name", "applies_to", "example_path"]);
@@ -300,29 +299,6 @@ export function summarizeSonarHotspots(hotspots, maxTop = 10) {
     open_count: arr.length,
     top_hotspots: topHotspots,
   };
-}
-export function _readSonarCloudConfigFromRepo(repoRoot) {
-  // Best-effort read of the sonarcloud block. Returns null if the file
-  // is missing, malformed, or has no sonarcloud declaration — all three
-  // are "skip" signals, not errors, by design (mirrors Step 11).
-  let yamlText;
-  try {
-    yamlText = readFileSync(join(repoRoot, ".ground-control.yaml"), "utf8");
-  } catch {
-    return null;
-  }
-  try {
-    const parsed = parseYaml(yamlText);
-    if (!parsed || typeof parsed !== "object") return null;
-    const sc = parsed.sonarcloud;
-    if (!sc || typeof sc !== "object") return null;
-    const projectKey = typeof sc.project_key === "string" ? sc.project_key : null;
-    const organization = typeof sc.organization === "string" ? sc.organization : null;
-    if (!projectKey) return null;
-    return { projectKey, organization };
-  } catch {
-    return null;
-  }
 }
 export function _sonarAuthHeader(token) {
   // SonarCloud REST: HTTP Basic with token as username, empty password.

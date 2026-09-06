@@ -15,6 +15,18 @@
 
 const TOKEN_MISSING = "sonar_watch_token_missing";
 
+// Repairs for the conditions the watcher can actually name. An error absent from
+// this table is a condition nothing has diagnosed, so it routes to diagnosis
+// rather than to the nearest-looking repair — the failure mode issue #1559
+// records, where a scan the repo's own CI skipped was reported as a missing
+// credential and an operator provisioned a token that changed nothing.
+const NEXT_ACTION_BY_ERROR = new Map([
+  [TOKEN_MISSING, "provision_sonar_token_on_mcp_host_then_rerun_monitor"],
+  ["sonar_watch_authentication_failed", "repair_sonar_credential_then_rerun_monitor"],
+  ["sonar_watch_config_invalid", "repair_ground_control_config_then_rerun_monitor"],
+  ["sonar_watch_analysis_not_produced", "diagnose_sonar_scan_scope_then_rerun_monitor"],
+]);
+
 /** Whether the gate was actually evaluated. `skipped` counts: the repo declares no sonarcloud block. */
 export function sonarGateEvaluable(sonar) {
   if (!sonar?.ok) return false;
@@ -65,11 +77,9 @@ export function classifySonarGateFailure(sonar) {
       sonar_gate: "not_evaluable",
       error,
       message: sonar?.message ?? "SonarCloud could not be read, so the gate produced no verdict",
-      // A missing host credential is an operator provisioning fault with a
-      // known repair; every other unevaluable envelope needs diagnosis first.
-      next_action: error === TOKEN_MISSING
-        ? "provision_sonar_token_on_mcp_host_then_rerun_monitor"
-        : "diagnose_sonar_watch_failure_then_rerun_monitor",
+      // Only a condition the watcher confirmed carries its own repair; anything
+      // else needs diagnosis before a repair can honestly be named.
+      next_action: NEXT_ACTION_BY_ERROR.get(error) ?? "diagnose_sonar_watch_failure_then_rerun_monitor",
     };
   }
   return {
