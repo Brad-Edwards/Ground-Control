@@ -29,7 +29,7 @@ async function tokenMissingEnvelope() {
   const original = process.env.SONAR_TOKEN;
   delete process.env.SONAR_TOKEN;
   try {
-    return await runWatchSonarAnalysis({ repoPath: dir, prNumber: 7, initialWaitSeconds: 0 });
+    return await runWatchSonarAnalysis({ repoPath: dir, prNumber: 7, initialWaitSeconds: 0, fetchProducerEvidence: async () => null, authorizeRepoRead: async () => ({ ok: true, repoSlug: "fake/repo" }) });
   } finally {
     if (original === undefined) delete process.env.SONAR_TOKEN;
     else process.env.SONAR_TOKEN = original;

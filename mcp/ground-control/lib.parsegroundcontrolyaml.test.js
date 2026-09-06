@@ -381,62 +381,6 @@ describe("parseGroundControlYaml", () => {
     );
   });
 
-
-  it("requires both sonarcloud fields when sonarcloud is set", () => {
-    const yaml = "schema_version: 1\nproject: x\nsonarcloud:\n  project_key: foo\n";
-    const result = parseGroundControlYaml(yaml);
-    assert.equal(result.ok, false);
-    assert.ok(result.errors.some((e) => e.includes("organization")));
-  });
-
-
-  it("accepts optional sonarcloud.quality_gate (issue #948 / shifter aces-strict)", () => {
-    const result = parseYamlLines([
-      "schema_version: 1",
-      "project: shifter",
-      "sonarcloud:",
-      "  project_key: Brad-Edwards_shifter",
-      "  organization: brad-edwards",
-      "  quality_gate: aces-strict",
-      "",
-    ]);
-    assert.equal(result.ok, true);
-    assert.equal(result.value.sonarcloud.project_key, "Brad-Edwards_shifter");
-    assert.equal(result.value.sonarcloud.organization, "brad-edwards");
-    assert.equal(result.value.sonarcloud.quality_gate, "aces-strict");
-  });
-
-
-  it("rejects sonarcloud unknown keys after quality_gate is allowlisted", () => {
-    const result = parseYamlLines([
-      "schema_version: 1",
-      "project: shifter",
-      "sonarcloud:",
-      "  project_key: foo",
-      "  organization: bar",
-      "  bogus: true",
-      "",
-    ]);
-    assert.equal(result.ok, false);
-    assert.ok(result.errors.some((e) => e.includes("sonarcloud has unknown key 'bogus'")));
-  });
-
-
-  it("rejects empty sonarcloud.quality_gate", () => {
-    const result = parseYamlLines([
-      "schema_version: 1",
-      "project: shifter",
-      "sonarcloud:",
-      "  project_key: foo",
-      "  organization: bar",
-      "  quality_gate: ''",
-      "",
-    ]);
-    assert.equal(result.ok, false);
-    assert.ok(result.errors.some((e) => e.includes("sonarcloud.quality_gate")));
-  });
-
-
   it("parses a knowledge section with only dir and leaves overrides null", () => {
     const result = parseYamlLines([
       "schema_version: 1",

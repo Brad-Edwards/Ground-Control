@@ -5,8 +5,8 @@
 // split along its own dependency layering. lib.js remains the barrel every caller imports.
 
 import { _fetchCiRunFailedLog, _fetchCiRunSnapshot, _sleepMs, evaluateCiPollState, extractFailedStepsFromJobsJson, summarizeCiLogFailedOutput } from "./doc-coverage.js";
-import { getOwnerRepo } from "./grc-legacy-compat-3.js";
 import { ensureGitRepo } from "./grc-legacy-compat-4.js";
+import { authorizeWatcherRepoRead } from "./watcher-repo-authorization.js";
 import { FINDING_CLASSIFICATIONS, FINDING_SWEEP_EVIDENCE_MAX, truncateReviewProse } from "./grc-legacy-compat.js";
 import { buildCiWatchGhArgs } from "./doc-coverage.js";
 import { execFile } from "./runtime-primitives.js";
@@ -185,6 +185,7 @@ export async function runWatchCiRun({
   queuedTimeoutSeconds = 300,
   totalTimeoutSeconds = 2700,
   pollIntervalSeconds = 15,
+  authorizeRepoRead = authorizeWatcherRepoRead,
 }) {
   if (typeof repoPath !== "string" || repoPath.length === 0) {
     return {
@@ -242,20 +243,15 @@ export async function runWatchCiRun({
     };
   }
 
-  // Resolve owner/name from the repo's git remote up-front so every
-  // subsequent `gh` call can pass `--repo <slug>` and ignore any rogue
-  // `GH_REPO` env var on the MCP host.
-  let repoSlug;
-  try {
-    const { owner, name } = await getOwnerRepo(repoRoot);
-    repoSlug = `${owner}/${name}`;
-  } catch (e) {
-    return {
-      ok: false,
-      error: "ci_watch_repo_lookup_failed",
-      message: e?.message ?? "getOwnerRepo failed",
-    };
-  }
+  // Resolve owner/name up-front so every subsequent `gh` call can pass
+  // `--repo <slug>` and ignore any rogue `GH_REPO` env var on the MCP host.
+  // The slug comes from the authorized launch-workspace identity, not from the
+  // caller-selected checkout's origin: these reads spend the MCP host's GitHub
+  // credentials, and origin alone does not establish that the checkout is one
+  // this server may act on (issue #1559).
+  const authorized = await authorizeRepoRead({ repoRoot, errorPrefix: "ci_watch" });
+  if (!authorized.ok) return authorized;
+  const repoSlug = authorized.repoSlug;
 
   // Resolve the run set. An explicit runId watches exactly that run; otherwise
   // watch every run the branch's newest commit triggered, so the gate cannot

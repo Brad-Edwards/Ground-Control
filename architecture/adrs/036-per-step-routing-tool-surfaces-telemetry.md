@@ -862,3 +862,89 @@ empty, which is what Step 11 requires before advancing. Accepting it would
 certify pull requests with INFO-through-BLOCKER findings unread, converting a
 fixable credential defect into a permanent reduction in the gate's coverage. See
 `architecture/notes/sonar-watcher-token-provisioning-preflight.md`.
+
+**2026-09-06 (issue #1559, an analysis that cannot arrive is not an analysis
+that is late).** The `gc_watch_sonar_analysis` surface described above waits for
+SonarCloud's `project_status` to stop answering 404. That is the right wait
+while a scan is running, and a guaranteed spend of the whole 30-minute cap once
+the repository's own CI has declared the scan terminal: the component never
+appears, the job is not cancellable, and no state exists in which the poll could
+succeed. Because the credential gate ran first, a host without `SONAR_TOKEN`
+reported the absence as `sonar_watch_token_missing`; the token was provisioned
+and nothing changed, because the token was never the cause. The routing table,
+the tier-to-model mapping, and the telemetry contract are unchanged.
+
+The tool now resolves whether an analysis is *possible* before it waits for one.
+Ahead of the propagation wait and ahead of reading the credential, it performs
+one origin-pinned `gh pr view --json headRefOid,statusCheckRollup` read, selects
+the producer named by the new optional `sonarcloud.analysis_check` (absent, any
+check or workflow whose name matches `/sonar/i`), and classifies it on the
+station axis `lib/ci-conclusion.js` already owns, so the `{skipped, neutral}`
+grouping is stated once for both remote gates. Only a producer set that is
+entirely skipped ends the watch, with `sonar_watch_analysis_not_produced`.
+Everything else keeps the existing behavior byte-for-byte - including a producer
+that *failed*, because the `SonarCloud Code Analysis` check reports the hosted
+quality-gate result, so a red one means an analysis exists and was rejected;
+terminating there would suppress the issue and hotspot read and report an
+evaluated failure as an unevaluable gate.
+
+**The evidence terminates the watch; it does not clear the gate.** A terminal
+skipped check-run proves that no analysis is coming. It does not carry the
+consuming repository's ownership decision, so it cannot prove *why* the scan was
+skipped, and Ground Control has no integration that can obtain that decision -
+copying another repository's path-ownership classifier, or trusting a
+caller-supplied skip flag, are both rejected. Missing integration therefore
+yields unknown scope, not a waiver: the envelope stays `ok: false`, `sonar_gate`
+stays `not_evaluable`, nothing new passes `sonarGatePassed`, and the legacy
+`skipped: true` boolean is not overloaded with a second meaning. What the
+envelope adds is a normalized, bounded `scope_evidence` record - repository, pull
+request, head revision, project key, producer selector, and each matched check's
+conclusion - bounded at its origin because the mechanical `failure()` helper
+scrubs its message and not a nested object. Verified readiness/finalize
+clearance for a legitimately out-of-scope pull request is issue #1533's
+contract, and it consumes this server-acquired evidence rather than a caller's
+assertion.
+
+`classifySonarGateFailure` gains a table from confirmed condition to repair, so
+an unrecognized error routes to diagnosis instead of to the nearest-looking
+cause. `provision_sonar_token_on_mcp_host_then_rerun_monitor` is now reachable
+only from `sonar_watch_token_missing`: a credential SonarCloud rejected is
+`sonar_watch_authentication_failed`, an unreadable `.ground-control.yaml` is
+`sonar_watch_config_invalid`, and a response body carrying neither a gate status
+nor an error document is `sonar_watch_quality_gate_malformed` rather than
+another indistinguishable "not available" poll.
+
+**The privileged read is authorized, not merely pinned.** Both remote-gate
+watchers resolved their GitHub destination from the caller-selected checkout's
+git origin and then spent the MCP host's credentials on it. Pinning `--repo`
+stops a rogue `GH_REPO` from retargeting the read; it does not establish that
+the checkout is one this server may act on, so a caller could pass any local
+path - or retarget a writable checkout's origin at a private repository the
+host's token can reach - and receive that repository's pull-request metadata
+back in the envelope, without any Sonar credential. `lib/watcher-repo-authorization.js`
+puts one boundary in front of both: `authorizeImplementRepoRoot` pins the read to
+the immutable workspace identity captured at MCP launch, and the `owner/name`
+slug comes from what was authorized rather than from what the caller supplied.
+`runWatchCiRun` carried the same origin-only trust and is fixed with it. The two
+watchers differ in what a refusal costs: the CI watcher's whole job is that
+read, so it is terminal (`ci_watch_repo_not_authorized`); the Sonar watcher's
+producer lookup is an optimization over a watch that needs no GitHub access at
+all, so an unauthorized checkout makes no request - which is what prevents the
+harm - and keeps the gate it can still evaluate. Denying a legitimate Sonar watch
+because a checkout has no resolvable GitHub identity would trade one fail-open
+for a fail-closed on the wrong axis.
+
+Three fail-open paths in the same call graph closed with it. The watcher read its
+SonarCloud declaration through a best-effort reader that collapsed a missing
+file, an unreadable one, unparseable YAML, an invalid declaration, and a valid
+config with no `sonarcloud` block into one `null`, and `null` became
+`skipped: true`, which `sonarGatePassed` accepts unconditionally - so a malformed
+or unreadable `.ground-control.yaml` silently cleared the SonarCloud gate. The
+strict reader distinguishes those states, treats only `ENOENT` as proof that the
+repository never opted in, and fails closed on the rest; the permissive reader is
+deleted rather than left exported for a future caller to reach. Separately,
+`total_timeout_seconds` bounded only the polling loop, so the propagation wait,
+the retry backoffs, and the issue/hotspot pagination all ran outside the
+documented cap. One budget now spans the call: every sleep is clipped to what
+remains, and each loop consults it before spending another request. See
+`architecture/notes/sonar-scope-monitor-preflight.md`.

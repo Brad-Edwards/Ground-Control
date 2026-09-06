@@ -181,6 +181,8 @@ The renderer's `change_class` is typically `source` for `/quickfix` runs; `doc-o
 
 If `cfg.sonarcloud` is null, skip; proceed to Step Q18.
 
+Step 11's sub-step 2a routing applies unchanged, including its `error`-keyed buckets for an unevaluable gate (issue #1559). In particular, `sonar_watch_analysis_not_produced` means the PR's SonarCloud producer check is already terminal, so `sonar_status: "skipped"` is only honest here when `cfg.sonarcloud` is null - never as a stand-in for a scan the repo declined to run.
+
 ### Steps Q15–Q17: NO Requirement Transitions or Traceability Reconciliation
 
 `/quickfix` runs are scoped to fix-shaped work, not requirement-shaped work - no requirement status transitions, no traceability reconciliation against in-scope UIDs. The `in_scope_requirements[]` list is by definition empty for a `/quickfix` run.

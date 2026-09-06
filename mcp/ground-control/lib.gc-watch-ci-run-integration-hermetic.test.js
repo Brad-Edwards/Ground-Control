@@ -118,6 +118,7 @@ process.exit(2);
     try {
       await withShimPath(shim.binDir, async () => {
         const r = await runWatchCiRun({
+        authorizeRepoRead: async () => ({ ok: true, repoSlug: "test-owner/test-repo" }),
           repoPath: shim.repoDir,
           branch: "main",
           runId: 123,
@@ -174,6 +175,7 @@ process.exit(2);
     try {
       await withShimPath(shim.binDir, async () => {
         const r = await runWatchCiRun({
+        authorizeRepoRead: async () => ({ ok: true, repoSlug: "test-owner/test-repo" }),
           repoPath: shim.repoDir,
           branch: "main",
           runId: 456,
@@ -223,6 +225,7 @@ process.exit(2);
     try {
       await withShimPath(shim.binDir, async () => {
         const r = await runWatchCiRun({
+        authorizeRepoRead: async () => ({ ok: true, repoSlug: "test-owner/test-repo" }),
           repoPath: shim.repoDir,
           branch: "feature/x",
           pollIntervalSeconds: 1,
@@ -290,6 +293,7 @@ process.exit(2);
     try {
       await withShimPath(shim.binDir, async () => {
         const r = await runWatchCiRun({
+        authorizeRepoRead: async () => ({ ok: true, repoSlug: "test-owner/test-repo" }),
           repoPath: shim.repoDir,
           branch: "feature/x",
           pollIntervalSeconds: 1,

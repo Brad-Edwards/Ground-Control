@@ -3,6 +3,12 @@
 Issue: #946
 Requirement: none
 
+Scope-monitor follow-up: [issue #1559 preflight](sonar-scope-monitor-preflight.md)
+separates verified path exclusion from missing credentials and reserves
+readiness acceptance for #1533. Its applicability check precedes requiring a
+token for an unnecessary request; the launch-directory credential boundary
+below remains unchanged.
+
 This note fixes the architecture boundary for making the Step 11 SonarCloud
 observation available on every supported MCP host. It is design guidance, not
 an implementation plan.

@@ -106,4 +106,42 @@ describe("classifySonarGateFailure", () => {
     assert.equal(c.error, "sonar_findings_open");
     assert.equal(c.next_action, "fix_sonar_findings_then_rerun_publish_and_monitor");
   });
+
+  // Issue #1559: a scan the repo's own CI never produced was reported as a
+  // missing credential, so an operator provisioned a token and nothing changed.
+  it("sends an analysis that was never produced to scope diagnosis, not to token provisioning", () => {
+    const c = classifySonarGateFailure({ ok: false, error: "sonar_watch_analysis_not_produced" });
+    assert.equal(c.sonar_gate, "not_evaluable");
+    assert.equal(c.next_action, "diagnose_sonar_scan_scope_then_rerun_monitor");
+  });
+
+  it("separates a rejected credential from an absent one", () => {
+    const c = classifySonarGateFailure({ ok: false, error: "sonar_watch_authentication_failed" });
+    assert.equal(c.next_action, "repair_sonar_credential_then_rerun_monitor");
+  });
+
+  it("sends an unreadable repository config to the config repair", () => {
+    const c = classifySonarGateFailure({ ok: false, error: "sonar_watch_config_invalid" });
+    assert.equal(c.next_action, "repair_ground_control_config_then_rerun_monitor");
+  });
+
+  it("routes token provisioning from the missing-token error and from nothing else", () => {
+    const provisioning = "provision_sonar_token_on_mcp_host_then_rerun_monitor";
+    assert.equal(
+      classifySonarGateFailure({ ok: false, error: "sonar_watch_token_missing" }).next_action,
+      provisioning,
+    );
+    for (const error of [
+      "sonar_watch_analysis_not_produced",
+      "sonar_watch_authentication_failed",
+      "sonar_watch_config_invalid",
+      "sonar_watch_quality_gate_malformed",
+      "sonar_watch_quality_gate_failed",
+      "sonar_watch_repo_not_found",
+      "sonar_watch_repo_not_authorized",
+      undefined,
+    ]) {
+      assert.notEqual(classifySonarGateFailure({ ok: false, error }).next_action, provisioning);
+    }
+  });
 });
