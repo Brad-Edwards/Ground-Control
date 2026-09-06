@@ -222,8 +222,10 @@ function hasClaudeAuth(env) {
 //      can serve as the sole auth when it is all that is present.
 // Parse one `KEY=VALUE` line from a dotenv-style fallback file, stripping a
 // single matching quote pair. Returns [key, value] or null for blank/comment/
-// malformed lines. Extracted so reviewEngineEnv stays flat (Sonar S3776).
-function parseEnvFileLine(line) {
+// malformed lines. Extracted so reviewEngineEnv stays flat (Sonar S3776), and
+// exported so `lib/host-env.js` reads the server's own env files through the
+// same grammar rather than a second parser (issue #946).
+export function parseEnvFileLine(line) {
   const trimmed = line.trim();
   if (!trimmed || trimmed.startsWith("#")) return null;
   const eq = trimmed.indexOf("=");

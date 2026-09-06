@@ -749,3 +749,55 @@ paths; the `source+migration` reminder names no framework, ORM, or test class.
 solves the contract without a taxonomy that would immediately grow language and
 framework combinations. `.github/PULL_REQUEST_TEMPLATE.md` moves in lockstep. See
 `architecture/notes/repository-neutral-pr-body-rendering-preflight.md`.
+
+**2026-09-06 (issue #946, MCP-host provisioning and unevaluable Sonar gates).**
+Two corrections to the `gc_watch_sonar_analysis` surface described above. The
+routing table, the tier-to-model mapping, and the telemetry contract are
+unchanged.
+
+1. **Host provisioning is a server responsibility, not an inheritance
+   assumption.** This ADR recorded that `SONAR_TOKEN` is read at call time and
+   passed only in the Authorization header, but stated no requirement about how
+   the variable reaches the server. In practice it arrived by inheritance from
+   the launching agent process, which made the tool's correctness a property of
+   which runtime happened to host it: a Claude Code-spawned server inherits its
+   parent's full environment, a Codex-spawned one exactly eight variables, and
+   the token is not among them. `gc_watch_sonar_analysis` was therefore
+   unusable, deterministically, in every Codex-hosted run in a repository that
+   declares a `sonarcloud:` block. The server now resolves its optional
+   variables from declared sources it reads itself, in `lib/host-env.js`:
+   an inherited non-empty value, then `.env` in the launch directory, then the
+   per-host `~/.config/ground-control/env`. The per-host file covers what the
+   launch root cannot - a launcher whose working directory is not a repository
+   root, and provisioning one credential once per machine rather than once per
+   checkout. Both files are read at startup, so provisioning or rotation takes
+   effect on the next server start; the token's handling is otherwise unchanged
+   and it still never enters argv, telemetry, exports, or a returned envelope.
+   The credential is never placed in `.ground-control.yaml`, `.mcp.json`, a
+   Codex `config.toml`, or the MCP tool schema.
+
+2. **An unevaluable gate is not a rejecting verdict.** `gc_implement_mechanical
+   action="monitor"` folded every non-passing Sonar envelope into one branch and
+   answered all of them with `fix_sonar_findings_then_rerun_publish_and_monitor`.
+   For a missing host credential that named code defects no one had read, and
+   re-running was deterministic, so each attempt ended in an escalated execution
+   obligation. `lib/sonar-gate.js` now classifies the envelope on the same axis
+   `lib/ci-conclusion.js` applies to CI: an envelope the watcher could not
+   produce, and an analysis that never appeared within the watch window, are
+   `not_evaluable` and carry a repair that fits
+   (`provision_sonar_token_on_mcp_host_then_rerun_monitor`,
+   `diagnose_sonar_watch_failure_then_rerun_monitor`, or
+   `rerun_monitor_after_sonar_analysis_completes`). Only a gate that actually
+   returned open issues or hotspots remains `sonar_findings_open`, records a
+   `fail` station result, and consumes a Step 11 fix cycle. The failure envelope
+   gains `sonar_gate` (`not_evaluable` | `findings_open`) so the distinction is
+   machine-readable, and `skills/implement/steps/step-11-sonarcloud.md` gains the
+   branch it previously lacked.
+
+Substituting the pull request's `SonarCloud Code Analysis` check-run for the
+server-side scrape was considered and rejected. A green check means the hosted
+quality gate did not fail; it does not mean the issue and hotspot lists are
+empty, which is what Step 11 requires before advancing. Accepting it would
+certify pull requests with INFO-through-BLOCKER findings unread, converting a
+fixable credential defect into a permanent reduction in the gate's coverage. See
+`architecture/notes/sonar-watcher-token-provisioning-preflight.md`.
