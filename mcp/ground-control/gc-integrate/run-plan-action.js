@@ -177,6 +177,30 @@ const CI_BLOCKERS = {
   },
 };
 
+// A Sonar skip on a Sonar-configured repo, classified by what the watcher
+// observed. A terminal producer is a scope question, not a configuration one:
+// routing it to `check_sonar_configuration` sent the operator at
+// .ground-control.yaml for a scan the repository's own CI declined to run
+// (issue #1559). The block stands either way.
+function sonarSkipBlockedRecord(pr, sonarResult) {
+  const notProduced = sonarResult.reason === "sonar_watch_analysis_not_produced";
+  let summary;
+  if (notProduced) {
+    summary = "SonarCloud published no analysis for this pull request: its producer check is already terminal";
+  } else {
+    summary = "Sonar analysis was skipped but sonarcloud is configured in .ground-control.yaml";
+    if (sonarResult.reason) summary += ` (watcher reported ${sonarResult.reason})`;
+  }
+  return {
+    pr_number: pr.pr_number,
+    outcome: "blocked",
+    failure_class: notProduced ? "sonar_analysis_not_produced" : "sonar_skipped_but_configured",
+    summary: safeSummary(summary),
+    next_action: notProduced ? "diagnose_sonar_scan_scope" : "check_sonar_configuration",
+    ...(sonarResult.scope_evidence ? { sonar_scope_evidence: sonarResult.scope_evidence } : {}),
+  };
+}
+
 // The CI and Sonar readiness gates. Hook contract for both:
 // (pr, ctx, deps) => Promise<{conclusion, details_url?}>. Returns a blocked
 // record for the first gate that refuses, or null when the PR is ready.
@@ -206,23 +230,7 @@ async function runReadinessWatchers(pr, ctx, deps, cfg) {
   // A skipped analysis is only a problem when the repo configures SonarCloud;
   // otherwise there is nothing for the watcher to have observed.
   if (sonarResult.conclusion === "skipped" && cfg?.sonarcloud != null) {
-    // A terminal producer is a scope question, not a configuration one. Routing
-    // it to `check_sonar_configuration` sent the operator at .ground-control.yaml
-    // for a scan the repository's own CI declined to run (issue #1559).
-    const notProduced = sonarResult.reason === "sonar_watch_analysis_not_produced";
-    return {
-      pr_number: pr.pr_number,
-      outcome: "blocked",
-      failure_class: notProduced ? "sonar_analysis_not_produced" : "sonar_skipped_but_configured",
-      summary: safeSummary(
-        notProduced
-          ? "SonarCloud published no analysis for this pull request: its producer check is already terminal"
-          : "Sonar analysis was skipped but sonarcloud is configured in .ground-control.yaml"
-            + (sonarResult.reason ? ` (watcher reported ${sonarResult.reason})` : ""),
-      ),
-      next_action: notProduced ? "diagnose_sonar_scan_scope" : "check_sonar_configuration",
-      ...(sonarResult.scope_evidence ? { sonar_scope_evidence: sonarResult.scope_evidence } : {}),
-    };
+    return sonarSkipBlockedRecord(pr, sonarResult);
   }
   if (sonarResult.conclusion === "failure") {
     return {

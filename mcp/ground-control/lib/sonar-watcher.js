@@ -320,6 +320,93 @@ async function resolveSonarProducerScope({ repoRoot, repoSlug, prNumber, project
   };
 }
 
+/**
+ * Read the repo's SonarCloud declaration into the watch's inputs.
+ *
+ * Returns `{ projectKey, selector }` when the repo opted into the gate, or
+ * `{ earlyReturn }` carrying the exact envelope the caller returns: a skip for a
+ * repo that declares no `sonarcloud` block, and a refusal for a declaration this
+ * server could not read at all — the permissive reader turned both an
+ * unparseable file and an unreadable one into `skipped: true`, which
+ * `sonarGatePassed` accepts unconditionally (issue #1559).
+ */
+function resolveSonarDeclaration(repoRoot, prNumber) {
+  const declared = readSonarCloudConfigStrict(repoRoot);
+  if (declared.state === "invalid" || declared.state === "unreadable") {
+    return {
+      earlyReturn: {
+        ok: false,
+        error: "sonar_watch_config_invalid",
+        message: `.ground-control.yaml could not be read as a SonarCloud declaration, so the gate produced no verdict: ${declared.errors[0]}`,
+        pr_number: prNumber,
+      },
+    };
+  }
+  if (declared.state !== "configured") {
+    // No sonarcloud block — skip entirely. Mirrors current /implement Step 11.
+    return {
+      earlyReturn: {
+        ok: true,
+        skipped: true,
+        pr_number: prNumber,
+        quality_gate: "NONE",
+        ...emptySonarSummaries(),
+      },
+    };
+  }
+  return {
+    projectKey: declared.config.project_key,
+    selector: declared.config.analysis_check ?? null,
+  };
+}
+
+/**
+ * Poll the gate, then read the issue and hotspot lists behind it.
+ *
+ * Everything from here on needs a credential and an analysis that can exist, so
+ * it is separated from the applicability checks that decide whether to get this
+ * far at all.
+ */
+async function readSonarGate({ repoRoot, projectKey, prNumber, token, pollIntervalSeconds, budget }) {
+  const pollResult = await pollSonarQualityGateUntilReady({
+    projectKey, prNumber, token, pollIntervalSeconds, budget,
+  });
+  if (pollResult.earlyReturn) return pollResult.earlyReturn;
+  const qg = pollResult.qg;
+
+  const fetched = await _fetchSonarIssuesAndHotspots({
+    projectKey, prNumber, token, qgStatus: qg.status, budget,
+  });
+  if (fetched.earlyReturn) return fetched.earlyReturn;
+  const { issues, hotspots } = fetched;
+
+  const exportPath = _writeSonarExport(repoRoot, prNumber, {
+    pr_number: prNumber,
+    quality_gate: qg.status,
+    issues,
+    hotspots,
+    fetched_at: new Date().toISOString(),
+  });
+
+  // The measurement projection is built here, at the boundary that owns the full issue and
+  // hotspot lists (issue #1355). Building it from `issues_summary.top_issues` instead would cap
+  // the record at ten and report a truncated count as a complete one; the raw arrays never leave
+  // this function.
+  const measurement = sonarGateFindings(issues, hotspots);
+
+  return {
+    ok: true,
+    skipped: false,
+    pr_number: prNumber,
+    quality_gate: qg.status,
+    issues_summary: summarizeSonarIssues(issues),
+    hotspots_summary: summarizeSonarHotspots(hotspots),
+    full_issue_export_path: exportPath,
+    measurement_findings: measurement.findings,
+    measurement_findings_dropped: measurement.dropped,
+  };
+}
+
 export async function runWatchSonarAnalysis({
   repoPath,
   prNumber,
@@ -352,30 +439,9 @@ export async function runWatchSonarAnalysis({
     };
   }
 
-  const declared = readSonarCloudConfigStrict(repoRoot);
-  if (declared.state === "invalid" || declared.state === "unreadable") {
-    // A declaration this server cannot read is not a gate that passed. The
-    // permissive reader turned both an unparseable file and an unreadable one
-    // into `skipped: true`, which `sonarGatePassed` accepts unconditionally.
-    return {
-      ok: false,
-      error: "sonar_watch_config_invalid",
-      message: `.ground-control.yaml could not be read as a SonarCloud declaration, so the gate produced no verdict: ${declared.errors[0]}`,
-      pr_number: prNumber,
-    };
-  }
-  if (declared.state !== "configured") {
-    // No sonarcloud block — skip entirely. Mirrors current /implement Step 11.
-    return {
-      ok: true,
-      skipped: true,
-      pr_number: prNumber,
-      quality_gate: "NONE",
-      ...emptySonarSummaries(),
-    };
-  }
-  const projectKey = declared.config.project_key;
-  const selector = declared.config.analysis_check ?? null;
+  const declaration = resolveSonarDeclaration(repoRoot, prNumber);
+  if (declaration.earlyReturn) return declaration.earlyReturn;
+  const { projectKey, selector } = declaration;
 
   // The producer read spends the MCP host's GitHub credentials, so the checkout
   // has to be one this server is authorized to act on and the destination has to
@@ -418,49 +484,5 @@ export async function runWatchSonarAnalysis({
     await budget.sleep(initialWaitSeconds * 1000);
   }
 
-  const pollResult = await pollSonarQualityGateUntilReady({
-    projectKey,
-    prNumber,
-    token,
-    pollIntervalSeconds,
-    budget,
-  });
-  if (pollResult.earlyReturn) return pollResult.earlyReturn;
-  const qg = pollResult.qg;
-
-  const fetched = await _fetchSonarIssuesAndHotspots({
-    projectKey,
-    prNumber,
-    token,
-    qgStatus: qg.status,
-    budget,
-  });
-  if (fetched.earlyReturn) return fetched.earlyReturn;
-  const { issues, hotspots } = fetched;
-
-  const exportPath = _writeSonarExport(repoRoot, prNumber, {
-    pr_number: prNumber,
-    quality_gate: qg.status,
-    issues,
-    hotspots,
-    fetched_at: new Date().toISOString(),
-  });
-
-  // The measurement projection is built here, at the boundary that owns the full issue and
-  // hotspot lists (issue #1355). Building it from `issues_summary.top_issues` instead would cap
-  // the record at ten and report a truncated count as a complete one; the raw arrays never leave
-  // this function.
-  const measurement = sonarGateFindings(issues, hotspots);
-
-  return {
-    ok: true,
-    skipped: false,
-    pr_number: prNumber,
-    quality_gate: qg.status,
-    issues_summary: summarizeSonarIssues(issues),
-    hotspots_summary: summarizeSonarHotspots(hotspots),
-    full_issue_export_path: exportPath,
-    measurement_findings: measurement.findings,
-    measurement_findings_dropped: measurement.dropped,
-  };
+  return readSonarGate({ repoRoot, projectKey, prNumber, token, pollIntervalSeconds, budget });
 }
