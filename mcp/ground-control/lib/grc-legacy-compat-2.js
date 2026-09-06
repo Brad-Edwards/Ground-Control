@@ -4,7 +4,7 @@
 // (docs/CODING_STANDARDS.md, Sonar S104). It contained no mutual recursion, so it was
 // split along its own dependency layering. lib.js remains the barrel every caller imports.
 
-import { DEFAULT_CODEX_REVIEW_MAX_DIFF_BYTES, FINDING_BODY_MAX, FINDING_CATEGORY_SHAPE_MAX, FINDING_CLASSIFICATIONS, FINDING_CLASSIFICATION_NOTE_MAX, FINDING_SWEEP_EVIDENCE_MAX, FINDING_TITLE_MAX, truncateReviewProse, validateFindingPath } from "./grc-legacy-compat.js";
+import { FINDING_BODY_MAX, FINDING_CATEGORY_SHAPE_MAX, FINDING_CLASSIFICATIONS, FINDING_CLASSIFICATION_NOTE_MAX, FINDING_SWEEP_EVIDENCE_MAX, FINDING_TITLE_MAX, getDefaultCodexReviewMaxDiffBytes, truncateReviewProse, validateFindingPath } from "./grc-legacy-compat.js";
 
 export function validateFinding(raw, idx, repoRoot) {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
@@ -249,7 +249,7 @@ export function parseOwnerRepoFromRemoteUrl(url) {
 }
 export const EXECUTION_OBLIGATION_WRITE_PERMISSIONS = new Set(["admin", "maintain", "write"]);
 export const ENRICH_THREAD_PAGE_CAP = 100;
-export function selectDiffMode({ diffText, maxBytes = DEFAULT_CODEX_REVIEW_MAX_DIFF_BYTES }) {
+export function selectDiffMode({ diffText, maxBytes = getDefaultCodexReviewMaxDiffBytes() }) {
   if (!maxBytes || maxBytes <= 0) return "inline";
   if (Buffer.byteLength(diffText || "", "utf8") > maxBytes) return "manifest";
   return "inline";
@@ -404,7 +404,7 @@ function countDiffFiles(text) {
   const headers = new Set(text.match(DIFF_FILE_HEADER_LINE_RE) ?? []);
   return headers.size;
 }
-export function planReviewSlices({ diffText, maxBytes = DEFAULT_CODEX_REVIEW_MAX_DIFF_BYTES }) {
+export function planReviewSlices({ diffText, maxBytes = getDefaultCodexReviewMaxDiffBytes() }) {
   const text = typeof diffText === "string" ? diffText : "";
   const filesTotal = countDiffFiles(text);
   // Same guard shape as selectDiffMode, so the two never disagree about

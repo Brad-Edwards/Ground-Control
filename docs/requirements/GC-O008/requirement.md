@@ -22,7 +22,7 @@ The /implement and /ship skills (GC-O007) need per-repo workflow values — test
 ## Traceability
 
 - IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (Ground Control MCP server: parseGroundControlYaml and getRepoGroundControlContext)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (Ground Control MCP server: gc_get_repo_ground_control_context tool registration)
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/server-runtime.js` (Ground Control MCP server: gc_get_repo_ground_control_context tool registration; moved out of index.js when the entry point became an environment bootstrap (issue #1562))
 - DOCUMENTS → ADR `ADR-023` (Repo-Local Workflow Config via .ground-control.yaml)
 - TESTS → TEST `mcp/ground-control/lib.parsegroundcontrolyaml.test.js` (.ground-control.yaml parsing and schema validation tests)
 - TESTS → TEST `mcp/ground-control/lib.getrepogroundcontrolcontext.test.js` (getRepoGroundControlContext tests (config resolution, diagnostics, suggested starter yaml))

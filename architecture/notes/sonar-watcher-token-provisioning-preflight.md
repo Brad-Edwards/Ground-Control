@@ -60,8 +60,12 @@ execution-obligation type for this deterministic provisioning fault.
 
 - `index.js::loadDotenvFromCwd`, `.env.example`, `.gitignore`, and the optional-
   environment section of `mcp/ground-control/README.md` are the existing host
-  secret distribution contract. Shell inheritance remains a compatibility
-  override, not the only provisioning mechanism.
+  secret distribution contract. **Superseded by issue #1562:** shell inheritance
+  is no longer a compatibility override. `<launch directory>/.env` is the only
+  source, the loader is `mcp/ground-control/lib/server-env.js`, and the per-host
+  file this note's sibling decision introduced no longer exists. See
+  `launch-directory-env-authority-preflight.md`. The Sonar decisions in this note
+  are unaffected.
 - `.ground-control.yaml::sonarcloud` and
   `normalizeSonarcloudConfig` remain the non-secret repository configuration
   boundary. Unknown keys fail closed; do not add `token`, `token_file`, or a

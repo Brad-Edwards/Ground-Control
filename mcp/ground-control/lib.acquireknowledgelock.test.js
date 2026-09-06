@@ -390,6 +390,17 @@ describe("classifyChangedSurface", () => {
     assert.equal(cls.surface_class, "mcp_tool");
   });
 
+  // The tool registrations moved out of index.js when the entry point became an
+  // environment bootstrap (issue #1562). Anchoring only on index.js would leave
+  // the surface matching a file the contract had left, retiring the
+  // documentation gate for every future tool change.
+  it("classifies mcp/ground-control/server-runtime.js as mcp_tool surface", () => {
+    const result = classifyChangedSurface(["mcp/ground-control/server-runtime.js"], REPO);
+    const cls = result.classifications.find((c) => c.path === "mcp/ground-control/server-runtime.js");
+    assert.equal(cls.surface_class, "mcp_tool");
+    assert.ok(cls.doc_targets.includes("docs/DEVELOPMENT_WORKFLOW.md"));
+  });
+
   it("classifies mcp/ground-control/lib.js as config_parser surface", () => {
     const result = classifyChangedSurface(["mcp/ground-control/lib.js"], REPO);
     const cls = result.classifications.find((c) => c.path === "mcp/ground-control/lib.js");

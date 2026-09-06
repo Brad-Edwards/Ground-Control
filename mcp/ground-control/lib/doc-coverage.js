@@ -49,7 +49,14 @@ const SURFACE_CLASS_MAP = [
   },
   {
     surface_class: "mcp_tool",
-    exact_patterns: ["mcp/ground-control/index.js"],
+    // The entry point and the runtime it loads. index.js became an environment
+    // bootstrap in #1562 and the registrations moved to server-runtime.js;
+    // anchoring only on index.js would keep matching a file the tool surface
+    // had left, which is the same failure the config_parser note below records.
+    exact_patterns: [
+      "mcp/ground-control/index.js",
+      "mcp/ground-control/server-runtime.js",
+    ],
     doc_targets: ["docs/DEVELOPMENT_WORKFLOW.md"],
     outcome_required: true,
   },

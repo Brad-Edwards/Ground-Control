@@ -5,9 +5,6 @@
 // split along its own dependency layering. lib.js remains the barrel every caller imports.
 
 import { execFile as execFileCb } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { promisify } from "node:util";
 import { CLAUDE_MODEL_BY_TIER, DEFAULT_IMPLEMENT_ROUTING_STAGES, ROUTING_STAGE_NAME_RE, ROUTING_TIERS } from "./repo-vocabulary.js";
 
@@ -194,63 +191,53 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     ...suggestedYamlArchitectureSection(),
   ].join("\n");
 }
-// Default fallback-auth file (issue #1500). A launcher — Codex especially, or
-// any non-interactive shell — may hand the MCP an environment with NO Claude
-// auth (no Vertex/Bedrock vars, no CLAUDE_CONFIG_DIR, no key), so the review
-// `claude` falls through to the default profile, which is frequently expired
-// and surfaces as `test_quality_review_engine_failed`. This user-owned,
-// NON-secret file (`KEY=VALUE` lines) supplies auth in that case.
-export const REVIEW_ENGINE_ENV_FALLBACK = join(homedir(), ".config", "ground-control", "review-env");
+// The auth modes the review engine (`claude`) accepts. Every one is inventoried
+// in lib/server-env.js, so each arrives from the launch directory's `.env` and
+// nowhere else (issue #1562).
+export const REVIEW_ENGINE_AUTH_VARS = Object.freeze([
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "CLAUDE_CODE_USE_BEDROCK",
+  "CLAUDE_CODE_USE_VERTEX",
+  "CLAUDE_CONFIG_DIR",
+]);
 
-function hasClaudeAuth(env) {
-  return Boolean(
-    env.CLAUDE_CODE_USE_VERTEX ||
-      env.CLAUDE_CODE_USE_BEDROCK ||
-      env.CLAUDE_CONFIG_DIR ||
-      env.ANTHROPIC_API_KEY ||
-      env.ANTHROPIC_AUTH_TOKEN,
+export const REVIEW_ENGINE_AUTH_MISSING = "review_engine_auth_missing";
+
+/**
+ * Refuse before spawning `claude` when no auth mode is declared.
+ *
+ * The engine used to load a user-level `review-env` file in this case, and
+ * without one it fell through to whatever default profile the host happened to
+ * have — frequently an expired one, which surfaced as an engine failure rather
+ * than as the provisioning fault it is. Naming the alternatives and the file to
+ * fix is the whole recovery path. The message carries names only, never a
+ * value.
+ */
+export function assertReviewEngineAuth(env = process.env) {
+  if (REVIEW_ENGINE_AUTH_VARS.some((name) => env[name])) return;
+  const error = new Error(
+    "No review-engine auth is declared. Set one of "
+      + `${REVIEW_ENGINE_AUTH_VARS.join(", ")} in the launch directory's .env, `
+      + "then restart the MCP server; the file is read at startup.",
   );
+  error.code = REVIEW_ENGINE_AUTH_MISSING;
+  throw error;
 }
 
-// Build the environment for the review engine (`claude`), which runs as a
-// separate process from the agent. Two rules keep the review authenticated
-// across any repo, folder, tmux session, and launcher (codex or claude):
-//   1. If the inherited environment carries no Claude auth at all, load it from
-//      REVIEW_ENGINE_ENV_FALLBACK (never overriding a value already present, so
-//      an active Vertex or personal mode still wins).
-//   2. Strip ANTHROPIC_API_KEY only when another auth path survives, so the key
-//      can serve as the sole auth when it is all that is present.
-// Parse one `KEY=VALUE` line from a dotenv-style fallback file, stripping a
-// single matching quote pair. Returns [key, value] or null for blank/comment/
-// malformed lines. Extracted so reviewEngineEnv stays flat (Sonar S3776), and
-// exported so `lib/host-env.js` reads the server's own env files through the
-// same grammar rather than a second parser (issue #946).
-export function parseEnvFileLine(line) {
-  const trimmed = line.trim();
-  if (!trimmed || trimmed.startsWith("#")) return null;
-  const eq = trimmed.indexOf("=");
-  if (eq <= 0) return null;
-  const key = trimmed.slice(0, eq).trim();
-  let value = trimmed.slice(eq + 1).trim();
-  const quoted = value.length >= 2
-    && ((value[0] === '"' && value.at(-1) === '"') || (value[0] === "'" && value.at(-1) === "'"));
-  if (quoted) value = value.slice(1, -1);
-  return [key, value];
-}
-export function reviewEngineEnv(baseEnv = process.env, fallbackPath = REVIEW_ENGINE_ENV_FALLBACK) {
+/**
+ * Build the environment for the review engine (`claude`), which runs as a
+ * separate process from the agent.
+ *
+ * OS execution state passes through — the child still needs PATH and HOME — but
+ * every Claude configuration value it reads has already been bound to the
+ * launch directory's `.env` at startup. The one remaining rule is the conflict
+ * strip: ANTHROPIC_API_KEY is removed only when another auth path survives, so
+ * the key can serve as the sole auth when it is all that is declared.
+ */
+export function reviewEngineEnv(baseEnv = process.env) {
+  assertReviewEngineAuth(baseEnv);
   const env = { ...baseEnv };
-
-  if (!hasClaudeAuth(env)) {
-    try {
-      for (const line of readFileSync(fallbackPath, "utf8").split(/\r?\n/)) {
-        const parsed = parseEnvFileLine(line);
-        if (parsed && env[parsed[0]] === undefined) env[parsed[0]] = parsed[1];
-      }
-    } catch {
-      // No fallback file, or unreadable: leave the environment as inherited.
-    }
-  }
-
   if (env.CLAUDE_CODE_USE_VERTEX || env.CLAUDE_CODE_USE_BEDROCK || env.CLAUDE_CONFIG_DIR) {
     delete env.ANTHROPIC_API_KEY;
   }
