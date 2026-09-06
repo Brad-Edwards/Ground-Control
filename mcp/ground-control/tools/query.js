@@ -230,8 +230,13 @@ export function registerQuery(server, ctx) {
       `instead of fixing in-turn (issue #884 v1 regression). Default cycle cap: ${TEST_QUALITY_REVIEW_HARD_CAP} per ` +
       `issue (issue #906; configurable per repo via \`workflow.test_quality_review.pre_push_cap\` in ` +
       `.ground-control.yaml; bounds [1, 10]); cycle cap+1 requires override_cap=true + override_reason. ` +
-      `Authentication: the CLI invocation strips ANTHROPIC_API_KEY from the subprocess env so claude uses ` +
-      `the host's OAuth session — see docs/DEVELOPMENT_WORKFLOW.md "Test-quality review engine".`,
+      `Authentication: the review engine's auth is declared in the launch directory's .env — one of ` +
+      `CLAUDE_CODE_USE_VERTEX, CLAUDE_CODE_USE_BEDROCK, CLAUDE_CONFIG_DIR, ANTHROPIC_API_KEY, or ` +
+      `ANTHROPIC_AUTH_TOKEN — and is never inherited from the launcher or read from a user-level file ` +
+      `(issue #1562). With none declared this returns test_quality_review_auth_missing before spawning ` +
+      `claude, which is an operator provisioning fault rather than a station failure. ANTHROPIC_API_KEY ` +
+      `is stripped from the subprocess env only when another auth path is declared, so it can still be ` +
+      `the sole auth. See docs/DEVELOPMENT_WORKFLOW.md "Test-quality review engine".`,
     {
       repo_path: z.string(),
       base_branch: z.string().optional(),

@@ -1,15 +1,22 @@
 # Documentation style
 
-> **Sync note for issue #946 (2026-09-06, MCP-host environment provisioning):** The MCP server
-> resolves its optional environment from declared sources it reads itself - an inherited non-empty
-> value, then `.env` in the launch directory, then the per-host `~/.config/ground-control/env` -
-> instead of depending on the launching agent process to pass its environment down. The private
-> dotenv parser in `mcp/ground-control/index.js` is replaced by `mcp/ground-control/lib/host-env.js`,
-> which reuses the existing `parseEnvFileLine` grammar, so the entry point stays thin and the loader
-> is unit-testable without the protocol layer. ADR-036 records the change. The documentation-coverage
-> classifier, its surface classes, the `outcome_required` mapping, the Vale rule set,
-> `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new `docs/DOC_STYLE.md` style rule
-> is established.
+> **Sync note for issue #1562 (2026-09-06, launch-directory environment authority):** The MCP server
+> reads Ground Control's variables from `<launch directory>/.env` and nowhere else - no machine-level
+> or user-level file, and no fallback to the ambient environment. `mcp/ground-control/index.js` became
+> an environment bootstrap that binds the file before dynamically importing
+> `mcp/ground-control/server-runtime.js`, so an environment-derived default cannot evaluate first. The
+> `mcp_tool` surface class therefore anchors on both paths; without that addition the surface would
+> keep matching a file the tool registrations had left. The `outcome_required` mapping, the Vale rule
+> set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new `docs/DOC_STYLE.md` style
+> rule is established.
+
+> **Sync note for issue #946 (2026-09-06, MCP-host environment provisioning), superseded by issue
+> #1562 (2026-09-06):** #946 had the MCP server resolve its optional environment from an inherited
+> non-empty value, then `.env` in the launch directory, then a per-host `~/.config/ground-control/env`.
+> #1562 removed the machine-level file and the ambient fallback: `<launch directory>/.env` is now the
+> only source of Ground Control's variables. What survives from #946 is the loader living in `lib/`
+> rather than the entry point, and the single `parseEnvFileLine` grammar; the loader is now
+> `mcp/ground-control/lib/server-env.js`. ADR-036 records both decisions.
 
 > **Sync note for issue #633 follow-up (2026-09-04, /integrate lane restored):** The
 > `gc_integration_manager` implementation removed by #1506 is restored and registered, and a new

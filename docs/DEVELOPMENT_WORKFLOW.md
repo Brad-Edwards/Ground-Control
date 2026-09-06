@@ -15,25 +15,35 @@ files (issue #1500). A working host needs the following.
 | `git` and an authenticated `gh` | The server owns every privileged Git and GitHub side effect (ADR-027) |
 | Python 3 | Runs the repo-native policy tooling (`make policy`) |
 | Codex CLI on `PATH` | Backs the architecture preflight and the pre-push review tools |
-| A `claude` CLI OAuth session | Backs the Step 6.6 test-quality review |
+| A `claude` CLI and a review-engine auth mode declared in `.env` | Backs the Step 6.6 test-quality review (see **Test-quality review engine**) |
 | Commit signing configured | Commits are signed non-interactively; the workflow never prompts |
 
 Optional environment variables are listed in
 [`mcp/ground-control/README.md`](../mcp/ground-control/README.md) and templated in
 `.env.example`. None is required: the server starts and every registered tool
-works with none of them set.
+that needs no variable works with none of them set.
 
-**Provisioning the MCP host (issue #946).** A variable that switches a tool on
-must reach the server, and the launcher decides what the server inherits: a
-Codex-spawned host receives eight environment variables, a Claude Code-spawned
-one around seventy. The server therefore resolves each variable itself, from the
-first source with a non-empty value - the inherited environment, then `.env` in
-the launch directory, then the per-host `~/.config/ground-control/env`. Put a
-value every checkout on the machine should see in the per-host file; both files
-are read at startup, so a new or rotated value needs a server restart. Without
-this, a tool's correctness was a property of which agent runtime happened to host
-it: `gc_watch_sonar_analysis` could not run at all under Codex in any repository
-that declares a `sonarcloud:` block.
+**Provisioning the MCP host (issue #1562).** `<launch directory>/.env` is the
+only source of Ground Control's variables, whether the server was started by
+Claude Code, Codex, or anything else. No machine-level or user-level file is
+consulted, and no variable falls back to the ambient environment the launcher
+passed down. If a variable a tool needs is absent, that tool does not run: it
+returns an error naming the variable and the file, and the operator fixes the
+`.env` and restarts the server, which is when the file is read.
+
+The launch directory is a deliberate control. It is what lets separate checkouts
+draw on resources belonging to different projects or organizations, and what
+makes it possible to deploy Ground Control into a single-repo sandbox. Issue #946
+had reached the opposite arrangement - inherited value first, then `.env`, then a
+per-host `~/.config/ground-control/env` - which made a tool's correctness a
+property of whichever runtime happened to host it and silently substituted a
+global credential into a repository that deliberately has none. #1562 removed
+the machine-level file and the ambient fallback together.
+
+The rule governs Ground Control's own variables, listed in
+`mcp/ground-control/lib/server-env.js`. It does not hand a spawned `claude` or
+`codex` an empty environment: those children still receive `PATH`, `HOME`, and
+the rest of the OS state they need to execute.
 
 ## Workflow: `/implement <issue-number | requirement-uid>`
 
@@ -243,15 +253,31 @@ claude --print
        --allowedTools "Read Glob Grep"
 ```
 
-with the prompt on stdin and `ANTHROPIC_API_KEY` **stripped from the subprocess env**. The strip is intentional: when the env var is set, `claude` uses it preferentially over the host's OAuth session; the env-var-anchored account is often empty (set up but never funded) while the OAuth account is what the user actually uses. Stripping forces OAuth - the canonical user-driven auth path that also powers the parent /implement run.
+with the prompt on stdin.
 
-**Operator quickstart:**
-1. Run `claude login` on the host once (credentials persist in `~/.claude`).
-2. `/implement <issue>` invokes Step 6.6 automatically; no separate action needed.
+**Authentication (issue #1562).** The engine's auth is declared in the launch
+directory's `.env` like every other Ground Control variable - never inherited
+from the launcher, and never read from a user-level file. Declare exactly one
+mode:
+
+| Mode | Declare |
+|---|---|
+| Vertex AI | `CLAUDE_CODE_USE_VERTEX`, plus `CLOUD_ML_REGION` and a project variable |
+| Amazon Bedrock | `CLAUDE_CODE_USE_BEDROCK`, plus the AWS region/credential variables |
+| A dedicated Claude Code profile | `CLAUDE_CONFIG_DIR` |
+| Direct API | `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` |
+
+With none declared the review refuses before spawning `claude`, returning
+`test_quality_review_auth_missing` and naming the alternatives and the file. That
+is a provisioning fault for the operator, not a station failure, so it does not
+consume the free non-verdict retry in `lib/review-reattempt.js`.
+
+`ANTHROPIC_API_KEY` is stripped from the subprocess environment **only when
+another auth path is declared**, so an explicit Vertex, Bedrock, or profile mode
+wins over a stray key while the key still serves as the sole auth when it is all
+that is declared.
 
 **Model override:** pass `model` in the MCP call (`claude-haiku-4-5`, `claude-opus-4-8`, etc.). The /implement SKILL uses the default `claude-sonnet-5`.
-
-**Separate billing account:** if the env-var path is preferred, remove the env-var strip in `runSingleClaudeTestQualityReview` (lib.js) and ensure `ANTHROPIC_API_KEY` has credits. The default strip path keeps OAuth as the canonical auth.
 
 The legacy `Skill("review-tests")` path was removed in #884 v2. Existing host installs at `~/.claude/skills/review-tests/` and `~/.codex/prompts/review-tests.md` are orphaned and can be deleted manually; `bin/install-skills.sh` no longer installs them.
 - **Step 15 transitions each in-scope requirement to `ACTIVE`** by editing the `status:` frontmatter in `docs/requirements/<UID>/requirement.md` - **in the delivery diff, before publish** (issue #1541), so the transition is reviewed in and merged by the PR. It MUST happen BEFORE Step 16's traceability reconciliation so IMPLEMENTS links land on an already-ACTIVE requirement. Forward-looking requirements (the diff documents/references but does not deliver) stay DRAFT and use `DOCUMENTS` links instead in Step 16.

@@ -73,10 +73,15 @@ export function buildReviewCoverageIncompleteEnvelope({
     ],
   };
 }
-export const DEFAULT_CODEX_REVIEW_PARALLEL = (() => {
+// Resolved on every call, not once at module-import time (issue #1562): this
+// module evaluates during the static-import graph, which completes before the
+// entry point binds `<launch dir>/.env`, so a module-level constant would
+// permanently miss a value declared only in that file. Same reasoning as
+// getDefaultCodexTimeoutMs in lib/model-subprocess.js.
+export function getDefaultCodexReviewParallel() {
   const raw = Number.parseInt(process.env.GC_CODEX_REVIEW_PARALLEL || "", 10);
   return raw === 2 ? 2 : 1;
-})();
+}
 export function dedupFindings(comments) {
   const seen = new Map();
   for (const c of comments) {

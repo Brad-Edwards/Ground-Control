@@ -58,8 +58,10 @@ the equivalent for your driver):
 ```
 
 That is the whole required configuration. The server needs no environment
-variables and no reachable service to start, and every registered tool works
-with none of the optional variables below set.
+variables and no reachable service to start. Most tools work with none of the
+variables below set; the ones that need a credential refuse and name it, so
+provisioning is a decision you make per repository rather than an inheritance
+you get by accident.
 
 Install dependencies once with `make ground-control-mcp-install` (`npm ci` in
 `mcp/ground-control`). The Codex-backed tools additionally require the Codex CLI
@@ -67,21 +69,26 @@ on `PATH`, and the GitHub-writing tools require an authenticated `gh`.
 
 ### Optional environment
 
-At startup the server resolves each variable below from the first source that
-supplies a non-empty value:
+`<launch directory>/.env` is the **only** source of Ground Control's variables,
+whether the server was started by Claude Code, Codex, or anything else. No
+machine-level or user-level configuration file is consulted, and no variable
+falls back to the ambient environment the launcher passed down. If a variable a
+tool needs is absent, that tool does not run: it returns an error naming the
+variable and the file, and the operator fixes the `.env` and restarts the server.
 
-1. the environment it inherited from the launcher;
-2. `.env` in the directory it was launched in (usually the consuming repo's root);
-3. `~/.config/ground-control/env`, the per-host file, in the same directory as
-   `review-env`.
+The launch directory is a deliberate control, not an incidental default. It is
+what lets separate checkouts draw on resources belonging to different projects or
+organizations, and what makes it possible to deploy Ground Control into a
+single-repo sandbox. A machine-level file assumes there is a machine level, which
+is an assumption about deployment topology Ground Control has no business making,
+and it silently substitutes a global credential into a repository that
+deliberately has none (issue #1562).
 
-Nothing here is required. The server reads both files itself rather than relying
-on the launching process to pass its environment down, because a launcher may
-hand the child a core-only environment: a Codex-spawned server receives eight
-variables, and neither a token nor `GROUND_CONTROL_DIR` is among them, which used
-to make `gc_watch_sonar_analysis` fail on that runtime alone (issue #946). The
-per-host file also covers the case where the launch directory is not a repository
-root, and keeps one credential in one place instead of one copy per checkout.
+Nothing here is required. The server starts, and every tool that needs no
+variable works, with the file absent. Each variable below switches on one
+optional behavior. `.env.example` is the template, and
+`lib/server-env.js` holds the inventory a contract test keeps in agreement with
+both the template and the code.
 
 | Variable | Effect when set |
 |---|---|
@@ -89,14 +96,24 @@ root, and keeps one credential in one place instead of one copy per checkout.
 | `GROUND_CONTROL_API_TOKEN` | Bearer token for that measurement emission, when the sink requires one. |
 | `GROUND_CONTROL_PACK_REGISTRY_ADMIN_TOKEN` | Legacy token, preferred over the above for the two cross-project measurement rollups. |
 | `GC_CODEX_TIMEOUT_MS` | Per-invocation timeout for Codex-backed tools, within the bounds in `lib/model-subprocess.js`. |
-| `GC_CODEX_REVIEW_PARALLEL` | Runs the core and security reviewers concurrently. |
+| `GC_CODEX_REVIEW_PARALLEL` | Runs the core and security reviewers concurrently when set to `2`. |
 | `GC_CODEX_REVIEW_MAX_DIFF_BYTES` | Diff-slice budget for a review cycle (see diff transport below). |
+| `GH_VERIFY_FINDING_AUTHORS` | Extra comma-separated GitHub logins `gc_codex_verify_finding` accepts as finding authors, for a service-identity deployment. |
+| `GC_KNOWLEDGE_INGEST_ANTHROPIC_API_KEY` | Anthropic key used only by the knowledge-ingest child, so ingestion can bill separately from the review engine. |
 | `SONAR_TOKEN` | Lets `gc_watch_sonar_analysis` read the SonarCloud quality gate. Without it the tool returns `sonar_watch_token_missing`, which `/implement` Step 11 treats as an infrastructure blocker for the operator rather than as SonarCloud findings for the agent. |
+| `CLAUDE_CODE_USE_VERTEX`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CONFIG_DIR`, `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` | Selects the review engine's auth mode. Declare exactly one; with none declared the Step 6.6 review refuses with `test_quality_review_auth_missing` before spawning `claude`. See "Test-quality review engine" in `docs/DEVELOPMENT_WORKFLOW.md`. |
+| `CLOUD_ML_REGION`, `GOOGLE_CLOUD_PROJECT`, `ANTHROPIC_VERTEX_PROJECT_ID`, `GOOGLE_APPLICATION_CREDENTIALS`, `AWS_REGION`, `AWS_PROFILE`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `ANTHROPIC_BASE_URL` | Companion values the selected review-engine auth mode needs. |
+| `OPENAI_API_KEY`, `CODEX_HOME` | Forwarded to the `codex` child. Neither is required: `codex` authenticates from its own profile directory when no key is declared. |
 
-Keep `.env` gitignored and `chmod 600` either file if you put a token in it.
-Tokens are read by the server process and are never returned through a tool
-result or exposed to the model. Both files are read once at startup, so
-provisioning or rotating a value takes effect on the next server start.
+The Citation MCP server (`mcp/citation`) has its own variables. They reach that
+separate process through `.mcp.json` expansion from the MCP client's
+environment, not through this file, and are documented in
+`mcp/citation/README.md`.
+
+Keep `.env` gitignored and `chmod 600` if you put a token in it. Tokens are read
+by the server process and are never returned through a tool result or exposed to
+the model. The file is read once at startup, so provisioning or rotating a value
+takes effect on the next server start.
 
 ## Tool surface
 

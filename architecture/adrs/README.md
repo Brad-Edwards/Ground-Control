@@ -54,7 +54,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [033](033-authenticated-audit-actor-provenance.md) | Authenticated Audit Actor Provenance | Accepted |
 | [034](034-api-enum-contract-single-source.md) | API Enum Contract Single Source of Truth | Accepted (amended 2026-06-15, #1106) |
 | [035](035-mcp-tool-catalog-curation.md) | MCP Tool Catalog Curation | Accepted |
-| [036](036-per-step-routing-tool-surfaces-telemetry.md) | Per-Step Model Routing, Durable-Record Tool Surfaces, and Step Telemetry (amends ADR-021) | Accepted (amended 2026-05-26, GC-O011/#989; 2026-07-03, ADR-081; 2026-07-28, #1473; 2026-09-06, #946) |
+| [036](036-per-step-routing-tool-surfaces-telemetry.md) | Per-Step Model Routing, Durable-Record Tool Surfaces, and Step Telemetry (amends ADR-021) | Accepted (amended 2026-05-26, GC-O011/#989; 2026-07-03, ADR-081; 2026-07-28, #1473; 2026-09-06, #946; 2026-09-06, #1562 supersedes the #946 environment-source decision) |
 | [037](037-browser-session-access-control.md) | Browser Session Access Control | Accepted |
 | [038](038-finding-entity-boundary.md) | Finding Entity Boundary | Accepted |
 | [039](039-control-verification-subsystem.md) | Control Verification Subsystem (Tests + Effectiveness Assessments) | Accepted |
@@ -73,7 +73,7 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [051](051-sonarcloud-gate-recalibration.md) | SonarCloud Gate Recalibration | Proposed |
 | [052](052-risk-control-mapping.md) | Risk-Control Mapping Aggregate (GC-T003) | Accepted |
 | [053](053-conversation-surface-hardening.md) | Conversation Surface Hardening | Accepted |
-| [054](054-documentation-coverage-gate.md) | Documentation Coverage Gate | Accepted (amended 2026-06-14, #1102) |
+| [054](054-documentation-coverage-gate.md) | Documentation Coverage Gate | Accepted (amended 2026-06-14, #1102; 2026-09-06, #1562 mcp_tool surface anchors on the entry point and the server runtime) |
 | [055](055-research-workflow-skills-and-citation-mcp.md) | Research Workflow Skills and Citation MCP | Accepted |
 | [056](056-research-project-type-and-intake.md) | Research Project Type and Intake Metadata | Accepted |
 | [057](057-per-run-grc-screening-gate.md) | Per-run GRC Screening Gate in /implement | Superseded by ADR-089 for active product and workflow behavior |

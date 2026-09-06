@@ -1,8 +1,10 @@
-// The watcher's token-missing envelope (issue #946).
+// The watcher's token-missing envelope (issues #946, #1562).
 //
 // The operator, not the agent, repairs this state, and the message is the only
-// place the workflow tells them where the server looks. Naming just the variable
-// left the recovery action undiscoverable on a host whose launcher strips it.
+// place the workflow tells them where the server looks. It used to name a
+// per-host `~/.config/ground-control/env` alongside the launch root; that file
+// is gone, and naming it would send an operator to provision a location nothing
+// reads (issue #1562). One source, named once.
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -22,23 +24,31 @@ function makeSonarRepo() {
   return dir;
 }
 
+async function tokenMissingEnvelope() {
+  const dir = makeSonarRepo();
+  const original = process.env.SONAR_TOKEN;
+  delete process.env.SONAR_TOKEN;
+  try {
+    return await runWatchSonarAnalysis({ repoPath: dir, prNumber: 7, initialWaitSeconds: 0 });
+  } finally {
+    if (original === undefined) delete process.env.SONAR_TOKEN;
+    else process.env.SONAR_TOKEN = original;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 describe("runWatchSonarAnalysis - missing host credential", () => {
-  it("names both declared sources and the restart so an operator can act on the envelope", async () => {
-    const dir = makeSonarRepo();
-    const original = process.env.SONAR_TOKEN;
-    delete process.env.SONAR_TOKEN;
-    try {
-      const result = await runWatchSonarAnalysis({ repoPath: dir, prNumber: 7, initialWaitSeconds: 0 });
-      assert.equal(result.ok, false);
-      assert.equal(result.error, "sonar_watch_token_missing");
-      assert.match(result.message, /SONAR_TOKEN/);
-      assert.match(result.message, /\.env/);
-      assert.match(result.message, /\.config\/ground-control\/env/);
-      assert.match(result.message, /restart/i);
-    } finally {
-      if (original === undefined) delete process.env.SONAR_TOKEN;
-      else process.env.SONAR_TOKEN = original;
-      rmSync(dir, { recursive: true, force: true });
-    }
+  it("names the variable, the launch directory's .env, and the restart", async () => {
+    const result = await tokenMissingEnvelope();
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "sonar_watch_token_missing");
+    assert.match(result.message, /SONAR_TOKEN/);
+    assert.match(result.message, /\.env/);
+    assert.match(result.message, /restart/i);
+  });
+
+  it("does not send the operator to a machine-level file that nothing reads", async () => {
+    const result = await tokenMissingEnvelope();
+    assert.equal(result.message.includes(".config/ground-control"), false);
   });
 });

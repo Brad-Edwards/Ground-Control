@@ -248,11 +248,13 @@ export function collectDevStartBlockerFailures(fields, blockerUids) {
   }
   return { missing, invalid };
 }
-export const DEFAULT_CODEX_REVIEW_MAX_DIFF_BYTES = (() => {
+// Resolved on every call for the same import-ordering reason as
+// getDefaultCodexReviewParallel (issue #1562).
+export function getDefaultCodexReviewMaxDiffBytes() {
   const raw = Number.parseInt(process.env.GC_CODEX_REVIEW_MAX_DIFF_BYTES || "", 10);
   if (!Number.isInteger(raw)) return 256 * 1024; // 256 KiB
   return raw;
-})();
+}
 export function buildDiffBlock({
   diffText,
   mode = "inline",
