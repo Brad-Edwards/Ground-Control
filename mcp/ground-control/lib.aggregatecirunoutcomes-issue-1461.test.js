@@ -74,6 +74,7 @@ describe("runWatchCiRun input validation (issue #934)", () => {
     const { runWatchCiRun } = await import("./lib.js");
     for (const bad of [0, -1, 1.5, "1"]) {
       const r = await runWatchCiRun({
+        authorizeRepoRead: async () => ({ ok: true, repoSlug: "fake/repo" }),
         repoPath: "/tmp",
         branch: "main",
         runId: bad,
@@ -86,6 +87,7 @@ describe("runWatchCiRun input validation (issue #934)", () => {
   it("refuses when timeout fields are not positive integers", async () => {
     const { runWatchCiRun } = await import("./lib.js");
     const r1 = await runWatchCiRun({
+        authorizeRepoRead: async () => ({ ok: true, repoSlug: "fake/repo" }),
       repoPath: "/tmp",
       branch: "main",
       queuedTimeoutSeconds: 0,
@@ -93,6 +95,7 @@ describe("runWatchCiRun input validation (issue #934)", () => {
     assert.equal(r1.ok, false);
     assert.equal(r1.error, "ci_watch_input_invalid");
     const r2 = await runWatchCiRun({
+        authorizeRepoRead: async () => ({ ok: true, repoSlug: "fake/repo" }),
       repoPath: "/tmp",
       branch: "main",
       totalTimeoutSeconds: -5,
@@ -100,6 +103,7 @@ describe("runWatchCiRun input validation (issue #934)", () => {
     assert.equal(r2.ok, false);
     assert.equal(r2.error, "ci_watch_input_invalid");
     const r3 = await runWatchCiRun({
+        authorizeRepoRead: async () => ({ ok: true, repoSlug: "fake/repo" }),
       repoPath: "/tmp",
       branch: "main",
       pollIntervalSeconds: 0,
@@ -112,7 +116,7 @@ describe("runWatchCiRun input validation (issue #934)", () => {
     const { runWatchCiRun } = await import("./lib.js");
     const dir = mkdtempSync(join(tmpdir(), "gc-ci-watch-not-git-"));
     try {
-      const r = await runWatchCiRun({ repoPath: dir, branch: "main" });
+      const r = await runWatchCiRun({ repoPath: dir, branch: "main", authorizeRepoRead: async () => ({ ok: true, repoSlug: "fake/repo" }) });
       assert.equal(r.ok, false);
       assert.equal(r.error, "ci_watch_repo_not_found");
     } finally {
@@ -378,6 +382,8 @@ describe("runWatchSonarAnalysis input validation + skip path (issue #934)", () =
     const { runWatchSonarAnalysis } = await import("./lib.js");
     for (const bad of [0, -1, 1.5, "1", null, undefined]) {
       const r = await runWatchSonarAnalysis({
+        authorizeRepoRead: async () => ({ ok: true, repoSlug: "fake/repo" }),
+        fetchProducerEvidence: async () => null,
         repoPath: "/tmp",
         prNumber: bad,
       });
@@ -390,7 +396,7 @@ describe("runWatchSonarAnalysis input validation + skip path (issue #934)", () =
     const { runWatchSonarAnalysis } = await import("./lib.js");
     const dir = mkdtempSync(join(tmpdir(), "gc-sonar-not-git-"));
     try {
-      const r = await runWatchSonarAnalysis({ repoPath: dir, prNumber: 1 });
+      const r = await runWatchSonarAnalysis({ repoPath: dir, prNumber: 1, fetchProducerEvidence: async () => null, authorizeRepoRead: async () => ({ ok: true, repoSlug: "fake/repo" }) });
       assert.equal(r.ok, false);
       assert.equal(r.error, "sonar_watch_repo_not_found");
     } finally {
@@ -404,7 +410,7 @@ describe("runWatchSonarAnalysis input validation + skip path (issue #934)", () =
       "schema_version: 1\nproject: test-proj\n",
     );
     try {
-      const r = await runWatchSonarAnalysis({ repoPath: dir, prNumber: 1 });
+      const r = await runWatchSonarAnalysis({ repoPath: dir, prNumber: 1, fetchProducerEvidence: async () => null, authorizeRepoRead: async () => ({ ok: true, repoSlug: "fake/repo" }) });
       assert.equal(r.ok, true);
       assert.equal(r.quality_gate, "NONE");
       assert.equal(r.skipped, true);
@@ -428,7 +434,7 @@ describe("runWatchSonarAnalysis input validation + skip path (issue #934)", () =
       // Real origin so owner/repo resolves from the git remote, as production does. git ignores
       // GH_REPO; the `gh repo view` fallback honours it.
       execFileSync("git", ["-C", dir, "remote", "add", "origin", "https://github.com/fake/repo.git"]);
-      const r = await runWatchSonarAnalysis({ repoPath: dir, prNumber: 1 });
+      const r = await runWatchSonarAnalysis({ repoPath: dir, prNumber: 1, fetchProducerEvidence: async () => null, authorizeRepoRead: async () => ({ ok: true, repoSlug: "fake/repo" }) });
       // Missing yaml is the same effective state as no sonarcloud block.
       assert.equal(r.ok, true);
       assert.equal(r.quality_gate, "NONE");

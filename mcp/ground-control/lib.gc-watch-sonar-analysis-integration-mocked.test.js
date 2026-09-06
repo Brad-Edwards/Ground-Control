@@ -68,6 +68,8 @@ describe("gc_watch_sonar_analysis integration (mocked fetch, issue #934 fix-list
     };
     try {
       const r = await runWatchSonarAnalysis({
+        authorizeRepoRead: async () => ({ ok: true, repoSlug: "fake/repo" }),
+        fetchProducerEvidence: async () => null,
         repoPath: dir,
         prNumber: 7,
         initialWaitSeconds: 0,
@@ -108,6 +110,8 @@ describe("gc_watch_sonar_analysis integration (mocked fetch, issue #934 fix-list
     };
     try {
       const r = await runWatchSonarAnalysis({
+        authorizeRepoRead: async () => ({ ok: true, repoSlug: "fake/repo" }),
+        fetchProducerEvidence: async () => null,
         repoPath: dir,
         prNumber: 9,
         initialWaitSeconds: 0,

@@ -172,6 +172,12 @@ async function prepareQueue(queue, results, run, deps) {
       summary: prOutcome.summary,
       ...(prOutcome.failure_class ? { failure_class: prOutcome.failure_class } : {}),
       ...(prOutcome.next_action ? { next_action: prOutcome.next_action } : {}),
+      // Bounded, server-acquired Sonar scope evidence when the watcher produced
+      // it. Dropping it here left the lane's blocked record naming a cause with
+      // nothing behind it (issue #1559).
+      ...(prOutcome.sonar_scope_evidence
+        ? { sonar_scope_evidence: prOutcome.sonar_scope_evidence }
+        : {}),
     };
 
     // A single merge failure does NOT halt the queue; the PR is marked

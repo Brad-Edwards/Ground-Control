@@ -92,4 +92,28 @@ describe("runMonitor — SonarCloud gate classification", () => {
     assert.equal(result.next_action, "fix_sonar_findings_then_rerun_publish_and_monitor");
     assert.equal(stations.at(-1).outcome.stationResult, "fail");
   });
+
+  // Issue #1559: the driver's durable obligation has to name what the server
+  // observed, or the operator is sent after a cause nobody confirmed.
+  it("carries the watcher's scope evidence into the failure envelope", async () => {
+    const scope_evidence = {
+      source: "github_check_runs",
+      repo: "Brad-Edwards/shifter",
+      pr_number: 42,
+      head_sha: "a9df89dae32854f0915230ffd17ba2fcb65aee68",
+      reason: "producer_skipped",
+      checks: [{ name: "sonar", status: "completed", conclusion: "skipped" }],
+    };
+    const { result } = await monitorWithSonar({
+      ok: false,
+      error: "sonar_watch_analysis_not_produced",
+      message: "no analysis will be published for this pull request",
+      scope: "unproved",
+      scope_evidence,
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.sonar_gate, "not_evaluable");
+    assert.equal(result.next_action, "diagnose_sonar_scan_scope_then_rerun_monitor");
+    assert.deepEqual(result.sonar_scope_evidence, scope_evidence);
+  });
 });

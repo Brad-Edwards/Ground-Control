@@ -412,7 +412,16 @@ export async function runMonitor(args, deps) {
       classified.error,
       classified.message,
       classified.next_action,
-      { failed_stage: "sonar", sonar_gate: classified.sonar_gate, sonar },
+      {
+        failed_stage: "sonar",
+        sonar_gate: classified.sonar_gate,
+        sonar,
+        // Lifted to the envelope's top level so the durable obligation record
+        // names what was observed rather than a guess (issue #1559). Already
+        // normalized and bounded at its origin: `failure()` scrubs its message,
+        // not a nested object.
+        ...(sonar?.scope_evidence ? { sonar_scope_evidence: sonar.scope_evidence } : {}),
+      },
     );
   }
   return {

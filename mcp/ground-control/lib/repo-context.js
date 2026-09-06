@@ -321,6 +321,18 @@ export function isSafeGitRefName(s) {
   ))) return false;
   return true;
 }
+// The optional sonarcloud fields: same validation, same trimming, one loop.
+// `analysis_check` names the CI check or workflow that publishes this repo's
+// Sonar analysis, so the watcher can tell "no analysis is coming" from "it has
+// not landed yet" (issue #1559). Absent, any Sonar-named check matches. It
+// selects an existing producer; it never asserts that a scan may be skipped.
+const SONARCLOUD_OPTIONAL_KEYS = ["quality_gate", "analysis_check"];
+const SONARCLOUD_ALLOWED_KEYS = new Set(["project_key", "organization", ...SONARCLOUD_OPTIONAL_KEYS]);
+
+function nonEmptyString(value) {
+  return typeof value === "string" && value.trim() !== "";
+}
+
 export function normalizeSonarcloudConfig(raw) {
   if (raw == null) {
     return { ok: true, value: null };
@@ -328,31 +340,25 @@ export function normalizeSonarcloudConfig(raw) {
   if (typeof raw !== "object" || Array.isArray(raw)) {
     return { ok: false, errors: ["sonarcloud must be a mapping, not a list or scalar"] };
   }
-  const allowed = new Set(["project_key", "organization", "quality_gate"]);
-  const errors = [];
-  for (const key of Object.keys(raw)) {
-    if (!allowed.has(key)) {
-      errors.push(`sonarcloud has unknown key '${key}'`);
+  const errors = Object.keys(raw)
+    .filter((key) => !SONARCLOUD_ALLOWED_KEYS.has(key))
+    .map((key) => `sonarcloud has unknown key '${key}'`);
+
+  for (const key of ["project_key", "organization"]) {
+    if (!nonEmptyString(raw[key])) {
+      errors.push(`sonarcloud.${key} must be a non-empty string when sonarcloud is set`);
     }
   }
-  const project_key = raw.project_key;
-  const organization = raw.organization;
-  const quality_gate = raw.quality_gate;
-  if (typeof project_key !== "string" || project_key.trim() === "") {
-    errors.push("sonarcloud.project_key must be a non-empty string when sonarcloud is set");
-  }
-  if (typeof organization !== "string" || organization.trim() === "") {
-    errors.push("sonarcloud.organization must be a non-empty string when sonarcloud is set");
-  }
-  if (quality_gate != null) {
-    if (typeof quality_gate !== "string" || quality_gate.trim() === "") {
-      errors.push("sonarcloud.quality_gate must be a non-empty string when set");
+  for (const key of SONARCLOUD_OPTIONAL_KEYS) {
+    if (raw[key] != null && !nonEmptyString(raw[key])) {
+      errors.push(`sonarcloud.${key} must be a non-empty string when set`);
     }
   }
   if (errors.length) return { ok: false, errors };
-  const value = { project_key, organization };
-  if (quality_gate != null && typeof quality_gate === "string" && quality_gate.trim() !== "") {
-    value.quality_gate = quality_gate.trim();
+
+  const value = { project_key: raw.project_key, organization: raw.organization };
+  for (const key of SONARCLOUD_OPTIONAL_KEYS) {
+    if (raw[key] != null) value[key] = raw[key].trim();
   }
   return { ok: true, value };
 }
