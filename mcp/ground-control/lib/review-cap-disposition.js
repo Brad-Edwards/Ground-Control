@@ -35,6 +35,10 @@ function _parseMarkerAttrs(attrText) {
   }
   return attrs;
 }
+function isNumstatCount(column) {
+  // `-` is git's binary-file placeholder; anything else must be a decimal count.
+  return column === "-" || Number.isInteger(Number.parseInt(column, 10));
+}
 export function parseNumstatManifest(manifest) {
   const result = { files_changed: 0, lines_added: 0, lines_deleted: 0 };
   if (typeof manifest !== "string") return result;
@@ -66,6 +70,12 @@ export function parseChangedPathsFromManifest(manifest) {
     if (line === "" || line.startsWith("#") || line === "(none)" || line === "(no files changed)") continue;
     const parts = line.split("\t");
     if (parts.length < 3) continue;
+    // Same row grammar as parseNumstatManifest: only a numstat row is data.
+    // The manifest also carries an additive `--name-status` block (#1557), and
+    // without this check a rename row (`R100\told\tnew`) would be read as a
+    // changed path and reach classifyChangedSurface, which throws on a path it
+    // cannot resolve. A status column is never an integer.
+    if (!isNumstatCount(parts[0]) || !isNumstatCount(parts[1])) continue;
     const path = parts.slice(2).join("\t");
     if (path && !seen.has(path)) {
       seen.add(path);

@@ -79,7 +79,7 @@ export async function runCodexReview({
   }
 
   // Compute the diff once and reuse it across both reviewers.
-  const { diffText, manifest, baseRefDescriptor, unreviewedUntrackedPaths } = await computeReviewDiff(
+  const { diffText, manifest, baseRefDescriptor, unreviewedUntrackedPaths, trackedSymlinks } = await computeReviewDiff(
     repoRoot,
     baseBranch,
     uncommitted,
@@ -104,6 +104,7 @@ export async function runCodexReview({
     diffManifest: manifest,
     baseRefDescriptor,
     vocabulary,
+    trackedSymlinks,
   };
 
   // Parse each reviewer's tail independently. A malformed payload from one

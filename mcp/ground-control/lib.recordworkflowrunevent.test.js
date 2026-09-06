@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import {
   buildReviewAutoDispositionRecord,
   collectDispositionSignals,
+  parseChangedPathsFromManifest,
   parseReviewAutoDispositionMarkers,
   recordWorkflowRunEvent,
   scoreDisposition,
@@ -276,6 +277,37 @@ describe("collectDispositionSignals", () => {
     assert.equal(s.diff.lines_added, 13);
     assert.equal(s.diff.lines_deleted, 5);
     assert.equal(s.diff.files_changed, 3);
+  });
+
+  it("ignores the additive name-status block so scoring is unchanged (#1557)", () => {
+    // The name-status block shares the manifest string with numstat but is not
+    // a second parsed schema: both manifest parsers must skip its rows, or a
+    // rename row (`R100\told\tnew`) would be double-counted as a changed path
+    // and reach classifyChangedSurface, which throws on a path it cannot
+    // resolve.
+    const numstatOnly = ["# staged", "10\t4\tsrc/a.js", "0\t7\tsrc/gone.js"].join("\n");
+    const withKinds = [
+      numstatOnly,
+      "",
+      "# change kinds",
+      "M\tsrc/a.js",
+      "D\tsrc/gone.js",
+      "R100\tsrc/old.js\tsrc/new.js",
+    ].join("\n");
+    const args = {
+      reviewer: "codex",
+      findingsSummary: { one_off_count: 0, class_count: 0, top_categories: [] },
+      changedPaths: [],
+      priorAutoOverrides: 0,
+      repoRoot: REPO,
+    };
+    const base = collectDispositionSignals({ ...args, diffManifest: numstatOnly });
+    const withBlock = collectDispositionSignals({ ...args, diffManifest: withKinds });
+    assert.deepEqual(withBlock.diff, base.diff);
+    assert.deepEqual(
+      parseChangedPathsFromManifest(withKinds),
+      parseChangedPathsFromManifest(numstatOnly),
+    );
   });
 
   it("classifies mcp paths as a high-risk surface", () => {
