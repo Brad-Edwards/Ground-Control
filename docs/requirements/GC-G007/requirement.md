@@ -1,12 +1,12 @@
 ---
 id: GC-G007
 title: "Mixed-Entity Graph Participation"
-status: ACTIVE
+status: DEPRECATED
 type: FUNCTIONAL
 priority: MUST
 wave: 4
 created_at: 2026-03-30T02:53:19.561586Z
-updated_at: 2026-05-28T04:48:05.620513Z
+updated_at: 2026-09-05T20:12:24Z
 ---
 
 # GC-G007 — Mixed-Entity Graph Participation
@@ -19,7 +19,26 @@ The system shall support first-class graph participation for non-requirement ent
 
 Ground Control's core differentiator is the graph itself. If risks, controls, assets, issues, and evidence are not graph participants in their own right, the platform falls back into siloed records linked only indirectly through requirements.
 
+## Retirement
+
+Every artifact that implemented this requirement was deleted by the #1500
+re-platform ([ADR-089](../../../architecture/adrs/089-retire-grc-product-and-next-issue-recommendation.md)),
+which stripped Ground Control to the MCP server over repo-local files. No
+surviving artifact implements it, so the status is `DEPRECATED` rather than
+`ACTIVE`: an active requirement with no implementation evidence asserts a
+capability the system does not have. The original evidence is preserved under
+`## Historical traceability` below (issue #650).
+
 ## Traceability
+
+- IMPLEMENTS → GITHUB_ISSUE `727` (GH-727: Mixed-Entity Graph Participation)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
 
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/graph/service/DocumentGraphProjectionContributor.java` (DocumentGraphProjectionContributor — clause 8: document graph participation)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/documents/DocumentResponse.java` (DocumentResponse.graphNodeId — consistent graph identity on document API responses)
@@ -40,6 +59,5 @@ Ground Control's core differentiator is the graph itself. If risks, controls, as
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/graph/model/GraphEntityType.java` (GraphEntityType enum — typed graph entity vocabulary covering all entity families including DOCUMENT)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/graph/model/GraphIds.java` (GraphIds — consistent graph node identity factory for all entity types (cross-domain consistency))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/graph/service/GraphTargetResolverService.java` (GraphTargetResolverService — validateDocumentTarget + multi-entity target resolution (clause 9-11))
-- IMPLEMENTS → GITHUB_ISSUE `727` (GH-727: Mixed-Entity Graph Participation)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/graph/service/RequirementGraphProjectionContributor.java` (Requirement graph projection of traceability artifacts)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/RequirementGraphProjectionContributorTest.java` (Requirement traceability graph projection unit coverage)

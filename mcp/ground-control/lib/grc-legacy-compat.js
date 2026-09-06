@@ -248,11 +248,13 @@ export function collectDevStartBlockerFailures(fields, blockerUids) {
   }
   return { missing, invalid };
 }
-export const DEFAULT_CODEX_REVIEW_MAX_DIFF_BYTES = (() => {
+// Resolved on every call for the same import-ordering reason as
+// getDefaultCodexReviewParallel (issue #1562).
+export function getDefaultCodexReviewMaxDiffBytes() {
   const raw = Number.parseInt(process.env.GC_CODEX_REVIEW_MAX_DIFF_BYTES || "", 10);
   if (!Number.isInteger(raw)) return 256 * 1024; // 256 KiB
   return raw;
-})();
+}
 export function buildDiffBlock({
   diffText,
   mode = "inline",
@@ -276,7 +278,7 @@ export function buildDiffBlock({
     manifest && manifest.trim() !== "" ? manifest : "(empty manifest)",
     "DIFF-MANIFEST>>>",
     "",
-    `The manifest above lists every file in the complete change${against} with its added/deleted line counts. It is CONTEXT ONLY — never infer content, behavior, or the direction of the change from a filename or a numstat row.${sliceOf}`,
+    `The manifest above lists every file in the complete change${against} with its added/deleted line counts, followed by a block stating each file's change kind (\`A\` added, \`D\` deleted, \`M\` modified, \`R\` renamed). It is CONTEXT ONLY — never infer content or behavior from a filename or a numstat row. The change kind is stated, so read it rather than guessing the direction of a change from line counts: a deleted file and an emptied one produce the same numstat row.${sliceOf}`,
     "",
     ...diffLines,
   ];

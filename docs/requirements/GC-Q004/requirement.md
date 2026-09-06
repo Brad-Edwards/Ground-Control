@@ -21,12 +21,20 @@ Architects and leads need a single landing page that answers 'how healthy is thi
 
 ## Traceability
 
-- IMPLEMENTS → CODE_FILE `frontend/src/pages/dashboard.tsx` (Dashboard page - Project health metrics)
 - IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (gc_dashboard_stats MCP tool)
+- IMPLEMENTS → GITHUB_ISSUE `autarchy-ai/Ground-Control#348` (GC-Q004: Project Health Dashboard)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
+- IMPLEMENTS → CODE_FILE `frontend/src/pages/dashboard.tsx` (Dashboard page - Project health metrics)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/service/AnalysisService.java` (AnalysisService.getDashboardStats())
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/service/AuditService.java` (AuditService.getRecentRequirementChanges())
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/admin/AnalysisController.java` (GET /api/v1/analysis/dashboard-stats endpoint)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/AnalysisServiceTest.java` (AnalysisServiceTest.GetDashboardStats unit tests)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/AnalysisControllerTest.java` (AnalysisControllerTest.GetDashboardStats unit test)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/integration/AnalysisIntegrationTest.java` (dashboardStats_returnsAggregatedMetrics integration test)
-- IMPLEMENTS → GITHUB_ISSUE `autarchy-ai/Ground-Control#348` (GC-Q004: Project Health Dashboard)

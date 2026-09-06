@@ -23,6 +23,14 @@ Threat-control mapping connects security analysis to operational controls across
 
 - IMPLEMENTS → GITHUB_ISSUE `#266` (GC-H006: Threat-Control Mapping)
 - DOCUMENTS → ADR `ADR-052` (ADR-052 — Risk-Control Mapping Aggregate (GC-T003), amended 2026-06-20 for GC-H006 threat-control mapping)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/riskcontrol/model/RiskControlMapping.java` (RiskControlMapping — ThreatModel analysis-side endpoint)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/riskcontrol/service/RiskControlMappingService.java` (RiskControlMappingService — 3-way analysis-endpoint validation + threat create paths)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/riskcontrol/service/RiskControlCoverageService.java` (RiskControlCoverageService — threat-side coverage queries (no-controls, unmapped-controls, insufficient-effectiveness))

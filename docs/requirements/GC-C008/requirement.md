@@ -21,9 +21,17 @@ AI agents and CI/CD pipelines must be able to run validations programmatically. 
 
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP gc_analyze_completeness tool — backend-backed implementation)
+- IMPLEMENTS → GITHUB_ISSUE `autarchy-ai/Ground-Control#343` (GC-C008: Analysis API Exposure)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/admin/AnalysisController.java` (AnalysisController - Analysis API endpoints)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/service/AnalysisService.java` (AnalysisService — analyzeCompleteness method)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP gc_analyze_completeness tool — backend-backed implementation)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/AnalysisServiceTest.java` (AnalysisServiceTest — AnalyzeCompleteness nested class)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/integration/AnalysisIntegrationTest.java` (AnalysisIntegrationTest — completeness + coverage-gaps smoke tests)
-- IMPLEMENTS → GITHUB_ISSUE `autarchy-ai/Ground-Control#343` (GC-C008: Analysis API Exposure)

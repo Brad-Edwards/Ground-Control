@@ -21,5 +21,13 @@ GitHub labels are the primary filtering and categorization mechanism in GitHub. 
 
 ## Traceability
 
-- IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/service/GitHubIssueSyncService.java` (GitHubIssueSyncService - Read labels during sync (partial))
 - DOCUMENTS → GITHUB_ISSUE `#680` (GC-D005: Label Synchronization)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
+- IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/service/GitHubIssueSyncService.java` (GitHubIssueSyncService - Read labels during sync (partial))

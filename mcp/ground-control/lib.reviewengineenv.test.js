@@ -1,18 +1,23 @@
-// The review engine (`claude`) inherits the launcher's environment minus
-// ANTHROPIC_API_KEY — but only when another auth path survives (Vertex/Bedrock
-// or a dedicated CLAUDE_CONFIG_DIR profile). If the key is the only auth, it is
-// kept, so the review runs across any repo/folder/tmux session and whichever
-// auth mode (Vertex or a personal profile) launched the MCP, instead of falling
-// through to an expired default OAuth profile (issue #1500).
+// Review-engine auth is declared in the launch directory's .env, or the review
+// does not run (issue #1562).
+//
+// The engine used to load `~/.config/ground-control/review-env` whenever the
+// inherited environment carried no Claude auth. That is a user-level file
+// serving a per-checkout process: it silently supplied a global credential to a
+// repository that deliberately has none, and it hid a provisioning fault behind
+// an expired default profile. Those are just variables and they belong in
+// `.env` like every other variable, so the fallback is gone and its absence is
+// a refusal that names what to set and where.
+//
+// The conflict rule survives: ANTHROPIC_API_KEY is stripped only when another
+// auth path exists, so the key can still be the sole auth when it is all that
+// is declared (issue #1500).
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { reviewEngineEnv } from "./lib/runtime-primitives.js";
+import { REVIEW_ENGINE_AUTH_VARS, assertReviewEngineAuth, reviewEngineEnv } from "./lib/runtime-primitives.js";
 
-describe("reviewEngineEnv — review-engine auth follows the launch mode", () => {
+describe("reviewEngineEnv — review-engine auth follows the declared mode", () => {
   it("strips ANTHROPIC_API_KEY when Vertex is the auth mode", () => {
     const env = reviewEngineEnv({ CLAUDE_CODE_USE_VERTEX: "1", GOOGLE_CLOUD_PROJECT: "p", ANTHROPIC_API_KEY: "sk-x" });
     assert.equal(env.ANTHROPIC_API_KEY, undefined);
@@ -35,9 +40,10 @@ describe("reviewEngineEnv — review-engine auth follows the launch mode", () =>
     assert.equal(env.ANTHROPIC_API_KEY, "sk-x");
   });
 
-  it("is a no-op on the key when there is no key at all", () => {
-    const env = reviewEngineEnv({ CLAUDE_CODE_USE_VERTEX: "1" });
-    assert.equal("ANTHROPIC_API_KEY" in env, false);
+  it("passes OS execution state through to the child", () => {
+    const env = reviewEngineEnv({ CLAUDE_CODE_USE_VERTEX: "1", PATH: "/usr/bin", HOME: "/home/u" });
+    assert.equal(env.PATH, "/usr/bin");
+    assert.equal(env.HOME, "/home/u");
   });
 
   it("does not mutate the input environment", () => {
@@ -46,35 +52,38 @@ describe("reviewEngineEnv — review-engine auth follows the launch mode", () =>
     assert.equal(base.ANTHROPIC_API_KEY, "sk-x");
   });
 
-  it("loads the fallback file when the inherited env has NO Claude auth", () => {
-    const dir = mkdtempSync(join(tmpdir(), "gc-review-env-"));
-    const fp = join(dir, "review-env");
-    writeFileSync(fp, "# vertex fallback\nCLAUDE_CODE_USE_VERTEX=1\nCLOUD_ML_REGION=global\nGOOGLE_CLOUD_PROJECT=proj-x\n");
+  it("refuses when no auth mode is declared, rather than falling through to ambient auth", () => {
+    assert.throws(
+      () => reviewEngineEnv({ PATH: "/usr/bin", HOME: "/home/u" }),
+      (err) => err.code === "review_engine_auth_missing",
+    );
+  });
+
+  it("treats an empty declared value as no auth", () => {
+    assert.throws(
+      () => assertReviewEngineAuth({ CLAUDE_CONFIG_DIR: "" }),
+      (err) => err.code === "review_engine_auth_missing",
+    );
+  });
+
+  it("names every accepted variable and the launch-directory .env in the refusal", () => {
     try {
-      const env = reviewEngineEnv({ PATH: "/usr/bin" }, fp);
-      assert.equal(env.CLAUDE_CODE_USE_VERTEX, "1");
-      assert.equal(env.GOOGLE_CLOUD_PROJECT, "proj-x");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
+      assertReviewEngineAuth({ PATH: "/usr/bin" });
+      assert.fail("expected a refusal");
+    } catch (err) {
+      for (const name of REVIEW_ENGINE_AUTH_VARS) {
+        assert.ok(err.message.includes(name), `message must name ${name}`);
+      }
+      assert.ok(err.message.includes(".env"), "message must name the file to fix");
     }
   });
 
-  it("does NOT consult the fallback when the env already has auth", () => {
-    const dir = mkdtempSync(join(tmpdir(), "gc-review-env-"));
-    const fp = join(dir, "review-env");
-    writeFileSync(fp, "GOOGLE_CLOUD_PROJECT=from-fallback\n");
+  it("never puts a declared value in the refusal message", () => {
     try {
-      const env = reviewEngineEnv({ CLAUDE_CONFIG_DIR: "/home/u/.claude-personal" }, fp);
-      assert.equal(env.GOOGLE_CLOUD_PROJECT, undefined);
-      assert.equal(env.CLAUDE_CONFIG_DIR, "/home/u/.claude-personal");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
+      assertReviewEngineAuth({ ANTHROPIC_API_KEY: "", SONAR_TOKEN: "squirrel-token" });
+      assert.fail("expected a refusal");
+    } catch (err) {
+      assert.equal(err.message.includes("squirrel-token"), false);
     }
-  });
-
-  it("is a no-op when the env has no auth and the fallback file is absent", () => {
-    const env = reviewEngineEnv({ PATH: "/usr/bin" }, join(tmpdir(), "gc-nonexistent-review-env-file"));
-    assert.equal("ANTHROPIC_API_KEY" in env, false);
-    assert.equal(env.PATH, "/usr/bin");
   });
 });

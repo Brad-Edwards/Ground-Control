@@ -21,15 +21,23 @@ Step-based format is the primary test case format in TestRail, Zephyr Scale, Xra
 
 ## Traceability
 
+- IMPLEMENTS → ADR `architecture/adrs/041-test-case-step-format.md` (ADR-041: Step-based test case format)
+- IMPLEMENTS → GITHUB_ISSUE `670` (TC-002: Step-Based Test Case Format)
+- IMPLEMENTS → PULL_REQUEST `914` (security: add step-based test case format for TC-002)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/testcases/model/TestCaseStep.java` (TestCaseStep entity (TC-002 / ADR-041))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/testcases/service/TestCaseStepService.java` (TestCaseStepService — CRUD + service-level cascade)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/testcases/TestCaseStepController.java` (TestCaseStepController — /api/v1/test-cases/{id}/steps)
 - IMPLEMENTS → CODE_FILE `backend/src/main/resources/db/migration/V073__create_test_case_step.sql` (test_case_step table — (test_case_id, step_number) unique, step_number > 0 check)
-- IMPLEMENTS → ADR `architecture/adrs/041-test-case-step-format.md` (ADR-041: Step-based test case format)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/TestCaseStepTest.java` (TestCaseStepTest — entity validation)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/TestCaseStepServiceTest.java` (TestCaseStepServiceTest — service unit tests)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/TestCaseStepControllerTest.java` (TestCaseStepControllerTest — @WebMvcTest with ArgumentCaptors)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/integration/TestCaseStepControllerIntegrationTest.java` (TestCaseStepControllerIntegrationTest — HTTP roundtrip + cross-test-case rejection)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/integration/TestCaseStepServiceIntegrationTest.java` (TestCaseStepServiceIntegrationTest — Envers ADD/DEL revtype assertions)
-- IMPLEMENTS → GITHUB_ISSUE `670` (TC-002: Step-Based Test Case Format)
-- IMPLEMENTS → PULL_REQUEST `914` (security: add step-based test case format for TC-002)

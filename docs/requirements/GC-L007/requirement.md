@@ -21,19 +21,27 @@ Agents need to analyze GRC data programmatically without losing methodological i
 
 ## Traceability
 
-- TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/GrcAnalysisControllerTest.java`
 - IMPLEMENTS → PULL_REQUEST `#930` (feat(GC-L007): add MCP GRC analysis tools)
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js`
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js`
+- DOCUMENTS → DOCUMENTATION `architecture/notes/mcp-grc-analysis-tools-preflight.md`
+- IMPLEMENTS → GITHUB_ISSUE `#219` (GC-L007: MCP GRC Analysis Tools)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
+- TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/GrcAnalysisControllerTest.java`
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/grcanalysis/service/GrcAnalysisService.java`
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/grcanalysis/service/EvidenceFreshnessAnalysisService.java`
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/grcanalysis/service/ObservationProjectionService.java`
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/grcanalysis/service/VendorRiskAggregationService.java`
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/grcanalysis/GrcAnalysisController.java`
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js`
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js`
-- DOCUMENTS → DOCUMENTATION `architecture/notes/mcp-grc-analysis-tools-preflight.md`
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/grcanalysis/EvidenceFreshnessAnalysisServiceTest.java`
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/grcanalysis/ObservationProjectionServiceTest.java`
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/grcanalysis/VendorRiskAggregationServiceTest.java`
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/integration/grcanalysis/GrcAnalysisIntegrationTest.java`
 - TESTS → TEST `mcp/ground-control/gc-analyze.test.js`
-- IMPLEMENTS → GITHUB_ISSUE `#219` (GC-L007: MCP GRC Analysis Tools)

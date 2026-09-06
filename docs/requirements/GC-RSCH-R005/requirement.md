@@ -22,8 +22,16 @@ Captured from Reactor auto-research requirements analysis (/home/atomik/src/reac
 ## Traceability
 
 - DOCUMENTS → GITHUB_ISSUE `1029` (Research adapter/plugin boundary)
+- IMPLEMENTS → ADR `architecture/adrs/086-research-high-risk-operation-authorization.md` (ADR-086 high-risk operation authorization decision)
+- IMPLEMENTS → GITHUB_ISSUE `1008` (Research privacy, security, and prompt-injection controls)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/research/service/ResearchOperationAuthorizationService.java` (Default-deny high-risk operation authorization service)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/research/model/ResearchRunOperationAuthorization.java` (Run-scoped authorization aggregate)
-- IMPLEMENTS → ADR `architecture/adrs/086-research-high-risk-operation-authorization.md` (ADR-086 high-risk operation authorization decision)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/research/ResearchOperationAuthorizationServiceTest.java` (Authorization lifecycle behavioral tests)
-- IMPLEMENTS → GITHUB_ISSUE `1008` (Research privacy, security, and prompt-injection controls)

@@ -32,7 +32,15 @@ Today the verdict is the agent's self-certified judgment and an empty baseline s
 - DOCUMENTS → GITHUB_ISSUE `1122` (Issue #1122: GC-GRC-009 derivation-backed change screening (kill the no_baseline pass))
 - IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (v2 screening compute + reconciliation recompute (classifyGrcScreening, runComputeGrcScreening, reconcileGrcScreeningV2))
 - IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (gc_post_grc_screening v2 tool registration (computed contract, no paths override))
-- IMPLEMENTS → DOCUMENTATION `skills/implement/steps/step-03.5-grc-screening.md` (Step 3.5 derivation-backed screening prose (computed contract))
 - IMPLEMENTS → ADR `architecture/adrs/057-per-run-grc-screening-gate.md` (ADR-057 v2 amendment: derivation-backed screening contract)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
+- IMPLEMENTS → DOCUMENTATION `skills/implement/steps/step-03.5-grc-screening.md` (Step 3.5 derivation-backed screening prose (computed contract))
 - TESTS → TEST `mcp/ground-control/gc-grc-screening-v2.test.js` (v2 classification, empty-baseline gap, stale, candidates, provenance, runner tests)
 - TESTS → TEST `mcp/ground-control/gc-grc-reconciled.test.js` (v2 reconciliation recompute-from-final-diff freshness + gap-blocks tests)

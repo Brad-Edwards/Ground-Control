@@ -22,6 +22,18 @@ Versioned requirement packs and control packs are only operationally safe if dis
 ## Traceability
 
 - DOCUMENTS → ADR `ADR-022` (Content Pack Distribution Architecture)
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP tool definitions for pack registry)
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (MCP client pack import transport)
+
+## Historical traceability
+
+Links below named artifacts the #1500 re-platform deleted. They are kept for
+provenance and are outside the parsed `## Traceability` section, so no tool reads
+them as live evidence. Do not infer current implementation from them.
+
+- DOCUMENTS → DOCUMENTATION `docs/API.md` (Pack registry import API documentation)
+- IMPLEMENTS → CONFIG `.github/workflows/pack-registry-sync.yml` (GitHub Actions pack registry auth and sync workflow)
+- IMPLEMENTS → CODE_FILE `tools/packs/sync_packs.mjs` (Repo-native registry import and install sync CLI)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/packregistry/model/PackRegistryEntry.java` (PackRegistryEntry entity)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/packregistry/model/PackInstallRecord.java` (PackInstallRecord entity)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/packregistry/model/TrustPolicy.java` (TrustPolicy entity)
@@ -34,7 +46,6 @@ Versioned requirement packs and control packs are only operationally safe if dis
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/packregistry/TrustPolicyController.java` (TrustPolicyController)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/packregistry/PackInstallRecordController.java` (PackInstallRecordController)
 - IMPLEMENTS → CODE_FILE `backend/src/main/resources/db/migration/V053__create_pack_registry.sql` (V053 migration - pack registry tables)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP tool definitions for pack registry)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/PackRegistryServiceTest.java` (PackRegistryService unit tests)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/PackResolverTest.java` (PackResolver unit tests)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/TrustEvaluatorTest.java` (TrustEvaluator unit tests)
@@ -50,12 +61,8 @@ Versioned requirement packs and control packs are only operationally safe if dis
 - IMPLEMENTS → CODE_FILE `frontend/src/pages/admin.tsx` (Admin pack registry import UI)
 - IMPLEMENTS → CODE_FILE `frontend/src/lib/api-client.ts` (Frontend API client pack import support)
 - IMPLEMENTS → CODE_FILE `frontend/src/types/api.ts` (Frontend API types for pack import)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (MCP client pack import transport)
-- DOCUMENTS → DOCUMENTATION `docs/API.md` (Pack registry import API documentation)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/PackRegistryImportServiceTest.java` (PackRegistryImportService unit tests)
 - IMPLEMENTS → CONFIG `packs/catalog.json` (Committed registry pack metadata catalog)
-- IMPLEMENTS → CODE_FILE `tools/packs/sync_packs.mjs` (Repo-native registry import and install sync CLI)
-- IMPLEMENTS → CONFIG `.github/workflows/pack-registry-sync.yml` (GitHub Actions pack registry auth and sync workflow)
 - IMPLEMENTS → CODE_FILE `deploy/scripts/enable_pack_registry_auth.sh` (Host-side pack registry auth bootstrap script)
 - IMPLEMENTS → CONFIG `deploy/docker/docker-compose.prod.yml` (Production compose pack registry auth wiring)
 - IMPLEMENTS → CONFIG `deploy/terraform/modules/compute/user-data.sh.tftpl` (Compute bootstrap env wiring for pack registry auth)

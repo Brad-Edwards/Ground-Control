@@ -1,5 +1,37 @@
 # Documentation style
 
+> **Sync note for issue #1562 (2026-09-06, launch-directory environment authority):** The MCP server
+> reads Ground Control's variables from `<launch directory>/.env` and nowhere else - no machine-level
+> or user-level file, and no fallback to the ambient environment. `mcp/ground-control/index.js` became
+> an environment bootstrap that binds the file before dynamically importing
+> `mcp/ground-control/server-runtime.js`, so an environment-derived default cannot evaluate first. The
+> `mcp_tool` surface class therefore anchors on both paths; without that addition the surface would
+> keep matching a file the tool registrations had left. The `outcome_required` mapping, the Vale rule
+> set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new `docs/DOC_STYLE.md` style
+> rule is established.
+
+> **Sync note for issue #946 (2026-09-06, MCP-host environment provisioning), superseded by issue
+> #1562 (2026-09-06):** #946 had the MCP server resolve its optional environment from an inherited
+> non-empty value, then `.env` in the launch directory, then a per-host `~/.config/ground-control/env`.
+> #1562 removed the machine-level file and the ambient fallback: `<launch directory>/.env` is now the
+> only source of Ground Control's variables. What survives from #946 is the loader living in `lib/`
+> rather than the entry point, and the single `parseEnvFileLine` grammar; the loader is now
+> `mcp/ground-control/lib/server-env.js`. ADR-036 records both decisions.
+
+> **Sync note for issue #633 follow-up (2026-09-04, /integrate lane restored):** The
+> `gc_integration_manager` implementation removed by #1506 is restored and registered, and a new
+> contract test asserts every `gc_*` tool named in skill prose is registered. ADR-054 records the
+> change. The documentation-coverage classifier, `outcome_required` mapping, Vale rules, installer,
+> `.vale.ini`, and this file's style rules are unchanged.
+
+> **Sync note for issue #633 (2026-09-04, MCP server identity and documentation):** The MCP server
+> now advertises the version from `mcp/ground-control/package.json` in the `initialize` handshake,
+> `gc_render_pr_body` renders a lane-accurate pre-push review attestation (`lane` /
+> `pre_push_reviews`, with `tools/policy/authz_matrix.py` accepting either form), and the server's
+> README and `index.js` environment header were rewritten against the registered tool surface.
+> ADR-054 records the change. The documentation-coverage classifier, `outcome_required` mapping,
+> Vale rules, installer, `.vale.ini`, and this file's style rules are unchanged.
+
 > **Sync note for issue #871 (2026-08-14, strict Sonar enforcement):** The SonarCloud workflow
 > now enforces zero open issues after the hosted quality gate, and repository policy protects that
 > ordering and failure behavior. The policy compatibility barrel resolves focused module exports
@@ -269,11 +301,12 @@ retired). Changelog entries are generated from Conventional Commit PR titles,
 enforced by `.github/workflows/pr-title.yml`; product-version literals are
 mechanically updated by the release PR and their consistency is enforced by
 `run_version_mirror_consistency_check`.
-Adding a new MCP tool or `gc_admin` action - or changing an existing
-endpoint's request/response shape - does not require new style rules here
-unless it introduces a new doc-shape (a new or changed request/response
-schema, for example) - in that case document the schema under the relevant
-service section in `docs/API.md`, which Vale lints on touch.
+Adding a new MCP tool, or changing an existing tool's request/response shape,
+does not require new style rules here. The tool's registration and its
+description string in `mcp/ground-control/index.js` are the contract surface, and
+`mcp/ground-control/README.md` carries the tool reference; both are linted by Vale
+on touch. The REST reference that once held request/response schemas
+(`docs/API.md`) went with the backend it described (issue #1500).
 
 ## Scope: whole file on first touch
 
@@ -309,7 +342,7 @@ authorized remediation, and post-merge closure in
 `docs/DEVELOPMENT_WORKFLOW.md § /review` and `skills/review/SKILL.md`.
 
 Per-PR documentation outcomes are recorded as a `## Documentation` section in
-the PR body and the Step 19 final-report comment. Pass the optional
+the PR body and the Step 17 final-report comment. Pass the optional
 `documentation_outcome` field to `gc_render_pr_body` or `gc_post_final_report`
 when the diff touches a classified surface (per ADR-054). The renderer emits
 the section automatically; agents do not hand-author it.
@@ -324,36 +357,19 @@ the registration gate and crashes every call with
 
 ## MCP shape extensions and policy updates are not doc edits
 
-Additive Zod schema fields or new entries in `mcp/ground-control/lib.js`'s
-`TO_CAMEL` map (for example, the typed reassessment-trigger shape added for
-GC-T004 / C8 in issue #863, or field renames in the `gc_risk_scenario` tool)
-do not by themselves require new reference-doc prose. The MCP tool description
-string in the corresponding adapter file (for example, `gc-risk-governance.js` or
-`gc-risk-scenario.js`) is the contract surface; keep it accurate when adding or
-removing fields, and the changelog fragment in `changelog.d/` carries the
-temporal record. Similarly, updates to `tools/policy/checks.py` that extend
-the list of recognized adapter files (for example, adding `gc-risk-scenario.js`
-to the controller-parity check) are policy-surface changes recorded in
-amendments to ADR-054, not documentation edits. A new repo-native policy
-check added to `tools/policy/checks.py` (for example,
-`run_module_graph_boundary_check` for the CLD architecture registry in
-GC-CLD-2 / #1295) is the same kind of policy-surface change: its user-facing
-reference lives in `architecture/registry/README.md` and
-`docs/DEVELOPMENT_WORKFLOW.md`, and the surface addition is recorded in an
-ADR-054 amendment, not as a new style rule here.
+An additive Zod schema field on a registered tool does not by itself require new
+reference-doc prose. The tool's description string in
+`mcp/ground-control/index.js`, plus its handler and the `lib/` function it
+delegates to, are the contract surface; keep the description accurate when adding
+or removing a field. The temporal record is the Conventional Commit history that
+Release Please turns into `CHANGELOG.md` (GC-P027); the `changelog.d/` fragment
+convention this section once named was retired in #1399.
 
-New `gc_analyze` kinds backed by a fixed REST endpoint follow the same
-convention: a new kind value in `ANALYZE_KINDS` (for example
-`nist_assessment` added for GC-T014 / #721; `fair_quantitative` added for
-GC-T011 / #723; `continuous_compliance_monitoring` added for GC-I004 / #763;
-`fair_cam_control_analytics` added for GC-I017 / #746)
-plus an adapter helper in `lib.js` is documented by the
-endpoint entry in `docs/API.md` and the `gc_analyze` tool description string
-in `mcp/ground-control/index.js`. No separate user-facing prose page per
-kind, no new sections in this style guide. Clarifying a kind's filter
-semantics in that same description string (for example, noting that the
-`fair_cam_control_analytics` scope filters compose as an intersection) is a
-contract-surface edit to the description, not a new doc page.
+A new repo-native check in `tools/policy/` is a policy-surface change, not a
+documentation edit. Its user-facing reference belongs in
+`docs/DEVELOPMENT_WORKFLOW.md`, and the surface addition is recorded as an
+amendment to the ADR that owns the surface it guards, not as a new style rule
+here.
 
 Per-action required-field enumeration in an action-multiplexed tool's description string (issue #1169) is a contract-surface edit to that tool's description, not a new doc page.
 
@@ -368,6 +384,18 @@ that repo-authored gates read - the boundary itself belongs in
 distinction: the field is a contract surface, but a new environment variable
 that a repository's own commands depend on is a durable interface and needs a
 durable record.
+
+### Precedent log (historical)
+
+Everything below is a dated, issue-anchored record of past rulings on whether a
+particular change needed a new style rule. The answer was almost always no, and
+that general answer is the rule stated above. The entries stay for provenance.
+
+Read them as history, not as current guidance. Many describe surfaces the #1500
+re-platform removed: the Spring backend and its REST API, the React console, the
+GRC, measurement, research-run, and test-management products, `docs/API.md`, and
+the retired `changelog.d/` fragment convention. A path or tool named in an entry
+below is not evidence that it exists today; check the tree.
 
 Mirrored API-boundary enum constants follow the same convention: the
 `NORMALIZED_CONCEPTS` and `CROSSWALK_VOCABULARY_SURFACES` arrays added to

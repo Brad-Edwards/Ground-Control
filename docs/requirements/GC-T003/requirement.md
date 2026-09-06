@@ -26,6 +26,14 @@ Controls are the shared mitigation layer across FAIR, NIST, ISO, audit, and thir
 - IMPLEMENTS → GITHUB_ISSUE `#258` (GC-T003: Risk-Control Mapping)
 - DOCUMENTS → GITHUB_ISSUE `824` (Verify GC-T003 (Risk Scenario-Control Mapping): clause-by-clause audit, transition DRAFT→ACTIVE)
 - IMPLEMENTS → ADR `architecture/adrs/052-risk-control-mapping.md` (ADR-052: Risk-Control Mapping)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/riskcontrol/model/RiskControlMapping.java` (RiskControlMapping domain model)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/riskcontrol/model/ScopedControlImplementation.java` (ScopedControlImplementation domain model)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/riskcontrol/service/RiskControlMappingService.java` (RiskControlMappingService — many-to-many mapping CRUD)

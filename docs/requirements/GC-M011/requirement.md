@@ -22,6 +22,20 @@ ServiceNow CSDM, Atlassian Assets, cloud inventories, and security graph product
 ## Traceability
 
 - IMPLEMENTS → ADR `architecture/adrs/043-asset-classification-subtype-extensibility.md` (ADR-043: Asset Classification and Subtype Extensibility)
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js`
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js`
+- IMPLEMENTS → GITHUB_ISSUE `#722` (GC-M011: Asset Classification and Subtype Extensibility)
+- IMPLEMENTS → PULL_REQUEST `#917` (feat(assets): add subtype + metadata + schema registry (GC-M011))
+- IMPLEMENTS → PULL_REQUEST `#919` (fix(assets): clear 47 SonarCloud findings on GC-M011 work)
+- TESTS → TEST `mcp/ground-control/lib.tosnakecase.test.js` (toSnakeCase opaque-value-key guard (GC-M011 subtype metadata))
+
+## Historical traceability
+
+Links below named artifacts the #1500 re-platform deleted. They are kept for
+provenance and are outside the parsed `## Traceability` section, so no tool reads
+them as live evidence. Do not infer current implementation from them.
+
+- DOCUMENTS → DOCUMENTATION `docs/API.md`
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/assets/model/AssetSubtypeSchema.java`
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/assets/model/OperationalAsset.java`
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/assets/state/AssetSubtypeSchemaStatus.java`
@@ -42,13 +56,10 @@ ServiceNow CSDM, Atlassian Assets, cloud inventories, and security graph product
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/assets/AssetSubtypeSchemaRequest.java`
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/assets/AssetSubtypeSchemaResponse.java`
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/assets/UpdateAssetSubtypeSchemaRequest.java`
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js`
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js`
 - IMPLEMENTS → CONFIG `backend/src/main/resources/db/migration/V080__add_asset_subtype_and_metadata.sql`
 - IMPLEMENTS → CONFIG `backend/src/main/resources/db/migration/V081__add_asset_subtype_and_metadata_audit.sql`
 - IMPLEMENTS → CONFIG `backend/src/main/resources/db/migration/V082__create_asset_subtype_schema.sql`
 - IMPLEMENTS → CONFIG `backend/src/main/resources/db/migration/V083__create_asset_subtype_schema_audit.sql`
-- DOCUMENTS → DOCUMENTATION `docs/API.md`
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/AssetSubtypeValidatorTest.java`
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/AssetServiceTest.java`
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/AssetControllerTest.java`
@@ -56,7 +67,3 @@ ServiceNow CSDM, Atlassian Assets, cloud inventories, and security graph product
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/AssetGraphProjectionContributorTest.java`
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/integration/MigrationSmokeTest.java`
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/integration/RequirementsE2EIntegrationTest.java`
-- IMPLEMENTS → GITHUB_ISSUE `#722` (GC-M011: Asset Classification and Subtype Extensibility)
-- IMPLEMENTS → PULL_REQUEST `#917` (feat(assets): add subtype + metadata + schema registry (GC-M011))
-- IMPLEMENTS → PULL_REQUEST `#919` (fix(assets): clear 47 SonarCloud findings on GC-M011 work)
-- TESTS → TEST `mcp/ground-control/lib.tosnakecase.test.js` (toSnakeCase opaque-value-key guard (GC-M011 subtype metadata))

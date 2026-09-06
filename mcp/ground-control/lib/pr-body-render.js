@@ -9,7 +9,15 @@ import { renderDocumentationSection, validateDocumentationOutcome } from "./doc-
 import { devStartFieldValue, extractMarkdownHeadingSection, parseDevStartGateFields } from "./grc-legacy-compat.js";
 import { DEFAULT_DEV_START_GATE_PLAN_SECTION } from "./repo-context.js";
 import { PR_BODY_SUMMARY_MAX, PR_BODY_TEST_NOTES_MAX } from "./repo-vocabulary.js";
-import { EXACT_REQUIREMENT_UID_RE, PR_BODY_CHANGE_CLASSES, PR_BODY_GC_CHECK_LINES, REQUIREMENT_UID_CONTRACT_DESCRIPTION } from "./runtime-primitives.js";
+import {
+  EXACT_REQUIREMENT_UID_RE,
+  PR_BODY_CHANGE_CLASSES,
+  PR_BODY_LANES,
+  PR_BODY_PRE_PUSH_REVIEW_STATES,
+  PR_BODY_REVIEWS_OPTIONAL_LANE,
+  REQUIREMENT_UID_CONTRACT_DESCRIPTION,
+  prBodyGcCheckLines,
+} from "./runtime-primitives.js";
 
 // Mirrors tools/policy/checks.py::run_changelog_fragment_check's filename predicate.
 const CHANGELOG_FRAGMENT_RE =
@@ -142,6 +150,29 @@ function validateDevStartGate(devStartGate) {
   return [];
 }
 
+// Lane + pre-push review state (issue #1551). Both default to the /implement
+// shape so every existing caller renders byte-identical output. Claiming the
+// reviewers did not run is legal only for the lane whose contract makes them
+// optional — an /implement run must never render its way out of a mandatory gate.
+function validateLaneAndReviews({ lane, prePushReviews }) {
+  const errors = [];
+  const resolvedLane = lane == null ? "implement" : lane;
+  const resolvedReviews = prePushReviews == null ? "completed" : prePushReviews;
+  if (!PR_BODY_LANES.includes(resolvedLane)) {
+    errors.push(`lane must be one of: ${PR_BODY_LANES.join(", ")}`);
+  }
+  if (!PR_BODY_PRE_PUSH_REVIEW_STATES.includes(resolvedReviews)) {
+    errors.push(`prePushReviews must be one of: ${PR_BODY_PRE_PUSH_REVIEW_STATES.join(", ")}`);
+  }
+  if (errors.length === 0 && resolvedReviews === "not_run" && resolvedLane !== PR_BODY_REVIEWS_OPTIONAL_LANE) {
+    errors.push(
+      `prePushReviews='not_run' requires lane='${PR_BODY_REVIEWS_OPTIONAL_LANE}'; `
+      + `lane='${resolvedLane}' runs both pre-push reviewers and must attest that they completed`,
+    );
+  }
+  return errors;
+}
+
 function validateDocumentationOutcomeField(documentationOutcome) {
   if (documentationOutcome == null) return [];
   const docResult = validateDocumentationOutcome(documentationOutcome);
@@ -163,6 +194,7 @@ export function collectPrBodyErrors(input) {
     ...validateTestNotes(testNotes),
     ...validateDevStartGate(input.devStartGate),
     ...validateDocumentationOutcomeField(input.documentation_outcome),
+    ...validateLaneAndReviews(input),
   ];
 }
 
@@ -257,7 +289,7 @@ export function renderPrBodyLines(input) {
     "## ADR Impact", "", ...(adrRefs.length === 0 ? ["- No ADR required"] : bullets(adrRefs)), "",
     "## Changes", "", ...changesLines(changes, changeClass, devStartGate), "",
     "## Test Plan", "", ...testPlanLines(changeClass, testNotes), "",
-    "## Ground Control Checks", "", ...PR_BODY_GC_CHECK_LINES, "",
+    "## Ground Control Checks", "", ...prBodyGcCheckLines(input.prePushReviews), "",
     "## Traceability", "", ...traceabilityLines(traceability), "",
     "## Checklist", "", ...checklistLines(input),
   ];

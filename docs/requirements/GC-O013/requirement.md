@@ -34,7 +34,15 @@ Issues #874–#881 (#820 Phase-A) showed that MCP write-tool body/enum drift fro
 - DOCUMENTS → DOCUMENTATION `docs/DEVELOPMENT_WORKFLOW.md` (MCP–Backend Write-Contract Gate (Development Workflow))
 - IMPLEMENTS → CONFIG `.github/workflows/ci.yml` (mcp-contract required CI job (gate enforcement))
 - IMPLEMENTS → ADR `ADR-034` (ADR-034 amendment: MCP write-tool DTO drift gate contract)
-- TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/integration/McpOpenApiContractSpecTest.java` (Springdoc OpenAPI spec capture for the contract gate)
 - IMPLEMENTS → GITHUB_ISSUE `1106` (MCP↔OpenAPI write-contract CI test)
 - DOCUMENTS → GITHUB_ISSUE `1178` (Extend MCP↔OpenAPI write-contract gate beyond GRC tools)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
+- TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/integration/McpOpenApiContractSpecTest.java` (Springdoc OpenAPI spec capture for the contract gate)
 - TESTS → TEST `mcp/ground-control/openapi-contract.mcp-openapi-write-contract.test.js` (MCP↔OpenAPI contract gate (inventory + bidirectional field/enum assertions))

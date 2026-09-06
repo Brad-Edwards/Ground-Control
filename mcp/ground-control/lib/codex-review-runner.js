@@ -4,7 +4,7 @@
 // (docs/CODING_STANDARDS.md, Sonar S104). It contained no mutual recursion, so it was
 // split along its own dependency layering. lib.js remains the barrel every caller imports.
 
-import { DEFAULT_CODEX_REVIEW_PARALLEL, buildReviewCoverage, buildReviewCoverageIncompleteEnvelope, dedupFindings } from "./api-controls.js";
+import { buildReviewCoverage, buildReviewCoverageIncompleteEnvelope, dedupFindings, getDefaultCodexReviewParallel } from "./api-controls.js";
 import { CODEX_REVIEW_PREPUSH_HARD_CAP, deriveIssueNumberFromBranch, evaluateCodexReviewPrePushCycleCap } from "./api-requirements.js";
 import { postCodexReviewCycleMarker, readPriorCodexReviewCycleCount } from "./close-issue.js";
 import { buildCodexReviewFindingsComments, buildReviewCommentPostFailedEnvelope, collectPostFailures, mergeReviewerArchitecturalReads, renderReviewerEnvelope } from "./codex-review.js";
@@ -79,7 +79,7 @@ export async function runCodexReview({
   }
 
   // Compute the diff once and reuse it across both reviewers.
-  const { diffText, manifest, baseRefDescriptor, unreviewedUntrackedPaths } = await computeReviewDiff(
+  const { diffText, manifest, baseRefDescriptor, unreviewedUntrackedPaths, trackedSymlinks } = await computeReviewDiff(
     repoRoot,
     baseBranch,
     uncommitted,
@@ -104,6 +104,7 @@ export async function runCodexReview({
     diffManifest: manifest,
     baseRefDescriptor,
     vocabulary,
+    trackedSymlinks,
   };
 
   // Parse each reviewer's tail independently. A malformed payload from one
@@ -129,7 +130,7 @@ export async function runCodexReview({
   // exception (issue #1414 codex cycle 1, F2).
   let core;
   let security;
-  if (DEFAULT_CODEX_REVIEW_PARALLEL === 2) {
+  if (getDefaultCodexReviewParallel() === 2) {
     [core, security] = await Promise.all([
       runReviewer("core", buildCodexReviewCorePrompt),
       runReviewer("security", buildCodexSecurityReviewPrompt),

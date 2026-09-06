@@ -23,7 +23,15 @@ Agents need analysis results to make informed decisions about requirement qualit
 
 - IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP Server - Analysis tools)
 - IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (MCP lib — REST API client functions for analysis tools)
+- IMPLEMENTS → GITHUB_ISSUE `autarchy-ai/Ground-Control#347` (GC-L002: MCP Analysis Tools)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/service/AnalysisService.java` (AnalysisService — backend analysis operations backing MCP tools)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/AnalysisServiceTest.java` (AnalysisServiceTest — unit tests for all analysis operations)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/integration/AnalysisIntegrationTest.java` (AnalysisIntegrationTest — integration tests for analysis endpoints)
-- IMPLEMENTS → GITHUB_ISSUE `autarchy-ai/Ground-Control#347` (GC-L002: MCP Analysis Tools)

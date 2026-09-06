@@ -21,14 +21,22 @@ Point-in-time compliance assessments are immediately stale. Continuous monitorin
 
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (lib.js)
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (index.js)
+- IMPLEMENTS → GITHUB_ISSUE `#763` (GC-I004: Continuous Compliance Monitoring)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - TESTS → TEST `mcp/ground-control/gc-analyze.test.js` (gc-analyze.test.js)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/grcanalysis/service/ComplianceMonitoringAnalysisService.java` (ComplianceMonitoringAnalysisService.java)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/grcanalysis/service/GrcAnalysisService.java` (GrcAnalysisService.java)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/grcanalysis/GrcAnalysisController.java` (GrcAnalysisController.java)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (lib.js)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (index.js)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/grcanalysis/ComplianceMonitoringAnalysisServiceTest.java` (ComplianceMonitoringAnalysisServiceTest.java)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/grcanalysis/ComplianceMonitoringResponseTest.java` (ComplianceMonitoringResponseTest.java)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/GrcAnalysisControllerTest.java` (GrcAnalysisControllerTest.java)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/integration/grcanalysis/GrcAnalysisIntegrationTest.java` (GrcAnalysisIntegrationTest.java)
-- IMPLEMENTS → GITHUB_ISSUE `#763` (GC-I004: Continuous Compliance Monitoring)

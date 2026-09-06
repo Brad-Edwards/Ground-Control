@@ -251,12 +251,18 @@ export async function runWatchSonarAnalysis({
     };
   }
 
+  // Read at call time and passed only in the Authorization header - never argv,
+  // telemetry, an export, or a returned envelope (ADR-036). The value reaches
+  // process.env from the launch directory's .env and nowhere else
+  // (lib/server-env.js), so the message names that one file: an operator, not
+  // the agent, repairs this state, and it is read at startup (issue #1562).
   const token = process.env.SONAR_TOKEN;
   if (typeof token !== "string" || token.length === 0) {
     return {
       ok: false,
       error: "sonar_watch_token_missing",
-      message: "SONAR_TOKEN env var is not set on the MCP host",
+      message: "SONAR_TOKEN is not set on the MCP host. Set it in the launch directory's .env, "
+        + "then restart the MCP server; the file is read at startup.",
       pr_number: prNumber,
     };
   }

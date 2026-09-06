@@ -22,10 +22,19 @@ Findings are the output of every GRC activity. Without a unified finding entity 
 ## Traceability
 
 - IMPLEMENTS → GITHUB_ISSUE `#279` (GC-V001: Finding Entity)
+- IMPLEMENTS → ADR `architecture/adrs/038-finding-entity-boundary.md`
+- IMPLEMENTS → PULL_REQUEST `#903` (Add Finding entity (GC-V001) with cross-aggregate link integrity)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/findings/model/Finding.java`
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/findings/service/FindingService.java`
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/findings/FindingController.java`
-- IMPLEMENTS → ADR `architecture/adrs/038-finding-entity-boundary.md`
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/FindingTest.java`
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/FindingStatusPropertyTest.java`
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/FindingServiceTest.java`
@@ -33,4 +42,3 @@ Findings are the output of every GRC activity. Without a unified finding entity 
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/FindingGraphProjectionContributorTest.java`
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/FindingControllerTest.java`
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/FindingLinkControllerTest.java`
-- IMPLEMENTS → PULL_REQUEST `#903` (Add Finding entity (GC-V001) with cross-aggregate link integrity)

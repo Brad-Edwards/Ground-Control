@@ -13,6 +13,8 @@ import {
   ASYNC_JOB_IDEMPOTENCY_KEY_MAX,
   ASYNC_JOB_IDEMPOTENCY_KEY_RE,
   PR_BODY_CHANGE_CLASSES,
+  PR_BODY_LANES,
+  PR_BODY_PRE_PUSH_REVIEW_STATES,
   PR_BODY_SUMMARY_MAX,
   runAssertCompletion,
   runCodexReviewCycle,
@@ -241,7 +243,7 @@ function _registerGcAssertCompletion(server) {
 function _registerGcRenderPrBody(server) {
   server.tool(
     "gc_render_pr_body",
-    "Render a repo-neutral PR body that satisfies the Ground Control policy gates (template sections, requirement UIDs, ADR impact, two semantic Ground Control Checks, IMPLEMENTS/TESTS markers, no defer language). Returns the rendered body string to pass as the `body` input to `gc_create_synchronized_implement_pr` — the only canonical PR-write path (it revalidates body shape, repository identity, branch synchronization, and title immediately before the privileged GitHub write, per ADR-027); do not hand it to `gh pr create` from an agent sandbox. Attestations are repo-neutral and never publish configured command strings (issue #1199). change_class shapes a few cells: doc-only marks integration tests / changelog fragment N/A; source requires changelog fragment; source+migration adds a repo-neutral migration-verification reminder (no framework or test-class names). In `release-please` changelog_mode no per-PR changelog fragment is required or accepted (Release Please owns CHANGELOG.md, #1399). Pass dev_start_gate when the repo's configured PR policy requires a ## Dev-Start Gate section. A GitHub update gives exactly what's needed — not more, not less. No restating context the reader already has, no padding sections, no hedging prose.",
+    "Render a repo-neutral PR body that satisfies the Ground Control policy gates (template sections, requirement UIDs, ADR impact, two semantic Ground Control Checks, IMPLEMENTS/TESTS markers, no defer language). Returns the rendered body string to pass as the `body` input to `gc_create_synchronized_implement_pr` — the only canonical PR-write path (it revalidates body shape, repository identity, branch synchronization, and title immediately before the privileged GitHub write, per ADR-027); do not hand it to `gh pr create` from an agent sandbox. Attestations are repo-neutral and never publish configured command strings (issue #1199). change_class shapes a few cells: doc-only marks integration tests / changelog fragment N/A; source requires changelog fragment; source+migration adds a repo-neutral migration-verification reminder (no framework or test-class names). In `release-please` changelog_mode no per-PR changelog fragment is required or accepted (Release Please owns CHANGELOG.md, #1399). Pass dev_start_gate when the repo's configured PR policy requires a ## Dev-Start Gate section. `lane` and `pre_push_reviews` pick which pre-push review attestation the Ground Control Checks section carries (issue #1551): both default to the /implement shape (`implement` / `completed`), and a `pre_push_reviews` of not_run — legal only with `lane` quickfix, whose reviewers are off unless the user passed --review — renders the attestation that they did not run. The attestation is never omitted, only made accurate. A GitHub update gives exactly what's needed — not more, not less. No restating context the reader already has, no padding sections, no hedging prose.",
     {
       repo_path: z.string(),
       issue_number: z.number().int().positive(),
@@ -266,8 +268,10 @@ function _registerGcRenderPrBody(server) {
         outcome: z.enum(["updated", "verified_unchanged", "not_updated_authorized"]),
         rationale: z.string().optional(),
       }).optional(),
+      lane: z.enum(PR_BODY_LANES).optional(),
+      pre_push_reviews: z.enum(PR_BODY_PRE_PUSH_REVIEW_STATES).optional(),
     },
-    async ({ repo_path, issue_number, change_class, requirement_uids, adr_refs, summary, changes, traceability, changelog_fragment, changelog_mode, test_notes, dev_start_gate, documentation_outcome }) => {
+    async ({ repo_path, issue_number, change_class, requirement_uids, adr_refs, summary, changes, traceability, changelog_fragment, changelog_mode, test_notes, dev_start_gate, documentation_outcome, lane, pre_push_reviews }) => {
       try {
         return ok(JSON.stringify(await runRenderPrBody({
           repoPath: repo_path,
@@ -283,6 +287,8 @@ function _registerGcRenderPrBody(server) {
           testNotes: test_notes ?? null,
           devStartGate: dev_start_gate ?? null,
           documentation_outcome: documentation_outcome ?? null,
+          lane: lane ?? null,
+          prePushReviews: pre_push_reviews ?? null,
         }), null, 2));
       } catch (e) { return err(e); }
     },

@@ -21,13 +21,21 @@ The FAIR Cyber Risk Scenario Taxonomy makes scenario quality a first-class conce
 
 ## Traceability
 
+- DOCUMENTS → DOCUMENTATION `architecture/notes/fair-risk-scenario-taxonomy-clause-map.md` (FAIR Risk Scenario Taxonomy Clause Map)
+- IMPLEMENTS → PULL_REQUEST `1050` (PR #1050 — reshape RiskScenario to FAIR-CRST axes)
+- IMPLEMENTS → GITHUB_ISSUE `#720` (GC-T013: FAIR Risk Scenario Taxonomy Support)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/model/RiskScenario.java` (RiskScenario entity (FAIR-CRST scoping aggregate))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/riskscenarios/RiskScenarioRequest.java` (RiskScenarioRequest DTO (@Size(min=10) structural quality gate))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/riskscenarios/RiskScenarioResponse.java` (RiskScenarioResponse (derived fairSentence projection))
 - IMPLEMENTS → CODE_FILE `backend/src/main/resources/db/migration/V127__fair_risk_scenario_rename_columns.sql` (V127 Flyway migration (FAIR-CRST column renames and vulnerability drop))
-- DOCUMENTS → DOCUMENTATION `architecture/notes/fair-risk-scenario-taxonomy-clause-map.md` (FAIR Risk Scenario Taxonomy Clause Map)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/RiskScenarioControllerTest.java` (RiskScenarioControllerTest (fairSentence projection + @Size + vulnerability-drop))
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/RiskScenarioServiceTest.java` (RiskScenarioServiceTest (fairSentence computation + axis update path))
 - TESTS → TEST `mcp/ground-control/gc-risk-scenario.test.js` (MCP gc_risk_scenario adapter tests (FAIR-CRST snake/camel mapping + vulnerability drop))
-- IMPLEMENTS → PULL_REQUEST `1050` (PR #1050 — reshape RiskScenario to FAIR-CRST axes)
-- IMPLEMENTS → GITHUB_ISSUE `#720` (GC-T013: FAIR Risk Scenario Taxonomy Support)

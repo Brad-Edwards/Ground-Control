@@ -22,8 +22,16 @@ Captured from Reactor auto-research requirements analysis (/home/atomik/src/reac
 ## Traceability
 
 - DOCUMENTS → GITHUB_ISSUE `1029` (Research adapter/plugin boundary)
-- IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/projects/model/ProjectType.java` (ProjectType enum — RESEARCH literal distinguishes literature-based work from other project types)
 - DOCUMENTS → ADR `architecture/adrs/056-research-project-type-and-intake.md` (ADR-056 — Research project type and intake metadata)
 - IMPLEMENTS → PULL_REQUEST `1044` (PR #1044 — Research project type + intake metadata)
-- TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/integration/MigrationSmokeTest.java` (MigrationSmokeTest — V131 project.type NOT NULL column probe + V132 research_intake_audit column shape probes)
 - DOCUMENTS → GITHUB_ISSUE `999` (Research project type and intake metadata)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
+- IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/projects/model/ProjectType.java` (ProjectType enum — RESEARCH literal distinguishes literature-based work from other project types)
+- TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/integration/MigrationSmokeTest.java` (MigrationSmokeTest — V131 project.type NOT NULL column probe + V132 research_intake_audit column shape probes)

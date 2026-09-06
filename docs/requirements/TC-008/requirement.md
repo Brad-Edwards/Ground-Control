@@ -22,13 +22,21 @@ Test runs capture execution results against a specific build/environment. All be
 ## Traceability
 
 - IMPLEMENTS → GITHUB_ISSUE `#675` (TC-008: Test Run Entity)
+- IMPLEMENTS → ADR `ADR-049` (Test Run Entity)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/testcases/model/TestRun.java` (TestRun root entity)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/testcases/model/TestRunTesterAssignment.java` (TestRunTesterAssignment child entity)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/testcases/model/TestRunCaseResult.java` (TestRunCaseResult child entity (snapshot))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/testcases/service/TestRunService.java` (TestRunService (CRUD, snapshot-on-create, testers, results))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/testcases/TestRunController.java` (TestRunController REST surface /api/v1/test-runs/**)
 - IMPLEMENTS → CODE_FILE `backend/src/main/resources/db/migration/V110__create_test_run.sql` (TestRun root Flyway migration)
-- IMPLEMENTS → ADR `ADR-049` (Test Run Entity)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/testcases/state/TestRunStatusTest.java` (TestRunStatus transition matrix)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/testcases/model/TestRunTest.java` (TestRun entity invariants + status transitions)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/testcases/model/TestRunCaseResultTest.java` (TestRunCaseResult snapshot + status invariants)

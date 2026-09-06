@@ -472,3 +472,37 @@ the first-pass-yield and iterations-to-green denominators so an outage never
 reads as rework. Cap evaluators, the per-issue cycle counter, the verbatim
 findings record, the zero-deferral rule, and the human `override_cap` escape are
 unchanged. See ADR-029 (2026-07-29 amendment) for the obligation side.
+
+**2026-09-06 (issue #1557, review scope versus repository evidence).** The
+authoritative diff continues to define what Codex reviews. A reviewer must not
+re-derive that diff, review a file outside it, attribute another slice's
+coverage to itself, or anchor a finding anywhere except a path and right-side
+line in its supplied diff. Repository reads answer a separate question: the
+working tree at the invocation root is readable evidence for factual claims
+such as whether a path exists, what a canonical helper currently does, or what
+an ADR says. Both the core and security prompts must require that verification
+before asserting a repository fact. Evidence reads cannot enlarge review scope
+or replace the server-derived `review_coverage` contract.
+
+Read-only inspection is limited to the current repository and the selected
+review corpus. It does not authorize reads of untracked or ignored file bodies,
+which remain outside the staging consent boundary established by issue #1414.
+It also does not authorize GitHub, network, Git, or filesystem mutations. The
+review prompt may permit repo-scoped read commands needed to inspect or search
+files, so it must not retain a contradictory blanket ban on every shell-backed
+read. This is behavioral guidance, not a claim of host confidentiality:
+`codex exec -C <repo> --sandbox read-only` still selects a working directory and
+prevents writes but does not confine reads to that directory. The existing
+minimal `codexEngineEnv`, prompt-data delimiters, bounded process lifecycle,
+output validation, sensitive-content publication filter, and MCP-owned GitHub
+writes remain the security boundaries.
+
+For sliced reviews, the whole-change context adds a separate name-status block
+from the same `computeReviewDiff` selectors as the authoritative diff and
+numstat manifest. It may establish only the change kind (`A`, `M`, `D`, `R`,
+and related Git statuses), not file behavior. The existing numstat string stays
+byte-compatible because `parseNumstatManifest` and the review-cap disposition
+scorer consume it; name-status is additive, not a replacement or a second
+parsed schema. `diff_mode`, slice planning, finding envelopes, coverage
+validation, cycle counters, durable records, async jobs, and telemetry are
+unchanged, so ADR-036 does not move.

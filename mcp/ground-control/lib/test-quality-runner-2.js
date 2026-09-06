@@ -12,8 +12,33 @@ import { ensureGitRepo, getCurrentBranchName } from "./grc-legacy-compat-4.js";
 import { readVocabularyForReview } from "./plan-posting.js";
 import { getRepoGroundControlContext } from "./repo-vocabulary-2.js";
 import { rejectReservedMarkerSequence } from "./repo-vocabulary.js";
+import { REVIEW_ENGINE_AUTH_MISSING } from "./runtime-primitives.js";
 import { buildTestQualityReviewPrompt, parseTestQualityReviewFindings } from "./test-quality-prompt.js";
 import { ReviewerCapConfigError, TEST_QUALITY_REVIEW_HARD_CAP, buildTestQualityReviewFindingsComment, evaluateTestQualityReviewCycleCap, findChangedTestFiles, postFindingsRecordAndCycleMarker, readPriorTestQualityReviewCycleCount } from "./test-quality-runner.js";
+
+/**
+ * Split a `claude` invocation failure into the two things it can be.
+ *
+ * Undeclared review-engine auth is a provisioning fault the operator repairs in
+ * the launch directory's `.env`; it gets a code lib/review-reattempt.js does not
+ * classify as a free non-verdict retry, because re-running it cannot change the
+ * outcome (issue #1562). Everything else keeps the engine-failure code and its
+ * one free retry.
+ */
+export function testQualityReviewEngineFailure(err) {
+  if (err?.code === REVIEW_ENGINE_AUTH_MISSING) {
+    return {
+      error: "test_quality_review_auth_missing",
+      message: err.message,
+      next_action: "provision_review_engine_auth_in_launch_root_env",
+    };
+  }
+  return {
+    error: "test_quality_review_engine_failed",
+    message: `claude CLI invocation failed: ${err.message}`,
+    next_action: "fix_engine_issue_and_retry",
+  };
+}
 
 export async function runTestQualityReview({
   repoPath,
@@ -214,11 +239,9 @@ export async function runTestQualityReview({
   } catch (err) {
     return {
       ok: false,
-      error: "test_quality_review_engine_failed",
-      message: `claude CLI invocation failed: ${err.message}`,
+      ...testQualityReviewEngineFailure(err),
       issue_number: effectiveIssue,
       branch: branchName,
-      next_action: "fix_engine_issue_and_retry",
       finding_count: 0,
       findings: [],
     };

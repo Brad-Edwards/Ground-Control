@@ -23,6 +23,14 @@ MCP is the primary interface for AI agents. Requirements management must be full
 
 - IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (MCP Server - Requirements CRUD tools)
 - IMPLEMENTS → CODE_FILE `mcp/ground-control/lib.js` (MCP lib — REST API client functions for requirements CRUD)
+- IMPLEMENTS → GITHUB_ISSUE `autarchy-ai/Ground-Control#346` (GC-L001: MCP Requirements CRUD)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/admin/RequirementController.java` (RequirementController — REST endpoints backing MCP CRUD tools)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/integration/RequirementControllerIntegrationTest.java` (Requirements REST CRUD integration tests (create/get/getByUid/update/transition/archive) backing the MCP requirements tools)
-- IMPLEMENTS → GITHUB_ISSUE `autarchy-ai/Ground-Control#346` (GC-L001: MCP Requirements CRUD)

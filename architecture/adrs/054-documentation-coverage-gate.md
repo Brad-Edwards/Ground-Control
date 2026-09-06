@@ -8,6 +8,71 @@ accepted
 
 2026-05-23
 
+> **Sync note for issue #1562 (2026-09-06, launch-directory environment authority):** The MCP server
+> reads Ground Control's variables from `<launch directory>/.env` and nowhere else - no machine-level
+> or user-level file, and no fallback to the ambient environment. `mcp/ground-control/index.js` became
+> an environment bootstrap that binds the file before dynamically importing
+> `mcp/ground-control/server-runtime.js`, so an environment-derived default cannot evaluate first. The
+> `mcp_tool` surface class therefore anchors on both paths; without that addition the surface would
+> keep matching a file the tool registrations had left. The `outcome_required` mapping, the Vale rule
+> set, `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no new `docs/DOC_STYLE.md` style
+> rule is established.
+
+> **Sync note for issue #946 (2026-09-06, MCP-host environment provisioning), superseded by issue
+> #1562 (2026-09-06):** #946 had the MCP server resolve its optional environment from an inherited
+> non-empty value, then `.env` in the launch directory, then a per-host `~/.config/ground-control/env`.
+> #1562 removed the machine-level file and the ambient fallback: `<launch directory>/.env` is now the
+> only source of Ground Control's variables. What survives from #946 is the loader living in `lib/`
+> rather than the entry point, and the single `parseEnvFileLine` grammar; the loader is now
+> `mcp/ground-control/lib/server-env.js`. ADR-036 records both decisions.
+
+> **Sync note for issue #650 (2026-09-05, post-re-platform documentation reconciliation):**
+> The `config_parser` surface's `doc_targets` named
+> `architecture/adrs/027-ground-control-yaml-context-contract.md`, an ADR filename that has
+> never existed. A doc target that cannot resolve can never be satisfied, so that surface's
+> documentation requirement had silently stopped being enforceable. The path is corrected to
+> `architecture/adrs/027-agent-neutral-implement-workflow-packaging.md`, and a new case in
+> `mcp/ground-control/lib.acquireknowledgelock.test.js` asserts every file-shaped `doc_targets`
+> entry resolves against the real tree, so the class of defect cannot recur silently. The same
+> change retires the documents whose subject the #1500 re-platform removed (`docs/API.md`, the
+> `docs/deployment/`, `docs/frontend/`, and `docs/operations/` trees, the console design
+> specification, the `/deploy` skill, the dead `tools/ground_control/` backend clients, and the
+> `pack-registry-sync` workflow), and corrects
+> `.github/branch-protection-baseline.json` plus `CI_STRICTNESS_REQUIRED_CONTEXTS`, which still
+> required five contexts no workflow produces. The surface classes themselves, the
+> `outcome_required` mapping, the Vale rule set, `tools/install-vale.sh`, and `.vale.ini` are
+> unchanged, and no new `docs/DOC_STYLE.md` style rule is established; `docs/DOC_STYLE.md`
+> changes only to drop dead references and to mark its per-issue precedent log historical.
+
+> **Sync note for issue #633 follow-up (2026-09-04, /integrate lane restored):** #1506 removed
+> `mcp/ground-control/gc-integrate.js` and its `gc-integrate/*` modules as dead code after checking
+> for callers in JS and finding none; the caller is `skills/integrate/SKILL.md`, which names tools in
+> prose, so the sweep left GC-O011 (ACTIVE, MUST) with no entry point. The implementation and its
+> nine test suites are restored unchanged, registered through a new `mcp/ground-control/tools/integrate.js`,
+> and `mcp/ground-control/skill-tool-registration-contract.test.js` now asserts every `gc_*` name in
+> any skill is a registered tool, so the prose-to-registration boundary is checked. The documentation
+> coverage classifier, its surface classes, the `outcome_required` mapping, the Vale rule set,
+> `tools/install-vale.sh`, and `.vale.ini` are unchanged, and no `docs/DOC_STYLE.md` style rule is
+> established.
+
+> **Sync note for issue #633 (2026-09-04, MCP server identity and documentation):**
+> Three corrections to how the MCP server describes itself. (1) `mcp/ground-control/index.js` reads
+> the version it advertises in the `initialize` handshake from `mcp/ground-control/package.json`
+> instead of a hard-coded `1.0.0` literal, so a tool-surface change can no longer ship without a
+> semantic version bump; the package moved to 1.1.0 and `server-version.test.js` asserts the
+> handshake matches it. (2) The PR-body renderer's pre-push review attestation became lane-aware:
+> `gc_render_pr_body` takes `lane` and `pre_push_reviews`, and `_check_ground_control_checks` accepts
+> either accurate attestation, so a `/quickfix` run with the reviewers off no longer claims they
+> completed. The attestation stays mandatory. The PR-body policy surface moved to
+> `mcp/ground-control/lib/pr-body-policy.js` to keep `runtime-primitives.js` under the 500-LOC gate.
+> (3) `README.md` and the `index.js` environment header were rewritten against the registered
+> surface; both still described the REST backend deleted by #1500 and the entity tools removed by
+> #1506 - a required `GC_BASE_URL`, bearer tokens for `/api/v1/**`, the `GC_MCP_ADMIN` opt-in (read
+> nowhere in the server), `gc_query`, and roughly 80 unregistered `gc_*` tools. None of this is a
+> documentation-coverage extension: the classifier in `mcp/ground-control/lib/doc-coverage.js`, its
+> surface classes, the `outcome_required` mapping, the Vale rule set, `tools/install-vale.sh`, and
+> `.vale.ini` are unchanged, and no `docs/DOC_STYLE.md` style rule is established.
+
 > **Sync note for issue #871 (2026-08-14, strict Sonar enforcement):** The SonarCloud workflow
 > now runs the repository's zero-open-issues assertion after the hosted quality gate, including
 > when that gate has already failed, and `run_sonar_strictness_contract` prevents either boundary

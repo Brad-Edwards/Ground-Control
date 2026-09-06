@@ -22,6 +22,15 @@ Supported by Xray, Zephyr Scale, PractiTest, and qTest Scenario. BDD format brid
 ## Traceability
 
 - IMPLEMENTS → ADR `architecture/adrs/042-test-case-bdd-gherkin-format.md` (ADR-042: BDD/Gherkin authored format for test cases)
+- IMPLEMENTS → GITHUB_ISSUE `671` (TC-004: BDD/Gherkin Test Case Format)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/testcases/state/TestCaseFormat.java` (TestCaseFormat enum (STEP_BASED, GHERKIN))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/testcases/model/TestCaseGherkin.java` (TestCaseGherkin entity (one-per-parent Gherkin source))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/testcases/service/GherkinValidator.java` (GherkinValidator (parser + size/scenario/examples caps))
@@ -35,4 +44,3 @@ Supported by Xray, Zephyr Scale, PractiTest, and qTest Scenario. BDD format brid
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/TestCaseGherkinControllerTest.java` (TestCaseGherkinControllerTest — @WebMvcTest controller slice)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/TestCaseFormatTest.java` (TestCaseFormatTest — enum shape)
 - TESTS → TEST `mcp/ground-control/test-case-tools.test.js` (MCP test-case adapter tests — gc_test_case gherkin-* actions + TEST_CASE_FORMATS enum mirror)
-- IMPLEMENTS → GITHUB_ISSUE `671` (TC-004: BDD/Gherkin Test Case Format)

@@ -23,6 +23,15 @@ FAIR, NIST, and ISO-compatible workflows all need a persistent management record
 
 - IMPLEMENTS → GITHUB_ISSUE `#256` (GC-T001: Risk Entity)
 - DOCUMENTS → GITHUB_ISSUE `823` (Verify GC-T001 (Risk Register Record): clause-by-clause audit, transition DRAFT→ACTIVE)
+- DOCUMENTS → DOCUMENTATION `architecture/notes/risk-register-record-preflight.md` (GC-T001 Codex architecture preflight note)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/model/RiskRegisterRecord.java` (RiskRegisterRecord entity)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/state/RiskRegisterStatus.java` (RiskRegisterStatus lifecycle enum)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/service/RiskRegisterRecordService.java` (RiskRegisterRecordService)
@@ -36,4 +45,3 @@ FAIR, NIST, and ISO-compatible workflows all need a persistent management record
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/RiskRegisterRecordControllerTest.java` (RiskRegisterRecordControllerTest)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/RiskRegisterRecordResponseTest.java` (RiskRegisterRecordResponseTest)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/RiskRegisterRecordServiceTest.java` (RiskRegisterRecordServiceTest)
-- DOCUMENTS → DOCUMENTATION `architecture/notes/risk-register-record-preflight.md` (GC-T001 Codex architecture preflight note)

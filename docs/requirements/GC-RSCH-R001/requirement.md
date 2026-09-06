@@ -25,6 +25,14 @@ Captured from Reactor auto-research requirements analysis (/home/atomik/src/reac
 - DOCUMENTS → GITHUB_ISSUE `1007` (Research protocol planning artifact)
 - DOCUMENTS → ADR `architecture/adrs/056-research-project-type-and-intake.md` (ADR-056 — Research project type and intake metadata (forward-looking: R001 lifecycle phases delivered by subsequent issues on top of this intake foundation))
 - DOCUMENTS → GITHUB_ISSUE `999` (Research project type and intake metadata)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/research/model/ResearchRunStage.java` (ResearchRunStage — closed eight-stage research lifecycle enum)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/research/ResearchRunServiceTest.java` (ResearchRunServiceTest — stage-sequence advance tests)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/integration/ResearchRunLifecycleIntegrationTest.java` (SOURCE_SEARCH blocked-then-allowed protocol-plan gate (distinct stages, #1007))

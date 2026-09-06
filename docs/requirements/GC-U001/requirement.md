@@ -21,9 +21,18 @@ Audit programs operate on controls, findings, evidence, and risk context. Explic
 
 ## Traceability
 
+- DOCUMENTS → ADR `ADR-048` (Audit Entity Boundary)
+- IMPLEMENTS → GITHUB_ISSUE `#275` (GC-U001: Audit Entity)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `domain/audits` (Audit domain aggregate (GC-U001))
 - IMPLEMENTS → CODE_FILE `api/audits` (Audit REST controllers (/api/v1/audits/**))
-- DOCUMENTS → ADR `ADR-048` (Audit Entity Boundary)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/AuditTest.java` (AuditTest)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/AuditStatusPropertyTest.java` (AuditStatusPropertyTest)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/AuditServiceTest.java` (AuditServiceTest)
@@ -32,4 +41,3 @@ Audit programs operate on controls, findings, evidence, and risk context. Explic
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/AuditControllerTest.java` (AuditControllerTest)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/AuditLinkControllerTest.java` (AuditLinkControllerTest)
 - TESTS → TEST `mcp/ground-control/gc-audit.test.js`
-- IMPLEMENTS → GITHUB_ISSUE `#275` (GC-U001: Audit Entity)

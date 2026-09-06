@@ -36,7 +36,7 @@ async function withShimPath(binDir, fn) {
 // ---------------------------------------------------------------------------
 //
 // These exercise the real byte cap end to end: the fixture repo's uncommitted
-// diff genuinely exceeds DEFAULT_CODEX_REVIEW_MAX_DIFF_BYTES, so the runner
+// diff genuinely exceeds getDefaultCodexReviewMaxDiffBytes(), so the runner
 // takes the manifest path without any seam being poked. The codex shim records
 // every prompt it is given, which is what lets these assert the property the
 // issue is about — that the server supplied the diff rather than trusting the

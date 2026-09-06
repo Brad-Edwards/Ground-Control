@@ -39,9 +39,12 @@ jobs:
           fetch-depth: 0
       - name: Show Python version
         run: python3 --version
-      - name: Install pre-commit
+      # PyYAML backs the required-status-context gate (GC-P030) and the CI
+      # workflow-shape tests. It arrives transitively with pre-commit, but a
+      # gate must not depend on another tool's dependency graph.
+      - name: Install pre-commit and policy dependencies
         run: |
-          python3 -m pip install --user pre-commit
+          python3 -m pip install --user pre-commit PyYAML
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       # Hook environments (including the gitleaks binary) are rebuilt on every
       # run without this, which is most of the hygiene step's wall time. The key

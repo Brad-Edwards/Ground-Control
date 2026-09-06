@@ -21,10 +21,18 @@ A graph-native risk model is not usable if humans cannot see and work the scenar
 
 ## Traceability
 
+- DOCUMENTS → GITHUB_ISSUE `#747` (GC-Q009: Risk Scenario Workspace)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - TESTS → TEST `frontend/src/pages/__tests__/risk-scenario-workspace.test.tsx` (Risk Scenario Workspace page test)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/riskscenarios/service/RiskScenarioWorkspaceService.java` (RiskScenarioWorkspaceService)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/riskscenarios/RiskScenarioWorkspaceController.java` (RiskScenarioWorkspaceController)
 - IMPLEMENTS → CODE_FILE `frontend/src/pages/risk-scenario-workspace.tsx` (Risk Scenario Workspace page)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/RiskScenarioWorkspaceServiceTest.java` (RiskScenarioWorkspaceServiceTest)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/RiskScenarioWorkspaceControllerTest.java` (RiskScenarioWorkspaceControllerTest)
-- DOCUMENTS → GITHUB_ISSUE `#747` (GC-Q009: Risk Scenario Workspace)

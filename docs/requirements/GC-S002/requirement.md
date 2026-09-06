@@ -23,6 +23,14 @@ IAM evidence is required by nearly every compliance framework (SOC 2 CC6.1, ISO 
 
 - IMPLEMENTS → GITHUB_ISSUE `#211` (GC-S002: IAM Evidence Adapter Specification)
 - DOCUMENTS → DOCUMENTATION `docs/architecture/ARCHITECTURE.md` (ARCHITECTURE.md — GC-S002 IAM evidence adapter specification)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/evidence/collection/iam/IamEvidenceSpecification.java` (IamEvidenceSpecification — GC-S002 normative IAM adapter spec entry point)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/evidence/collection/iam/IamEvidenceProvider.java` (IamEvidenceProvider — GC-S002 IAM provider keys (Okta/Azure AD/AWS IAM))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/evidence/collection/iam/IamEvidenceFamily.java` (IamEvidenceFamily — GC-S002 five evidence families as scope types/schemas)

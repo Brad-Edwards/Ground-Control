@@ -117,7 +117,7 @@ under "Failure modes" below.
 |               --permission-mode bypassPermissions |
 |               --allowedTools "Read Glob Grep"     |
 |        with prompt on stdin                       |
-|        with ANTHROPIC_API_KEY stripped from env   |
+|        with auth declared in the launch-dir .env  |
 |   6. parse JSON envelope -> findings[]            |
 |   7. post durable findings record to issue thread |
 |   8. post cycle marker to issue thread            |
@@ -132,46 +132,47 @@ under "Failure modes" below.
 +--------------------+
 ```
 
-## Authentication and the env-var strip
+## Authentication
 
-The exec wrapper strips `ANTHROPIC_API_KEY` from the subprocess env
-before launching `claude --print`. This is intentional:
+The review engine's auth is declared in `<launch directory>/.env`, like every
+other Ground Control variable. It is never inherited from the launcher and never
+read from a user-level file (issue #1562). Declare exactly one mode:
 
-- The host environment may have `ANTHROPIC_API_KEY` set (for example, from a
-  shell profile, a previous integration, or a CI runner).
-- When `claude` sees that env var, it uses it preferentially over the
-  OAuth session the host human signed into.
-- The env-var-anchored account may have a different billing balance
-  than the OAuth account - in practice, the env-var account is often
-  empty (set up but never funded), while the OAuth account is the one
-  the user actually uses.
-- Stripping the env var forces `claude` onto the OAuth session - the
-  canonical user-driven auth path. The same credentials power the
-  /implement parent run; the test-quality review sub-call routes
-  through the same billing account.
+| Mode | Declare |
+|---|---|
+| Vertex AI | `CLAUDE_CODE_USE_VERTEX`, plus `CLOUD_ML_REGION` and a project variable |
+| Amazon Bedrock | `CLAUDE_CODE_USE_BEDROCK`, plus the AWS region/credential variables |
+| A dedicated Claude Code profile | `CLAUDE_CONFIG_DIR` |
+| Direct API | `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` |
+
+With none declared, `reviewEngineEnv` refuses before spawning `claude` and the
+station returns `test_quality_review_auth_missing`, naming the alternatives and
+the file. That is a provisioning fault the operator repairs, not a station
+failure, so it does not consume the free non-verdict retry in
+`lib/review-reattempt.js`.
+
+`ANTHROPIC_API_KEY` is stripped from the subprocess environment **only when
+another auth path is declared**. A stray key must not override an explicit
+Vertex, Bedrock, or profile mode, but the key is legitimate auth when it is all
+that is declared, so an unconditional strip would leave the engine with nothing.
 
 Concretely the wrapper is:
 
 ```js
-const childEnv = { ...process.env };
-delete childEnv.ANTHROPIC_API_KEY;
+const childEnv = reviewEngineEnv();
 await execFileWithInput("claude", args, { input: prompt, env: childEnv, ... });
 ```
 
 Operator implications:
 
-- The host running the MCP server (which is the same host running
-  /implement, since the MCP server is a local subprocess) must be
-  logged in to `claude` via OAuth. Run `claude login` once on the
-  host; the credentials persist.
-- If an operator genuinely wants a separate billing account via
-  `ANTHROPIC_API_KEY`, they must remove the env-var strip in
-  `runSingleClaudeTestQualityReview` and ensure the env-var account
-  has credits.
-- `--bare` mode is NOT used. `--bare` forces ANTHROPIC_API_KEY-only
-  auth (per the CLI's help text: "OAuth and keychain are never read")
-  which contradicts the strip. The MCP wrapper runs without `--bare`
-  so OAuth applies.
+- Provisioning is per launch directory. A repository whose `.env` declares no
+  auth does not get the host's; that is the point, and the refusal names what to
+  add.
+- The file is read once at server start, so a new or rotated value needs a
+  restart.
+- `--bare` mode is NOT used. `--bare` forces `ANTHROPIC_API_KEY`-only auth (per
+  the CLI's help text: "OAuth and keychain are never read"), which would
+  contradict the declared-mode contract above.
 
 ## Model selection
 
@@ -257,7 +258,8 @@ caller does not need to do follow-up `gh issue comment` calls.
 | `test_quality_review_issue_unresolved`    | No `issue_number` passed and branch lacks a numeric prefix                                      | `pass_issue_number_or_use_numeric_branch_prefix` |
 | `test_quality_review_cap_reached`         | Cycle 4 attempted without `override_cap=true`                                                   | `post_summary_and_escalate_to_user`              |
 | `test_quality_review_override_missing_reason` | `override_cap=true` with empty `override_reason`                                              | (none - fix input and retry)                     |
-| `test_quality_review_engine_failed`       | `claude --print` exited non-zero (transport error, OAuth not logged in, network)                | `fix_engine_issue_and_retry`                     |
+| `test_quality_review_engine_failed`       | `claude --print` exited non-zero (transport error, network, dead child)                         | `fix_engine_issue_and_retry`                     |
+| `test_quality_review_auth_missing`        | No review-engine auth mode is declared in the launch directory's `.env` (issue #1562)           | `provision_review_engine_auth_in_launch_root_env` |
 | `test_quality_review_parse_failed`        | `claude` returned non-JSON or JSON that doesn't satisfy the findings schema                     | `inspect_engine_output_and_retry`                |
 | `test_quality_review_record_rejected`     | Rendered findings record matched the sensitive-content guardrail                                | `scrub_findings_and_retry`                       |
 

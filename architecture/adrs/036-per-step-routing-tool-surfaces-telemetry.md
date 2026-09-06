@@ -749,3 +749,116 @@ paths; the `source+migration` reminder names no framework, ORM, or test class.
 solves the contract without a taxonomy that would immediately grow language and
 framework combinations. `.github/PULL_REQUEST_TEMPLATE.md` moves in lockstep. See
 `architecture/notes/repository-neutral-pr-body-rendering-preflight.md`.
+
+**2026-09-06 (issue #946, MCP-host provisioning and unevaluable Sonar gates).**
+Two corrections to the `gc_watch_sonar_analysis` surface described above. The
+routing table, the tier-to-model mapping, and the telemetry contract are
+unchanged.
+
+1. **Host provisioning is a server responsibility, not an inheritance
+   assumption.** This ADR recorded that `SONAR_TOKEN` is read at call time and
+   passed only in the Authorization header, but stated no requirement about how
+   the variable reaches the server. In practice it arrived by inheritance from
+   the launching agent process, which made the tool's correctness a property of
+   which runtime happened to host it: a Claude Code-spawned server inherits its
+   parent's full environment, a Codex-spawned one exactly eight variables, and
+   the token is not among them. `gc_watch_sonar_analysis` was therefore
+   unusable, deterministically, in every Codex-hosted run in a repository that
+   declares a `sonarcloud:` block. The server now resolves its optional
+   variables from declared sources it reads itself, in `lib/host-env.js`:
+   an inherited non-empty value, then `.env` in the launch directory, then the
+   per-host `~/.config/ground-control/env`. The per-host file covers what the
+   launch root cannot - a launcher whose working directory is not a repository
+   root, and provisioning one credential once per machine rather than once per
+   checkout. Both files are read at startup, so provisioning or rotation takes
+   effect on the next server start; the token's handling is otherwise unchanged
+   and it still never enters argv, telemetry, exports, or a returned envelope.
+   The credential is never placed in `.ground-control.yaml`, `.mcp.json`, a
+   Codex `config.toml`, or the MCP tool schema.
+
+2. **An unevaluable gate is not a rejecting verdict.** `gc_implement_mechanical
+   action="monitor"` folded every non-passing Sonar envelope into one branch and
+   answered all of them with `fix_sonar_findings_then_rerun_publish_and_monitor`.
+   For a missing host credential that named code defects no one had read, and
+   re-running was deterministic, so each attempt ended in an escalated execution
+   obligation. `lib/sonar-gate.js` now classifies the envelope on the same axis
+   `lib/ci-conclusion.js` applies to CI: an envelope the watcher could not
+   produce, and an analysis that never appeared within the watch window, are
+   `not_evaluable` and carry a repair that fits
+   (`provision_sonar_token_on_mcp_host_then_rerun_monitor`,
+   `diagnose_sonar_watch_failure_then_rerun_monitor`, or
+   `rerun_monitor_after_sonar_analysis_completes`). Only a gate that actually
+   returned open issues or hotspots remains `sonar_findings_open`, records a
+   `fail` station result, and consumes a Step 11 fix cycle. The failure envelope
+   gains `sonar_gate` (`not_evaluable` | `findings_open`) so the distinction is
+   machine-readable, and `skills/implement/steps/step-11-sonarcloud.md` gains the
+   branch it previously lacked.
+
+**2026-09-06 (issue #1562, the launch directory is the configuration scope).**
+This supersedes item 1 of the #946 amendment above. Item 2, the `not_evaluable`
+gate classification, stands unchanged and is unrelated to where variables come
+from.
+
+#946 was right that a tool's correctness must not be a property of whichever
+runtime happened to host the server, and wrong about the remedy. It kept the
+inherited environment as the highest-precedence source and added a per-host
+`~/.config/ground-control/env` behind the launch root. Both halves are removed.
+
+`<launch directory>/.env` is now the only source of Ground Control's
+configuration and credentials. No machine-level or user-level file is consulted
+for any purpose, and no owned variable falls back to the ambient environment,
+including the review engine's Claude auth - those are just variables and they
+belong in `.env` like every other variable. If a variable a tool needs is
+absent, the tool stops before its side effect and returns a bounded error naming
+the variable, or the accepted alternatives, and the file; the message never
+carries a value.
+
+The launch directory is the correct scope because it is a deliberate control.
+It is what lets separate checkouts draw on resources belonging to different
+projects or organizations, and what makes it possible to deploy Ground Control
+into a single-repo sandbox. A machine-level file assumes there is a machine
+level - an assumption about deployment topology Ground Control has no business
+making - and, ranked ahead of nothing, it silently substituted a global
+credential into a repository that deliberately has none.
+
+Three mechanisms carry the decision, in `mcp/ground-control/lib/server-env.js`:
+
+1. **One finite inventory** of the names Ground Control reads or deliberately
+   forwards. It is a provenance boundary, not a second validation schema -
+   `parseCodexTimeoutMs`, the review-size consumers, and `reviewEngineEnv`'s
+   auth-conflict rule keep owning their values. Inherited values for inventoried
+   names are deleted before anything is installed, so a missing, empty,
+   malformed, or unreadable file can never reactivate one.
+2. **Only inventoried keys are installed** from the file, so an unrelated `.env`
+   entry cannot replace `PATH` or `HOME`. The rest of the inherited environment
+   is left alone: the rule governs Ground Control's variables, not the ability of
+   `node`, `git`, `gh`, `codex`, and `claude` to execute.
+3. **The entry point binds before the runtime evaluates.** ESM hoists static
+   imports, so a source-order loader call below them is not an ordering
+   contract - which is why `DEFAULT_CODEX_REVIEW_PARALLEL` and
+   `DEFAULT_CODEX_REVIEW_MAX_DIFF_BYTES` permanently missed a value declared only
+   in `.env`. `index.js` is now an environment bootstrap that dynamically imports
+   `server-runtime.js`, and those two defaults resolve per call as
+   `getDefaultCodexTimeoutMs` already did (issue #1521).
+
+`REVIEW_ENGINE_ENV_FALLBACK` and its `~/.config/ground-control/review-env` read
+are gone with the same reasoning. `reviewEngineEnv` remains the single child
+environment builder for the test-quality reviewer and the disposition judge, and
+now refuses before spawning `claude` when no auth mode is declared. That refusal
+carries its own code so `lib/review-reattempt.js` does not spend a free
+non-verdict retry re-running a deterministic provisioning fault.
+
+`SONAR_TOKEN`'s handling is otherwise unchanged: read at call time, passed only
+in the Authorization header, never argv, telemetry, an export, or a returned
+envelope, and never placed in `.ground-control.yaml`, `.mcp.json`, a Codex
+`config.toml`, or a tool schema. Only its recovery message changed, to name one
+file instead of two. See
+`architecture/notes/launch-directory-env-authority-preflight.md`.
+
+Substituting the pull request's `SonarCloud Code Analysis` check-run for the
+server-side scrape was considered and rejected. A green check means the hosted
+quality gate did not fail; it does not mean the issue and hotspot lists are
+empty, which is what Step 11 requires before advancing. Accepting it would
+certify pull requests with INFO-through-BLOCKER findings unread, converting a
+fixable credential defect into a permanent reduction in the gate's coverage. See
+`architecture/notes/sonar-watcher-token-provisioning-preflight.md`.

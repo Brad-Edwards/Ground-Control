@@ -32,9 +32,16 @@ Continuous in-loop coverage handles change-sized scopes; the lane handles everyt
 ## Traceability
 
 - DOCUMENTS → GITHUB_ISSUE `1129` (Issue #1129: GC-GRC-016 on-demand arbitrary-scope assessment lane (gc_grc_assess))
+
+## Historical traceability
+
+Links below named artifacts the #1500 re-platform deleted. They are kept for
+provenance and are outside the parsed `## Traceability` section, so no tool reads
+them as live evidence. Do not infer current implementation from them.
+
+- DOCUMENTS → DOCUMENTATION `docs/API.md#grc-assessment-runs-gc-grc-016` (GRC assessment runs API reference)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/grcassessment/service/GrcAssessmentRunService.java` (GrcAssessmentRunService durable assessment lane orchestration)
 - IMPLEMENTS → CODE_FILE `mcp/ground-control/gc-grc-assess.js` (gc_grc_assess MCP adapter)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/grcassessment/GrcAssessmentRunServiceTest.java` (GrcAssessmentRunService behavior tests)
 - TESTS → TEST `mcp/ground-control/gc-grc-assess.test.js` (gc_grc_assess MCP adapter tests)
-- DOCUMENTS → DOCUMENTATION `docs/API.md#grc-assessment-runs-gc-grc-016` (GRC assessment runs API reference)
 - DOCUMENTS → DOCUMENTATION `skills/assess/SKILL.md` (Agent skill for the on-demand GRC assessment lane)

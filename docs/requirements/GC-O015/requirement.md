@@ -48,7 +48,7 @@ Maintainers repeatedly restate the same review contract when evaluating contribu
 - IMPLEMENTS → DOCUMENTATION `skills/review/SKILL.md` (Maintainer PR-review skill — prose contract for the lane)
 - IMPLEMENTS → GITHUB_ISSUE `1535` (Issue #1535: Add a maintainer-oriented pull request review skill)
 - IMPLEMENTS → PULL_REQUEST `1538` (PR #1538: maintainer pull request review lane — merged to dev)
-- CONSTRAINS → ADR `architecture/adrs/027-ground-control-yaml-context-contract.md` (ADR-027: the MCP server owns privileged gh/git side effects; the skill never runs them)
+- CONSTRAINS → ADR `architecture/adrs/027-agent-neutral-implement-workflow-packaging.md` (ADR-027: the MCP server owns privileged gh/git side effects; the skill never runs them)
 - CONSTRAINS → ADR `architecture/adrs/029-issue-thread-gate-model.md` (ADR-029: read-only maintainer review creates no issue-thread record; merge stays the single human touchpoint)
 - TESTS → TEST `mcp/ground-control/pr-review-context.test.js` (Read-only context tool tests: read-only invariant, diff completeness, linked-issue distinction)
 - TESTS → TEST `mcp/ground-control/pr-review-remediate.test.js` (Remediation tests: authorization, identity binding, fork/branch access, stale-base, publish, comment suppression)

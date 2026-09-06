@@ -21,11 +21,19 @@ ReqIF is the OMG standard for requirements interchange between tools. GC-B010 co
 
 ## Traceability
 
+- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (gc_import_reqif MCP tool)
+- IMPLEMENTS → GITHUB_ISSUE `#229` (GC-B013: ReqIF Import)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/service/ReqifParser.java` (ReqIF 1.2 parser (DOM/JAXP))
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/domain/requirements/service/ImportService.java` (ImportService.importReqif() three-phase upsert)
 - IMPLEMENTS → CODE_FILE `backend/src/main/java/com/keplerops/groundcontrol/api/admin/ImportController.java` (POST /admin/import/reqif REST endpoint)
-- IMPLEMENTS → CODE_FILE `mcp/ground-control/index.js` (gc_import_reqif MCP tool)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/ReqifParserTest.java` (ReqIF parser unit tests (9 tests))
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/ImportServiceTest.java` (ReqIF import service tests (6 tests in 4 nested classes))
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/api/ImportControllerTest.java` (ReqIF import controller tests (3 tests))
-- IMPLEMENTS → GITHUB_ISSUE `#229` (GC-B013: ReqIF Import)

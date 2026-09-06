@@ -5,9 +5,6 @@
 // split along its own dependency layering. lib.js remains the barrel every caller imports.
 
 import { execFile as execFileCb } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { promisify } from "node:util";
 import { CLAUDE_MODEL_BY_TIER, DEFAULT_IMPLEMENT_ROUTING_STAGES, ROUTING_STAGE_NAME_RE, ROUTING_TIERS } from "./repo-vocabulary.js";
 
@@ -194,61 +191,53 @@ export function buildSuggestedGroundControlYaml(project = "your-project-id") {
     ...suggestedYamlArchitectureSection(),
   ].join("\n");
 }
-// Default fallback-auth file (issue #1500). A launcher — Codex especially, or
-// any non-interactive shell — may hand the MCP an environment with NO Claude
-// auth (no Vertex/Bedrock vars, no CLAUDE_CONFIG_DIR, no key), so the review
-// `claude` falls through to the default profile, which is frequently expired
-// and surfaces as `test_quality_review_engine_failed`. This user-owned,
-// NON-secret file (`KEY=VALUE` lines) supplies auth in that case.
-export const REVIEW_ENGINE_ENV_FALLBACK = join(homedir(), ".config", "ground-control", "review-env");
+// The auth modes the review engine (`claude`) accepts. Every one is inventoried
+// in lib/server-env.js, so each arrives from the launch directory's `.env` and
+// nowhere else (issue #1562).
+export const REVIEW_ENGINE_AUTH_VARS = Object.freeze([
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "CLAUDE_CODE_USE_BEDROCK",
+  "CLAUDE_CODE_USE_VERTEX",
+  "CLAUDE_CONFIG_DIR",
+]);
 
-function hasClaudeAuth(env) {
-  return Boolean(
-    env.CLAUDE_CODE_USE_VERTEX ||
-      env.CLAUDE_CODE_USE_BEDROCK ||
-      env.CLAUDE_CONFIG_DIR ||
-      env.ANTHROPIC_API_KEY ||
-      env.ANTHROPIC_AUTH_TOKEN,
+export const REVIEW_ENGINE_AUTH_MISSING = "review_engine_auth_missing";
+
+/**
+ * Refuse before spawning `claude` when no auth mode is declared.
+ *
+ * The engine used to load a user-level `review-env` file in this case, and
+ * without one it fell through to whatever default profile the host happened to
+ * have — frequently an expired one, which surfaced as an engine failure rather
+ * than as the provisioning fault it is. Naming the alternatives and the file to
+ * fix is the whole recovery path. The message carries names only, never a
+ * value.
+ */
+export function assertReviewEngineAuth(env = process.env) {
+  if (REVIEW_ENGINE_AUTH_VARS.some((name) => env[name])) return;
+  const error = new Error(
+    "No review-engine auth is declared. Set one of "
+      + `${REVIEW_ENGINE_AUTH_VARS.join(", ")} in the launch directory's .env, `
+      + "then restart the MCP server; the file is read at startup.",
   );
+  error.code = REVIEW_ENGINE_AUTH_MISSING;
+  throw error;
 }
 
-// Build the environment for the review engine (`claude`), which runs as a
-// separate process from the agent. Two rules keep the review authenticated
-// across any repo, folder, tmux session, and launcher (codex or claude):
-//   1. If the inherited environment carries no Claude auth at all, load it from
-//      REVIEW_ENGINE_ENV_FALLBACK (never overriding a value already present, so
-//      an active Vertex or personal mode still wins).
-//   2. Strip ANTHROPIC_API_KEY only when another auth path survives, so the key
-//      can serve as the sole auth when it is all that is present.
-// Parse one `KEY=VALUE` line from a dotenv-style fallback file, stripping a
-// single matching quote pair. Returns [key, value] or null for blank/comment/
-// malformed lines. Extracted so reviewEngineEnv stays flat (Sonar S3776).
-function parseEnvFileLine(line) {
-  const trimmed = line.trim();
-  if (!trimmed || trimmed.startsWith("#")) return null;
-  const eq = trimmed.indexOf("=");
-  if (eq <= 0) return null;
-  const key = trimmed.slice(0, eq).trim();
-  let value = trimmed.slice(eq + 1).trim();
-  const quoted = value.length >= 2
-    && ((value[0] === '"' && value.at(-1) === '"') || (value[0] === "'" && value.at(-1) === "'"));
-  if (quoted) value = value.slice(1, -1);
-  return [key, value];
-}
-export function reviewEngineEnv(baseEnv = process.env, fallbackPath = REVIEW_ENGINE_ENV_FALLBACK) {
+/**
+ * Build the environment for the review engine (`claude`), which runs as a
+ * separate process from the agent.
+ *
+ * OS execution state passes through — the child still needs PATH and HOME — but
+ * every Claude configuration value it reads has already been bound to the
+ * launch directory's `.env` at startup. The one remaining rule is the conflict
+ * strip: ANTHROPIC_API_KEY is removed only when another auth path survives, so
+ * the key can serve as the sole auth when it is all that is declared.
+ */
+export function reviewEngineEnv(baseEnv = process.env) {
+  assertReviewEngineAuth(baseEnv);
   const env = { ...baseEnv };
-
-  if (!hasClaudeAuth(env)) {
-    try {
-      for (const line of readFileSync(fallbackPath, "utf8").split(/\r?\n/)) {
-        const parsed = parseEnvFileLine(line);
-        if (parsed && env[parsed[0]] === undefined) env[parsed[0]] = parsed[1];
-      }
-    } catch {
-      // No fallback file, or unreadable: leave the environment as inherited.
-    }
-  }
-
   if (env.CLAUDE_CODE_USE_VERTEX || env.CLAUDE_CODE_USE_BEDROCK || env.CLAUDE_CONFIG_DIR) {
     delete env.ANTHROPIC_API_KEY;
   }
@@ -327,25 +316,6 @@ export function findRequirementUidTokens(text) {
 export const REQUIREMENT_UID_CONTRACT_DESCRIPTION =
   `a single requirement UID: 1-${REQUIREMENT_UID_MAX_LENGTH} characters, starting with a letter or digit, `
   + "containing only letters, digits, '.', '_', or '-'";
-export const PR_BODY_POLICY_CHECK_LINE = "- [x] Configured repository policy command passes";
-// Repo-neutral Ground Control Checks (issue #1199): the section attests only
-// gates the /implement workflow actually enforces for every repository, named
-// semantically. The previous lines named `gc_evaluate_quality_gates` /
-// `gc_run_sweep`, tools removed with the #1500 backend teardown. The pre-push
-// review gates (code review + test-quality review, Steps 6.5/6.6) run before
-// gc_render_pr_body, so this attestation is accurate at render time. Keep this
-// byte-identical to tools/policy/authz_matrix.py::check_pr_body's required set —
-// the renderer-vs-policy compose fixture is the parity contract.
-export const PR_BODY_GC_CHECK_LINES = Object.freeze([
-  PR_BODY_POLICY_CHECK_LINE,
-  "- [x] Pre-push code review and test-quality review completed; all findings fixed or dispositioned",
-]);
-const PR_BODY_REQUIRED_HEADERS = Object.freeze([
-  "## Requirement UIDs",
-  "## ADR Impact",
-  "## Ground Control Checks",
-  "## Traceability",
-]);
 // Sonar S5843 caps a single regex literal's complexity at 20. The three richest
 // deferral patterns exceed that, so each is composed at module load from simple
 // sub-pattern literals via `new RegExp`. Every composed `source` is byte-identical
@@ -406,84 +376,20 @@ export function detectDeferralDisposition(text) {
   }
   return null;
 }
-// Strip a leading run and a trailing run of backticks (a markdown inline-code
-// wrapper like `GC-X001`). A linear scan rather than /^`+|`+$/g, which the regex
-// engine matches with super-linear backtracking (Sonar S8786); interior
-// backticks are left untouched, exactly as the anchored global replace did.
-function stripEdgeBackticks(s) {
-  let start = 0;
-  let end = s.length;
-  while (start < end && s[start] === "`") start += 1;
-  while (end > start && s[end - 1] === "`") end -= 1;
-  return s.slice(start, end);
-}
-function extractRequirementUidsSection(body) {
-  const start = body.indexOf("## Requirement UIDs");
-  if (start === -1) return "";
-  const after = body.slice(start + "## Requirement UIDs".length);
-  const nextHeader = after.search(/\n## /);
-  return nextHeader === -1 ? after : after.slice(0, nextHeader);
-}
-export function extractRequirementUidTokensFromSection(body) {
-  if (typeof body !== "string") return [];
-  const tokens = [];
-  for (const line of extractRequirementUidsSection(body).split(/\r?\n/)) {
-    const bullet = line.match(/^\s*[-*+]\s+(.+?)\s*$/);
-    if (!bullet) continue;
-    if (/^\(none\b/i.test(bullet[1])) continue;
-    // The WHOLE bullet must be a single token in the corpus. Scanning a bullet
-    // for any corpus-shaped word would count ordinary prose — `- (no real UID
-    // here)` contains `no`, a syntactically valid identifier — because the
-    // corpus cannot distinguish a UID from a word without a lookup. Requiring
-    // the bullet to be exactly one token keeps the gate decidable while still
-    // accepting every UID the structured path accepts.
-    const candidate = stripEdgeBackticks(bullet[1]).trim();
-    if (!EXACT_REQUIREMENT_UID_RE.test(candidate)) continue;
-    if (!tokens.includes(candidate)) tokens.push(candidate);
-  }
-  return tokens;
-}
-export function checkPrBodyShape(body) {
-  const errors = [];
-  if (typeof body !== "string" || body === "") {
-    return { ok: false, errors: ["body must be a non-empty string"] };
-  }
-  for (const h of PR_BODY_REQUIRED_HEADERS) {
-    if (!body.includes(h)) errors.push(`missing required header: ${h}`);
-  }
-  // Section-scoped UID check — see extractRequirementUidsSection for rationale.
-  // The section is machine-rendered one UID per bullet, so it is parsed
-  // structurally and each token is held to the identity corpus. That keeps the
-  // gate's accepted set exactly equal to what gc_render_pr_body accepts, so a
-  // UID that reconciles and reports can always be rendered (issue #1425).
-  const uidSection = extractRequirementUidsSection(body);
-  const sectionHasUid = extractRequirementUidTokensFromSection(body).length > 0;
-  const sectionHasNoneMarker = /-\s*\(none\b/i.test(uidSection);
-  if (!sectionHasUid && !sectionHasNoneMarker) {
-    errors.push(
-      "## Requirement UIDs section must contain at least one Ground Control UID " +
-      "(" + REQUIREMENT_UID_CONTRACT_DESCRIPTION + ") OR the explicit '- (none — ...)' " +
-      "marker for requirement-free runs. ADR references in other sections do NOT " +
-      "satisfy the requirement-UID gate — that is concept confusion between ADR " +
-      "impact and requirement traceability.",
-    );
-  }
-  if (!body.includes("ADR-") && !body.includes("No ADR required")) {
-    errors.push("ADR Impact must reference an ADR ('ADR-...') or contain 'No ADR required'");
-  }
-  for (const line of PR_BODY_GC_CHECK_LINES) {
-    if (!body.includes(line)) errors.push(`missing Ground Control Checks line: ${line}`);
-  }
-  if (!body.includes("- IMPLEMENTS:")) errors.push("missing '- IMPLEMENTS:' marker under Traceability");
-  if (!body.includes("- TESTS:")) errors.push("missing '- TESTS:' marker under Traceability");
-  // NB: deferral-language enforcement is intentionally NOT done here (codex
-  // cycle-4 F1). Authoritative enforcement: `block-defer-language.py`
-  // PreToolUse hook on `gh pr create` AND `bin/policy` /
-  // `check_pr_body::run_no_deferral_disposition_check` at CI time. The JS
-  // classifier was a partial subset of the Python `deferral_cases.json`
-  // matcher and gave false confidence ("ok:true" from a body that would
-  // later fail policy). The structural check (headers / markers / GC checks
-  // / UID section) is what this function owns; deferral is owned downstream.
-  if (errors.length) return { ok: false, errors };
-  return { ok: true };
-}
+
+// The PR-body policy surface (Ground Control Checks lines, required headers,
+// checkPrBodyShape) lives in pr-body-policy.js (issue #1551, split out to stay
+// under the 500-LOC file gate). Re-exported here so this remains the single
+// import path every existing caller already uses.
+export {
+  PR_BODY_LANES,
+  PR_BODY_POLICY_CHECK_LINE,
+  PR_BODY_PRE_PUSH_REVIEW_STATES,
+  PR_BODY_REVIEWS_OPTIONAL_LANE,
+  PR_BODY_REVIEW_CHECK_LINES,
+  PR_BODY_REVIEW_CHECK_LINE_COMPLETED,
+  PR_BODY_REVIEW_CHECK_LINE_NOT_RUN,
+  checkPrBodyShape,
+  extractRequirementUidTokensFromSection,
+  prBodyGcCheckLines,
+} from "./pr-body-policy.js";

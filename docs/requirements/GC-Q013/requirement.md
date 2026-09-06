@@ -21,13 +21,21 @@ Executives, risk owners, auditors, and engineers need different summary views ov
 
 ## Traceability
 
+- DOCUMENTS → DOCUMENTATION `docs/architecture/ARCHITECTURE.md` (GRC portfolio architecture note)
+- IMPLEMENTS → GITHUB_ISSUE `751` (Issue 751: GRC Portfolio Reporting Views)
+- IMPLEMENTS → PULL_REQUEST `1159` (PR 1159: feat: add grc portfolio reporting view)
+- DOCUMENTS → GITHUB_ISSUE `#751` (GC-Q013: GRC Portfolio Reporting Views)
+
+## Historical traceability
+
+Links below name artifacts that are not in the tree, almost all of them removed by the
+#1500 re-platform. They are kept for provenance and sit outside the parsed
+`## Traceability` section, so no tool reads them as live evidence. Do not infer current
+implementation from them.
+
 - IMPLEMENTS → CODE_FILE `frontend/src/pages/grc-portfolio.tsx` (GRC portfolio reporting page)
 - IMPLEMENTS → CODE_FILE `frontend/src/hooks/use-grc-portfolio.ts` (GRC portfolio data composition hook)
 - IMPLEMENTS → CODE_FILE `frontend/src/routes.tsx` (GRC portfolio route registration)
 - IMPLEMENTS → CODE_FILE `frontend/src/components/layout/app-layout.tsx` (GRC portfolio navigation entry)
 - IMPLEMENTS → CODE_FILE `frontend/src/types/api.ts` (GRC portfolio API response types)
 - TESTS → TEST `frontend/src/pages/__tests__/grc-portfolio.test.tsx` (GRC portfolio reporting page tests)
-- DOCUMENTS → DOCUMENTATION `docs/architecture/ARCHITECTURE.md` (GRC portfolio architecture note)
-- IMPLEMENTS → GITHUB_ISSUE `751` (Issue 751: GRC Portfolio Reporting Views)
-- IMPLEMENTS → PULL_REQUEST `1159` (PR 1159: feat: add grc portfolio reporting view)
-- DOCUMENTS → GITHUB_ISSUE `#751` (GC-Q013: GRC Portfolio Reporting Views)
