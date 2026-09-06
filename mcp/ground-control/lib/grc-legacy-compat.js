@@ -276,7 +276,7 @@ export function buildDiffBlock({
     manifest && manifest.trim() !== "" ? manifest : "(empty manifest)",
     "DIFF-MANIFEST>>>",
     "",
-    `The manifest above lists every file in the complete change${against} with its added/deleted line counts. It is CONTEXT ONLY — never infer content, behavior, or the direction of the change from a filename or a numstat row.${sliceOf}`,
+    `The manifest above lists every file in the complete change${against} with its added/deleted line counts, followed by a block stating each file's change kind (\`A\` added, \`D\` deleted, \`M\` modified, \`R\` renamed). It is CONTEXT ONLY — never infer content or behavior from a filename or a numstat row. The change kind is stated, so read it rather than guessing the direction of a change from line counts: a deleted file and an emptied one produce the same numstat row.${sliceOf}`,
     "",
     ...diffLines,
   ];

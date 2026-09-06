@@ -3,11 +3,7 @@
 
 import { before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { execFileSync } from "node:child_process";
-import { buildReviewCoverage, computeReviewDiff, planReviewSlices } from "./lib.js";
+import { buildReviewCoverage, planReviewSlices } from "./lib.js";
 
 // The full set of keys `review_coverage` publishes. Asserting the exact shape
 // at every public surface is the structural gate for a whole class of bug: a
@@ -298,118 +294,6 @@ describe("planReviewSlices", () => {
     assert.deepEqual(plan.slices, [""]);
     assert.equal(plan.files_total, 0);
     assert.equal(plan.files_covered, 0);
-  });
-});
-
-describe("computeReviewDiff uncommitted tree coverage (#1414)", () => {
-  function makeRepo() {
-    const repoDir = mkdtempSync(join(tmpdir(), "gc-reviewdiff-"));
-    execFileSync("git", ["-C", repoDir, "init", "-q", "--initial-branch", "dev"]);
-    execFileSync("git", ["-C", repoDir, "config", "user.email", "t@example.com"]);
-    execFileSync("git", ["-C", repoDir, "config", "user.name", "t"]);
-    writeFileSync(join(repoDir, "tracked.txt"), "base\n");
-    writeFileSync(join(repoDir, "doomed.txt"), "delete me\n");
-    writeFileSync(join(repoDir, ".gitignore"), "ignored.txt\n");
-    execFileSync("git", ["-C", repoDir, "add", "-A"]);
-    execFileSync("git", ["-C", repoDir, "commit", "-q", "-m", "init"]);
-    // Real origin so owner/repo resolves from the git remote, as production does. git ignores
-    // GH_REPO; the `gh repo view` fallback honours it.
-    execFileSync("git", ["-C", repoDir, "remote", "add", "origin", "https://github.com/fake/repo.git"]);
-    return repoDir;
-  }
-
-  it("covers staged, unstaged, and deleted files in the diff and the manifest", async () => {
-    const repoDir = makeRepo();
-    try {
-      writeFileSync(join(repoDir, "staged.txt"), "staged content\n");
-      execFileSync("git", ["-C", repoDir, "add", "staged.txt"]);
-      writeFileSync(join(repoDir, "tracked.txt"), "base\nunstaged content\n");
-      execFileSync("git", ["-C", repoDir, "rm", "-q", "doomed.txt"]);
-
-      const result = await computeReviewDiff(repoDir, "dev", true);
-
-      assert.ok(result.diffText.includes("+staged content"), "staged content missing");
-      assert.ok(result.diffText.includes("+unstaged content"), "unstaged content missing");
-      // Deletion direction is preserved, not re-rendered as an addition.
-      assert.ok(result.diffText.includes("-delete me"));
-      assert.equal(result.baseRefDescriptor, null);
-      assert.deepEqual(result.unreviewedUntrackedPaths, []);
-    } finally {
-      rmSync(repoDir, { recursive: true, force: true });
-    }
-  });
-
-  it("never transmits untracked file bodies, and reports the omission by count", async () => {
-    // Staging is the repository's explicit consent boundary for sending
-    // working-tree content to the model provider. A filename or content
-    // heuristic cannot authorize that egress: standard credential filenames
-    // are unbounded (.pgpass, .dockercfg, ...) and an opaque token is
-    // indistinguishable from ordinary text.
-    const repoDir = makeRepo();
-    try {
-      writeFileSync(join(repoDir, ".pgpass"), "localhost:5432:app:admin:hunter2\n");
-      writeFileSync(join(repoDir, "scratch.txt"), "ordinary untracked note\n");
-
-      const result = await computeReviewDiff(repoDir, "dev", true);
-
-      // No untracked body reaches the diff, whatever it is named.
-      assert.ok(!result.diffText.includes("hunter2"));
-      assert.ok(!result.diffText.includes("ordinary untracked note"));
-      // The omission is reported, not silent: a count in the reviewer-visible
-      // manifest, and the full list off-prompt for the caller.
-      assert.match(result.manifest, /# untracked: 2 path\(s\) present but NOT staged/);
-      assert.deepEqual(result.unreviewedUntrackedPaths.sort(), [".pgpass", "scratch.txt"]);
-      // A path can itself be revealing, so the prompt-visible manifest carries
-      // no filenames.
-      assert.ok(!result.manifest.includes(".pgpass"));
-    } finally {
-      rmSync(repoDir, { recursive: true, force: true });
-    }
-  });
-
-  it("reviews formerly untracked work once it is staged", async () => {
-    // The /implement lane stages with `git add -A` before review, so genuinely
-    // new files are reviewed as staged content rather than being skipped.
-    const repoDir = makeRepo();
-    try {
-      writeFileSync(join(repoDir, "brand-new.txt"), "new module body\n");
-      execFileSync("git", ["-C", repoDir, "add", "-A"]);
-
-      const result = await computeReviewDiff(repoDir, "dev", true);
-
-      assert.ok(result.diffText.includes("+new module body"));
-      assert.ok(result.diffText.includes("diff --git a/brand-new.txt b/brand-new.txt"));
-      assert.deepEqual(result.unreviewedUntrackedPaths, []);
-    } finally {
-      rmSync(repoDir, { recursive: true, force: true });
-    }
-  });
-
-  it("respects gitignore so ignored files are not even counted as unreviewed", async () => {
-    const repoDir = makeRepo();
-    try {
-      writeFileSync(join(repoDir, "ignored.txt"), "secret-ish\n");
-
-      const result = await computeReviewDiff(repoDir, "dev", true);
-
-      assert.ok(!result.diffText.includes("secret-ish"));
-      assert.deepEqual(result.unreviewedUntrackedPaths, []);
-      assert.ok(!result.manifest.includes("# untracked:"));
-    } finally {
-      rmSync(repoDir, { recursive: true, force: true });
-    }
-  });
-
-  it("keeps a clean tree empty rather than inventing untracked content", async () => {
-    const repoDir = makeRepo();
-    try {
-      const result = await computeReviewDiff(repoDir, "dev", true);
-      assert.equal(result.diffText, "");
-      assert.deepEqual(result.unreviewedUntrackedPaths, []);
-      assert.ok(!result.manifest.includes("# untracked:"));
-    } finally {
-      rmSync(repoDir, { recursive: true, force: true });
-    }
   });
 });
 

@@ -65,6 +65,21 @@ describe("buildCodexSecurityReviewPrompt", () => {
     assert.ok(prompt.includes("if (token == null)"));
   });
 
+  it("carries the scope-versus-evidence split into the security prompt (#1557)", () => {
+    // Both reviewers share buildCommonReviewPreamble, so the security reviewer
+    // must get the same evidence grant and the same scope guarantees.
+    const prompt = buildCodexSecurityReviewPrompt({
+      baseBranch: "dev",
+      uncommitted: false,
+      diffText: diff,
+    });
+    assert.match(prompt, /SCOPE/);
+    assert.match(prompt, /EVIDENCE/);
+    assert.match(prompt, /ground truth/i);
+    assert.ok(prompt.includes("do not re-derive it from git yourself"));
+    assert.ok(!prompt.includes("or any shell"));
+  });
+
   it("instructs codex to emit the verdict envelope in the REVIEW block (not by calling gh)", () => {
     const prompt = buildCodexSecurityReviewPrompt({
       baseBranch: "dev",
@@ -231,6 +246,24 @@ describe("buildDiffBlock", () => {
     }).join("\n");
     assert.ok(withoutRef.includes("<<<DIFF-MANIFEST"));
     assert.ok(!withoutRef.includes("<base-ref>"));
+  });
+
+  it("names the additive change-kind block in the manifest context line (#1557)", () => {
+    // `0\t297\tfoo.mjs` never says "deleted" and is byte-identical to an
+    // emptied-but-retained file. --name-status states it, so the reviewer is
+    // told to read the kind rather than infer direction from line counts.
+    const lines = buildDiffBlock({
+      diffText: "diff --git a/Foo.java b/Foo.java\n+x",
+      mode: "manifest",
+      manifest: "10\t2\tFoo.java\n\n# kinds\nD\tGone.java",
+      baseRefDescriptor: "origin/dev",
+      slice: { index: 1, total: 2 },
+    });
+    const text = lines.join("\n");
+    assert.match(text, /change kind/i);
+    assert.ok(text.includes("D\tGone.java"));
+    // Still context only — the manifest never becomes review evidence (#1414).
+    assert.ok(text.includes("CONTEXT ONLY"));
   });
 
   it("keeps inline-mode output byte-identical when no slice is supplied", () => {

@@ -151,3 +151,4 @@ them as live evidence. Do not infer current implementation from them.
 - TESTS → TEST `mcp/ground-control/gc-assert-quality-gates.test.js` (MCP quality-gate tests for in-scope DOCUMENTS coverage)
 - TESTS → TEST `backend/src/test/java/com/keplerops/groundcontrol/unit/domain/RequirementServiceTest.java` (RequirementService tests for DRAFT activation DOCUMENTS coverage)
 - TESTS → TEST `mcp/ground-control/gc-assert-completion.test.js` (gc_assert_completion composition tests (#1103))
+- IMPLEMENTS → GITHUB_ISSUE `1557` (Issue #1557 — pre-push reviewer prompt separates review scope from repository evidence (clause (C)))
