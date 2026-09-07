@@ -114,6 +114,8 @@ We use [MADR](https://adr.github.io/madr/) (Markdown Any Decision Records). Each
 | [092](092-file-size-limit-gate.md) | Enforce the 500-LOC File-Size Limit in Repo Policy | Accepted |
 | [093](093-requirements-specs-as-code.md) | Requirements as Specs-as-Code | Accepted |
 | [094](094-graphify-comprehension-index.md) | Graphify Comprehension Index | Accepted |
+| [095](095-repository-map-freshness-gate.md) | README Repository-Map Freshness Gate | Accepted |
+| [096](096-host-wide-verification-dispatcher.md) | Host-Wide Verification Resource Dispatcher | Accepted |
 
 Prior ADRs from the old project frame are archived in `archive/architecture/adrs/`.
 

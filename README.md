@@ -56,7 +56,7 @@ this is the ownership map.
 | `docs/` | Requirements (`docs/requirements/<UID>/requirement.md`), the [architecture overview](docs/architecture/ARCHITECTURE.md), [coding standards](docs/CODING_STANDARDS.md), and the [knowledge base](docs/knowledge/). |
 | `architecture/` | Architecture Decision Records ([`architecture/adrs/`](architecture/adrs/)) and the machine-enforced [ADR policy](architecture/policies/adr-policy.json). |
 | `tools/` | Repo-native policy checks ([`tools/policy/`](tools/policy/)) and their tests, plus CI, Sonar, and release tooling. Run by `make policy`. |
-| `bin/` | Executable entry points for the gates ([`bin/policy`](bin/policy), `bin/adr-guard`, `bin/check-pr-body`). |
+| `bin/` | Executable entry points: the gates ([`bin/policy`](bin/policy), `bin/adr-guard`, `bin/check-pr-body`), the host installers (`bin/install-ground-control.sh`, `bin/install-skills.sh`), and the host-wide verification dispatcher (`bin/gc-test-dispatch`). |
 | `scripts/` | Developer and CI shell helpers ([`scripts/`](scripts/)): hook install, bootstrap, PR-body checks. |
 | `.github/` | GitHub Actions [workflows](.github/workflows/), issue/PR templates, `CODEOWNERS`, and the branch-protection baseline. |
 
