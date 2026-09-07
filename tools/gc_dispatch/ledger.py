@@ -168,7 +168,8 @@ class Ledger(object):
 
     # -- public operations ----------------------------------------------
 
-    def _open_lease(self, lease_path: Path) -> int:
+    @staticmethod
+    def _open_lease(lease_path: Path) -> int:
         """Create and hold the lease that will back a new entry.
 
         The command this dispatcher launches must inherit the descriptor, so the

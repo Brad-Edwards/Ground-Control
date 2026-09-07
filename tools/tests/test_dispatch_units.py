@@ -90,6 +90,12 @@ class MillisecondsTest(unittest.TestCase):
         self.assertEqual(milliseconds(-5.0), 0)
 
 
+def read_metrics(state_dir):
+    """Return the dispatcher's recorded measurements, newest last."""
+    path = state_dir / "metrics.jsonl"
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+
+
 class HostRootTestCase(unittest.TestCase):
     """Isolates HOME and the XDG directories the dispatcher actually reads."""
 
@@ -121,9 +127,6 @@ class HostRootTestCase(unittest.TestCase):
         self.config_path.write_text(json.dumps(values), encoding="utf-8")
         self.config_path.chmod(0o600)
 
-    def metrics(self):
-        path = self.state_dir / "metrics.jsonl"
-        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
 
 
 class HostConfigTest(HostRootTestCase):
@@ -257,7 +260,7 @@ class DispatchOrchestrationTest(HostRootTestCase):
         with self.assertRaises(SystemExit) as caught:
             main(["--profile", "unit", "--cpu", "2", "--", sys.executable, "-c", "pass"])
         self.assertEqual(caught.exception.code, 0)
-        record = self.metrics()[-1]
+        record = read_metrics(self.state_dir)[-1]
         self.assertEqual(record["granted"], 2)
         self.assertEqual(record["capacity"], 4)
         self.assertEqual(record["outcome"], "ran")
@@ -267,7 +270,7 @@ class DispatchOrchestrationTest(HostRootTestCase):
         with self.assertRaises(SystemExit) as caught:
             main(["--profile", "unit", "--", sys.executable, "-c", "raise SystemExit(6)"])
         self.assertEqual(caught.exception.code, 6)
-        self.assertEqual(self.metrics()[-1]["exit_code"], 6)
+        self.assertEqual(read_metrics(self.state_dir)[-1]["exit_code"], 6)
 
     def test_a_usage_error_returns_the_usage_status_and_registers_nothing(self):
         self.write_config(cpu_capacity=4)
@@ -291,7 +294,7 @@ class DispatchOrchestrationTest(HostRootTestCase):
             blocker.release(held)
         self.assertEqual(status, EXIT_QUEUE_TIMEOUT)
         self.assertFalse(marker.exists())
-        self.assertEqual(self.metrics()[-1]["outcome"], "queue_timeout")
+        self.assertEqual(read_metrics(self.state_dir)[-1]["outcome"], "queue_timeout")
 
     def test_the_metrics_file_is_bounded(self):
         state = self.state_dir

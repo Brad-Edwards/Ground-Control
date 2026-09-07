@@ -9,11 +9,9 @@ command execution (ADR-096).
 
 from __future__ import annotations
 
-from typing import Any
-
 # One record in the shared ledger. Spelled out here so the policy, the store, and
 # the tests all name the same shape.
-LedgerEntry = dict[str, Any]
+LedgerEntry = dict[str, object]
 
 
 def _effective(value: int, capacity: int) -> int:

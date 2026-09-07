@@ -13,8 +13,6 @@ import fcntl
 import os
 import re
 from pathlib import Path
-from typing import Any
-
 from .admission import LedgerEntry
 
 LEDGER_VERSION = 1
@@ -55,13 +53,13 @@ def process_token(pid: int) -> str | None:
     return tail[_STAT_STARTTIME_OFFSET].decode("ascii", "replace")
 
 
-def supervisor_identity() -> dict[str, Any]:
+def supervisor_identity() -> dict[str, object]:
     """Return this process's identity, for recording against a grant."""
     pid = os.getpid()
     return {"pid": pid, "token": process_token(pid) if _HAS_PROC else None}
 
 
-def _is_pid(value: Any) -> bool:
+def _is_pid(value: object) -> bool:
     """Whether the value can name a live process."""
     return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
@@ -80,7 +78,7 @@ def _pid_is_signalable(pid: int) -> bool:
     return True
 
 
-def supervisor_alive(supervisor: Any) -> bool:
+def supervisor_alive(supervisor: object) -> bool:
     """Whether the process that took a grant is still running."""
     pid = supervisor.get("pid") if isinstance(supervisor, dict) else None
     if not _is_pid(pid):
@@ -121,12 +119,12 @@ def _require(condition: bool, detail: str) -> None:
             f"host ledger is invalid and will not be reset or scheduled against: {detail}")
 
 
-def _is_int(value: Any) -> bool:
+def _is_int(value: object) -> bool:
     """Whether the value is a real integer rather than a bool."""
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def _is_number(value: Any) -> bool:
+def _is_number(value: object) -> bool:
     """Whether the value is a real number rather than a bool."""
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
@@ -170,7 +168,7 @@ def _validate_state(entry: LedgerEntry, ticket: str) -> None:
                  f"ticket {ticket} is queued but carries a start time")
 
 
-def _validate_entry(entry: Any, seen: set[str]) -> None:
+def _validate_entry(entry: object, seen: set[str]) -> None:
     """Reject any record the scheduler could misread as free or unlimited capacity."""
     _require(isinstance(entry, dict), "an entry is not an object")
     _require(set(entry) == set(ENTRY_FIELDS),
@@ -191,7 +189,7 @@ def _validate_entry(entry: Any, seen: set[str]) -> None:
     _validate_supervisor(entry)
 
 
-def validate_ledger(doc: Any) -> dict[str, Any]:
+def validate_ledger(doc: object) -> dict[str, object]:
     """Return the document once every record is known-good, else fail closed."""
     _require(isinstance(doc, dict), "the ledger is not an object")
     _require(set(doc) == {"version", "next_seq", "entries"},

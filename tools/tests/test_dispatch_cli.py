@@ -25,6 +25,14 @@ EXIT_USAGE = 64
 EXIT_INTERNAL = 70
 EXIT_QUEUE_TIMEOUT = 75
 
+def read_metrics(state_dir):
+    """Return the dispatcher's recorded measurements, newest last."""
+    path = state_dir / "metrics.jsonl"
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+
+
 def worker_env_probe():
     """A command that prints the xdist worker count the dispatcher granted it."""
     return [sys.executable, "-c",
@@ -111,11 +119,6 @@ class DispatchTestBase(unittest.TestCase):
         self.assertEqual(report["granted"], requested)
         return proc
 
-    def metrics(self):
-        path = self.state / "metrics.jsonl"
-        if not path.exists():
-            return []
-        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
 
 
 class CommandFidelityTest(DispatchTestBase):
@@ -264,7 +267,7 @@ class ArgumentValidationTest(DispatchTestBase):
 class ReportingTest(DispatchTestBase):
     def test_a_run_reports_its_queue_time_execution_time_and_capacity(self):
         self.run_dispatch("--profile", "suite", "--cpu", "2", "--", sys.executable, "-c", "pass")
-        records = self.metrics()
+        records = read_metrics(self.state)
         self.assertEqual(len(records), 1)
         record = records[0]
         self.assertEqual(record["profile"], "suite")
@@ -287,7 +290,7 @@ class ReportingTest(DispatchTestBase):
         self.write_host_config(cpu_capacity=8, max_queue_wait_seconds=0)
         self.start_holder(8, 8, 8)
         self.run_dispatch("--profile", "suite", "--cpu", "4", "--", sys.executable, "-c", "pass")
-        outcomes = [r["outcome"] for r in self.metrics()]
+        outcomes = [r["outcome"] for r in read_metrics(self.state)]
         self.assertIn("queue_timeout", outcomes)
 
     def test_no_command_text_is_persisted(self):
@@ -354,7 +357,7 @@ class HostConfigurationTest(DispatchTestBase):
         self.config_path.unlink()
         self.run_dispatch("--profile", "suite", "--", sys.executable, "-c", "pass")
         expected = len(os.sched_getaffinity(0))
-        self.assertEqual(self.metrics()[0]["capacity"], expected)
+        self.assertEqual(read_metrics(self.state)[0]["capacity"], expected)
 
     def test_a_world_writable_host_config_is_refused(self):
         self.config_path.chmod(0o666)
