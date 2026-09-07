@@ -12,11 +12,11 @@ import os
 import re
 import sys
 import time
-from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, NamedTuple
 
-from .hostconfig import HostConfigError, load_host_config
-from .ledger import Ledger, LedgerError
+from .hostconfig import HostConfig, HostConfigError, load_host_config
+from .ledger import Ledger, LedgerError, Ticket
 from .supervisor import ChildResult, exit_like, run_command
 
 EXIT_USAGE = 64
@@ -43,8 +43,9 @@ class UsageError(ValueError):
     """A malformed invocation, refused before any work is registered."""
 
 
-@dataclass(frozen=True)
-class Request:
+class Request(NamedTuple):
+    """One workload's declared demand and the exact command to run."""
+
     profile: str
     requested: int
     minimum: int
@@ -53,6 +54,7 @@ class Request:
 
 
 def _demand(option: str, raw: str) -> int:
+    """Parse and bound one CPU demand value."""
     try:
         value = int(raw, 10)
     except ValueError:
@@ -63,6 +65,7 @@ def _demand(option: str, raw: str) -> int:
 
 
 def _split_options(args: list[str]) -> tuple[list[str], list[str]]:
+    """Separate dispatcher options from the command that follows ``--``."""
     if "--" not in args:
         raise UsageError("the command to run must follow '--'")
     separator = args.index("--")
@@ -72,30 +75,42 @@ def _split_options(args: list[str]) -> tuple[list[str], list[str]]:
     return args[:separator], command
 
 
-def parse_args(args: list[str]) -> Request:
-    options, command = _split_options(list(args))
+def _consume_option(options: list[str], index: int, values: dict[str, str]) -> int:
+    """Read one option at ``index``, returning the next index to read."""
+    option = options[index]
+    name, _, inline = option.partition("=")
+    if name not in VALUE_OPTIONS:
+        raise UsageError(f"unknown option {option!r}")
+    if inline:
+        values[name] = inline
+        return index + 1
+    if index + 1 >= len(options):
+        raise UsageError(f"{name} needs a value")
+    values[name] = options[index + 1]
+    return index + 2
+
+
+def _parse_options(options: list[str]) -> tuple[dict[str, str], bool]:
+    """Collect the option values and the xdist opt-in."""
     values: dict[str, str] = {}
     xdist = False
     index = 0
     while index < len(options):
-        option = options[index]
-        name, _, inline = option.partition("=")
+        name, _, inline = options[index].partition("=")
         if name == "--xdist":
             if inline:
                 raise UsageError("--xdist takes no value")
             xdist = True
             index += 1
-        elif name in VALUE_OPTIONS:
-            if inline:
-                values[name] = inline
-                index += 1
-            else:
-                if index + 1 >= len(options):
-                    raise UsageError(f"{name} needs a value")
-                values[name] = options[index + 1]
-                index += 2
         else:
-            raise UsageError(f"unknown option {option!r}")
+            index = _consume_option(options, index, values)
+    return values, xdist
+
+
+def parse_args(args: list[str]) -> Request:
+    """Turn an argument vector into one validated workload request."""
+    options, command = _split_options(list(args))
+    values, xdist = _parse_options(options)
 
     profile = values.get("--profile")
     if profile is None:
@@ -111,11 +126,21 @@ def parse_args(args: list[str]) -> Request:
     return Request(profile=profile, requested=requested, minimum=minimum, xdist=xdist, argv=command)
 
 
-def _milliseconds(seconds: float) -> int:
+def milliseconds(seconds: float) -> int:
+    """Round a duration to whole milliseconds, never below zero."""
     return max(0, int(round(seconds * 1000)))
 
 
-def _report(state_dir: Path, record: dict) -> None:
+def _append_metric(path: Path, record: dict[str, Any]) -> None:
+    """Append one bounded JSON line, restarting the file when it grows too large."""
+    if path.exists() and path.stat().st_size > METRICS_MAX_BYTES:
+        path.unlink()
+    fd = os.open(path, os.O_CREAT | os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record) + "\n")
+
+
+def report(state_dir: Path, record: dict[str, Any]) -> None:
     """Emit the bounded operational record for one dispatch.
 
     Local diagnostics only: never an issue-thread record, never step telemetry,
@@ -123,36 +148,41 @@ def _report(state_dir: Path, record: dict) -> None:
     """
     summary = " ".join(f"{key}={value}" for key, value in record.items() if value is not None)
     print(f"gc-test-dispatch: {summary}", file=sys.stderr)
-    path = state_dir / METRICS_NAME
     try:
-        if path.exists() and path.stat().st_size > METRICS_MAX_BYTES:
-            path.unlink()
-        fd = os.open(path, os.O_CREAT | os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW, 0o600)
-        with os.fdopen(fd, "a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record) + "\n")
+        _append_metric(state_dir / METRICS_NAME, record)
     except OSError:
         # Measurement must never be the reason a verification command fails.
         pass
 
 
-def _wait_for_admission(ledger: Ledger, ticket, capacity: int, wait_seconds: float) -> int | None:
+def _wait_for_admission(
+    ledger: Ledger, ticket: Ticket, capacity: int, wait_seconds: float,
+) -> int | None:
+    """Poll for a grant until one arrives or the host's queue bound expires."""
     deadline = time.monotonic() + wait_seconds
     delay = POLL_MIN_SECONDS
-    while True:
-        granted = ledger.try_admit(ticket, capacity)
-        if granted is not None:
-            return granted
+    granted = ledger.try_admit(ticket, capacity)
+    while granted is None:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             return None
         time.sleep(min(delay, remaining))
         delay = min(delay * 2, POLL_MAX_SECONDS)
+        granted = ledger.try_admit(ticket, capacity)
+    return granted
 
 
-def _dispatch(request: Request, config, ledger: Ledger) -> ChildResult | int:
-    queued_at = time.monotonic()
-    ticket = ledger.enqueue(request.profile, request.requested, request.minimum)
-    record = {
+def _child_environment(request: Request, granted: int) -> dict[str, str]:
+    """Return the command's environment, adding only the opted-in worker count."""
+    env = dict(os.environ)
+    if request.xdist:
+        env[XDIST_WORKER_ENV] = str(granted)
+    return env
+
+
+def _new_record(request: Request, config: HostConfig) -> dict[str, Any]:
+    """Seed the measurement record with everything known before admission."""
+    return {
         "profile": request.profile,
         "requested": request.requested,
         "minimum": request.minimum,
@@ -164,34 +194,45 @@ def _dispatch(request: Request, config, ledger: Ledger) -> ChildResult | int:
         "exit_code": None,
         "term_signal": None,
     }
-    result: ChildResult | None = None
+
+
+def _run_admitted(
+    request: Request, ticket: Ticket, granted: int, record: dict[str, Any],
+) -> ChildResult:
+    """Run the command on its grant and fold the outcome into the record."""
+    record["granted"] = granted
+    started_at = time.monotonic()
+    result = run_command(request.argv, _child_environment(request, granted), ticket.lease_fd)
+    record["exec_ms"] = milliseconds(time.monotonic() - started_at)
+    record["outcome"] = "ran"
+    record["exit_code"] = result.exit_code
+    record["term_signal"] = result.term_signal
+    return result
+
+
+def _dispatch(request: Request, config: HostConfig, ledger: Ledger) -> ChildResult | int:
+    """Queue for capacity, run the command once admitted, and always release."""
+    queued_at = time.monotonic()
+    ticket = ledger.enqueue(request.profile, request.requested, request.minimum)
+    record = _new_record(request, config)
     try:
         granted = _wait_for_admission(
             ledger, ticket, config.cpu_capacity, config.max_queue_wait_seconds)
-        record["queue_ms"] = _milliseconds(time.monotonic() - queued_at)
+        record["queue_ms"] = milliseconds(time.monotonic() - queued_at)
         if granted is None:
             return EXIT_QUEUE_TIMEOUT
-        record["granted"] = granted
-        env = dict(os.environ)
-        if request.xdist:
-            env[XDIST_WORKER_ENV] = str(granted)
-        started_at = time.monotonic()
-        result = run_command(request.argv, env, ticket.lease_fd)
-        record["exec_ms"] = _milliseconds(time.monotonic() - started_at)
-        record["outcome"] = "ran"
-        record["exit_code"] = result.exit_code
-        record["term_signal"] = result.term_signal
+        return _run_admitted(request, ticket, granted, record)
     except LedgerError as exc:
         record["outcome"] = "state_error"
         print(f"gc-test-dispatch: {exc}", file=sys.stderr)
         return EXIT_INTERNAL
     finally:
         ledger.release(ticket)
-        _report(config.state_dir, record)
-    return result
+        report(config.state_dir, record)
 
 
 def main(argv: list[str]) -> int:
+    """Parse, admit, run, and return the status the caller should exit with."""
     try:
         request = parse_args(argv)
     except UsageError as exc:

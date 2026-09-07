@@ -810,7 +810,12 @@ setting can raise these values; an unknown key or an out-of-range value is
 refused rather than ignored.
 
 Admission is strict first-in-first-out over an advisory-locked per-user ledger in
-`$XDG_RUNTIME_DIR/ground-control/dispatch`. An entry is granted the lesser of its
+`$XDG_RUNTIME_DIR/ground-control/dispatch`, or under
+`${XDG_STATE_HOME:-~/.local/state}/ground-control/dispatch` when no runtime
+directory is set. It is never placed in a world-writable directory such as
+`/tmp`: this ledger is the host's admission authority, and a predictable path
+under a shared directory is one another account can pre-create or race. An entry
+is granted the lesser of its
 request and the remaining capacity whenever at least its minimum fits, and later
 work is backfilled from what the entry ahead of it leaves, so a two-core check
 runs beside a six-core suite. The walk stops at the first entry that does not fit,

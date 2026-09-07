@@ -25,6 +25,12 @@ EXIT_USAGE = 64
 EXIT_INTERNAL = 70
 EXIT_QUEUE_TIMEOUT = 75
 
+def worker_env_probe():
+    """A command that prints the xdist worker count the dispatcher granted it."""
+    return [sys.executable, "-c",
+            "import os, sys; sys.stdout.write(os.environ.get('PYTEST_XDIST_AUTO_NUM_WORKERS', 'unset'))"]
+
+
 HOLDER = r"""
 import json, os, sys
 sys.path.insert(0, os.environ["GC_DISPATCH_TOOLS"])
@@ -179,25 +185,21 @@ class CommandFidelityTest(DispatchTestBase):
 
 
 class ParallelismTest(DispatchTestBase):
-    def _worker_env_probe(self):
-        return [sys.executable, "-c",
-                "import os, sys; sys.stdout.write(os.environ.get('PYTEST_XDIST_AUTO_NUM_WORKERS', 'unset'))"]
-
     def test_the_xdist_worker_count_is_the_granted_capacity(self):
         result = self.run_dispatch(
-            "--profile", "suite", "--cpu", "3", "--xdist", "--", *self._worker_env_probe())
+            "--profile", "suite", "--cpu", "3", "--xdist", "--", *worker_env_probe())
         self.assertEqual(result.stdout, "3")
 
     def test_a_command_that_did_not_opt_in_keeps_its_environment(self):
         result = self.run_dispatch(
-            "--profile", "suite", "--cpu", "3", "--", *self._worker_env_probe())
+            "--profile", "suite", "--cpu", "3", "--", *worker_env_probe())
         self.assertEqual(result.stdout, "unset")
 
     def test_an_elastic_request_runs_on_the_capacity_that_is_actually_free(self):
         self.start_holder(6, 6, 8)
         result = self.run_dispatch(
             "--profile", "suite", "--cpu", "8", "--min-cpu", "2", "--xdist",
-            "--", *self._worker_env_probe())
+            "--", *worker_env_probe())
         self.assertEqual(result.stdout, "2")
 
     def test_work_beyond_the_host_budget_waits_instead_of_oversubscribing(self):

@@ -48,7 +48,9 @@ against a shared host CPU budget and then runs the exact command it was given.
    dispatcher arguments. Total capacity, the queue bound, and the stale-lease
    bound live in `${XDG_CONFIG_HOME:-~/.config}/ground-control/dispatch.json`,
    which the machine's owner writes. No flag and no repository setting can raise
-   the host budget.
+   the host budget. The shared ledger lives under `XDG_RUNTIME_DIR`, falling back
+   to `XDG_STATE_HOME`, and never in a world-writable directory: a predictable
+   path under a shared directory is one another account can pre-create or race.
 
    This adds no `.ground-control.yaml` field. `parseGroundControlYaml` stays the
    only reader of that file (ADR-027), and the dispatcher never parses repository

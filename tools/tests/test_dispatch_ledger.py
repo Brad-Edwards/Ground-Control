@@ -20,7 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 TOOLS_ROOT = REPO_ROOT / "tools"
 sys.path.insert(0, str(TOOLS_ROOT))
 
-from gc_dispatch.ledger import Ledger, LedgerError, prepare_state_dir  # noqa: E402
+from gc_dispatch.ledger import Ledger, LedgerError, prepare_state_dir
 
 # Admits itself, reports the grant, then blocks on stdin so the test controls
 # exactly when the lease is released. No sleeps, so nothing here is timing bound.

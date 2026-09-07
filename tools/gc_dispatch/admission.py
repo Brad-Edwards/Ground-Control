@@ -9,6 +9,12 @@ command execution (ADR-096).
 
 from __future__ import annotations
 
+from typing import Any
+
+# One record in the shared ledger. Spelled out here so the policy, the store, and
+# the tests all name the same shape.
+LedgerEntry = dict[str, Any]
+
 
 def _effective(value: int, capacity: int) -> int:
     """Clamp a demand to the host's total capacity.
@@ -20,29 +26,39 @@ def _effective(value: int, capacity: int) -> int:
     return max(1, min(int(value), capacity))
 
 
-def plan_admission(capacity: int, entries: list[dict], ticket: str) -> int | None:
+def _remaining_capacity(capacity: int, entries: list[LedgerEntry]) -> int:
+    """Capacity left after every running grant is subtracted."""
+    used = sum(int(entry.get("granted") or 0) for entry in entries if entry.get("state") == "running")
+    return max(0, capacity - used)
+
+
+def _queued_in_order(entries: list[LedgerEntry]) -> list[LedgerEntry]:
+    """Queued entries oldest first, with the ticket breaking a sequence tie."""
+    return sorted(
+        (entry for entry in entries if entry.get("state") == "queued"),
+        key=lambda entry: (int(entry["seq"]), str(entry["ticket"])),
+    )
+
+
+def plan_admission(capacity: int, entries: list[LedgerEntry], ticket: str) -> int | None:
     """Return the CPU grant for ``ticket``, or ``None`` while it must keep waiting.
 
-    Admission is strict FIFO by sequence number. Each queued entry ahead of the
-    caller consumes what it would be granted, so cheaper work behind a satisfied
-    request is backfilled from the remainder. The walk stops at the first entry
-    that does not fit: letting later work jump a blocked head is what starves a
-    large suite indefinitely on a busy host.
+    Admission is strict first-in-first-out by sequence number. Each queued entry
+    ahead of the caller consumes what it would be granted, so cheaper work behind
+    a satisfied request is backfilled from the remainder. The walk stops at the
+    first entry that does not fit: letting later work jump a blocked head is what
+    starves a large suite indefinitely on a busy host.
     """
     capacity = max(1, int(capacity))
-    used = sum(int(e.get("granted") or 0) for e in entries if e.get("state") == "running")
-    remaining = max(0, capacity - used)
-
-    waiting = sorted(
-        (e for e in entries if e.get("state") == "queued"),
-        key=lambda e: (int(e["seq"]), str(e["ticket"])),
-    )
-    for entry in waiting:
+    remaining = _remaining_capacity(capacity, entries)
+    granted: int | None = None
+    for entry in _queued_in_order(entries):
         minimum = _effective(entry["minimum"], capacity)
         if remaining < minimum:
-            return None
+            break
         grant = min(_effective(entry["requested"], capacity), remaining)
         if entry["ticket"] == ticket:
-            return grant
+            granted = grant
+            break
         remaining -= grant
-    return None
+    return granted
