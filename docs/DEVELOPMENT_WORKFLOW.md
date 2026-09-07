@@ -683,6 +683,8 @@ Repo-local scripts live under `scripts/` (bash) and `bin/` (Python). The ones yo
 |---------|---------|
 | `scripts/bootstrap-claude-workflow.sh` | Wire the Claude-Code-only surfaces from `~/.claude/`: the `.claude/skills/<name>/` skills (symlinked - edit takes effect live) and the `WORKFLOW_HOOKS` allowlist under `.claude/hooks/` (**copied** as real files so runtime does not depend on which branch this repo is checked out to). Idempotent; safe to re-run. Pass `--dry-run` to preview, `--force` to clobber non-matching host content. The hook allowlist is explicit, so generic host-local hooks (for example, `block-break-system-packages.sh`) are left alone. Re-run after editing a hook file in the repo to push the new version into `~/.claude/hooks/`. Does **not** touch the `skills/<name>/` agent-neutral skills - that's `bin/install-skills.sh`'s job. |
 | `bin/install-skills.sh` | Install the agent-neutral `skills/<name>/` skills into `~/.claude/skills/<name>`, `~/.codex/skills/<name>`, `~/.codex/prompts/<name>.md` (legacy alias), and `~/.cursor/skills/<name>`. Claude/Codex symlink by default; Cursor always hard-copies (`scripts/test-cursor-skill-symlink.sh`). Pass `--copy` to hard-copy every target, `--dry-run` to preview, `--no-codex` / `--no-cursor` to skip those targets, `--force` to overwrite divergent host content. Idempotent; refuses to clobber unmanaged host targets without `--force`. |
+| `bin/install-ground-control.sh` | The general Ground Control host installer: the agent-neutral `skills/<name>/` skills plus the host-wide verification dispatcher. Skill installation is delegated verbatim to `bin/install-skills.sh`, so that script keeps its contract and its flags (`--copy`, `--no-codex`, `--no-cursor`, `--claude-dir`, and the rest) pass straight through. The dispatcher is installed as real **copies** at `~/.local/bin/gc-test-dispatch` and `${XDG_DATA_HOME:-~/.local/share}/ground-control/gc_dispatch/`, never a symlink into this checkout. Pass `--dry-run` to preview, `--force` to overwrite divergent host content, `--no-skills` or `--no-dispatcher` to install only one half. Idempotent. |
+| `bin/gc-test-dispatch` | The host-wide verification dispatcher (GC-O016, [ADR-096](../architecture/adrs/096-host-wide-verification-dispatcher.md)). Wraps a verification command so it is admitted against a shared per-user CPU budget before it runs. See [Host-wide verification dispatch](#host-wide-verification-dispatch). |
 | `bin/policy` | Run the repo-native policy guardrails (ADR sync, requirement-spec frontmatter, the `/implement` execution and workflow contracts, repo identity, version mirrors, file size, the repository-map freshness gate, and the PR-body contract). Invoked by `make policy` and CI. |
 | `bin/adr-guard` | ADR-specific policy checks run standalone. |
 | `bin/check-pr-body` | Validate a PR body against the required template. |
@@ -694,8 +696,13 @@ After cloning this repo onto a new host (or after any `rm -rf ~/.claude/skills/`
 
 ```
 scripts/bootstrap-claude-workflow.sh   # .claude/skills/* skills + the WORKFLOW_HOOKS allowlist under .claude/hooks/
-bin/install-skills.sh                  # skills/* (agent-neutral) into ~/.claude/skills, ~/.codex/skills, ~/.codex/prompts, ~/.cursor/skills
+bin/install-ground-control.sh          # skills/* (agent-neutral) + the host-wide verification dispatcher
 ```
+
+`bin/install-ground-control.sh` is the general, agent-neutral entry point: it runs
+`bin/install-skills.sh` for the skills and then installs `gc-test-dispatch`. Run
+`bin/install-skills.sh` directly when you want the skills alone; it remains the
+canonical skill installer and is unchanged.
 
 `scripts/bootstrap-claude-workflow.sh` walks:
 - `.claude/skills/*/` - every skill directory gets a matching `~/.claude/skills/<name>` **symlink**. Editing a skill in the repo takes effect immediately in the next session.
@@ -740,6 +747,103 @@ agent "/implement 123"
 ```
 
 **CLI permissions** live in [`.cursor/cli.json`](../.cursor/cli.json) (project override). For long autonomous runs, pass `--force` if approval prompts would block git/gh/make/MCP calls. The Cursor CLI driver runs every step on the parent session (Codex-style); see the Cursor CLI section in `skills/implement/SKILL.md`.
+
+## Host-wide verification dispatch
+
+Ground Control coordinates verification inside one checkout and one MCP server
+process. Nothing coordinates between them, so two `/implement` runs in different
+repositories, or in linked worktrees of the same repository, can each reach their
+completion and pre-commit boundaries correctly and launch a full test suite at the
+same moment on the same machine. Both runs are individually compliant; their
+combined worker count is not.
+
+`gc-test-dispatch` admits a verification command against a shared per-user CPU
+budget and then runs that exact command. It is a wrapper, not a gate: it never
+skips a test, reuses a prior pass, caches a result, weakens pre-commit, or
+substitutes for the completion, policy, continuous-integration, or SonarCloud
+authorities. See GC-O016 and
+[ADR-096](../architecture/adrs/096-host-wide-verification-dispatcher.md).
+
+### Wrapping a consumer repository's commands
+
+Demand is declared by the repository, in the dispatcher arguments it embeds in the
+`.ground-control.yaml` commands it already has. There is no new configuration
+field, and the dispatcher never reads repository configuration.
+
+```yaml
+workflow:
+  completion_command: gc-test-dispatch --profile completion --cpu 8 --min-cpu 2 --xdist -- make test
+  precommit_command: gc-test-dispatch --profile precommit --cpu 2 -- pre-commit run
+  policy_command: gc-test-dispatch --profile policy --cpu 2 -- make policy
+```
+
+| Argument | Meaning |
+|----------|---------|
+| `--profile <name>` | Names the workload in the recorded measurements. Lowercase letters, digits, `.`, `-`, and `_`. |
+| `--cpu N` | Requested capacity, default `1`, bounds `[1, 1024]`. |
+| `--min-cpu N` | Smallest grant the workload accepts, default the value of `--cpu`. Set it below `--cpu` for a suite that can usefully run narrower rather than wait. |
+| `--xdist` | Sets `PYTEST_XDIST_AUTO_NUM_WORKERS` to the granted capacity, for a suite that runs pytest with `-n auto`. Without it no environment value changes. |
+| `-- <command>` | Everything after `--` is the command, run directly as an argument vector. No shell, no rewriting. |
+
+The command keeps its own standard input, output, and error. Its exit status is
+returned unchanged, and when the command is killed by a signal the dispatcher
+terminates the same way, so a shell or a CI runner sees the real cause.
+
+### Host configuration
+
+Capacity belongs to the machine's owner, not to a repository. It lives in
+`${XDG_CONFIG_HOME:-~/.config}/ground-control/dispatch.json`, which must be owned
+by the invoking user and not writable by group or other:
+
+```json
+{
+  "cpu_capacity": 8,
+  "max_queue_wait_seconds": 1800,
+  "stale_lease_seconds": 21600
+}
+```
+
+Every key is optional. Without the file, capacity defaults to the process's
+effective CPU affinity, so a `cgroup` or `taskset` confined host is respected
+rather than measured by its raw processor count. No flag and no repository
+setting can raise these values; an unknown key or an out-of-range value is
+refused rather than ignored.
+
+Admission is strict first-in-first-out over an advisory-locked per-user ledger in
+`$XDG_RUNTIME_DIR/ground-control/dispatch`. An entry is granted the lesser of its
+request and the remaining capacity whenever at least its minimum fits, and later
+work is backfilled from what the entry ahead of it leaves, so a two-core check
+runs beside a six-core suite. The walk stops at the first entry that does not fit,
+so a large suite is not starved by a stream of small ones. When the wait exceeds
+`max_queue_wait_seconds` the command does **not** run and the dispatcher exits
+`75`, so an over-subscribed host produces a visible failure rather than a silent
+skip.
+
+Each run appends one bounded record to `metrics.jsonl` in that directory and
+prints one `gc-test-dispatch:` summary line to stderr, carrying the profile,
+requested and granted capacity, host capacity, queue time, execution time, and
+outcome. Those are local operational diagnostics for tuning demand profiles. They
+are not an issue-thread record (ADR-029), not step telemetry (ADR-036), and never
+a result any gate reads back as evidence. No command, working directory,
+environment, or output is persisted.
+
+### The repo-local `/implement` addendum
+
+Wrapping the configured commands covers the completion, policy, and pre-commit
+boundaries, because Ground Control runs those commands verbatim. Step 5 targeted
+tests are different: the agent chooses those commands from the change in front of
+it, so no configuration field can express them. A consumer repository that wants
+them dispatched adds a short repository-local `/implement` addendum saying so, for
+example:
+
+> Step 5 targeted tests run through `gc-test-dispatch --profile targeted --cpu 2
+> --min-cpu 1 -- <the narrowest test command>`. Discretionary full-suite runs
+> during edit iteration remain prohibited; the repository-wide completion and
+> policy commands run only at their own boundaries.
+
+Keep it to invocation guidance. An addendum must not restate, relax, or reorder a
+gate: GC-O007 and the ADR-021 / ADR-027 / ADR-029 ordering are unchanged by the
+dispatcher, and Ground Control carries no consumer-specific branch.
 
 ## Test tooling beyond unit tests
 
